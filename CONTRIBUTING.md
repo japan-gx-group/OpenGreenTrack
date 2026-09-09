@@ -114,12 +114,15 @@ npm run dev
 3. PR を作成する（[PR テンプレート](.github/PULL_REQUEST_TEMPLATE.md)が自動で開きます）
    - 関連 Issue を `Closes #34` のように記載する
    - 何を・なぜ変えたかを説明する
-4. **CI（lint / test / build / check:migrations）がグリーン**になっていることを確認する
-5. レビューを受け、指摘に対応する
-6. 承認後にマージ（原則 Squash merge）
+4. **CI（Secret Scan / Lint & Build Verification）がグリーン**になっていることを確認する
+5. レビューコメントが付いた場合は対応し、スレッドを解決する
+6. マージする（**Squash merge のみ**。マージ後にトピックブランチは自動削除されます）
 
-> ⚠️ **強制マージ（Force Merge）や CI・レビューのチェック上書き（Override）は禁止**です。
-> テストが赤い・レビュー未承認の場合は、根本原因を修正してから通常マージしてください（[`AGENTS.md`](AGENTS.md) R11）。
+> **承認（Approve）は必須ではありません。** `main` へのマージをブロックするのは、CI の失敗と未解決のレビューコメントの2つです。
+> ただし fork からの Pull Request にはマージ権限が無いため、外部からの貢献はメンテナが内容を確認したうえでマージします。
+
+> ⚠️ **CI が赤い状態でのマージ、およびブランチ保護のバイパスは禁止**です。
+> 根本原因を修正してからマージしてください（[`AGENTS.md`](AGENTS.md) R11）。
 
 ## コミット前チェックリスト
 
@@ -127,6 +130,7 @@ npm run dev
 
 ```bash
 npm run lint              # ESLint が通る
+npm run typecheck         # 型エラーが無い
 npm run build             # 本番ビルドが通る
 npm run test              # テストが通る
 npm run check:migrations  # マイグレーションを触った場合
@@ -139,7 +143,7 @@ npm run check:migrations  # マイグレーションを触った場合
 | `lint` | `*.ts` / `*.tsx` をステージしたとき | ステージしたファイルに `eslint --fix`（修正結果は自動で再ステージ） |
 | `check-migrations` | `supabase/migrations/*.sql` をステージしたとき | マイグレーションに DML が混入していないか検査（`AGENTS.md` R12） |
 
-`build` と `test` の失敗はフックでは検出できないため、**push 前に上記4つを自分で流してください**。強制力の本丸は CI 側（lint / test / build / check:migrations / シークレット走査）です。
+`build` と `test` の失敗はフックでは検出できないため、**push 前に上記5つを自分で流してください**。強制力の本丸は CI 側（シークレット走査 / check:migrations / lint / test / build / typecheck）です。
 
 あわせて [`AGENTS.md`](AGENTS.md) 末尾の「してはいけないことチェックリスト」も確認してください。
 
