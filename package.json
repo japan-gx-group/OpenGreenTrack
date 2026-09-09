@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/japan-gx-group/JGX-GXTechnology-GHG-Tool.git"
+    "url": "git+https://github.com/japan-gx-group/GreenTrack-GHG-Management.git"
   },
   "type": "module",
   "packageManager": "npm@11.13.0",

@@ -36,8 +36,8 @@ GreenTrack へのご関心ありがとうございます 🌱
 
 ```bash
 # 1. フォーク & クローン
-git clone https://github.com/<your-account>/JGX-GXTechnology-GHG-Tool.git
-cd JGX-GXTechnology-GHG-Tool
+git clone https://github.com/<your-account>/GreenTrack-GHG-Management.git
+cd GreenTrack-GHG-Management
 
 # 2. 依存インストール（lefthook の git hook も自動セットアップされます）
 npm install

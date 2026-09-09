@@ -163,10 +163,10 @@ GitHub のリポジトリ画面で **Code** ボタンを押し、**HTTPS** の U
 
 ```bash
 git clone <リポジトリURL>
-cd JGX-GXTechnology-GHG-Tool
+cd GreenTrack-GHG-Management
 ```
 
-`cd` は「このフォルダに移動する」という意味です。以降のコマンドは、必ず `JGX-GXTechnology-GHG-Tool` フォルダの中で実行してください。
+`cd` は「このフォルダに移動する」という意味です。以降のコマンドは、必ず `GreenTrack-GHG-Management` フォルダの中で実行してください。
 
 <details>
 <summary>Git を使わず ZIP で取得した場合だけ開く</summary>
@@ -937,7 +937,7 @@ psql "<接続文字列>" -f backup_data.sql
 
 ### どのフォルダでコマンドを実行すればよいかわからない
 
-`JGX-GXTechnology-GHG-Tool` フォルダの中で実行します。
+`GreenTrack-GHG-Management` フォルダの中で実行します。
 
 確認:
 
