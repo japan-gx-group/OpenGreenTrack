@@ -7,6 +7,7 @@
     "type": "git",
     "url": "git+https://github.com/japan-gx-group/OpenGreenTrack.git"
   },
+  "homepage": "https://g-track.org",
   "type": "module",
   "packageManager": "npm@11.13.0",
   "engines": {

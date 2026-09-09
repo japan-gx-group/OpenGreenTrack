@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/japan-gx-group/OpenGreenTrack/actions/workflows/ci.yml/badge.svg)](https://github.com/japan-gx-group/OpenGreenTrack/actions/workflows/ci.yml)
 
+**公式サイト: https://g-track.org/** — 製品概要・導入事例・お問い合わせはこちら。
+
 OpenGreenTrack は企業向けの温室効果ガス（GHG）排出量算定・可視化・管理プラットフォームです。Scope 1 / 2 / 3 を横断し、拠点別・カテゴリ別の排出量を集計して、経営層から現場まで意思決定に活かせるダッシュボードを提供します。
 
 ---
