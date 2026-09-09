@@ -13,7 +13,7 @@ import {
   UserRound,
   X,
 } from 'lucide-react';
-import { GreenTrackMark } from '@/components/ui/GreenTrackMark';
+import { OpenGreenTrackMark } from '@/components/ui/OpenGreenTrackMark';
 import clsx from 'clsx';
 import { createClient } from '@/lib/supabase/client';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -101,7 +101,7 @@ export const Sidebar = () => {
               color: 'var(--color-primary)',
             }}
           >
-            <GreenTrackMark size={22} />
+            <OpenGreenTrackMark size={22} />
           </span>
           <span style={{ flex: 1, minWidth: 0 }}>
             {isLoading ? (
@@ -142,7 +142,7 @@ export const Sidebar = () => {
                 textOverflow: 'ellipsis',
               }}
             >
-              GreenTrack · GHG Management
+              OpenGreenTrack · GHG Management
             </span>
           </span>
           {/* 画面遷移なので ChevronRight。組織切替ドロップダウンを実装したら ChevronsUpDown に戻す */}

@@ -59,10 +59,10 @@ export const buildInviteEmail = (input: InviteEmailInput): InviteEmailContent =>
     ? `この招待リンクの有効期限は発行から7日間（${expiryDate} まで）です。`
     : 'この招待リンクの有効期限は発行から7日間です。';
 
-  const subject = `【GreenTrack】${organizationName} への招待`;
+  const subject = `【OpenGreenTrack】${organizationName} への招待`;
 
   const text = [
-    `${inviterName} さんから、GHG排出量算定プラットフォーム「GreenTrack」の`,
+    `${inviterName} さんから、GHG排出量算定プラットフォーム「OpenGreenTrack」の`,
     `組織「${organizationName}」に招待されました。`,
     '',
     '以下のリンクからアカウントを登録すると、メンバーとして参加できます。',
@@ -78,7 +78,7 @@ export const buildInviteEmail = (input: InviteEmailInput): InviteEmailContent =>
   // ここだけ例外的に生の色値をインラインスタイルで指定する（AGENTS.md R5 の例外）。
   const html = [
     '<div style="font-family: sans-serif; line-height: 1.8; color: #1f2937; max-width: 560px;">',
-    `  <p>${escapeHtml(inviterName)} さんから、GHG排出量算定プラットフォーム「GreenTrack」の組織「${escapeHtml(organizationName)}」に招待されました。</p>`,
+    `  <p>${escapeHtml(inviterName)} さんから、GHG排出量算定プラットフォーム「OpenGreenTrack」の組織「${escapeHtml(organizationName)}」に招待されました。</p>`,
     '  <p>以下のリンクからアカウントを登録すると、メンバーとして参加できます。</p>',
     `  <p><a href="${escapeHtml(inviteUrl)}">${escapeHtml(inviteUrl)}</a></p>`,
     `  <p>${escapeHtml(expiryLine)}</p>`,

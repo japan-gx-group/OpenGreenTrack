@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
   <!--
-    GreenTrack のロゴマーク（ブラウザタブ用）。
-    3本のパスと rotate は src/components/ui/GreenTrackMark.tsx と共通仕様。形を変えるときは両方を同時に更新すること。
-    外側の translate/scale は、GreenTrackMark の viewBox (-3.37 -4.45 24.61 24.04) を
+    OpenGreenTrack のロゴマーク（ブラウザタブ用）。
+    3本のパスと rotate は src/components/ui/OpenGreenTrackMark.tsx と共通仕様。形を変えるときは両方を同時に更新すること。
+    外側の translate/scale は、OpenGreenTrackMark の viewBox (-3.37 -4.45 24.61 24.04) を
     512px タイルの中央 360px 枠に収めるための値（scale = 360 / 24.61）。
     ファビコンは currentColor が効かないため、色はブランドトークン primary-dark (#145236) を直接指定している。
   -->

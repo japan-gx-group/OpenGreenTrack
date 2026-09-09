@@ -90,7 +90,7 @@ export const FAQ_ITEMS: FaqItem[] = [
   },
 ];
 
-export const QUICK_GUIDE_TEXT = `GreenTrack クイックガイド（簡易版）
+export const QUICK_GUIDE_TEXT = `OpenGreenTrack クイックガイド（簡易版）
 
 1. データ入力
    「データ入力」画面のフォームから拠点・カテゴリ・活動量を入力して登録します。

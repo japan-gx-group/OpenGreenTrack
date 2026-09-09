@@ -29,7 +29,7 @@ export const AppTopBar = () => {
   return (
     <header className="header">
       <div className="flex items-center" style={{ gap: '9px', fontSize: '13px', color: 'var(--color-text-muted)' }}>
-        <span className="truncate">{profile?.organizationName ?? 'GreenTrack'}</span>
+        <span className="truncate">{profile?.organizationName ?? 'OpenGreenTrack'}</span>
         {pageTitle && (
           <>
             <ChevronRight size={13} style={{ color: 'var(--color-text-subtle)', flex: 'none' }} />

@@ -1,6 +1,6 @@
 # コントリビューションガイド
 
-GreenTrack へのご関心ありがとうございます 🌱
+OpenGreenTrack へのご関心ありがとうございます 🌱
 このドキュメントは、バグ報告・機能提案・コード貢献の進め方をまとめたものです。
 
 > 開発規約の**正本**は [`AGENTS.md`](AGENTS.md) です。コードを書く前に必ず目を通してください。
@@ -36,8 +36,8 @@ GreenTrack へのご関心ありがとうございます 🌱
 
 ```bash
 # 1. フォーク & クローン
-git clone https://github.com/<your-account>/GreenTrack-GHG-Management.git
-cd GreenTrack-GHG-Management
+git clone https://github.com/<your-account>/OpenGreenTrack.git
+cd OpenGreenTrack
 
 # 2. 依存インストール（lefthook の git hook も自動セットアップされます）
 npm install

@@ -1,6 +1,6 @@
 # アーキテクチャ概要（Next.js + Supabase）
 
-GreenTrack は **Next.js（App Router）+ Supabase** で構成します。
+OpenGreenTrack は **Next.js（App Router）+ Supabase** で構成します。
 自前のAPIサーバやORMは持たず、バックエンド機能はすべて Supabase に寄せます。
 
 ```
@@ -46,7 +46,7 @@ GreenTrack は **Next.js（App Router）+ Supabase** で構成します。
 
 ## RLS の考え方（マルチテナントの肝）
 
-GreenTrack は複数企業（organization）が同居するマルチテナント型です。
+OpenGreenTrack は複数企業（organization）が同居するマルチテナント型です。
 「A社のユーザーにはA社のデータしか見えない」を、アプリのコードではなく **DBのRLSポリシーで強制** します。
 
 - ほぼ全テーブルが `organization_id` 列を持つ
@@ -66,7 +66,7 @@ GreenTrack は複数企業（organization）が同居するマルチテナント
 
 ## ロギングと監視（Pino + Request Tracing）
 
-GreenTrack ではセルフホスト・単一テナント運用を前提とし、外部 SaaS に依存しない運用ログ出力基盤を備えています。
+OpenGreenTrack ではセルフホスト・単一テナント運用を前提とし、外部 SaaS に依存しない運用ログ出力基盤を備えています。
 
 1. **サーバ側ログ (`src/lib/logging/logger.ts`)**:
    - Pino を採用し、本番環境 (`NODE_ENV=production`) では `stdout` へ標準的な NDJSON（1行1 JSON）を出力します。
@@ -80,7 +80,7 @@ GreenTrack ではセルフホスト・単一テナント運用を前提とし、
    - API Route や Server Action で `await getRequestLogger()` を呼び出すことで、`requestId`, `organizationId`, `userId` が全ログ行に共通バインドされます。
 
 3. **ブラウザ側ログ (`src/lib/logging/clientLogger.ts`)**:
-   - Client Component 用の構造化ログ出力。`[GreenTrack]` プレフィックス付きでブラウザ DevTools コンソールへ出力されます。
+   - Client Component 用の構造化ログ出力。`[OpenGreenTrack]` プレフィックス付きでブラウザ DevTools コンソールへ出力されます。
 
 4. **ヘルスチェックエンドポイント (`/api/health`)**:
    - `GET /api/health` で Supabase データベース接続とアプリケーションの正常性を返します (`200 OK` / `503 Service Unavailable`)。デプロイ時の readiness probe や死活監視に利用できます。

@@ -1,6 +1,6 @@
-# GreenTrack セットアップガイド
+# OpenGreenTrack セットアップガイド
 
-このガイドは、GreenTrack をはじめて動かす人向けの手順書です。
+このガイドは、OpenGreenTrack をはじめて動かす人向けの手順書です。
 
 セットアップ方法は 2 つあります。まず試すだけなら **A. ローカルで動かす**、チーム利用や本番運用なら **B. クラウドで運用する** を選びます。
 
@@ -43,7 +43,7 @@ PC のファイルとして開く場合:
 
 ## 事前に知っておくこと
 
-- GreenTrack は **Next.js アプリ** と **Supabase** で動きます。
+- OpenGreenTrack は **Next.js アプリ** と **Supabase** で動きます。
 - Supabase は、ログイン機能、データベース、ファイル保存場所をまとめて提供するサービスです。
 - `.env.local` は接続先やキーを書くための個人用設定ファイルです。秘密情報を含むため、GitHub にコミットしてはいけません。
 - `SUPABASE_SERVICE_ROLE_KEY` は管理者権限キーです。ブラウザ側のコードや `NEXT_PUBLIC_` の環境変数に入れてはいけません。
@@ -62,7 +62,7 @@ PC のファイルとして開く場合:
 
 ## 1. 共通の準備
 
-この章のゴールは、GreenTrack のファイルを取得し、アプリを動かすための基本ツールをそろえることです。
+この章のゴールは、OpenGreenTrack のファイルを取得し、アプリを動かすための基本ツールをそろえることです。
 
 | 順番 | 作業 | 完了の目安 |
 |---:|---|---|
@@ -97,7 +97,7 @@ Windows の場合:
 
 ### 2. Git を用意する
 
-Git は、GitHub から GreenTrack のファイル一式を取得するための道具です。
+Git は、GitHub から OpenGreenTrack のファイル一式を取得するための道具です。
 
 まず確認します。
 
@@ -163,10 +163,10 @@ GitHub のリポジトリ画面で **Code** ボタンを押し、**HTTPS** の U
 
 ```bash
 git clone <リポジトリURL>
-cd GreenTrack-GHG-Management
+cd OpenGreenTrack
 ```
 
-`cd` は「このフォルダに移動する」という意味です。以降のコマンドは、必ず `GreenTrack-GHG-Management` フォルダの中で実行してください。
+`cd` は「このフォルダに移動する」という意味です。以降のコマンドは、必ず `OpenGreenTrack` フォルダの中で実行してください。
 
 <details>
 <summary>Git を使わず ZIP で取得した場合だけ開く</summary>
@@ -472,7 +472,7 @@ Studio は、ローカル Supabase の管理画面です。
 
 ## 2-B. クラウドで運用する（チーム利用・本番向け）
 
-クラウド方式では、supabase.com にプロジェクトを作り、GreenTrack からそのプロジェクトへ接続します。MVP の配布形態である「ユーザーが git clone して自分の Supabase アカウントで動かす」場合はこちらです。
+クラウド方式では、supabase.com にプロジェクトを作り、OpenGreenTrack からそのプロジェクトへ接続します。MVP の配布形態である「ユーザーが git clone して自分の Supabase アカウントで動かす」場合はこちらです。
 
 この章のゴール:
 
@@ -499,7 +499,7 @@ Supabase Dashboard で **New project** を選び、次の項目を設定しま�
 | 項目 | 入力例 | 補足 |
 |---|---|---|
 | Organization | 自社またはチーム名 | 既存 Organization があれば選択 |
-| Project name | `greentrack` | 任意の名前で OK |
+| Project name | `opengreentrack` | 任意の名前で OK |
 | Database Password | 強いパスワード | 後から必要になるため安全に保管 |
 | Region | `Northeast Asia` など | 利用者に近い地域を選ぶ |
 | Pricing plan | Free | まず検証する場合は無料枠で OK |
@@ -538,7 +538,7 @@ Supabase Dashboard の Auth 設定で、プロジェクトの運用方針に合�
 
 ### B-3-3. 自己サインアップを無効にし、パスワード変更の再認証を有効にする
 
-GreenTrack は招待制です。最初の管理者は初期セットアップ画面（`/signup`）が、以降のメンバーは「設定 → メンバー管理」の招待が、どちらもサーバー側（service_role の管理 API）でユーザーを作成します。Supabase Auth 自体の「新規ユーザー登録」は使いません。
+OpenGreenTrack は招待制です。最初の管理者は初期セットアップ画面（`/signup`）が、以降のメンバーは「設定 → メンバー管理」の招待が、どちらもサーバー側（service_role の管理 API）でユーザーを作成します。Supabase Auth 自体の「新規ユーザー登録」は使いません。
 
 ところが Supabase プロジェクトの既定では誰でも anon key だけで自己登録できるため、そのままにしておくと次の問題があります。
 
@@ -599,7 +599,7 @@ supabase link --project-ref abcdefghijklmnop
 supabase db push --include-seed
 ```
 
-このコマンドは、`supabase/migrations/` の SQL（テーブル定義などのスキーマ）をクラウドの Supabase DB に反映し、続けて `supabase/seeds/production/` の公式排出係数マスタを投入します。GreenTrack の算定には公式排出係数が必要なため、**初回は `--include-seed` 付きで実行することを推奨します。**
+このコマンドは、`supabase/migrations/` の SQL（テーブル定義などのスキーマ）をクラウドの Supabase DB に反映し、続けて `supabase/seeds/production/` の公式排出係数マスタを投入します。OpenGreenTrack の算定には公式排出係数が必要なため、**初回は `--include-seed` 付きで実行することを推奨します。**
 
 `--include-seed` を付けない `supabase db push` は、マイグレーション（スキーマ）だけを反映します。公式排出係数を後から入れる方法は B-8 を参照してください。
 
@@ -710,7 +710,7 @@ npm run dev
 
 ```env
 RESEND_API_KEY=<Resend の API キー>
-INVITE_EMAIL_FROM="GreenTrack <noreply@認証したドメイン>"
+INVITE_EMAIL_FROM="OpenGreenTrack <noreply@認証したドメイン>"
 ```
 
 4. `npm run dev`（本番では `npm run start`）を再起動すると有効になります。
@@ -726,7 +726,7 @@ INVITE_EMAIL_FROM="GreenTrack <noreply@認証したドメイン>"
 
 ## 2-D. 本番運用時のセキュリティヘッダ
 
-GreenTrack は Next.js 側でセキュリティレスポンスヘッダを返し、CSP Report-Only の違反はサーバーログ（`[csp-report]`）に記録します。リバースプロキシや CDN 側でも同名ヘッダを設定する場合は、値が重複・矛盾しないよう片側を正本にしてください。
+OpenGreenTrack は Next.js 側でセキュリティレスポンスヘッダを返し、CSP Report-Only の違反はサーバーログ（`[csp-report]`）に記録します。リバースプロキシや CDN 側でも同名ヘッダを設定する場合は、値が重複・矛盾しないよう片側を正本にしてください。
 
 **HSTS（`Strict-Transport-Security`）** は本番ビルドのときだけ返します。既定値は `max-age=63072000`（2年）で、`includeSubDomains` は付けません。
 
@@ -754,7 +754,7 @@ GreenTrack は Next.js 側でセキュリティレスポンスヘッダを返し
 
 ## 2-E. 本番運用時のリクエスト制限
 
-GreenTrack のアプリ側では、重い認証済みAPIに DB ベースの制限を入れています。
+OpenGreenTrack のアプリ側では、重い認証済みAPIに DB ベースの制限を入れています。
 
 | API | アプリ側の制限 | `Retry-After` |
 |---|---|---:|
@@ -783,7 +783,7 @@ GreenTrack のアプリ側では、重い認証済みAPIに DB ベースの制�
 
 ## 2-G. バックアップとリストア（誤削除からの復旧）
 
-GreenTrack の削除操作は、すべて**物理削除**です。特に拠点を削除すると、その拠点に紐づく活動量データ（`activity_records`）や算定結果（`emission_results`）まで連鎖して削除されます。アプリ内にゴミ箱や復元機能はありません。
+OpenGreenTrack の削除操作は、すべて**物理削除**です。特に拠点を削除すると、その拠点に紐づく活動量データ（`activity_records`）や算定結果（`emission_results`）まで連鎖して削除されます。アプリ内にゴミ箱や復元機能はありません。
 
 GHG 排出量の算定結果は対外報告（SSBJ 等）の根拠になるため、誤削除に備えて**必ずバックアップを運用してください**。この章では、次の 4 つを説明します。
 
@@ -807,7 +807,7 @@ Supabase のクラウドプロジェクト（2-B の構成）では、プラッ�
 
 - 本番運用では Pro プラン以上にして、**PITR の有効化を推奨**します。誤削除に気づいた時刻の直前へ戻せます。
 - **無料（Free）プランには自動バックアップがありません。** 無料枠で実データを扱う場合は、G-2 のセルフバックアップを必ず定期実行してください。
-- GreenTrack はファイルを保存しない（Supabase Storage を使わない）ため、バックアップの対象はデータベースだけです。
+- OpenGreenTrack はファイルを保存しない（Supabase Storage を使わない）ため、バックアップの対象はデータベースだけです。
 
 > ⚠️ Dashboard からの復元は**プロジェクト全体**をその時点へ巻き戻します。誤削除の後に入力された正しいデータも失われます。「消してしまった数行だけ戻したい」場合は、本番を直接巻き戻すのではなく **G-3 の部分復旧**の手順を使ってください。
 
@@ -830,10 +830,10 @@ supabase db dump -f backup_data.sql --data-only
 または、PostgreSQL 標準の `pg_dump` を直接使います。接続文字列は Supabase Dashboard の **Project Settings → Database** で確認できます（セルフホスト時は自環境の接続情報）。
 
 ```bash
-pg_dump "<接続文字列>" --format=custom --file=greentrack_backup.dump
+pg_dump "<接続文字列>" --format=custom --file=opengreentrack_backup.dump
 ```
 
-- ファイル名には日付を入れて管理してください（例: `greentrack_20260810.dump`）。
+- ファイル名には日付を入れて管理してください（例: `opengreentrack_20260810.dump`）。
 - `--format=custom` 形式は `pg_restore` で復元でき、テーブル単位の取り出し（部分復旧）がしやすいためおすすめです。
 
 #### 推奨頻度と保持期間
@@ -854,7 +854,7 @@ pg_dump "<接続文字列>" --format=custom --file=greentrack_backup.dump
 
 ```bash
 # custom 形式（pg_dump --format=custom）の場合
-pg_restore --dbname="<接続文字列>" --clean --if-exists greentrack_backup.dump
+pg_restore --dbname="<接続文字列>" --clean --if-exists opengreentrack_backup.dump
 
 # プレーン SQL（supabase db dump）の場合
 psql "<接続文字列>" -f backup_schema.sql
@@ -872,7 +872,7 @@ psql "<接続文字列>" -f backup_data.sql
    ローカル Supabase（2-A の構成）を復旧作業用の別環境として使えます。`supabase start` で起動した後、ローカル DB（ポート `54322`）へバックアップを復元します。
 
    ```bash
-   pg_restore --dbname="postgresql://postgres:postgres@127.0.0.1:54322/postgres" --clean --if-exists greentrack_backup.dump
+   pg_restore --dbname="postgresql://postgres:postgres@127.0.0.1:54322/postgres" --clean --if-exists opengreentrack_backup.dump
    ```
 
 2. **削除された行を抽出する**
@@ -886,7 +886,7 @@ psql "<接続文字列>" -f backup_data.sql
      -c "\copy (select * from activity_records where \"locationId\" = '<削除した拠点のID>') to 'restore_activity_records.csv' with csv header"
    ```
 
-   GreenTrack のカラム名は `"locationId"` のような**大文字混じり（camelCase）**のため、SQL 中では必ず二重引用符で囲みます（囲まないと `column "location_id" does not exist` エラーになります）。上の例のようにコマンド全体を二重引用符で囲んでいる場合は、カラム名の二重引用符を `\"locationId\"` とエスケープしてください。他のテーブル（`emission_results` など）を抽出する場合も同様です。
+   OpenGreenTrack のカラム名は `"locationId"` のような**大文字混じり（camelCase）**のため、SQL 中では必ず二重引用符で囲みます（囲まないと `column "location_id" does not exist` エラーになります）。上の例のようにコマンド全体を二重引用符で囲んでいる場合は、カラム名の二重引用符を `\"locationId\"` とエスケープしてください。他のテーブル（`emission_results` など）を抽出する場合も同様です。
 
 3. **本番へ INSERT する**
 
@@ -901,7 +901,7 @@ psql "<接続文字列>" -f backup_data.sql
 
 注意:
 
-- **RLS（行レベルセキュリティ）の回避が必要です。** GreenTrack の各テーブルは RLS で保護されており、アプリが使う anon キーの接続では他ユーザー・他組織の行を書き込めません。復旧作業は、RLS の対象外となる接続 — Supabase Dashboard の **SQL Editor**、`postgres` ユーザーでの直接 DB 接続、または `SUPABASE_SERVICE_ROLE_KEY` を使ったサーバー側接続 — で行ってください。service_role キーの扱いは 2-B の注意（画面側に出さない・コミットしない）と同じです。
+- **RLS（行レベルセキュリティ）の回避が必要です。** OpenGreenTrack の各テーブルは RLS で保護されており、アプリが使う anon キーの接続では他ユーザー・他組織の行を書き込めません。復旧作業は、RLS の対象外となる接続 — Supabase Dashboard の **SQL Editor**、`postgres` ユーザーでの直接 DB 接続、または `SUPABASE_SERVICE_ROLE_KEY` を使ったサーバー側接続 — で行ってください。service_role キーの扱いは 2-B の注意（画面側に出さない・コミットしない）と同じです。
 - 復元する行の `id` が本番の既存データと**重複しないか**を事前に確認してください。
 - 拠点削除のように連鎖削除（cascade）で消えたデータは、子テーブル（`activity_records` / `emission_results` など）の行も忘れずに戻してください。
 - 作業前に、**現時点の本番のバックアップ**をもう 1 つ取得してから始めると、INSERT を誤った場合もやり直せます。
@@ -916,7 +916,7 @@ psql "<接続文字列>" -f backup_data.sql
 
 ### 今後の拡張（論理削除）
 
-現時点の GreenTrack には論理削除（`deletedAt` フラグ）やゴミ箱・復元 UI がなく、誤削除への備えは本章のバックアップ運用が正となります。論理削除の導入は、RLS ポリシーと全画面のクエリへ影響が広いため、監査ログ（「誰がいつ削除したか」の記録）と設計をセットにして将来のバージョンで検討します。
+現時点の OpenGreenTrack には論理削除（`deletedAt` フラグ）やゴミ箱・復元 UI がなく、誤削除への備えは本章のバックアップ運用が正となります。論理削除の導入は、RLS ポリシーと全画面のクエリへ影響が広いため、監査ログ（「誰がいつ削除したか」の記録）と設計をセットにして将来のバージョンで検討します。
 
 ---
 
@@ -937,7 +937,7 @@ psql "<接続文字列>" -f backup_data.sql
 
 ### どのフォルダでコマンドを実行すればよいかわからない
 
-`GreenTrack-GHG-Management` フォルダの中で実行します。
+`OpenGreenTrack` フォルダの中で実行します。
 
 確認:
 

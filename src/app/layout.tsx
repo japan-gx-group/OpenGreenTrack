@@ -20,7 +20,7 @@ const instrumentSans = Instrument_Sans({
 });
 
 export const metadata: Metadata = {
-  title: 'GreenTrack',
+  title: 'OpenGreenTrack',
   description: '企業向けGHG（温室効果ガス）排出量算定・可視化ツール',
   icons: {
     icon: '/favicon.svg',

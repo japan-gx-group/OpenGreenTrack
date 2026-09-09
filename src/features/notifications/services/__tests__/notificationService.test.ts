@@ -275,7 +275,7 @@ describe('getReadMarker / setReadMarker（localStorage）', () => {
     expect(getReadMarker()).toBeNull();
     setReadMarker('2026-09-01T00:00:00.000Z');
     expect(getReadMarker()).toBe('2026-09-01T00:00:00.000Z');
-    expect([...store.keys()]).toEqual(['greentrack.notifications.readAt']);
+    expect([...store.keys()]).toEqual(['opengreentrack.notifications.readAt']);
   });
 
   it('localStorage が使えない（例外を投げる）場合は null / 何もしない', () => {

@@ -3,7 +3,7 @@
 // 実行: node scripts/official-factors/generate.ts
 // 出力: supabase/seeds/production/official_emission_factors.sql
 //
-// 生成物は GreenTrack の初期データのうち、本番環境にも投入する共通マスタ（seed）。
+// 生成物は OpenGreenTrack の初期データのうち、本番環境にも投入する共通マスタ（seed）。
 // データはスキーマ定義ファイルではなく seed として管理する（AGENTS.md R12）。投入方法:
 //   ローカル DB 作り直し      : npx supabase db reset（config.toml [db.seed].sql_paths で自動投入）
 //   稼働中ローカル DB へ再投入: npm run db:seed:production（= node scripts/db/seed.ts production）
@@ -411,7 +411,7 @@ for (let i = 0; i < sqlRows.length; i += CHUNK_SIZE) {
   );
 }
 
-const header = `-- 公式排出係数マスタ（GreenTrack の初期データ。本番環境にも投入する共通マスタ）
+const header = `-- 公式排出係数マスタ（OpenGreenTrack の初期データ。本番環境にも投入する共通マスタ）
 -- scripts/official-factors/generate.ts による自動生成。手編集しないこと（修正は data/ を直して再生成する）。
 --
 -- 出典と権利（再配布時もこの表示を保持すること。詳細はリポジトリ直下の NOTICE）:
