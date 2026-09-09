@@ -1,6 +1,6 @@
 # GreenTrack - GHG排出量算定・管理ツール
 
-[![CI](https://github.com/japan-gx-group/JGX-GXTechnology-GHG-Tool/actions/workflows/ci.yml/badge.svg)](https://github.com/japan-gx-group/JGX-GXTechnology-GHG-Tool/actions/workflows/ci.yml)
+[![CI](https://github.com/japan-gx-group/GreenTrack-GHG-Management/actions/workflows/ci.yml/badge.svg)](https://github.com/japan-gx-group/GreenTrack-GHG-Management/actions/workflows/ci.yml)
 
 GreenTrack は企業向けの温室効果ガス（GHG）排出量算定・可視化・管理プラットフォームです。Scope 1 / 2 / 3 を横断し、拠点別・カテゴリ別の排出量を集計して、経営層から現場まで意思決定に活かせるダッシュボードを提供します。
 
@@ -69,7 +69,7 @@ Docker をインストールできない会社 PC では、クラウドで運用
 
 ```bash
 git clone <リポジトリURL>
-cd JGX-GXTechnology-GHG-Tool
+cd GreenTrack-GHG-Management
 npm install
 ```
 
