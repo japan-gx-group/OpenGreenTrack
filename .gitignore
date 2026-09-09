@@ -1,0 +1,77 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Next.js
+.next/
+out/
+next-env.d.ts
+
+# 環境変数（.env.example のみコミット可）
+# .env / .env.production / .env.keys など、どの階層のどの .env 派生ファイルも
+# 除外したうえで、テンプレートの .env.example だけを明示的に戻す。
+# supabase/.env もこのパターンで一緒に除外される。
+.env
+.env.*
+!.env.example
+
+# Supabase
+.supabase
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# 進捗管理・週次報告などリポジトリ直下に置く運用ファイル（Excel）
+# ルート直下のみ対象。テスト用の xlsx フィクスチャ（IDEAインポーター等）は
+# 配下ディレクトリに置けばコミットできる
+/*.xlsx
+/*.xlsm
+/*.xls
+
+# Excel が編集中に作る一時ロックファイル（配下ディレクトリのフィクスチャを
+# 開いたときにも出るため、ルート限定ではなく全階層を対象にする）
+~$*
+
+# TypeScript Build Cache
+*.tsbuildinfo
+
+# Playwright（E2Eスモーク）の実行結果とログイン済みセッション。
+# e2e/.auth はテスト用とはいえ認証Cookieそのものなのでコミットしない。
+/playwright-report/
+/test-results/
+/blob-report/
+/e2e/.auth/
+
+# npm 以外のパッケージマネージャのロックファイル（このリポジトリは npm 専用。package-lock.json が正）
+pnpm-lock.yaml
+pnpm-workspace.yaml
+yarn.lock
+bun.lockb
+
+# DB / Storage のバックアップ（docs/setup-guide.md 2-G の手順で作るファイル）。
+# 中身は全組織の実データなので絶対にコミットしない。
+# supabase/migrations/*.sql と supabase/seeds/*.sql は残す必要があるため、
+# *.sql の全面除外はせず、ルート直下とバックアップ命名だけを対象にする。
+*.dump
+/backup/
+/backup_*.sql
+/greentrack_*.sql

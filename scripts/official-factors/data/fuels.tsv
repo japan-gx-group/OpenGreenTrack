@@ -1,0 +1,45 @@
+# 燃料の使用に関する排出係数（算定省令 別表第1×別表2×(44/12)）
+# 出典: 温対法 算定・報告・公表制度「算定方法・排出係数一覧」(令和7年度実績・2025年公表) p.23（参考1）
+# 公表資料を Japan GX Group が加工して作成（PDFからの抽出・転記）。加工後の値について公表元は責任を負わない。
+# Apache License 2.0 の対象外。原典に対する権利は公表元に帰属するが、公共データ利用規約（第1.0版）＝CC BY 4.0 互換のため、
+# 出典と加工した旨を表示すれば商用利用・改変・再配布ができる（NOTICE 参照。再配布時はこの表示を保持すること）。
+# 列: key <TAB> 燃料種名 <TAB> energyType <TAB> 単位 <TAB> 係数値
+# key は行の安定キー（小文字英数字と _ のみ、ファイル内で一意）。係数 ID は energyType + key + 年度から導出するため、
+# 名称・値・出典を訂正しても key を変えなければ同じ行が更新される。一度公開した key は変更しない
+# （変えると別の行になり、旧行の archive が必要になる）。行を追加するときは新しい一意な key を付ける。
+# 値は公表資料の確定値をそのまま転記する（パーサの誤読リスクを避けるため手書きでコミット）。
+coal_coking_imported	輸入原料炭	fuel_coal	tCO2/t	2.59
+coal_coking_for_coke	コークス用原料炭	fuel_coal	tCO2/t	2.60
+coal_coking_pci	吹込用原料炭	fuel_coal	tCO2/t	2.60
+coal_steam_imported	輸入一般炭	fuel_coal	tCO2/t	2.33
+coal_steam_domestic	国産一般炭	fuel_coal	tCO2/t	2.15
+coal_anthracite_imported	輸入無煙炭	fuel_coal	tCO2/t	2.64
+coal_coke	石炭コークス	fuel	tCO2/t	3.18
+petroleum_coke	石油コークス又はFCCコーク（流動接触分解で使用された触媒に析出する炭素）	fuel	tCO2/t	3.06
+coal_tar	コールタール	fuel	tCO2/t	2.86
+petroleum_asphalt	石油アスファルト	fuel	tCO2/t	2.99
+condensate_ngl	コンデンセート（NGL）	fuel_crude_oil	tCO2/kL	2.34
+crude_oil	原油（コンデンセート（NGL）を除く。）	fuel_crude_oil	tCO2/kL	2.67
+gasoline	揮発油	fuel_gasoline	tCO2/kL	2.29
+naphtha	ナフサ	fuel_naphtha	tCO2/kL	2.27
+jet_fuel	ジェット燃料油	fuel_jet	tCO2/kL	2.48
+kerosene	灯油	fuel_kerosene	tCO2/kL	2.50
+diesel_oil	軽油	fuel_diesel	tCO2/kL	2.62
+heavy_oil_a	A重油	fuel_heavy_oil	tCO2/kL	2.75
+heavy_oil_bc	B・C重油	fuel_heavy_oil	tCO2/kL	3.10
+lubricating_oil	潤滑油	fuel	tCO2/kL	2.93
+lpg	液化石油ガス（LPG）	fuel_lpg	tCO2/t	2.99
+petroleum_hydrocarbon_gas	石油系炭化水素ガス	fuel	tCO2/千m3	2.43
+lng	液化天然ガス（LNG）	fuel_lng	tCO2/t	2.79
+natural_gas	天然ガス（液化天然ガス（LNG）を除く。）	fuel_natural_gas	tCO2/千m3	1.96
+coke_oven_gas	コークス炉ガス	fuel	tCO2/千m3	0.735
+blast_furnace_gas	高炉ガス	fuel	tCO2/千m3	0.313
+blast_furnace_gas_power	発電用高炉ガス	fuel	tCO2/千m3	0.334
+converter_gas	転炉ガス	fuel	tCO2/千m3	1.16
+rdf	RDF	fuel	tCO2/t	1.07
+rpf	RPF	fuel	tCO2/t	1.64
+waste_tire	廃タイヤ	fuel	tCO2/t	1.64
+waste_plastic_municipal	廃プラスチック類（一般廃棄物）	fuel	tCO2/t	2.76
+waste_plastic_industrial	廃プラスチック類（産業廃棄物）	fuel	tCO2/t	2.57
+hydrocarbon_oil_from_waste_oil	廃油から製造された燃料炭化水素油	fuel	tCO2/kL	2.64
+hydrocarbon_oil_from_waste_plastic	廃プラスチック類から製造された燃料炭化水素油	fuel	tCO2/kL	2.62

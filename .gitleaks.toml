@@ -1,0 +1,39 @@
+# gitleaks（秘密情報スキャン）の設定。
+# CI の secret-scan ジョブ（.github/workflows/ci.yml）が、この設定でリポジトリの
+# コミット履歴全体を走査する。ローカルでも同じ設定で実行できる:
+#   gitleaks git . --config .gitleaks.toml --redact
+#
+# 方針:
+# - 既定のルールセットをそのまま使う（[extend] useDefault）。ルールは自作しない。
+# - 確認済みの誤検知だけを allowlist で除外する。実在する鍵は絶対に allowlist へ足さず、
+#   鍵そのものを失効（ローテート）させること。
+# - allowlist を増やすときは「なぜ秘密情報ではないのか」を description に必ず書く。
+# - 除外はファイル単位（paths）ではなく「検出値そのものにマッチする正規表現」で書く。
+#   paths を書くとそのファイルは丸ごと走査対象外になり、同じファイルに後から入った
+#   本物の鍵まで見逃すため。
+# - regexTarget は必ず "match"（gitleaks が検出した「変数名＝値」の部分）にする。
+#   "line" は行全体が対象になるため、allowlist に一致する文字列と同じ行に実鍵を並べれば
+#   実鍵側の検出まで一緒に消える（例: `KEY: "…dummy…" # <実鍵>`）。
+# - 正規表現には必ず「除外してよい値そのもの」を書く。変数名だけで一致させると、
+#   後から誰かが同じ変数名に実鍵を入れたときに無期限ですり抜ける。
+# - .env.example はあえて除外していない。プレースホルダーしか書かない運用なので、
+#   実値を貼ってしまったらここで落ちるのが正しい。
+
+[extend]
+useDefault = true
+
+# CI のビルド検証で Next.js の prerender を通すためのダミー値。
+# 署名が無効な固定文字列で、.github/workflows/ci.yml に平文で置いてある。
+[[allowlists]]
+description = "CI のビルド用ダミー Supabase anon key（実鍵ではない）"
+regexTarget = "match"
+regexes = ['''NEXT_PUBLIC_SUPABASE_ANON_KEY:\s*"eyJ[\w-]+\.[\w-]*dummy-anon-key"''']
+
+# パスワード生成用の文字集合。ランダム文字列に見えるが鍵ではなく
+# 「使ってよい文字の一覧」。現行のコードには存在せず、履歴の走査でのみ当たる
+# （prisma/seed/demoData.ts、削除済み）。値まで固定してあるので、同じ変数名に
+# 別の文字列を入れた場合はここで除外されず検出される。
+[[allowlists]]
+description = "PASSWORD_ALPHABET（文字集合であって鍵ではない）"
+regexTarget = "match"
+regexes = ['''PASSWORD_ALPHABET\s*=\s*'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';?''']

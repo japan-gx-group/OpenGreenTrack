@@ -1,0 +1,97 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+# CI は検査だけを行い、リポジトリへ書き戻さないため GITHUB_TOKEN は読み取り専用に絞る（最小権限）。
+# 実行内容: シークレット走査 / check:migrations / lint / test / build / typecheck。
+permissions:
+  contents: read
+
+# 同一ブランチで新しい push が来たら、実行中の古いジョブを自動キャンセルする。
+# ただし main は常に最後まで走らせる（将来デプロイ等を足しても途中でキャンセルされないように）。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  # 秘密情報（API キー・トークン等）がコミットされていないかを gitleaks で検査する。
+  # .gitignore はファイル名パターンしか守れず、ソースに直書きされた鍵はすり抜けるため、
+  # lint / build とは独立したジョブとして常に走らせる。誤検知の除外は .gitleaks.toml 側。
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # 履歴全体を走査するため浅いクローンを無効化する。
+          # これにより「PR の中で一度コミットして後から消した鍵」も検出できる。
+          fetch-depth: 0
+
+      # 公式 Action はセルフホスト以外の組織利用にライセンスキーが要るため、
+      # OSS のバイナリをバージョン固定＋チェックサム検証で取得して直接実行する。
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -euo pipefail
+          curl -sSfL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          rm gitleaks.tar.gz
+
+      # --redact: 検出した値そのものをログに出さない（CI ログ経由の二次流出を防ぐ）。
+      # 検出時は終了コード 1 で落ちる。
+      - name: Scan for committed secrets
+        run: ./gitleaks git . --config .gitleaks.toml --redact --no-banner
+
+  lint-and-build:
+    name: Lint & Build Verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Node.js (LTS)
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      # マイグレーションが DDL のみか（データの投入・更新を含んでいないか）を検査する（AGENTS.md R12）。
+      # 依存ライブラリ不要の軽いチェックなので lint より先に走らせ、規約違反に最初に気付けるようにする。
+      - name: Check migrations are DDL-only
+        run: npm run check:migrations
+
+      - name: Run Linter
+        run: npm run lint
+
+      - name: Run Tests
+        run: npm run test
+
+      - name: Run Build
+        run: npm run build
+        # ビルド時に Supabase クライアントを生成する処理が入った場合、環境変数が無いと
+        # prerender が落ちるため、ダミー値を渡しておく保険（値はプレースホルダーで実鍵ではない）。
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: "https://placeholder-project.supabase.co"
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy-anon-key"
+
+      # リポジトリ全体（テスト・scripts を含む）を型検査する。
+      # vitest はトランスパイルするだけで型を見ず、next build の型検査もテストファイルまでは見ないため、
+      # このステップが無いとテスト側の型エラーが CI を素通りして main に滞留する。
+      # build の後に置くのは、Next が生成する .next/types の型（ルート型など）が揃った状態で検査するため。
+      - name: Run Type Check
+        run: npm run typecheck

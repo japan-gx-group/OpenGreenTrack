@@ -1,0 +1,57 @@
+# Scope3 代表排出原単位
+# 出典: 環境省「サプライチェーンを通じた組織の温室効果ガス排出等の算定のための排出原単位データベース Ver.3.6」(2026年4月)
+# 公表資料を Japan GX Group が加工して作成（PDFからの抽出・転記）。加工後の値について公表元は責任を負わない。
+# Apache License 2.0 の対象外。原典に対する権利は公表元に帰属するが、公共データ利用規約（第1.0版）＝CC BY 4.0 互換のため、
+# 出典と加工した旨を表示すれば商用利用・改変・再配布ができる（NOTICE 参照。再配布時はこの表示を保持すること）。
+# 列: key <TAB> 係数名 <TAB> energyType <TAB> 単位 <TAB> 係数値
+# key は行の安定キー（小文字英数字と _ のみ、ファイル内で一意）。係数 ID は energyType + key + 年度から導出するため、
+# 名称・値・出典を訂正しても key を変えなければ同じ行が更新される。一度公開した key は変更しない
+# （変えると別の行になり、旧行の archive が必要になる）。行を追加するときは新しい一意な key を付ける。
+# 数千項目のうち活動量ベースで使いやすい代表的な原単位のみ厳選して収録する。
+# 値は DB_V3-6.xlsx の該当シートから転記（小数第6位まで）。
+# --- カテゴリ5等: 廃棄物（シート8 廃棄物【種類・処理方法別】 SHK制度に基づくCO2排出原単位） ---
+waste_incineration_waste_oil	廃棄物焼却 廃油（植物性・動物性・特定有害産業廃棄物を除く）	waste	t-CO2/t	2.93
+waste_incineration_waste_oil_hazardous	廃棄物焼却 廃油（特定有害産業廃棄物）	waste	t-CO2/t	1.02
+waste_incineration_synthetic_fiber	廃棄物焼却 合成繊維	waste	t-CO2/t	2.31
+waste_incineration_waste_tire	廃棄物焼却 廃タイヤ	waste	t-CO2/t	1.64
+waste_incineration_plastic_industrial	廃棄物焼却 廃プラスチック類（産業廃棄物・合成繊維／廃タイヤ以外）	waste	t-CO2/t	2.56
+waste_incineration_pet_container	廃棄物焼却 ポリエチレンテレフタレート製の容器	waste	t-CO2/t	2.27
+waste_incineration_plastic_municipal	廃棄物焼却 廃プラスチック類（一般廃棄物）	waste	t-CO2/t	2.76
+waste_incineration_paper	廃棄物焼却 紙くず	waste	t-CO2/t	0.144
+waste_incineration_diaper	廃棄物焼却 紙おむつ	waste	t-CO2/t	1.22
+waste_incineration_average	廃棄物焼却 平均値	waste	t-CO2/t	0.533928
+waste_landfill_average	廃棄物埋立 平均値	waste	t-CO2/t	2.408
+waste_transport	廃棄物輸送段階（焼却・埋立共通）	waste	t-CO2/t	0.047219
+# --- カテゴリ6: 出張（シート11 交通費支給額当たり、シート12 宿泊、シート13 従業員） ---
+travel_expense_air_domestic	交通費支給額 旅客航空機（国内線）	business_travel	kg-CO2/円	0.005250
+travel_expense_air_international	交通費支給額 旅客航空機（国際線）	business_travel	kg-CO2/円	0.007096
+travel_expense_rail	交通費支給額 旅客鉄道	business_travel	kg-CO2/円	0.001854
+travel_expense_ship	交通費支給額 旅客船舶	business_travel	kg-CO2/円	0.050190
+travel_expense_bus	交通費支給額 バス（営業用乗合）	business_travel	kg-CO2/円	0.004711
+travel_expense_taxi	交通費支給額 タクシー・ハイヤー	business_travel	kg-CO2/円	0.003313
+travel_per_night	宿泊数当たり	business_travel	kg-CO2/泊	31.532238
+travel_per_employee_year	出張 従業員当たり（年間）	business_travel	t-CO2/人・年	0.130373
+travel_per_day_all	出張 延べ出張日数当たり（全出張平均）	business_travel	t-CO2/人・日	0.029575
+travel_per_day_domestic_day_trip	出張 延べ出張日数当たり（国内・日帰り）	business_travel	t-CO2/人・日	0.030133
+travel_per_day_domestic_overnight	出張 延べ出張日数当たり（国内・宿泊）	business_travel	t-CO2/人・日	0.027284
+travel_per_day_overseas	出張 延べ出張日数当たり（海外）	business_travel	t-CO2/人・日	0.045192
+# --- カテゴリ7: 通勤（シート14 従業員【勤務日数】 勤務形態×都市区分別） ---
+commute_office_large_city	通勤 オフィス・大都市	business_travel_commuting	kg-CO2/人・日	0.984721
+commute_office_medium_city	通勤 オフィス・中都市	business_travel_commuting	kg-CO2/人・日	1.542243
+commute_office_small_city_a	通勤 オフィス・小都市A	business_travel_commuting	kg-CO2/人・日	1.838515
+commute_office_small_city_b	通勤 オフィス・小都市B	business_travel_commuting	kg-CO2/人・日	1.593634
+commute_office_town	通勤 オフィス・町村	business_travel_commuting	kg-CO2/人・日	1.569099
+commute_factory_large_city	通勤 工場・大都市	business_travel_commuting	kg-CO2/人・日	1.219872
+commute_factory_medium_city	通勤 工場・中都市	business_travel_commuting	kg-CO2/人・日	1.891684
+commute_factory_small_city_a	通勤 工場・小都市A	business_travel_commuting	kg-CO2/人・日	1.917020
+commute_factory_small_city_b	通勤 工場・小都市B	business_travel_commuting	kg-CO2/人・日	1.810720
+commute_factory_town	通勤 工場・町村	business_travel_commuting	kg-CO2/人・日	1.837927
+# --- カテゴリ4/9: 輸送トンキロ法（シート2 輸送【トンキロ法】 トラック以外の輸送モード） ---
+tonkm_rail	輸送トンキロ 鉄道	freight_transport	t-CO2/t-km	0.000022
+tonkm_ship_fuel_improved_20	輸送トンキロ 船舶（燃費20%以上改善）	freight_transport	t-CO2/t-km	0.000031
+tonkm_ship_fuel_improved_15	輸送トンキロ 船舶（燃費15%以上改善）	freight_transport	t-CO2/t-km	0.000033
+tonkm_ship_fuel_improved_10	輸送トンキロ 船舶（燃費10%以上改善）	freight_transport	t-CO2/t-km	0.000035
+tonkm_ship_fuel_improved_5	輸送トンキロ 船舶（燃費5%以上改善）	freight_transport	t-CO2/t-km	0.000037
+tonkm_ship_fuel_improved_0	輸送トンキロ 船舶（燃費0%以上改善）	freight_transport	t-CO2/t-km	0.000038
+tonkm_ship_other	輸送トンキロ 船舶（その他）	freight_transport	t-CO2/t-km	0.000039
+tonkm_air	輸送トンキロ 航空	freight_transport	t-CO2/t-km	0.001490

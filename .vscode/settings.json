@@ -1,0 +1,31 @@
+{
+  // 他リポジトリのウィンドウと見分けやすくするための配色（紫系）
+  // 個人設定で上書きしたい場合は User Settings 側の colorCustomizations を使う
+  "workbench.colorCustomizations": {
+    "titleBar.activeBackground": "#6B33B5",
+    "titleBar.activeForeground": "#FFFFFF",
+    "titleBar.inactiveBackground": "#6B33B5CC",
+    "titleBar.inactiveForeground": "#FFFFFFAA",
+    "titleBar.border": "#9B5DE5",
+
+    "activityBar.background": "#4A2280",
+    "activityBar.foreground": "#FFFFFF",
+    "activityBar.inactiveForeground": "#FFFFFF88",
+    "activityBar.border": "#9B5DE5",
+    "activityBarBadge.background": "#9B5DE5",
+    "activityBarBadge.foreground": "#FFFFFF",
+
+    "statusBar.background": "#4A2280",
+    "statusBar.foreground": "#FFFFFF",
+    "statusBar.border": "#9B5DE5",
+    "statusBar.debuggingBackground": "#B3541E",
+    "statusBar.noFolderBackground": "#4A2280",
+    "statusBarItem.hoverBackground": "#6B33B5",
+    "statusBarItem.remoteBackground": "#9B5DE5",
+    "statusBarItem.remoteForeground": "#FFFFFF",
+
+    "sash.hoverBorder": "#9B5DE5",
+    "panel.border": "#9B5DE5",
+    "sideBar.border": "#9B5DE5"
+  }
+}

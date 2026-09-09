@@ -1,0 +1,15 @@
+# lefthook: Git フック管理（DX向上用。強制力の本丸は CI 側）
+# pre-commit: ステージした TS/TSX にだけ eslint --fix をかけて、CIが赤くなる前に整える。
+#   check-migrations: supabase/migrations/*.sql をステージしたときだけ、migration に DML（データ）が
+#   入っていないかを検査する（AGENTS.md R12。CI でも同じスクリプトが走る）。検査対象はステージ分に限らず
+#   ディレクトリ全体。ファイルを書き換えないので stage_fixed は付けない。
+pre-commit:
+  parallel: true
+  commands:
+    lint:
+      glob: "*.{ts,tsx}"
+      run: npx eslint --fix {staged_files}
+      stage_fixed: true
+    check-migrations:
+      glob: "supabase/migrations/*.sql"
+      run: node scripts/db/check-migrations.ts
