@@ -140,7 +140,7 @@ export const getNotifications = async (): Promise<AppNotification[]> => {
     .slice(0, MAX_NOTIFICATIONS);
 };
 
-const READ_MARKER_KEY = 'greentrack.notifications.readAt';
+const READ_MARKER_KEY = 'opengreentrack.notifications.readAt';
 
 /** 既読の基準時刻（これより新しいお知らせを未読として数える）。 */
 export const getReadMarker = (): string | null => {

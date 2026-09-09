@@ -1,4 +1,4 @@
--- GreenTrack v1.0 初期スキーマ (4/4): Storage
+-- OpenGreenTrack v1.0 初期スキーマ (4/4): Storage
 -- 目的: ファイル保存用バケットと、パス先頭フォルダ = organizationId による storage.objects の組織分離。
 -- 収録: §1 バケット 2 つ / §2 storage.objects ポリシー 2 本。storage スキーマ本体（テーブル・RLS 有効化・GRANT・foldername()）は Supabase 管理のため触らない。
 -- 適用順: 4 本の最後（ファイル名順）。

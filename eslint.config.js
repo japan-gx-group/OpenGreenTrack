@@ -94,10 +94,10 @@ export default defineConfig([
     // CLI の命名規約（select.tsx 等）を守る必要があるため .client 接尾辞の対象外にする（AGENTS.md R6 / R14）
     ignores: ['src/app/**', 'src/components/ui/[a-z]*.tsx'],
     plugins: {
-      greentrack: { rules: { 'client-component-filename': clientComponentFilename } },
+      opengreentrack: { rules: { 'client-component-filename': clientComponentFilename } },
     },
     rules: {
-      'greentrack/client-component-filename': 'error',
+      'opengreentrack/client-component-filename': 'error',
     },
   },
 ])

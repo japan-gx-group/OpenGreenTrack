@@ -74,4 +74,4 @@ bun.lockb
 *.dump
 /backup/
 /backup_*.sql
-/greentrack_*.sql
+/opengreentrack_*.sql

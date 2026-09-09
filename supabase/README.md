@@ -32,7 +32,7 @@ npm run db:reset:demo                # DB を作り直し、スキーマ + 公�
 
 ## migrations/ — スキーマ（DDL のみ）
 
-この 4 本が GreenTrack v1.0 の初期スキーマです。`supabase db reset` / `supabase db push` がタイムスタンプ順に適用します。後のファイルは前のファイルのテーブル・関数に依存するため、この順番が前提です。
+この 4 本が OpenGreenTrack v1.0 の初期スキーマです。`supabase db reset` / `supabase db push` がタイムスタンプ順に適用します。後のファイルは前のファイルのテーブル・関数に依存するため、この順番が前提です。
 
 | ファイル | 収録物 |
 |---|---|

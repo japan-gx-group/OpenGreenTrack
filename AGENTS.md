@@ -1,6 +1,6 @@
 # AGENTS.md — AIエージェント向け開発規約（正本）
 
-このファイルは **GreenTrack（GHG排出量算定ツール）** リポジトリの開発規約の**正本**です。
+このファイルは **OpenGreenTrack（GHG排出量算定ツール）** リポジトリの開発規約の**正本**です。
 Codex / Claude Code / Fable など、**どのAIエージェントで作業する場合も必ずこのルールに従ってください。**
 人間の開発者も同じルールに従います。迷ったらこのファイルに立ち返ること。
 
@@ -100,12 +100,12 @@ src/
 **R6. Server / Client コンポーネントの境界**
 
 - デフォルトは Server Component。`useState` / `useEffect` / `onClick` / `localStorage` / recharts を使う部分**だけ** `'use client'` を付ける
-- **`'use client'` を付けたコンポーネントファイルは `<Name>.client.tsx` と命名する**（`src/app/` の規約ファイル `page.tsx` / `layout.tsx` / `error.tsx` 等は除く）。ディレクトリ一覧を見ただけで Server / Client の境界が分かるようにするため。ESLint（`eslint.config.js` の `greentrack/client-component-filename`）が「`'use client'` があるのに `.client.tsx` でない」「`.client.tsx` なのに `'use client'` が無い」の両方をエラーにする
+- **`'use client'` を付けたコンポーネントファイルは `<Name>.client.tsx` と命名する**（`src/app/` の規約ファイル `page.tsx` / `layout.tsx` / `error.tsx` 等は除く）。ディレクトリ一覧を見ただけで Server / Client の境界が分かるようにするため。ESLint（`eslint.config.js` の `opengreentrack/client-component-filename`）が「`'use client'` があるのに `.client.tsx` でない」「`.client.tsx` なのに `'use client'` が無い」の両方をエラーにする
   - 対象は `.tsx` のコンポーネントのみ。hook（`use*.ts`）や Context の値ファイルは名前で役割が分かるため対象外
   - テストは対象と同じ名前にする: `Modal.client.tsx` → `__tests__/Modal.client.test.tsx`（R13）
   - 例外: `src/components/ui/` の shadcn/ui 生成ファイル（`select.tsx` `dialog.tsx` など小文字始まり）は shadcn CLI の命名規約に従い `.client` を付けない（付けると `npx shadcn add` の更新や部品同士の import が壊れる）。lint も小文字始まりのファイルだけ除外している（R14）
 - ✅ 良い例: ページはServerのまま、グラフ部分だけ `'use client'` の子コンポーネント `Sparkline.client.tsx` に切り出す
-- ✅ 良い例: `src/components/ui/GreenTrackMark.tsx`（hook を使わない表示だけの部品。Server Component のまま）
+- ✅ 良い例: `src/components/ui/OpenGreenTrackMark.tsx`（hook を使わない表示だけの部品。Server Component のまま）
 - ❌ ダメな例: とりあえず全ファイル先頭に `'use client'` を付ける
 - ❌ ダメな例: `'use client'` を付けたまま `Modal.tsx` の名前で置く（lint エラー）
 

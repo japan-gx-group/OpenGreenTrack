@@ -1,4 +1,4 @@
--- GreenTrack v1.0 初期スキーマ (2/3): RLS と権限
+-- OpenGreenTrack v1.0 初期スキーマ (2/3): RLS と権限
 -- 組織単位のデータ分離と最小権限を DB 層で担保する（PostgREST を直接叩いても他組織へ到達できず、未認証では何も見えない）。
 -- §1 RLS 補助関数 4 本と EXECUTE 権限  §2 enable row level security（20 テーブル）  §3 ポリシー 51 本  §4 GRANT / REVOKE と default privileges
 -- 適用順: 20260831000000_schema.sql の後。

@@ -186,7 +186,7 @@ export const ReportPrintView = () => {
           ))}
 
           <footer className="report-print-footer">
-            GreenTrack — GHG排出量算定レポート / 出力日時: {reportDocument.meta.find(item => item.label === '出力日時')?.value ?? '-'}
+            OpenGreenTrack — GHG排出量算定レポート / 出力日時: {reportDocument.meta.find(item => item.label === '出力日時')?.value ?? '-'}
           </footer>
         </article>
       )}

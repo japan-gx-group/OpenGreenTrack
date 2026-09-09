@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import type { Scope3CategoryItem } from '../services/scopeAnalysisService';
 
-// ランク（排出量降順）ごとの配色。デザイン正（GreenTrack ダッシュボード）の
+// ランク（排出量降順）ごとの配色。デザイン正（OpenGreenTrack ダッシュボード）の
 // ドーナツ配色に対応するデザイントークンを順に割り当てる。
 // 上位6色は正のドーナツと一致（primary→success→teal→sage→terracotta→gray）。
 const RANK_COLORS = [

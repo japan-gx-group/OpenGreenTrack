@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Sparkles, LayoutGrid, FileText } from 'lucide-react';
-import { GreenTrackMark } from '@/components/ui/GreenTrackMark';
+import { OpenGreenTrackMark } from '@/components/ui/OpenGreenTrackMark';
 
 // 認証画面（ログイン / 初回登録ウィザード / 招待受諾 / パスワード再設定）で共通の2カラムシェル。
 // src/app/(auth)/layout.tsx が 1 回だけ描き、各フォームは AuthFormFrame で幅を決めた本体だけを返す。
@@ -39,11 +39,11 @@ export const AuthLayout = ({ children }: { children: ReactNode }) => (
         className="flex h-9 w-9 items-center justify-center rounded-[10px]"
         style={{ background: PANEL.chip }}
       >
-        <GreenTrackMark size={22} />
+        <OpenGreenTrackMark size={22} />
       </span>
       <span>
         <span className="block font-serif text-lg font-semibold leading-none tracking-[0.2px]">
-          GreenTrack
+          OpenGreenTrack
         </span>
         <span
           className="mt-1 block text-[9.5px] uppercase tracking-[0.16em]"
@@ -77,11 +77,11 @@ export const AuthLayout = ({ children }: { children: ReactNode }) => (
           className="flex h-11 w-11 items-center justify-center rounded-xl"
           style={{ background: PANEL.chip }}
         >
-          <GreenTrackMark size={28} />
+          <OpenGreenTrackMark size={28} />
         </span>
         <span>
           <span className="block font-serif text-[22px] font-semibold leading-none tracking-[0.2px]">
-            GreenTrack
+            OpenGreenTrack
           </span>
           <span
             className="mt-1 block text-[10.5px] uppercase tracking-[0.16em]"
@@ -131,7 +131,7 @@ export const AuthLayout = ({ children }: { children: ReactNode }) => (
       </div>
 
       <div className="relative text-[11.5px]" style={{ color: PANEL.footer }}>
-        © 2026 GreenTrack · 日本GXグループ株式会社
+        © 2026 OpenGreenTrack · 日本GXグループ株式会社
       </div>
     </aside>
 

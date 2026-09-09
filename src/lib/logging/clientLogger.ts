@@ -13,7 +13,7 @@ const emit = (level: LogLevel, message: string, context?: Record<string, unknown
     ...context,
   };
   const fn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.info;
-  fn('[GreenTrack]', entry);
+  fn('[OpenGreenTrack]', entry);
 };
 
 export const clientLogger = {

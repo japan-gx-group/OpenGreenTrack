@@ -46,7 +46,7 @@ describe('buildInviteEmail', () => {
 
   it('件名に組織名とプラットフォーム名が入る', () => {
     const { subject } = buildInviteEmail(input);
-    expect(subject).toBe('【GreenTrack】サンプル株式会社 への招待');
+    expect(subject).toBe('【OpenGreenTrack】サンプル株式会社 への招待');
   });
 
   it('本文（テキスト・HTML）に必須要素がすべて含まれる', () => {
@@ -54,7 +54,7 @@ describe('buildInviteEmail', () => {
     for (const body of [text, html]) {
       expect(body).toContain('山田 太郎');
       expect(body).toContain('サンプル株式会社');
-      expect(body).toContain('GreenTrack');
+      expect(body).toContain('OpenGreenTrack');
       expect(body).toContain(input.inviteUrl);
       expect(body).toContain('7日間');
       expect(body).toContain('このメールには返信しないでください');

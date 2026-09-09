@@ -3,7 +3,7 @@
 環境省・経済産業省の公表資料から公式排出係数マスタ（`emission_factors` の
 `organizationId is null` 行）のシード SQL を生成するスクリプト。
 
-生成物 `supabase/seeds/production/official_emission_factors.sql` は、GreenTrack の初期データのうち
+生成物 `supabase/seeds/production/official_emission_factors.sql` は、OpenGreenTrack の初期データのうち
 **本番環境にも投入する共通マスタ**（seed）。データはマイグレーション（スキーマ定義）には置かず、
 seed として管理する（`AGENTS.md` R12）。
 テスト/デモ用の `supabase/seeds/demo/demo.sql` とは独立していて、どちらか一方だけでも投入できる。

@@ -1,11 +1,11 @@
 {
-  "name": "greentrack",
+  "name": "opengreentrack",
   "private": true,
   "version": "0.1.0",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/japan-gx-group/GreenTrack-GHG-Management.git"
+    "url": "git+https://github.com/japan-gx-group/OpenGreenTrack.git"
   },
   "type": "module",
   "packageManager": "npm@11.13.0",

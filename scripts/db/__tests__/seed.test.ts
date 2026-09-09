@@ -133,7 +133,7 @@ describe('resolveSeedFiles', () => {
 
   /** `<tmp>/<set>/<file>` を作る。file にスラッシュを含めるとサブディレクトリ内に作る */
   const makeSeedsDir = (layout: Record<string, string[]>): string => {
-    const dir = mkdtempSync(path.join(tmpdir(), 'greentrack-seed-test-'));
+    const dir = mkdtempSync(path.join(tmpdir(), 'opengreentrack-seed-test-'));
     tempDirs.push(dir);
     for (const [set, files] of Object.entries(layout)) {
       mkdirSync(path.join(dir, set), { recursive: true });

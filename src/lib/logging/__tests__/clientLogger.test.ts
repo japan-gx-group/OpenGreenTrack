@@ -15,7 +15,7 @@ describe('clientLogger', () => {
   it('emits info log with prefix and context', () => {
     clientLogger.info('test message', { userId: '123' });
     expect(console.info).toHaveBeenCalledWith(
-      '[GreenTrack]',
+      '[OpenGreenTrack]',
       expect.objectContaining({
         level: 'info',
         message: 'test message',
@@ -27,7 +27,7 @@ describe('clientLogger', () => {
   it('emits warn log to console.warn', () => {
     clientLogger.warn('warning test', { detail: 'abc' });
     expect(console.warn).toHaveBeenCalledWith(
-      '[GreenTrack]',
+      '[OpenGreenTrack]',
       expect.objectContaining({
         level: 'warn',
         message: 'warning test',
@@ -39,7 +39,7 @@ describe('clientLogger', () => {
   it('emits error log to console.error', () => {
     clientLogger.error('error occurred', { errorCode: 500 });
     expect(console.error).toHaveBeenCalledWith(
-      '[GreenTrack]',
+      '[OpenGreenTrack]',
       expect.objectContaining({
         level: 'error',
         message: 'error occurred',

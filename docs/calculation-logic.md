@@ -1,6 +1,6 @@
 # GHG自動算定ロジック仕様書
 
-本書は GreenTrack の GHG 自動算定エンジンの算定式・係数選択ルール・単位換算・集計方針をまとめた正本である。実装は `src/features/calculation/` にある。
+本書は OpenGreenTrack の GHG 自動算定エンジンの算定式・係数選択ルール・単位換算・集計方針をまとめた正本である。実装は `src/features/calculation/` にある。
 
 - 純粋な計算コア（副作用なし・テスト対象）: `src/features/calculation/engine/`
 - I/O を伴うサービス層: `src/features/calculation/services/calculationService.ts`

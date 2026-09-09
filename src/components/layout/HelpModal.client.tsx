@@ -91,7 +91,7 @@ export const HelpModal = ({ onClose }: HelpModalProps) => {
   // クイックガイドをテキスト（.txt）でその場ダウンロードさせる。
   const handleDownloadGuide = () => {
     const blob = new Blob([QUICK_GUIDE_TEXT], { type: 'text/plain;charset=utf-8' });
-    downloadBlob(blob, 'GreenTrack_クイックガイド.txt');
+    downloadBlob(blob, 'OpenGreenTrack_クイックガイド.txt');
   };
 
   return createPortal(
