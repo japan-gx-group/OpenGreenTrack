@@ -67,7 +67,27 @@ OpenGreenTrack は企業向けの温室効果ガス（GHG）排出量算定・�
 
 Docker をインストールできない会社 PC では、クラウドで運用する経路を選んでください。macOS / Windows でのターミナル操作や Docker 未導入時の対応も [`docs/setup-guide.md`](docs/setup-guide.md) に記載しています。
 
+### 前提ツール
+
+| ツール | 必要なバージョン | 確認コマンド | 備考 |
+|---|---|---|---|
+| Node.js | **24 以上**（`package.json` の `engines` で指定） | `node -v` | 満たさない場合 `npm install` 時に `EBADENGINE` 警告が出ます |
+| npm | Node.js 24 同梱のもの | `npm -v` | |
+| Git | 任意の最新版 | `git --version` | |
+| Docker Desktop | ローカルで動かす場合のみ必要 | `docker --version` | クラウドで運用する経路では不要 |
+
 ### 最短手順
+
+上から順に実行してください（ローカルで動かす場合）。
+
+| 順番 | 作業 | コマンド |
+|---:|---|---|
+| 1 | リポジトリ取得と依存インストール | `git clone` → `npm install` |
+| 2 | 環境変数ファイルのひな形を作る | `cp .env.example .env.local` |
+| 3 | Supabase 起動 → DB 作成 → `.env.local` に値を記入 | `npx supabase start` → `npm run db:reset:demo` |
+| 4 | 開発サーバー起動 | `npm run dev` |
+
+手順 1: リポジトリを取得して、依存パッケージをインストールします。
 
 ```bash
 git clone <リポジトリURL>
@@ -81,27 +101,40 @@ npm install
 
 ### 環境変数
 
+手順 2: `.env.example` をコピーして `.env.local` を作ります。
+
 ```bash
 cp .env.example .env.local
 ```
 
-- ローカルで動かす場合は `npx supabase start` が表示するローカル用 URL / キーを設定します
-- クラウドで運用する場合は Supabase Dashboard の Project Settings から URL / キーを取得します
+**実際の値は次章「[Supabase セットアップ](#supabase-セットアップ)」を実行すると得られます。** 取得した値を、次の対応表のとおり `.env.local` に書き込んでください。
+
+| 取得元の名前 | `.env.local` の変数名 |
+|---|---|
+| `API_URL`（ローカル） / Project URL（クラウド） | `NEXT_PUBLIC_SUPABASE_URL` |
+| `ANON_KEY`（ローカル） / anon public（クラウド） | `NEXT_PUBLIC_SUPABASE_ANON_KEY` |
+| `SERVICE_ROLE_KEY`（ローカル） / service_role（クラウド） | `SUPABASE_SERVICE_ROLE_KEY` |
+
+- ローカルで動かす場合は `npx supabase status -o env` で上記 3 つの名前（`API_URL` / `ANON_KEY` / `SERVICE_ROLE_KEY`）の値が表示されます。`npx supabase start` の画面表示は `Project URL` / `Publishable` / `Secret` というラベルで、`.env.local` の変数名とは異なるため、値の確認には `-o env` を使うのが確実です。
+- クラウドで運用する場合は Supabase Dashboard の Project Settings → API から URL / キーを取得します。
 - `.env.example` はコミットして共有する（サンプル値のみ）
 - **`.env.local` は機密情報を含むため、決してコミットしない**（`.gitignore` 済み）
 - `SUPABASE_SERVICE_ROLE_KEY` は管理者権限キーのため、サーバ側でのみ使用する（クライアントコードでの参照禁止）
 
-### 開発サーバー起動
-
-```bash
-npm run dev
-```
-
-ブラウザで **http://localhost:3000** にアクセスします（ポートは `3000` に固定）。
+> **Tip:** ローカルで動かす場合は、次のコマンドで `.env.local` に貼り付けられる 3 行をそのまま出力できます。
+>
+> ```bash
+> npx supabase status -o env \
+>   --override-name api.url=NEXT_PUBLIC_SUPABASE_URL \
+>   --override-name auth.anon_key=NEXT_PUBLIC_SUPABASE_ANON_KEY \
+>   --override-name auth.service_role_key=SUPABASE_SERVICE_ROLE_KEY
+> ```
 
 ---
 
 ## Supabase セットアップ
+
+手順 3: Supabase を起動して DB を作り、`.env.local` の値を埋めます。
 
 ローカルで試す場合:
 
@@ -109,6 +142,8 @@ npm run dev
 npx supabase start
 npm run db:reset:demo   # DB を作り直し、公式排出係数マスタ + デモデータを投入
 ```
+
+`npx supabase start` が完了したら、[環境変数](#環境変数) の対応表に従って `.env.local` の 3 つの値を埋めてください（値は `npx supabase status -o env` で再表示できます）。
 
 クラウドで運用する場合:
 
@@ -125,6 +160,19 @@ Supabase CLI は `npx supabase …` で実行します（`npm run db:*` も内�
 - `supabase/seeds/demo/`（デモ組織・デモユーザー `org-a@example.com` / `password123` を含むデモデータ）は `npm run db:reset:demo` または `npm run db:seed:demo` で明示的に入れたときだけ投入されます。**本番には入れないでください。**
 
 手順の詳細とつまずきやすい点は [`docs/setup-guide.md`](docs/setup-guide.md)、シードとコマンドの一覧は [`supabase/README.md`](supabase/README.md) を参照してください。
+
+---
+
+## 開発サーバー起動
+
+手順 4: `.env.local` を埋め終えたら起動します。
+
+```bash
+npm run dev
+```
+
+ブラウザで **http://localhost:3000** にアクセスします（ポートは `3000` に固定）。
+デモデータを投入した場合は `org-a@example.com` / `password123` でログインできます。
 
 ---
 
