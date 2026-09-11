@@ -9,12 +9,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Modal } from '@/components/ui/Modal.client';
-import { Plus, Trash2, Send, Copy, Check, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Send, Copy, Check, Loader2, AlertTriangle } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { isValidEmail } from '@/lib/email';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { saveMemberChanges } from '@/features/settings/services/members';
 import { createInvite, revokeInvite } from '@/features/settings/services/invites';
+import { isLocalOnlyInviteUrl } from '@/features/settings/services/inviteLink';
 // 型のみの import（実体はサーバ専用モジュールのためバンドルされない）
 import type { InviteEmailStatus } from '@/features/settings/services/inviteEmail';
 
@@ -41,6 +42,11 @@ interface PendingInvite {
 }
 
 const buildInviteUrl = (token: string) => `${window.location.origin}/invite/${token}`;
+
+// 招待メールの設定手順（セットアップガイドの「2-C. 招待メールの設定（任意）」）。
+// 設定はアプリ内の画面ではなく .env.local への追記で行うため、公開リポジトリの手順へ誘導する。
+const INVITE_EMAIL_SETUP_DOC_URL =
+  'https://github.com/japan-gx-group/OpenGreenTrack/blob/main/docs/setup-guide.md#2-c-招待メールの設定任意';
 
 // 一覧の取得はコンポーネント外の純粋な fetch 関数に分け、state 反映は呼び出し側の
 // コールバックで行う（react-hooks/set-state-in-effect 対応。Locations.tsx と同じ方針）。
@@ -400,12 +406,34 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
             {issuedInvite.emailStatus === 'skipped' && (
               <p className="text-sm text-text-main">
                 メール送信が未設定のため、招待メールは送信されていません。招待リンクをコピーして招待する方に共有してください（有効期限: 7日間）。
+                <br />
+                招待メールを自動で送りたい場合は{' '}
+                <a
+                  href={INVITE_EMAIL_SETUP_DOC_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary underline underline-offset-2"
+                >
+                  セットアップガイド「2-C. 招待メールの設定」
+                </a>
+                {' '}の手順で設定してください。
               </p>
             )}
             {issuedInvite.emailStatus === 'failed' && (
               <p className="text-sm text-danger">
                 招待メールの送信に失敗しました。招待リンクをコピーして招待する方に共有してください（有効期限: 7日間）。
               </p>
+            )}
+            {/* localhost 構成では、リンクを共有しても相手のPCでは開けない（相手自身のPCを指すため） */}
+            {isLocalOnlyInviteUrl(issuedInvite.url) && (
+              <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning">
+                <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+                <span>
+                  このリンクは、いまお使いのパソコンの中でしか開けません。リンクに含まれる localhost（127.0.0.1）は
+                  「リンクを開いた人自身のパソコン」を指すため、メールやチャットで送っても相手の環境では表示できません。
+                  他の方を招待するには、他のパソコンからアクセスできる URL での運用（クラウド運用など）が必要です。
+                </span>
+              </div>
             )}
             <div className="flex items-center gap-2">
               <input
