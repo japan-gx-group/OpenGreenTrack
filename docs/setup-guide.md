@@ -359,20 +359,24 @@ supabase start
 
 初回は Docker イメージをダウンロードするため、数分かかることがあります。
 
-起動が成功すると、次のような値が表示されます。
+起動が成功すると、Studio URL や Project URL、各種キーが表で表示されます。
 
-```text
-API URL: http://127.0.0.1:54321
-Studio URL: http://127.0.0.1:54323
-anon key: ...
-service_role key: ...
-```
-
-閉じてしまった場合は、次のコマンドで再表示できます。
+ただし、画面に表示されるラベル（`Project URL` / `Publishable` / `Secret` など）は `.env.local` の変数名とは異なります。**`.env.local` に書く値は、次のコマンドで確認してください。**
 
 ```bash
-supabase status
+supabase status -o env
 ```
+
+次のような出力になります（`...` の部分が実際の値です）。
+
+```text
+ANON_KEY="..."
+API_URL="http://127.0.0.1:54321"
+SERVICE_ROLE_KEY="..."
+STUDIO_URL="http://127.0.0.1:54323"
+```
+
+この 3 つ（`API_URL` / `ANON_KEY` / `SERVICE_ROLE_KEY`）を次の A-4 で `.env.local` に書き写します。
 
 ### A-4. `.env.local` を作る
 
@@ -404,18 +408,36 @@ code .env.local
 
 `.env.local` は先頭に `.` が付くため、通常のファイル一覧に見えないことがあります。見つからない場合は、上のコマンドで開いてください。
 
+`supabase status -o env` の出力と `.env.local` の変数名は、次のように対応します。名前が違うので注意してください。
+
+| `supabase status -o env` の出力 | `.env.local` の変数名 |
+|---|---|
+| `API_URL` | `NEXT_PUBLIC_SUPABASE_URL` |
+| `ANON_KEY` | `NEXT_PUBLIC_SUPABASE_ANON_KEY` |
+| `SERVICE_ROLE_KEY` | `SUPABASE_SERVICE_ROLE_KEY` |
+
+書き終わった `.env.local` は次のようになります。
+
 ```env
 NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<supabase start で表示された anon key>
-SUPABASE_SERVICE_ROLE_KEY=<supabase start で表示された service_role key>
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<ANON_KEY の値>
+SUPABASE_SERVICE_ROLE_KEY=<SERVICE_ROLE_KEY の値>
 ```
 
 注意:
 
-- `NEXT_PUBLIC_SUPABASE_URL` は `http://127.0.0.1:54321` です。
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY` には `anon key` を入れます。
-- `SUPABASE_SERVICE_ROLE_KEY` には `service_role key` を入れます。
+- `NEXT_PUBLIC_SUPABASE_URL` は `http://127.0.0.1:54321` です（`API_URL` と同じ値）。
+- キーはとても長い文字列です。途中で改行せず、1 行に貼り付けてください。
 - `.env.local` は絶対にコミットしません。
+
+手で書き写すのが不安な場合は、次のコマンドで `.env.local` に貼り付けられる 3 行をそのまま出力できます。
+
+```bash
+supabase status -o env \
+  --override-name api.url=NEXT_PUBLIC_SUPABASE_URL \
+  --override-name auth.anon_key=NEXT_PUBLIC_SUPABASE_ANON_KEY \
+  --override-name auth.service_role_key=SUPABASE_SERVICE_ROLE_KEY
+```
 
 ### A-5. データベースを作る
 
@@ -651,7 +673,13 @@ npm run db:seed:demo -- --db-url "<接続文字列>" --force
 cp .env.example .env.local
 ```
 
-Supabase Dashboard の Project Settings から、API URL とキーをコピーします。
+Supabase Dashboard の **Project Settings → API** から、Project URL とキーをコピーします。画面上の名前と `.env.local` の変数名は、次のように対応します。
+
+| Supabase Dashboard の表示 | `.env.local` の変数名 |
+|---|---|
+| Project URL | `NEXT_PUBLIC_SUPABASE_URL` |
+| Project API keys の `anon` `public` | `NEXT_PUBLIC_SUPABASE_ANON_KEY` |
+| Project API keys の `service_role` `secret` | `SUPABASE_SERVICE_ROLE_KEY` |
 
 `.env.local` を開く方法:
 
