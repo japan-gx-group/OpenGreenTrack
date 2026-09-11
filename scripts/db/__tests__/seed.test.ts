@@ -239,7 +239,7 @@ port = 54321
 
   it('リポジトリの supabase/config.toml からローカル DB コンテナ名を解決できる', () => {
     const toml = readFileSync(DEFAULT_CONFIG_PATH, 'utf8');
-    expect(containerNameFromConfig(toml)).toBe('supabase_db_jgx-gxtechnology-ghg-tool');
+    expect(containerNameFromConfig(toml)).toBe('supabase_db_opengreentrack');
   });
 });
 
