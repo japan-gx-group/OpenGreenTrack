@@ -2,6 +2,11 @@
 // 取込状況の取得は RLS（idea_imports の自組織 SELECT ポリシー）に任せてブラウザから直接
 // SELECT し、書き込み（取込開始・削除）は Route Handler（/api/idea-imports）経由で行う
 // （idea_* テーブルは authenticated に書き込み GRANT が無い。設計書 §3.2）。
+//
+// 取込開始は 3 段階: ① 署名付きアップロード URL の発行（/api/idea-imports/upload-url）→
+// ② ブラウザから Supabase Storage（upload-quarantine）へ直接アップロード →
+// ③ パスだけを /api/idea-imports へ渡して取込を開始。ファイル本体を API に送らないため、
+// リクエストボディ制限のあるホスティング（Vercel の 4.5MB 等）でも数十MBの xlsx を取り込める。
 
 import { createClient } from '@/lib/supabase/client';
 
@@ -65,19 +70,67 @@ export const fetchIdeaImportOverview = async (): Promise<IdeaImportOverview> => 
   };
 };
 
-/** 取込の開始。202 応答の importId を返す（進捗は fetchIdeaImportOverview でポーリング）。 */
+/** xlsx の MIME タイプ（Storage のオブジェクトメタデータ用。バケットは MIME を制限していない） */
+const XLSX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+/** 取込開始の進行段階（画面の表示切替用） */
+export type IdeaImportStartPhase = 'uploading' | 'starting';
+
+/**
+ * 署名付きアップロード URL を発行し、ブラウザから Storage へ直接アップロードする。
+ * 戻り値は取込 API に渡す Storage パス。
+ */
+const uploadIdeaFileToStorage = async (file: File): Promise<string> => {
+  const urlResponse = await fetch('/api/idea-imports/upload-url', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fileName: file.name, fileSize: file.size }),
+  });
+  const urlBody = (await urlResponse.json().catch(() => null)) as
+    | { bucket?: string; storagePath?: string; token?: string; error?: string }
+    | null;
+  if (!urlResponse.ok || !urlBody?.bucket || !urlBody.storagePath || !urlBody.token) {
+    throw new Error(urlBody?.error ?? 'アップロード先の準備に失敗しました');
+  }
+
+  // 署名付きトークンでのアップロード。upload-quarantine にはブラウザ向けの insert ポリシーが無く、
+  // トークン（service_role が発行）だけがこのパスへの書き込みを許可する。
+  const supabase = createClient();
+  const { error } = await supabase.storage
+    .from(urlBody.bucket)
+    .uploadToSignedUrl(urlBody.storagePath, urlBody.token, file, { contentType: XLSX_MIME_TYPE });
+  if (error) {
+    throw new Error('ファイルのアップロードに失敗しました。ネットワーク状態を確認して再度お試しください');
+  }
+  return urlBody.storagePath;
+};
+
+/**
+ * 取込の開始。ファイルを Storage へ直接アップロードしてから取込 API を呼び、
+ * 202 応答の importId を返す（進捗は fetchIdeaImportOverview でポーリング）。
+ * onPhase は段階の切り替わり（アップロード中 → 取込開始中）を画面へ知らせる任意のコールバック。
+ */
 export const startIdeaImport = async (
   file: File,
   gwpModel: string,
   licenseConfirmed: boolean,
+  onPhase?: (phase: IdeaImportStartPhase) => void,
 ): Promise<{ importId: string }> => {
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('gwpModel', gwpModel);
-  // サーバ側でも必須チェックされる（クライアントの値はあくまで利用者の確認操作の転記）
-  formData.append('licenseConfirmed', licenseConfirmed ? 'true' : 'false');
+  onPhase?.('uploading');
+  const storagePath = await uploadIdeaFileToStorage(file);
 
-  const response = await fetch('/api/idea-imports', { method: 'POST', body: formData });
+  onPhase?.('starting');
+  const response = await fetch('/api/idea-imports', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      storagePath,
+      fileName: file.name,
+      gwpModel,
+      // サーバ側でも必須チェックされる（クライアントの値はあくまで利用者の確認操作の転記）
+      licenseConfirmed,
+    }),
+  });
   const body = (await response.json().catch(() => null)) as
     | { importId?: string; error?: string }
     | null;

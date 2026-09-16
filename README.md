@@ -175,7 +175,7 @@ _All documentation is written in Japanese._
 - `SUPABASE_SERVICE_ROLE_KEY` は RLS をバイパスする管理者キー。必ずサーバー側でのみ利用する
 - `.env.local` を誤ってコミットした場合は、速やかに該当キーをローテーション（Supabase で再発行）する
 - CI/CD 用のシークレットは GitHub Actions / Vercel 等の Secrets 管理機能を使用する
-- IDEAデータベース取込（`POST /api/idea-imports`）は数十MBの Excel をアップロードするため、**リクエストボディ制限のあるホスティング（Vercel の 4.5MB 等）では動作しない**。セルフホスト（またはボディ制限・メモリを設定できる環境）を前提とする（詳細は [`docs/setup-guide.md`](docs/setup-guide.md) の 2-F）
+- IDEAデータベース取込は、数十MBの Excel をブラウザから Supabase Storage（`upload-quarantine` バケット）へ直接アップロードし、サーバはパスだけを受け取ってストリーミングで読み取る。リクエストボディ制限のあるホスティング（Vercel 等）でも動作し、Node のメモリは数百MBで足りる（詳細は [`docs/setup-guide.md`](docs/setup-guide.md) の 2-F）
 - 脆弱性を発見した場合は公開 Issue ではなく [`SECURITY.md`](SECURITY.md) の手順で報告してください
 
 ---

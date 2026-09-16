@@ -1,8 +1,14 @@
 // IDEA Excel 取込の実行トリガー（docs/idea-scope3-spec.md §4.1）。
-// multipart でファイル・GWPモデル・ライセンス確認を受け取り、idea_imports 行を
-// processing / isActive=false で作成して 202 を返す。パース〜取込本体は応答後に
-// 非同期実行され、ブラウザは idea_imports 行をポーリングして進捗・結果を取得する
-// （即時レスポンス + バックグラウンド処理のパターン）。
+// ブラウザが Supabase Storage（upload-quarantine）へ直接アップロードした xlsx のパスと、
+// GWPモデル・ライセンス確認を JSON で受け取り、idea_imports 行を processing / isActive=false で
+// 作成して 202 を返す。パース〜取込本体は応答後に非同期実行され、ブラウザは idea_imports 行を
+// ポーリングして進捗・結果を取得する（即時レスポンス + バックグラウンド処理のパターン）。
+//
+// ファイル本体を API に送らない理由: IDEA Excel は数十MBになり、リクエストボディ制限のある
+// ホスティング（Vercel の 4.5MB 等）ではアップロード自体が失敗するため。署名付きアップロード URL
+// の発行は /api/idea-imports/upload-url が行う。ここでは受け取ったパスが自組織向けに発行した形か
+// を検証し、Storage から取得した実バイト列を検証（拡張子・サイズ・ZIP マジックナンバー）してから
+// 取込に回す。取込の完了・失敗・入力不備のいずれでも quarantine のファイルは削除する。
 //
 // 認証ガード（/api/calculations と同方針）:
 //   取込はサーバ側で service_role を使うため、呼び出し元をここで検証する。
@@ -10,9 +16,12 @@
 //   ロールによる絞り込みは行わない（ロール判定は無効）。設計書 §3.2 の
 //   「admin ロールを検証」は実装と一致しないため、意図的に採用しない。
 //
-// ⚠️ デプロイ前提: IDEA Excel は数十MBになり得るため、リクエストボディ制限のある
-//   ホスティング（Vercel の 4.5MB 等）ではこの API は動かない。セルフホスト
-//   （またはボディ制限を設定できる環境）を前提とする（§4.1。README / docs/setup-guide.md）。
+// 後片付け: storagePath の組織チェックを通った後は、202 で取込本体へ引き渡す場合を除き、どの経路で
+//   抜けても（例外を含む）finally で quarantine のファイルを削除する。
+//
+// デプロイ前提: リクエストボディは JSON 数百バイトなのでボディ制限のあるホスティングでも動く。
+//   xlsx の読み取りはストリーミング（対象シートの行だけを逐次処理）で、ヒープはファイルサイズ +
+//   数十MB程度に収まる（docs/setup-guide.md 2-F に実測値）。
 
 import { NextResponse, after } from 'next/server';
 import { getCurrentProfile } from '@/lib/currentProfile';
@@ -20,51 +29,45 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { getRequestLogger } from '@/lib/logging/requestLogger';
 import { IDEA_GWP_MODEL_OPTIONS } from '@/features/factors/services/ideaImport';
 import {
-  IDEA_IMPORT_MAX_FILE_SIZE_BYTES,
+  IDEA_IMPORT_PROCESSING_MESSAGE,
+  downloadIdeaUploadFile,
+  hasProcessingIdeaImport,
+  isIdeaUploadPathForOrganization,
   processIdeaImport,
+  recoverStaleIdeaImports,
+  removeIdeaUploadFile,
   validateIdeaImportFile,
 } from '@/features/factors/services/ideaImportServer';
 
-// service_role と exceljs（Node バッファ前提）を使うため Node ランタイム必須。
+// service_role と exceljs（Node ストリーム前提）を使うため Node ランタイム必須。
 export const runtime = 'nodejs';
 
-// 進行中とみなす取込の滞留窓。プロセス中断等で processing のまま残った行は
-// この時間を過ぎたら failed に回収し、新しい取込をブロックし続けないようにする
-// （取込本体は数十秒オーダーで完了する）。
-const IDEA_IMPORT_STALE_MS = 10 * 60 * 1000;
-
-// Content-Length 事前チェックで multipart の境界・他フィールド（gwpModel 等）ぶんとして
-// 上限に足す余裕。ファイル本体以外の multipart オーバーヘッドは数百バイトなので 64KiB あれば十分。
-const IDEA_IMPORT_MULTIPART_OVERHEAD_BYTES = 64 * 1024;
+/** idea_imports.fileName の列幅（varchar(300)） */
+const FILE_NAME_MAX_LENGTH = 300;
 
 const GWP_MODEL_VALUES: readonly string[] = IDEA_GWP_MODEL_OPTIONS.map((option) => option.value);
 
 const PROCESSING_CONFLICT_RESPONSE = () =>
-  NextResponse.json(
-    { error: 'IDEAデータベースの取込が進行中です。完了後に再度お試しください' },
-    { status: 409 },
-  );
+  NextResponse.json({ error: IDEA_IMPORT_PROCESSING_MESSAGE }, { status: 409 });
 
-/**
- * 組織に processing の取込が残っているか。
- * 排他の正本は部分一意インデックス idea_imports_one_processing_per_org（20260907000000_review_fixes.sql）で、
- * 確認〜INSERT の間に別リクエストが割り込んでも INSERT が 23505 で失敗し 409 になる。
- * ここは数十 MB のボディを読む前に分かりやすい 409 を返すための入口チェック。
- */
-const hasProcessingImport = async (
-  supabase: ReturnType<typeof createAdminClient>,
-  organizationId: string,
-): Promise<boolean> => {
-  const { data, error } = await supabase
-    .from('idea_imports')
-    .select('id')
-    .eq('organizationId', organizationId)
-    .eq('status', 'processing')
-    .limit(1);
-  if (error) {
-    throw new Error(`進行中インポートの確認に失敗しました: ${error.message}`);
+/** リクエストボディ（JSON）。ファイル本体は含まない */
+interface IdeaImportRequestBody {
+  /** /api/idea-imports/upload-url が発行した Storage パス */
+  storagePath: string;
+  /** 利用者が選択した元のファイル名（表示用。拡張子の検証にも使う） */
+  fileName: string;
+  gwpModel: string;
+  licenseConfirmed: boolean;
+}
+
+const parseRequestBody = async (request: Request): Promise<Partial<IdeaImportRequestBody> | null> => {
+  try {
+    const body: unknown = await request.json();
+    if (body === null || typeof body !== 'object') return null;
+    return body as Partial<IdeaImportRequestBody>;
+  } catch {
+    return null;
   }
-  return (data ?? []).length > 0;
 };
 
 export const POST = async (request: Request) => {
@@ -74,82 +77,71 @@ export const POST = async (request: Request) => {
     return NextResponse.json({ error: 'ログインが必要です' }, { status: 401 });
   }
 
-  // request.formData() はボディ全体をメモリに載せてから validateIdeaImportFile でサイズ超過を
-  // 弾くため、ヘッダの時点で明らかに上限を超えているものはボディを読む前に拒否する
-  // （数十MB超のアップロードをメモリに積まずに済む）。ヘッダが無い・不正な場合は本体側の検証に任せる。
-  const declaredLength = Number(request.headers.get('content-length'));
-  if (
-    Number.isFinite(declaredLength) &&
-    declaredLength > IDEA_IMPORT_MAX_FILE_SIZE_BYTES + IDEA_IMPORT_MULTIPART_OVERHEAD_BYTES
-  ) {
+  const body = await parseRequestBody(request);
+  if (!body) {
     return NextResponse.json(
-      { error: 'ファイルサイズが上限（50MB）を超えています' },
-      { status: 413 },
+      { error: 'JSON で storagePath / fileName / gwpModel / licenseConfirmed を送信してください' },
+      { status: 400 },
     );
   }
 
+  const { storagePath, fileName, gwpModel, licenseConfirmed } = body;
+  // 自組織向けに発行したパス以外（他組織のフォルダ・任意パス）は、Storage に触れる前に拒否する。
+  // storage.objects の RLS は service_role には効かないため、この検証が組織分離の要（§3.2）。
+  // ここで弾いた場合は他人のファイルかもしれないので削除もしない。
+  if (typeof storagePath !== 'string' || !isIdeaUploadPathForOrganization(storagePath, profile.organizationId)) {
+    return NextResponse.json({ error: 'アップロード先の指定が不正です' }, { status: 400 });
+  }
+
+  const supabase = createAdminClient();
+
+  // ここから先は quarantine に自組織のファイルが置かれている前提。202 で取込本体へ引き渡した場合を除き、
+  // 400 / 409 / 500 のどの経路（例外を含む）で抜けても finally でファイルを削除し、残置させない
+  // （ライセンスデータのため。§0.1）。置かれていないと分かった場合だけ削除を省く。
+  let discardUpload = true;
   try {
-    const supabase = createAdminClient();
-
-    // 入口チェック①: 既に進行中なら、数十MBのボディを読み込む前に 409 で返す。
-    if (await hasProcessingImport(supabase, profile.organizationId)) {
-      return PROCESSING_CONFLICT_RESPONSE();
-    }
-
-    let formData: FormData;
-    try {
-      formData = await request.formData();
-    } catch {
-      return NextResponse.json(
-        { error: 'multipart/form-data でファイルを送信してください' },
-        { status: 400 },
-      );
-    }
-
-    const file = formData.get('file');
-    if (!(file instanceof File)) {
-      return NextResponse.json({ error: 'file（IDEAのxlsxファイル）が必要です' }, { status: 400 });
+    if (typeof fileName !== 'string' || fileName.trim() === '') {
+      return NextResponse.json({ error: 'fileName（IDEAのxlsxファイル名）が必要です' }, { status: 400 });
     }
 
     // ライセンス確認（§4.1-1 の確認チェック）はクライアント表示だけでなくサーバ側でも要求する。
-    if (formData.get('licenseConfirmed') !== 'true') {
-      return NextResponse.json(
-        { error: 'SuMPOとのライセンス契約の確認が必要です' },
-        { status: 400 },
-      );
+    if (licenseConfirmed !== true) {
+      return NextResponse.json({ error: 'SuMPOとのライセンス契約の確認が必要です' }, { status: 400 });
     }
 
-    const gwpModel = formData.get('gwpModel');
     if (typeof gwpModel !== 'string' || !GWP_MODEL_VALUES.includes(gwpModel)) {
       return NextResponse.json({ error: '対応していないGWPモデルです' }, { status: 400 });
     }
 
-    const fileBuffer = Buffer.from(await file.arrayBuffer());
-    const validation = validateIdeaImportFile(file.name, fileBuffer);
+    // 滞留した processing 行の回収を先に行う（進行中チェックより後だと、中断された取込の行が
+    // 409 を出し続けて回収に到達できず、組織が永久に取込できなくなる）。
+    await recoverStaleIdeaImports(supabase, profile.organizationId, log);
+
+    // 入口チェック: 既に進行中なら、Storage からファイルを取得する前に 409 で返す。
+    // 確認〜INSERT の窓に割り込まれた場合は INSERT の 23505 で捕捉する（下記）。
+    if (await hasProcessingIdeaImport(supabase, profile.organizationId)) {
+      return PROCESSING_CONFLICT_RESPONSE();
+    }
+
+    const download = await downloadIdeaUploadFile(supabase, storagePath);
+    if (!download.ok) {
+      if (download.reason === 'not_found') {
+        discardUpload = false;
+        return NextResponse.json(
+          { error: 'アップロードされたファイルが見つかりません。もう一度ファイルを選択してください' },
+          { status: 400 },
+        );
+      }
+      if (download.reason === 'too_large') {
+        return NextResponse.json({ error: 'ファイルサイズが上限（50MB）を超えています' }, { status: 400 });
+      }
+      log.error({ error: download.error, storagePath }, 'アップロードされたファイルの取得に失敗しました');
+      return NextResponse.json({ error: 'サーバー内部エラーが発生しました' }, { status: 500 });
+    }
+    const fileBuffer = download.buffer;
+    const validation = validateIdeaImportFile(fileName, fileBuffer);
     if (!validation.ok) {
       return NextResponse.json({ error: validation.errorMessage }, { status: 400 });
-    }
-
-    // 滞留した processing 行の回収（中断された取込が新規取込を恒久ブロックしないように）。
-    const staleBefore = new Date(Date.now() - IDEA_IMPORT_STALE_MS).toISOString();
-    const { error: staleError } = await supabase
-      .from('idea_imports')
-      .update({
-        status: 'failed',
-        errorMessage: '取込が完了しないまま中断された可能性があります。再度取り込んでください',
-      })
-      .eq('organizationId', profile.organizationId)
-      .eq('status', 'processing')
-      .lt('updatedAt', staleBefore);
-    if (staleError) {
-      // housekeeping の失敗は取込自体を止めない（進行中チェックで再度弾かれるだけ）。
-      log.warn({ error: staleError }, '滞留インポートの回収に失敗しました');
-    }
-
-    // 入口チェック②: ボディの読み込み・解析中に別リクエストが先に INSERT した場合を拾う。
-    // 確認〜INSERT の窓に割り込まれた場合は INSERT の 23505 で捕捉する（下記）。
-    if (await hasProcessingImport(supabase, profile.organizationId)) {
-      return PROCESSING_CONFLICT_RESPONSE();
     }
 
     // §4.1-3: processing / isActive=false で作成する（true で作ると旧 active 行と
@@ -162,7 +154,7 @@ export const POST = async (request: Request) => {
         version: '',
         gwpModel,
         citationText: '',
-        fileName: file.name.slice(0, 300),
+        fileName: fileName.trim().slice(0, FILE_NAME_MAX_LENGTH),
         status: 'processing',
         isActive: false,
         importedByUserId: profile.id,
@@ -181,20 +173,30 @@ export const POST = async (request: Request) => {
     const importId = importRow.id as string;
 
     // 取込本体（パース → チャンク挿入 → 完了処理 RPC）は応答を返した後に実行する。
-    after(() =>
-      processIdeaImport({
-        importId,
-        organizationId: profile.organizationId,
-        fileBuffer,
-        gwpModel,
-        log: log.child({ component: 'processIdeaImport' }),
-      }),
-    );
+    // 完了・失敗のどちらでも quarantine のファイルを削除する（残置させない）。
+    after(async () => {
+      try {
+        await processIdeaImport({
+          importId,
+          organizationId: profile.organizationId,
+          fileBuffer,
+          gwpModel,
+          log: log.child({ component: 'processIdeaImport' }),
+        });
+      } finally {
+        await removeIdeaUploadFile(supabase, storagePath, log);
+      }
+    });
+    discardUpload = false;
 
     return NextResponse.json({ importId }, { status: 202 });
   } catch (error) {
     // 生の DB エラーを呼び出し元へ返さないよう、詳細はサーバーログにのみ残す。
     log.error({ error }, '予期しないエラー');
     return NextResponse.json({ error: 'サーバー内部エラーが発生しました' }, { status: 500 });
+  } finally {
+    if (discardUpload) {
+      await removeIdeaUploadFile(supabase, storagePath, log);
+    }
   }
 };

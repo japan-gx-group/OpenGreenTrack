@@ -219,20 +219,28 @@ alter table emission_results alter column emissions type numeric(15, 6);
 [係数管理画面 > IDEAデータベースカード]
   1. ファイル選択（.xlsx）+ GWPモデル選択（既定: IPCC 2021 GWP100a without LULUCF）
      + ライセンス確認チェック（SuMPOと契約済みであることの確認文言）
-  2. POST /api/idea-imports（multipart）
-  3. サーバー側: idea_imports を processing / isActive=false で作成 → パース → 500行単位で
+  2. POST /api/idea-imports/upload-url でファイル名・サイズを申告し、署名付きアップロード URL
+     （Supabase Storage `upload-quarantine` / 自組織フォルダ配下のパス）を受け取る
+     → ブラウザから Storage へ直接アップロード（ファイル本体は API に送らない）
+     → POST /api/idea-imports（JSON: storagePath / fileName / gwpModel / licenseConfirmed）
+  3. サーバー側: storagePath が自組織向けに発行した形かを検証 → Storage から取得して
+     拡張子・サイズ・ZIP マジックナンバーを検証 → idea_imports を processing / isActive=false で作成
+     → ストリーミング読取でパース（対象シートの行だけを逐次処理）→ 500行単位で
      idea_factors へチャンク挿入 → 完了処理を単一トランザクションで実行:
        completed / rowCount 更新 → 旧インポートを isActive=false 化 → 新インポートを
        isActive=true 化 → 未算定レコードの ideaCode 再マッピング（§3.6）
      ★ isActive の切替順は逆にできない（部分一意インデックスに衝突する。§3.1）
      ★ 新規行を isActive=true で作ると2回目の取込が INSERT 時点で失敗する
      （失敗時は failed + 部分挿入行の削除。旧 active はそのまま残るため運用は継続できる）
+     ★ 取込の完了・失敗・入力不備のいずれでも quarantine のファイルは削除する（残置させない）
   4. 画面はインポート記録をポーリング表示
 ```
 
-- パース本体は**純関数** `parseIdeaWorkbook(workbook, gwpModel) → { meta, rows, errors }` として `src/features/factors/services/ideaImport.ts` に切り出し、ダミー構造の xlsx フィクスチャでユニットテストする。
-- xlsx 読み取りは Route Handler（Node ランタイム）+ `exceljs`（読み取りのみ・**新規依存**）。
-- **デプロイ前提**: IDEA Excel は数十MBになり得るため、リクエストボディ制限のあるホスティング（Vercel の 4.5MB 等）では動かない。**セルフホスト（またはボディ制限を設定できる環境）を前提**とし、README / setup-guide に明記する。exceljs のメモリはファイルサイズの数倍になるため、実ファイル相当サイズでのメモリ計測を issue 2 のテスト項目に含める（必要なら対象シートのみのストリーミング読取へ切り替える）。
+- パース本体は**純関数**の逐次パーサー `createIdeaParser(gwpModel)`（シートごとに `beginSheet(name)` → 行を順に渡す → `finish()` で `{ meta, rows, errors, skippedRows }`）として `src/features/factors/services/ideaImport.ts` に置く。一括読込済みの Workbook から流す `parseIdeaWorkbook(workbook, gwpModel)` も同じパーサーを使うため、ダミー構造の xlsx フィクスチャによるユニットテストは一括読込のまま維持する。
+- xlsx 読み取りは Route Handler（Node ランタイム）+ `exceljs` の **ストリーミング読取**（`stream.xlsx.WorkbookReader`。`src/features/factors/services/ideaImportReader.ts`）。ワークブック全体をメモリ展開せず、対象シート（バージョン情報・指定 GWP モデルの列を持つ `LCIA結果_*`）の行だけを逐次パーサーへ流す。ヘッダー行（3〜5 行目）で列位置を確定してから 6 行目以降を処理するため、行へのランダムアクセスは要らない。
+  - exceljs 4.4 の WorkbookReader は ZIP 末尾の小さなエントリ（`xl/workbook.xml` 等）を取りこぼすことがあるため、入力は中央ディレクトリ直前に詰め物エントリを足したストリーム（`xlsxStreamSource.ts`）で渡す（詳細は同ファイルのコメント）。
+- **ファイルの受け渡し**: ブラウザは API にファイル本体を送らず、`POST /api/idea-imports/upload-url` が発行する署名付き URL で Supabase Storage の `upload-quarantine` バケット（自組織フォルダ配下 `${organizationId}/idea-imports/<uuid>.xlsx`）へ直接アップロードし、パスだけを `POST /api/idea-imports` に渡す。サーバはパスが自組織向けに発行した形であることを検証してから Storage の `info()` でサイズを確認し（上限超過は取得しない。バケットの `file_size_limit` は `on conflict do nothing` で作られるため頼らない）、取得した実バイト列を検証（拡張子・ZIP マジックナンバー）して取込に回す。`upload-url` は組織あたり 10 分に 10 回までのレート制限と、進行中の取込がある場合の 409 を持つ（数十MBを上げてから失敗させない）。滞留した processing 行の回収は進行中チェックより先に行う（逆だと中断された取込の行が 409 を出し続けて回収に到達できない）。完了・失敗・入力不備のいずれでも quarantine から削除する。アップロード後に取込 API が呼ばれなかった取り残し（タブを閉じた等）は、次回の `upload-url` 発行時に自組織フォルダ内の 24 時間超のファイルを削除する（`removeStaleIdeaUploadFiles`。スケジューラ不要）。バケットにはブラウザからの直接 select / delete ポリシーを置かない（`20260831000003_storage.sql` の方針）。分割・再開アップロード（TUS）は新規依存（tus-js-client）が要るため採用せず、上限 50MB 以内の通常アップロードで足りるとした。
+- **デプロイ前提**: API のリクエストボディは JSON 数百バイトのため、リクエストボディ制限のあるホスティング（Vercel の 4.5MB 等）でも動く。メモリは実ファイル相当（10,300 行 × 約 300 列・17MB）のダミーで **ヒープのピーク約 78MB（RSS 約 400MB）** を実測（`scripts/measure-idea-import.ts`。旧経路の一括読込は同条件で約 1.3GB）。Node プロセスに 512MB 程度あれば足りる（README / setup-guide 2-F）。
 - バリデーション（すべて満たさない場合は取込全体を failed とし、行単位エラーは行番号付きで収集する。活動量CSVの取込ポリシーに整合）:
   1. `バージョン情報` シートから version / releaseDate を取得できること
   2. いずれかの `LCIA結果_*` シートに指定 GWP モデルの列識別子が存在すること（無ければ「GWP列を含むファイルではありません」エラー）

@@ -42,7 +42,7 @@ OpenGreenTrack は **Next.js（App Router）+ Supabase** で構成します。
 - **Database（Postgres）**: スキーマは `supabase/migrations/*.sql` で管理する（**DDL のみ**。v1.0 初期スキーマは `schema` / `rls` / `rpc` / `storage` の 4 ファイルで、データは一切置かない — `AGENTS.md` R12。唯一の例外が `storage` の `storage.buckets` への `insert`（バケットはインフラ設定のため））。データは `supabase/seeds/` で管理する（`production/` = 本番でも投入する公式排出係数マスタ、`demo/` = デモ・テスト用データ）。テーブル設計の説明は `docs/database-design.md` を参照
 - **Auth**: メール+パスワード等でログイン。ユーザーは必ずいずれかの組織（organization）に属する
 - **RLS（Row Level Security）**: すべてのテーブルで有効化する
-- **Storage**: 現在アプリからの読み書き経路は無い（ファイル取込機能は削除済み。IDEA データベースの Excel はサーバ側で解析するだけで保存しない）。取込を再導入するときの受け皿として、バケット 2 つ（`import-files` / `upload-quarantine`）と `storage.objects` の組織分離ポリシーの定義だけを `20260831000003_storage.sql` に残している
+- **Storage**: IDEA データベースの Excel（数十MB）の一時置き場として `upload-quarantine` バケットを使う。ブラウザは `POST /api/idea-imports/upload-url`（`service_role`）が発行した署名付き URL でのみ書き込め、サーバがパスを検証してから取得・解析し、取込の完了・失敗のいずれでも削除する（原本は保存しない。ブラウザからの直接 select / delete ポリシーは置かない）。`import-files` バケットは現在使っておらず、取込原本の保存を導入するときの受け皿として定義だけを `20260831000003_storage.sql` に残している
 
 ## RLS の考え方（マルチテナントの肝）
 
