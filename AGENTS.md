@@ -152,7 +152,7 @@ src/
 - `supabase/migrations/` は**スキーマ定義（DDL）専用**。データ（DML）は書かず、`supabase/seeds/` に置く。
 - ❌ 禁止: マイグレーション内の `insert` / `update` / `delete` / `copy` / `truncate` / `merge`。対象を問わず禁止（排出係数マスタ・組織・ユーザー・デモデータ・既存行のバックフィル・データ訂正のいずれも）
 - ✅ 置いてよいのは DDL のみ: extension / type / table / column / constraint / index / function・RPC / trigger / policy / grant・revoke / comment on
-- ✅ 唯一の例外: `storage.buckets` の定義と設定変更（`insert` / `update` のみ）。バケットはデータではなくインフラ設定であり、Supabase 公式の作成手段が SQL のため。`delete` / `truncate` は例外にしない。この例外に当たるのは `20260831000003_storage.sql` の 1 本だけ（アプリからの読み書き経路は現在無く、バケットの定義だけを置いている）
+- ✅ 唯一の例外: `storage.buckets` の定義と設定変更（`insert` / `update` のみ）。バケットはデータではなくインフラ設定であり、Supabase 公式の作成手段が SQL のため。`delete` / `truncate` は例外にしない。この例外に当たるのは `20260831000003_storage.sql` の 1 本だけ（バケットの定義だけを置いている。`upload-quarantine` は IDEA 取込の一時置き場として、`service_role` が発行する署名付き URL 経由でのみ書き込まれる）
 - ✅ データの置き場（seed）:
   - `supabase/seeds/production/` — **本番でも投入する共通マスタ**（公式排出係数など。`scripts/official-factors/generate.ts` が生成する）
   - `supabase/seeds/demo/` — **テスト・デモ専用**（デモ組織・ユーザー・サンプル活動量など。**本番投入禁止**）

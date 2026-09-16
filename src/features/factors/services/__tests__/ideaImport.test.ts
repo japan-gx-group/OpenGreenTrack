@@ -14,8 +14,11 @@ import {
   IDEA_GWP_MODEL_OPTIONS,
   IDEA_NO_GWP_COLUMN_ERROR,
   buildIdeaCitationText,
+  createIdeaParser,
   formatIdeaParseErrors,
+  parseIdeaSheetStream,
   parseIdeaWorkbook,
+  type IdeaSheetStream,
 } from '../ideaImport';
 
 const GWP_HEADER = '気候変動 IPCC 2021 GWP 100a without LULUCF';
@@ -586,6 +589,155 @@ describe('parseIdeaWorkbook のエラー系（1行でも不正なら取込全体
     expect(result.errors).toEqual([
       { row: null, message: '「LCIA結果_GWP」シートにデータ行がありません' },
     ]);
+  });
+});
+
+// ストリーミング読取（ideaImportReader.ts）はこの逐次パーサーへシート・行を順に流す。
+// シートの到着順（ZIP のエントリ順）に依存しないこと、不要なシート・行を読まずに済むことを検証する。
+describe('createIdeaParser / parseIdeaSheetStream（逐次パーサー）', () => {
+  /** 一括読込したワークブックを、指定順のシートで非同期ストリームに見立てる */
+  const toSheetStream = (workbook: ExcelJS.Workbook, order?: string[]): AsyncIterable<IdeaSheetStream> => {
+    const sheets = order ? order.map((name) => workbook.getWorksheet(name)!) : workbook.worksheets;
+    return (async function* () {
+      for (const sheet of sheets) {
+        const rows: ExcelJS.Row[] = [];
+        sheet.eachRow((row) => rows.push(row));
+        yield {
+          name: sheet.name,
+          rows: (async function* () {
+            for (const row of rows) yield row;
+          })(),
+        };
+      }
+    })();
+  };
+
+  it('シートの到着順が逆（LCIA結果 → バージョン情報）でも一括読込と同じ結果になる', async () => {
+    const workbook = new ExcelJS.Workbook();
+    addVersionSheet(workbook);
+    addLciaSheet(workbook, { rows: validRows });
+    const expected = parseIdeaWorkbook(workbook, DEFAULT_IDEA_GWP_MODEL);
+
+    const streamed = await parseIdeaSheetStream(
+      toSheetStream(workbook, ['LCIA結果_GWP', 'バージョン情報']),
+      DEFAULT_IDEA_GWP_MODEL,
+    );
+
+    expect(streamed).toEqual(expected);
+    expect(streamed.rows).toHaveLength(3);
+  });
+
+  it('parseIdeaSheetStream は対象外シートや不要になった行も読み切る（ストリームを途中で放置しない）', async () => {
+    const workbook = new ExcelJS.Workbook();
+    addVersionSheet(workbook);
+    workbook.addWorksheet('利用方法').getCell('A1').value = '対象外';
+    addLciaSheet(workbook, {
+      sheetName: 'LCIA結果_統合化',
+      headers: [...FIXED_HEADERS, '統合化指標（ダミー）'],
+      rows: [['000000009mXXX', 'ダミー製品Z', 'JPN', 'CORE', 1, 'kg', 0.1]],
+    });
+    addLciaSheet(workbook, { sheetName: 'LCIA結果_IPCC', rows: validRows });
+
+    const consumed = new Map<string, { yielded: number; total: number }>();
+    const sheets = (async function* () {
+      for (const sheet of workbook.worksheets) {
+        const rows: ExcelJS.Row[] = [];
+        sheet.eachRow((row) => rows.push(row));
+        const counter = { yielded: 0, total: rows.length };
+        consumed.set(sheet.name, counter);
+        yield {
+          name: sheet.name,
+          rows: (async function* () {
+            for (const row of rows) {
+              counter.yielded += 1;
+              yield row;
+            }
+          })(),
+        };
+      }
+    })();
+
+    const result = await parseIdeaSheetStream(sheets, DEFAULT_IDEA_GWP_MODEL);
+    expect(result.errors).toEqual([]);
+    expect(result.rows).toHaveLength(3);
+    for (const [name, counter] of consumed) {
+      expect(counter.yielded, name).toBe(counter.total);
+    }
+  });
+
+  it('対象外シートは beginSheet が null を返し、対象確定後の LCIA シートも読まない', () => {
+    const parser = createIdeaParser(DEFAULT_IDEA_GWP_MODEL);
+    expect(parser.beginSheet('利用方法')).toBeNull();
+    expect(parser.beginSheet('LCI結果_フロー')).toBeNull();
+
+    const workbook = new ExcelJS.Workbook();
+    addLciaSheet(workbook, { rows: validRows.slice(0, 1) });
+    const consumer = parser.beginSheet('LCIA結果_GWP');
+    expect(consumer).not.toBeNull();
+    workbook.getWorksheet('LCIA結果_GWP')!.eachRow((row, rowNumber) => {
+      consumer!.row(row, rowNumber);
+    });
+    consumer!.end();
+
+    // 指定 GWP 列を持つ最初のシートを採用した後は、他の LCIA シートを開かない（§0.3）
+    expect(parser.beginSheet('LCIA結果_IPCC')).toBeNull();
+    const result = parser.finish();
+    expect(result.rows).toHaveLength(1);
+    expect(result.meta).toBeNull(); // バージョン情報シートは渡していない
+    expect(result.errors).toContainEqual({ row: null, message: '「バージョン情報」シートが見つかりません' });
+  });
+
+  it('GWP 列の無い LCIA シートは 6 行目で打ち切り（row が false）、次の LCIA シートを採用する', () => {
+    const parser = createIdeaParser(DEFAULT_IDEA_GWP_MODEL);
+    const workbook = new ExcelJS.Workbook();
+    addVersionSheet(workbook);
+    addLciaSheet(workbook, {
+      sheetName: 'LCIA結果_統合化',
+      headers: [...FIXED_HEADERS, '統合化指標（ダミー）'],
+      rows: [
+        ['000000009mXXX', 'ダミー製品Z', 'JPN', 'CORE', 1, 'kg', 0.1],
+        ['000000008mXXX', 'ダミー製品Y', 'JPN', 'CORE', 1, 'kg', 0.2],
+      ],
+    });
+    addLciaSheet(workbook, { sheetName: 'LCIA結果_IPCC', rows: validRows.slice(0, 1) });
+
+    for (const sheet of workbook.worksheets) {
+      const consumer = parser.beginSheet(sheet.name);
+      if (!consumer) continue;
+      const accepted: boolean[] = [];
+      sheet.eachRow((row, rowNumber) => {
+        if (accepted.at(-1) === false) return;
+        accepted.push(consumer.row(row, rowNumber));
+      });
+      consumer.end();
+      if (sheet.name === 'LCIA結果_統合化') {
+        // 1〜5 行目までは true、6 行目（ヘッダー確定）で false = 残りの行は不要
+        expect(accepted.at(-1)).toBe(false);
+        expect(accepted.filter((value) => value).length).toBeLessThanOrEqual(5);
+      }
+    }
+    const result = parser.finish();
+    expect(result.errors).toEqual([]);
+    expect(result.meta?.sheetName).toBe('LCIA結果_IPCC');
+    expect(result.rows.map((row) => row.ideaCode)).toEqual(['000000001mXXX']);
+  });
+
+  it('ヘッダーだけで 6 行目に到達しないシートも end() で判定される', () => {
+    const parser = createIdeaParser(DEFAULT_IDEA_GWP_MODEL);
+    const workbook = new ExcelJS.Workbook();
+    addVersionSheet(workbook);
+    addLciaSheet(workbook, { rows: [] });
+    for (const sheet of workbook.worksheets) {
+      const consumer = parser.beginSheet(sheet.name);
+      if (!consumer) continue;
+      sheet.eachRow((row, rowNumber) => {
+        consumer.row(row, rowNumber);
+      });
+      consumer.end();
+    }
+    const result = parser.finish();
+    expect(result.meta?.sheetName).toBe('LCIA結果_GWP');
+    expect(result.errors).toEqual([{ row: null, message: '「LCIA結果_GWP」シートにデータ行がありません' }]);
   });
 });
 

@@ -3,7 +3,8 @@
 // supabase の実DBは使わず、管理クライアントのスタブで
 //   - 500行チャンク挿入・完了 RPC の呼び出し（§4.1）
 //   - 失敗時の「failed + 部分挿入行の削除・旧 active 温存」（§4.1-3）
-// を検証する。単一トランザクションが必要な完了処理そのものは SQL（RPC）にあるため、
+// を検証する。xlsx の読み取りはストリーミング（ideaImportReader.ts）だが、フィクスチャは
+// 従来どおり exceljs で生成した Buffer を渡す。単一トランザクションが必要な完了処理そのものは SQL（RPC）にあるため、
 // 「同一組織で2回連続取込が成功する」ための isActive 切替順（旧 false 化 → 新 true 化）は
 // マイグレーション SQL（supabase/migrations/20260831000000_schema.sql・
 // 20260831000002_rpc.sql）の文面に対する回帰テストで担保する（実DBでの結合検証は
@@ -11,16 +12,32 @@
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import ExcelJS from 'exceljs';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Logger } from 'pino';
 import {
   IDEA_FACTOR_INSERT_CHUNK_SIZE,
   IDEA_IMPORT_MAX_FILE_SIZE_BYTES,
   IDEA_IMPORT_SQLSTATE,
+  IDEA_IMPORT_MAX_FILE_SIZE_BYTES as MAX_BYTES,
+  IDEA_IMPORT_STALE_MS,
+  IDEA_UPLOAD_BUCKET,
+  IDEA_UPLOAD_STALE_MS,
+  IDEA_UPLOAD_URL_RATE_LIMIT,
+  buildIdeaUploadPath,
+  consumeIdeaUploadUrlQuota,
   chunkArray,
+  downloadIdeaUploadFile,
+  hasProcessingIdeaImport,
+  isIdeaUploadPathForOrganization,
   processIdeaImport,
+  recoverStaleIdeaImports,
+  removeIdeaUploadFile,
+  removeStaleIdeaUploadFiles,
+  resetIdeaUploadUrlQuota,
   validateIdeaImportFile,
+  validateIdeaImportFileMeta,
 } from '../ideaImportServer';
 import { DEFAULT_IDEA_GWP_MODEL, IDEA_NO_GWP_COLUMN_ERROR } from '../ideaImport';
 
@@ -327,6 +344,259 @@ describe('validateIdeaImportFile', () => {
       validateIdeaImportFile('IDEA_dummy.xlsx', Buffer.alloc(IDEA_IMPORT_MAX_FILE_SIZE_BYTES + 1))
         .ok,
     ).toBe(false);
+  });
+});
+
+describe('validateIdeaImportFileMeta（署名付き URL 発行前の申告値チェック）', () => {
+  it('xlsx かつ上限以内なら受け入れる', () => {
+    expect(validateIdeaImportFileMeta('IDEA_dummy.xlsx', 1024)).toEqual({ ok: true });
+    expect(validateIdeaImportFileMeta('IDEA_DUMMY.XLSX', IDEA_IMPORT_MAX_FILE_SIZE_BYTES)).toEqual({ ok: true });
+  });
+
+  it('拡張子違い・サイズ超過・空・不正な数値は拒否する', () => {
+    expect(validateIdeaImportFileMeta('IDEA_dummy.xls', 1024).ok).toBe(false);
+    expect(validateIdeaImportFileMeta('IDEA_dummy.xlsx', IDEA_IMPORT_MAX_FILE_SIZE_BYTES + 1).ok).toBe(false);
+    expect(validateIdeaImportFileMeta('IDEA_dummy.xlsx', 0).ok).toBe(false);
+    expect(validateIdeaImportFileMeta('IDEA_dummy.xlsx', Number.NaN).ok).toBe(false);
+  });
+});
+
+describe('アップロード先パス（buildIdeaUploadPath / isIdeaUploadPathForOrganization）', () => {
+  const orgId = '0198a0b1-1111-4aaa-8bbb-000000000001';
+  const otherOrgId = '0198a0b1-2222-4aaa-8bbb-000000000002';
+
+  it('自組織フォルダ配下の UUID ファイル名で発行し、その形だけを受け入れる', () => {
+    const path = buildIdeaUploadPath(orgId);
+    expect(path).toMatch(new RegExp(`^${orgId}/idea-imports/[0-9a-f-]{36}\\.xlsx$`));
+    expect(isIdeaUploadPathForOrganization(path, orgId)).toBe(true);
+  });
+
+  it('他組織のパス・任意パス・トラバーサル・拡張子違いは拒否する（DoD: 他組織のパスでの取込拒否）', () => {
+    const otherPath = buildIdeaUploadPath(otherOrgId);
+    expect(isIdeaUploadPathForOrganization(otherPath, orgId)).toBe(false);
+    expect(isIdeaUploadPathForOrganization(`${orgId}/secret.xlsx`, orgId)).toBe(false);
+    expect(isIdeaUploadPathForOrganization(`${orgId}/idea-imports/../x.xlsx`, orgId)).toBe(false);
+    expect(
+      isIdeaUploadPathForOrganization(`${orgId}/idea-imports/0198a0b1-3333-4aaa-8bbb-000000000003.csv`, orgId),
+    ).toBe(false);
+    expect(isIdeaUploadPathForOrganization(buildIdeaUploadPath(orgId), 'not-a-uuid')).toBe(false);
+  });
+});
+
+describe('quarantine のファイル取得・削除', () => {
+  type StorageResult<T> = { data: T | null; error: { message: string; statusCode?: string } | null };
+  const makeStorageStub = (
+    info: StorageResult<{ size?: number }>,
+    download: StorageResult<Blob>,
+    removeError: { message: string } | null = null,
+  ) => {
+    const calls: { bucket: string; infoed: string[]; downloaded: string[]; removed: string[][] } = {
+      bucket: '',
+      infoed: [],
+      downloaded: [],
+      removed: [],
+    };
+    const client = {
+      storage: {
+        from: (bucket: string) => {
+          calls.bucket = bucket;
+          return {
+            info: async (path: string) => {
+              calls.infoed.push(path);
+              return info;
+            },
+            download: async (path: string) => {
+              calls.downloaded.push(path);
+              return download;
+            },
+            remove: async (paths: string[]) => {
+              calls.removed.push(paths);
+              return { data: [], error: removeError };
+            },
+          };
+        },
+      },
+    } as unknown as SupabaseClient;
+    return { client, calls };
+  };
+  const notFound = { message: 'Object not found', statusCode: '404' };
+  const blob = new Blob([Uint8Array.from(Buffer.from('PK\x03\x04data'))]);
+
+  it('downloadIdeaUploadFile: info でサイズを確認してから upload-quarantine から取得し、Buffer で返す', async () => {
+    const { client, calls } = makeStorageStub({ data: { size: 8 }, error: null }, { data: blob, error: null });
+    const result = await downloadIdeaUploadFile(client, 'org/idea-imports/x.xlsx');
+    expect(calls.bucket).toBe(IDEA_UPLOAD_BUCKET);
+    expect(calls.infoed).toEqual(['org/idea-imports/x.xlsx']);
+    expect(calls.downloaded).toEqual(['org/idea-imports/x.xlsx']);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.buffer.subarray(0, 4)).toEqual(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+  });
+
+  it('downloadIdeaUploadFile: 無ければ not_found（info・download のどちらで分かっても）', async () => {
+    const missingAtInfo = makeStorageStub({ data: null, error: notFound }, { data: blob, error: null });
+    expect(await downloadIdeaUploadFile(missingAtInfo.client, 'org/idea-imports/y.xlsx')).toEqual({ ok: false, reason: 'not_found' });
+    expect(missingAtInfo.calls.downloaded).toEqual([]);
+
+    const missingAtDownload = makeStorageStub({ data: { size: 8 }, error: null }, { data: null, error: notFound });
+    expect(await downloadIdeaUploadFile(missingAtDownload.client, 'org/idea-imports/y.xlsx')).toEqual({ ok: false, reason: 'not_found' });
+  });
+
+  it('downloadIdeaUploadFile: 上限超過はダウンロードせずに too_large（バケットの上限設定に頼らない）', async () => {
+    const { client, calls } = makeStorageStub({ data: { size: MAX_BYTES + 1 }, error: null }, { data: blob, error: null });
+    expect(await downloadIdeaUploadFile(client, 'org/idea-imports/big.xlsx')).toEqual({ ok: false, reason: 'too_large' });
+    expect(calls.downloaded).toEqual([]);
+  });
+
+  it('downloadIdeaUploadFile: 見つからない以外の Storage エラーは error として区別する（見つからない扱いにしない）', async () => {
+    const failing = makeStorageStub({ data: null, error: { message: 'upstream timeout', statusCode: '504' } }, { data: blob, error: null });
+    const result = await downloadIdeaUploadFile(failing.client, 'org/idea-imports/z.xlsx');
+    expect(result).toMatchObject({ ok: false, reason: 'error' });
+  });
+
+  it('removeIdeaUploadFile: 削除を呼び、失敗してもログに残すだけで throw しない', async () => {
+    const log = { error: vi.fn() } as unknown as Logger;
+    const ok = makeStorageStub({ data: null, error: null }, { data: null, error: null });
+    await removeIdeaUploadFile(ok.client, 'org/idea-imports/x.xlsx', log);
+    expect(ok.calls.removed).toEqual([['org/idea-imports/x.xlsx']]);
+    expect(log.error).not.toHaveBeenCalled();
+
+    const failing = makeStorageStub({ data: null, error: null }, { data: null, error: null }, { message: 'boom' });
+    await expect(removeIdeaUploadFile(failing.client, 'org/idea-imports/x.xlsx', log)).resolves.toBeUndefined();
+    expect(log.error).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('進行中チェックと滞留行の回収', () => {
+  const orgId = '0198a0b1-1111-4aaa-8bbb-000000000001';
+  const log = { warn: vi.fn(), info: vi.fn(), error: vi.fn() } as unknown as Logger;
+
+  it('hasProcessingIdeaImport: processing 行があれば true、DB エラーは throw', async () => {
+    const make = (result: { data: unknown[] | null; error: { message: string } | null }) =>
+      ({
+        from: () => ({ select: () => ({ eq: () => ({ eq: () => ({ limit: async () => result }) }) }) }),
+      }) as unknown as SupabaseClient;
+    expect(await hasProcessingIdeaImport(make({ data: [{ id: 'x' }], error: null }), orgId)).toBe(true);
+    expect(await hasProcessingIdeaImport(make({ data: [], error: null }), orgId)).toBe(false);
+    await expect(hasProcessingIdeaImport(make({ data: null, error: { message: 'boom' } }), orgId)).rejects.toThrow('boom');
+  });
+
+  it('recoverStaleIdeaImports: 滞留窓を過ぎた processing 行を failed にする（失敗は warn のみ）', async () => {
+    const now = Date.parse('2026-09-16T12:00:00Z');
+    const updates: { values: Record<string, unknown>; filters: unknown[] }[] = [];
+    const make = (error: { message: string } | null) =>
+      ({
+        from: () => ({
+          update: (values: Record<string, unknown>) => {
+            const filters: unknown[] = [];
+            const builder = {
+              eq: (column: string, value: unknown) => { filters.push(['eq', column, value]); return builder; },
+              lt: async (column: string, value: unknown) => { filters.push(['lt', column, value]); updates.push({ values, filters }); return { error }; },
+            };
+            return builder;
+          },
+        }),
+      }) as unknown as SupabaseClient;
+
+    await recoverStaleIdeaImports(make(null), orgId, log, now);
+    expect(updates[0].values).toMatchObject({ status: 'failed' });
+    expect(updates[0].filters).toEqual([
+      ['eq', 'organizationId', orgId],
+      ['eq', 'status', 'processing'],
+      ['lt', 'updatedAt', new Date(now - IDEA_IMPORT_STALE_MS).toISOString()],
+    ]);
+
+    await expect(recoverStaleIdeaImports(make({ message: 'boom' }), orgId, log, now)).resolves.toBeUndefined();
+    expect(log.warn).toHaveBeenCalled();
+  });
+
+  it('consumeIdeaUploadUrlQuota: 組織単位で窓あたりの発行回数を縛る', () => {
+    resetIdeaUploadUrlQuota();
+    for (let index = 0; index < IDEA_UPLOAD_URL_RATE_LIMIT.limit; index++) {
+      expect(consumeIdeaUploadUrlQuota('org-a')).toBe(true);
+    }
+    expect(consumeIdeaUploadUrlQuota('org-a')).toBe(false);
+    // 別組織は別枠
+    expect(consumeIdeaUploadUrlQuota('org-b')).toBe(true);
+    resetIdeaUploadUrlQuota();
+    expect(consumeIdeaUploadUrlQuota('org-a')).toBe(true);
+  });
+});
+
+describe('removeStaleIdeaUploadFiles（取り残しファイルの掃除）', () => {
+  const orgId = '0198a0b1-1111-4aaa-8bbb-000000000001';
+  const now = Date.parse('2026-09-16T12:00:00Z');
+  const iso = (ageMs: number) => new Date(now - ageMs).toISOString();
+
+  const makeStub = (
+    listResult: { data: Record<string, unknown>[] | null; error: { message: string } | null },
+    removeError: { message: string } | null = null,
+    /** 指定時は offset ごとのページを返す（ページングの検証用） */
+    pages?: Record<string, unknown>[][],
+  ) => {
+    const calls: { listed: { folder: string; options: unknown }[]; removed: string[][] } = { listed: [], removed: [] };
+    const client = {
+      storage: {
+        from: () => ({
+          list: async (folder: string, options: { limit: number; offset: number }) => {
+            calls.listed.push({ folder, options });
+            if (pages) return { data: pages[options.offset / options.limit] ?? [], error: null };
+            return listResult;
+          },
+          remove: async (paths: string[]) => {
+            calls.removed.push(paths);
+            return { data: [], error: removeError };
+          },
+        }),
+      },
+    } as unknown as SupabaseClient;
+    return { client, calls };
+  };
+  const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as unknown as Logger;
+
+  it('自組織フォルダ内の、閾値を過ぎたファイルだけを削除する（フォルダ要素・新しいファイルは残す）', async () => {
+    const { client, calls } = makeStub({
+      data: [
+        { name: 'old.xlsx', id: 'id-1', created_at: iso(IDEA_UPLOAD_STALE_MS + 1000) },
+        { name: 'fresh.xlsx', id: 'id-2', created_at: iso(60 * 1000) },
+        { name: 'subfolder', id: null, created_at: null },
+        { name: 'unknown-age.xlsx', id: 'id-3', created_at: null },
+      ],
+      error: null,
+    });
+
+    const removed = await removeStaleIdeaUploadFiles(client, orgId, log, now);
+
+    expect(calls.listed).toEqual([{ folder: `${orgId}/idea-imports`, options: { limit: 100, offset: 0 } }]);
+    expect(removed).toEqual([`${orgId}/idea-imports/old.xlsx`]);
+    expect(calls.removed).toEqual([[`${orgId}/idea-imports/old.xlsx`]]);
+  });
+
+  it('1 ページ（100 件）を超えても続きのページを見て、古いファイルを取り残さない', async () => {
+    const fresh = Array.from({ length: 100 }, (_, index) => ({ name: `fresh-${index}.xlsx`, id: `f-${index}`, created_at: iso(1000) }));
+    const stale = [{ name: 'old-after-page-1.xlsx', id: 'old', created_at: iso(IDEA_UPLOAD_STALE_MS + 1000) }];
+    const { client, calls } = makeStub({ data: [], error: null }, null, [fresh, stale]);
+
+    const removed = await removeStaleIdeaUploadFiles(client, orgId, log, now);
+
+    expect(calls.listed.map((call) => (call.options as { offset: number }).offset)).toEqual([0, 100]);
+    expect(removed).toEqual([`${orgId}/idea-imports/old-after-page-1.xlsx`]);
+  });
+
+  it('対象が無ければ削除を呼ばない', async () => {
+    const { client, calls } = makeStub({ data: [{ name: 'fresh.xlsx', id: 'id-2', created_at: iso(1000) }], error: null });
+    expect(await removeStaleIdeaUploadFiles(client, orgId, log, now)).toEqual([]);
+    expect(calls.removed).toEqual([]);
+  });
+
+  it('一覧・削除の失敗は throw せず空配列を返す（URL 発行を止めない）', async () => {
+    const failingList = makeStub({ data: null, error: { message: 'boom' } });
+    await expect(removeStaleIdeaUploadFiles(failingList.client, orgId, log, now)).resolves.toEqual([]);
+
+    const failingRemove = makeStub(
+      { data: [{ name: 'old.xlsx', id: 'id-1', created_at: iso(IDEA_UPLOAD_STALE_MS + 1000) }], error: null },
+      { message: 'boom' },
+    );
+    await expect(removeStaleIdeaUploadFiles(failingRemove.client, orgId, log, now)).resolves.toEqual([]);
   });
 });
 

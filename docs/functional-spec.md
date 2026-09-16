@@ -480,7 +480,8 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 | POST | `/api/calculations` | GHG 算定バッチの実行トリガー |
 | GET | `/api/calculations/provisional-recalculation` | 暫定適用のまま残っている算定済みデータの年度・件数 |
 | POST | `/api/calculations/provisional-recalculation` | 同レコードを再算定対象（`isCalculated = false`）へ差し戻し |
-| POST | `/api/idea-imports` | IDEA データベース（Excel）の取込 |
+| POST | `/api/idea-imports/upload-url` | IDEA データベース（Excel）の署名付きアップロード URL 発行（ブラウザは Supabase Storage の `upload-quarantine` へ直接アップロードする。組織あたり 10 分に 10 回まで、超過は 429） |
+| POST | `/api/idea-imports` | IDEA データベース（Excel）の取込開始（Storage 上のパスを JSON で受け取る。ファイル本体は送らない） |
 | DELETE | `/api/idea-imports/[id]` | IDEA 取込の削除（取込状態の取得は Supabase クライアントから直接読む） |
 | POST | `/api/dashboard-aggregates/refresh` | ダッシュボード集計の再計算 |
 | POST | `/api/account/delete` | アカウント削除 |
@@ -488,7 +489,7 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 | POST | `/api/csp-report` | CSP 違反レポートの受信 |
 | GET | `/auth/callback` | Supabase Auth のコールバック |
 
-`/api/calculations`・`/api/calculations/provisional-recalculation`・`/api/dashboard-aggregates/refresh`・`/api/idea-imports`・`/api/idea-imports/[id]`・`/api/account/delete` の 6 本は `service_role` で RLS を越えて読み書きするため、Route Handler 側でログイン済み・自組織であることを検証する。この組織チェックは RLS では効かず、ここでしか担保できない。`/api/health` も `service_role` を使うが `organizations` を 1 行読む疎通確認のみで、組織データは返さない。
+`/api/calculations`・`/api/calculations/provisional-recalculation`・`/api/dashboard-aggregates/refresh`・`/api/idea-imports/upload-url`・`/api/idea-imports`・`/api/idea-imports/[id]`・`/api/account/delete` の 7 本は `service_role` で RLS を越えて読み書きするため、Route Handler 側でログイン済み・自組織であることを検証する。この組織チェックは RLS では効かず、ここでしか担保できない。`/api/idea-imports/upload-url` は自組織フォルダ（`${organizationId}/idea-imports/<uuid>.xlsx`）にだけ署名付き URL を発行し、`/api/idea-imports` は受け取ったパスがその形であることを検証してから Storage に触れる。`/api/health` も `service_role` を使うが `organizations` を 1 行読む疎通確認のみで、組織データは返さない。
 
 ### 6.3 主要な RPC
 
@@ -511,7 +512,7 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 
 ### 6.5 ホスティング上の制約
 
-IDEA データベース取込（`POST /api/idea-imports`）は数十MBの Excel をアップロードするため、**リクエストボディ制限のあるホスティング（Vercel の 4.5MB 等）では動作しない**。セルフホスト（またはボディ制限・メモリを設定できる環境）を前提とする。
+IDEA データベース取込は、数十MBの Excel をブラウザから Supabase Storage（`upload-quarantine`）へ直接アップロードし、`POST /api/idea-imports` にはパスだけを JSON で渡す。API のリクエストボディは数百バイトのため、**リクエストボディ制限のあるホスティング（Vercel の 4.5MB 等）でも動作する**。xlsx の読み取りはストリーミング（対象シートの行だけを逐次処理）で、実ファイル相当（約1万行 × 約300列）でもヒープのピークは 100MB 未満（`docs/setup-guide.md` 2-F）。
 
 ---
 

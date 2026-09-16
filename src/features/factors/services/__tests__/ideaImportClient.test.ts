@@ -1,9 +1,16 @@
-// fetchIdeaImportOverview の回帰テスト。
-// 「直近N件から rows.find(isActive)」で active を探すと、失敗履歴が N 件を超えて蓄積したときに
-// active 行がウィンドウ外へ落ち、取込済みなのに未取込表示になる。
-// active は専用クエリ（isActive = true）で取得することを保証する。
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fetchIdeaImportOverview, type IdeaImportRecord } from '../ideaImportClient';
+// ideaImportClient のテスト。
+// - fetchIdeaImportOverview の回帰: 「直近N件から rows.find(isActive)」で active を探すと、失敗履歴が
+//   N 件を超えて蓄積したときに active 行がウィンドウ外へ落ち、取込済みなのに未取込表示になる。
+//   active は専用クエリ（isActive = true）で取得することを保証する。
+// - startIdeaImport: 署名付き URL 発行 → Storage へ直接アップロード → パスだけを取込 API へ渡す
+//   3 段階の経路（ファイル本体を API に送らない）を検証する。
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  fetchIdeaImportOverview,
+  startIdeaImport,
+  type IdeaImportRecord,
+  type IdeaImportStartPhase,
+} from '../ideaImportClient';
 
 // テーブル行の擬似DB。クエリビルダーのチェーン（select → eq / order / limit → maybeSingle）
 // を実際に評価して返すことで、実装のクエリ形が変わっても意図（active を取りこぼさない）
@@ -55,8 +62,22 @@ const makeBuilder = () => {
   return builder;
 };
 
+// Storage への直接アップロード（uploadToSignedUrl）の呼び出し記録
+const storageCalls: { bucket: string; path: string; token: string; file: File; options: unknown }[] = [];
+let storageUploadError: { message: string } | null = null;
+
 vi.mock('@/lib/supabase/client', () => ({
-  createClient: () => ({ from: () => makeBuilder() }),
+  createClient: () => ({
+    from: () => makeBuilder(),
+    storage: {
+      from: (bucket: string) => ({
+        uploadToSignedUrl: async (path: string, token: string, file: File, options: unknown) => {
+          storageCalls.push({ bucket, path, token, file, options });
+          return storageUploadError ? { data: null, error: storageUploadError } : { data: { path }, error: null };
+        },
+      }),
+    },
+  }),
 }));
 
 const makeRecord = (overrides: Partial<IdeaImportRecord>): IdeaImportRecord => ({
@@ -112,6 +133,90 @@ describe('fetchIdeaImportOverview', () => {
     failNextQuery = true;
     await expect(fetchIdeaImportOverview()).rejects.toThrow(
       'IDEAデータベースの取込状況の取得に失敗しました',
+    );
+  });
+});
+
+describe('startIdeaImport', () => {
+  const file = new File([new Uint8Array([0x50, 0x4b, 0x03, 0x04])], 'IDEA_dummy.xlsx');
+  const jsonResponse = (status: number, body: unknown) =>
+    new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+  const fetchMock = vi.fn<typeof fetch>();
+
+  beforeEach(() => {
+    storageCalls.length = 0;
+    storageUploadError = null;
+    fetchMock.mockReset();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('署名付き URL を発行 → Storage へ直接アップロード → パスだけを取込 API へ渡す', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse(200, { bucket: 'upload-quarantine', storagePath: 'org-1/idea-imports/u-1.xlsx', token: 'tok' }),
+      )
+      .mockResolvedValueOnce(jsonResponse(202, { importId: 'import-1' }));
+    const phases: IdeaImportStartPhase[] = [];
+
+    const result = await startIdeaImport(file, 'IPCC 2021 GWP 100a without LULUCF', true, (phase) => phases.push(phase));
+
+    expect(result).toEqual({ importId: 'import-1' });
+    expect(phases).toEqual(['uploading', 'starting']);
+
+    // ① 発行 API にはファイル名とサイズだけを申告する
+    const [urlInput, urlInit] = fetchMock.mock.calls[0];
+    expect(urlInput).toBe('/api/idea-imports/upload-url');
+    expect(JSON.parse(String(urlInit?.body))).toEqual({ fileName: 'IDEA_dummy.xlsx', fileSize: 4 });
+
+    // ② 発行されたバケット・パス・トークンでブラウザから直接アップロードする
+    expect(storageCalls).toHaveLength(1);
+    expect(storageCalls[0]).toMatchObject({ bucket: 'upload-quarantine', path: 'org-1/idea-imports/u-1.xlsx', token: 'tok' });
+    expect(storageCalls[0].file).toBe(file);
+
+    // ③ 取込 API には JSON でパス・ファイル名・GWP モデル・ライセンス確認を渡す（ファイル本体は送らない）
+    const [importInput, importInit] = fetchMock.mock.calls[1];
+    expect(importInput).toBe('/api/idea-imports');
+    expect(importInit?.method).toBe('POST');
+    expect(JSON.parse(String(importInit?.body))).toEqual({
+      storagePath: 'org-1/idea-imports/u-1.xlsx',
+      fileName: 'IDEA_dummy.xlsx',
+      gwpModel: 'IPCC 2021 GWP 100a without LULUCF',
+      licenseConfirmed: true,
+    });
+  });
+
+  it('URL 発行が拒否されたらサーバのメッセージで throw し、アップロードしない', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(400, { error: 'ファイルサイズが上限（50MB）を超えています' }));
+    await expect(startIdeaImport(file, 'IPCC 2021 GWP 100a without LULUCF', true)).rejects.toThrow(
+      'ファイルサイズが上限（50MB）を超えています',
+    );
+    expect(storageCalls).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('Storage へのアップロードに失敗したら取込 API を呼ばない', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, { bucket: 'upload-quarantine', storagePath: 'org-1/idea-imports/u-1.xlsx', token: 'tok' }),
+    );
+    storageUploadError = { message: 'network' };
+    await expect(startIdeaImport(file, 'IPCC 2021 GWP 100a without LULUCF', true)).rejects.toThrow(
+      'ファイルのアップロードに失敗しました',
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('取込 API のエラーはそのメッセージで throw する', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse(200, { bucket: 'upload-quarantine', storagePath: 'org-1/idea-imports/u-1.xlsx', token: 'tok' }),
+      )
+      .mockResolvedValueOnce(jsonResponse(409, { error: 'IDEAデータベースの取込が進行中です。完了後に再度お試しください' }));
+    await expect(startIdeaImport(file, 'IPCC 2021 GWP 100a without LULUCF', true)).rejects.toThrow(
+      'IDEAデータベースの取込が進行中です',
     );
   });
 });

@@ -29,6 +29,7 @@ import {
   fetchIdeaImportOverview,
   startIdeaImport,
   type IdeaImportOverview,
+  type IdeaImportStartPhase,
 } from '../services/ideaImportClient';
 
 // 取込中の idea_imports 行のポーリング間隔
@@ -53,7 +54,10 @@ export const IdeaDatabaseCard = () => {
   const [gwpModel, setGwpModel] = useState<string>(DEFAULT_IDEA_GWP_MODEL);
   const [licenseConfirmed, setLicenseConfirmed] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  // 取込開始の段階（null = 待機中）。ファイルは Storage へ直接アップロードしてから取込を開始する
+  // ため、数十MBのアップロード中であることをボタンに表示する
+  const [submitPhase, setSubmitPhase] = useState<IdeaImportStartPhase | null>(null);
+  const isSubmitting = submitPhase !== null;
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -111,10 +115,10 @@ export const IdeaDatabaseCard = () => {
     event.preventDefault();
     if (!selectedFile || !licenseConfirmed || isSubmitting || isProcessing) return;
 
-    setIsSubmitting(true);
+    setSubmitPhase('uploading');
     setMessage(null);
     try {
-      await startIdeaImport(selectedFile, gwpModel, licenseConfirmed);
+      await startIdeaImport(selectedFile, gwpModel, licenseConfirmed, setSubmitPhase);
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
       setMessage({ text: '取込を開始しました。完了までこのカードで進捗を表示します', type: 'success' });
@@ -125,7 +129,7 @@ export const IdeaDatabaseCard = () => {
         type: 'error',
       });
     } finally {
-      setIsSubmitting(false);
+      setSubmitPhase(null);
     }
   };
 
@@ -345,7 +349,13 @@ export const IdeaDatabaseCard = () => {
               disabled={!selectedFile || !licenseConfirmed || isSubmitting || isProcessing}
             >
               {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-              {active ? '版を更新（再取込）' : '取り込む'}
+              {submitPhase === 'uploading'
+                ? 'アップロード中…'
+                : submitPhase === 'starting'
+                  ? '取込を開始中…'
+                  : active
+                    ? '版を更新（再取込）'
+                    : '取り込む'}
             </button>
             {active && (
               <button

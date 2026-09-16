@@ -803,11 +803,22 @@ OpenGreenTrack のアプリ側では、重い認証済みAPIに DB ベースの�
 
 ## 2-F. IDEAデータベース取込（Scope3積上げ算定）のデプロイ前提
 
-係数管理画面の「IDEAデータベース」取込（`POST /api/idea-imports`）は、利用者が SuMPO とライセンス契約して入手した IDEA の Excel ファイル（**数十MBになり得ます**）をそのままアップロードします。このため次の前提があります（`docs/idea-scope3-spec.md` §4.1）:
+係数管理画面の「IDEAデータベース」取込は、利用者が SuMPO とライセンス契約して入手した IDEA の Excel ファイル（**数十MBになり得ます**）を取り込みます。ファイル本体は API に送らず、次の経路で処理します（`docs/idea-scope3-spec.md` §4.1）:
 
-- **リクエストボディ制限のあるホスティングでは動きません。** 例えば Vercel の Serverless Functions はボディ 4.5MB 制限があるため、この API だけ確実に失敗します。**セルフホスト（またはボディ制限を十分大きく設定できる環境）を前提**にしてください。
-- リバースプロキシ（nginx 等）を置く場合は、`/api/idea-imports` への `client_max_body_size`（または相当の設定）を **50MB 以上**にしてください。アプリ側の上限は 50MB です。
-- xlsx の展開はメモリ上で行われ、**ファイルサイズの数十倍のヒープ**を一時的に使います（10,300行 × 約300列・13.7MBのダミーファイルで約1.3GBを実測）。Node プロセスに十分なメモリ（目安 2GB 以上、必要に応じて `NODE_OPTIONS=--max-old-space-size=4096`）を確保してください。
+1. ブラウザが `POST /api/idea-imports/upload-url` で署名付きアップロード URL を受け取る
+2. ブラウザから Supabase Storage の `upload-quarantine` バケット（自組織フォルダ配下）へ直接アップロードする
+3. `POST /api/idea-imports` にはファイルのパスだけを JSON で渡し、サーバが Storage から取得・検証して取り込む。完了・失敗のいずれでも Storage 上のファイルは削除される
+
+アップロード後にブラウザを閉じる等で 3 が呼ばれなかったファイルは、次に 1 を呼んだときに自組織フォルダ内の 24 時間以上前のものが削除されます（スケジューラは不要です）。1 は組織あたり 10 分間に 10 回までに制限しており（超過は HTTP 429）、進行中の取込がある間は発行しません（409）。
+
+このため、次の前提になります。
+
+- **リクエストボディ制限のあるホスティングでも動きます。** API のリクエストボディは数百バイトの JSON です（Vercel の Serverless Functions のボディ 4.5MB 制限にはかかりません）。リバースプロキシ側にこの API 向けの `client_max_body_size` の緩和は不要です
+- **Supabase Storage が必要です。** `upload-quarantine` バケットは初期マイグレーション（`20260831000003_storage.sql`）で作成されます。ファイルサイズ上限はバケットとアプリの両方で 50MB です。セルフホストの Supabase では Storage サービス（と `[storage] file_size_limit`。`supabase/config.toml` は `50MiB`）が有効であることを確認してください
+- **メモリは数百MBで足ります。** xlsx はストリーミングで読み取り（対象シートの行だけを逐次処理）、ワークブック全体はメモリに展開しません。実ファイル相当（10,300行 × 約300列・17MBのダミーファイル）で **Node のヒープのピーク約 78MB（RSS 約 400MB）** を実測しました（`scripts/measure-idea-import.ts`。旧方式の一括読込は同条件で約 1.3GB）。Node プロセスに 512MB 程度のメモリがあれば十分で、`NODE_OPTIONS=--max-old-space-size` の調整は不要です
+- 取込本体は API の応答後にバックグラウンドで数十秒〜数分実行されます。関数の実行時間に上限があるホスティング（Vercel 等）では、上限が取込時間を下回らないように設定してください（10,300行のダミーファイルの読み取りは約3秒。加えて DB への挿入時間がかかります）
+
+計測の再現: `node --expose-gc --import ./scripts/register-ts-resolver.ts scripts/measure-idea-import.ts 10300 300 both`
 
 ---
 
