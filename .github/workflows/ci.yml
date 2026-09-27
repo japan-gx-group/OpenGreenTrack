@@ -2,7 +2,7 @@ name: Continuous Integration
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, ssbj ]
   pull_request:
 
 # CI は検査だけを行い、リポジトリへ書き戻さないため GITHUB_TOKEN は読み取り専用に絞る（最小権限）。
