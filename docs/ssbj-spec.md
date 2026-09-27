@@ -311,3 +311,24 @@ T01（初回のレポート例・対象範囲の合意）が未完了のため�
 | 架空の入力例・出力例 | §11 の架空サンプル株式会社・2024年度 | 架空データ |
 | リスク・機会の時間軸の区分 | 短期 / 中期 / 長期の 3 区分（各区分の期間の定義は持たない） | T07 |
 | 集計範囲 | 組織全体のみ（拠点別は扱わない） | §7、T08a |
+
+## 13. 実装状況
+
+各タスクで実装した内容と、その中で決めたことを記録する（詳細な表定義は `database-design.md`、画面仕様は `functional-spec.md` §4.9）。
+
+### レポートの作成・一覧・基本情報（T04）
+
+| 対象 | 内容 |
+|---|---|
+| DB | `ssbj_reports`（`supabase/migrations/20260927170328_ssbj_reports.sql`）。RLS は select / insert / update を自組織に限定し、年度の組織帰属を `exists` で検証。delete は持たない |
+| 画面 | `/ssbj`（一覧・新規作成）、`/ssbj/[reportId]`（基本情報の表示・編集）。サイドバー「出力」グループに「SSBJレポート」 |
+| コード | `src/features/ssbj/services/reportService.ts`（読み書き）、`hooks/useSsbjReports.ts` / `useSsbjReport.ts` / `useSsbjReportForm.ts`、`utils/reportValidation.ts`（検証）、`components/` |
+| デモデータ | `supabase/seeds/demo/ssbj_demo.sql`（デモ組織 A の 2024年度・組織 B の 2025年度に 1 件ずつ） |
+
+決めたこと:
+
+- **年度は作成後に変更できない。** 列指定の GRANT で update を基本情報の列に限る。後続機能が採用するその年度の OGT 値・保存版と食い違わないようにするため。
+- **レポートは画面で選択中の年度に作る。** 作成ダイアログで年度を選ばせず、対象年度を明示する（別の年度に作るときはヘッダーで切り替える）。
+- **年度の FK は `on delete` を指定しない（NO ACTION）。** `restrict` は即時検査のため、組織削除（デモ seed の再投入を含む）で年度とレポートが同じ文の中で連鎖削除されるときに失敗しうる。アプリからの年度削除は `fiscalYears.ts` の参照チェックで止める。
+- **一覧・詳細の年度表示は `fiscal_years` を埋め込んで取得する。** 画面の型 `SsbjReportRecord`（基本情報＋年度のラベル・期間）は保存版の `report` と同じ形にしている。
+- 版管理の列（`draftRevision`）と保存版は T06 が追加する（T04 には入れていない）。

@@ -214,6 +214,7 @@ erDiagram
 | `/factors` | 排出係数管理 | `emission_factors`、`idea_imports` |
 | `/locations` `/locations/[locationId]` | 拠点管理 | `locations` |
 | `/reports` `/reports/print` | レポート | 集計 RPC、`system_audit_logs`（履歴） |
+| `/ssbj` `/ssbj/[reportId]` | SSBJ レポート（試行版） | `ssbj_reports`、`fiscal_years` |
 | `/settings/company` `/settings/account` | 設定 | `organizations`、`profiles`、`fiscal_years`、`invites` |
 | `/login` `/signup` `/forgot-password` `/reset-password` `/invite/[token]` | 認証 | Supabase Auth、`invites` |
 
@@ -376,6 +377,19 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 
 **組織設定**: 組織情報、算定年度（開始月を含む）の管理、メンバー一覧と招待。
 **アカウント設定**: プロフィール、パスワード変更、アカウント削除。
+
+### 4.9 SSBJ レポート（試行版）
+
+サステナビリティ関連財務開示（SSBJ）の下書きを、組織・算定年度に結び付けて作成する。**社内確認用の試行版であり、SSBJ 基準への準拠や対外提出の完了を保証しない**（全画面の上部に注記を出す）。データ契約・保存境界・今後の画面構成は [`ssbj-spec.md`](./ssbj-spec.md) を正とする。
+
+| 画面 | 内容 |
+|---|---|
+| 一覧（`/ssbj`） | ヘッダーで選択中の年度のレポートを新しい順に表示し、新規作成する。レポートは選択中の年度に作る（作成ダイアログで対象年度を明示する）。年度が未登録なら企業設定へ案内する |
+| 詳細（`/ssbj/[reportId]`） | 基本情報（レポート名・対象年度と期間・作成目的・報告範囲・参照する基準の版）を表示・編集する。存在しない・他組織のレポートは「見つかりません」と表示し、存在を示唆しない |
+
+- 基本情報の必須はレポート名のみ。任意項目の未入力は「未入力」と表示し、空欄や「なし」にしない（項目名と必須性は初回レポート例の合意待ちの仮置き。`ssbj-spec.md` §12）
+- 対象年度は作成後に変更できない（後続機能が採用するその年度の OGT 値・保存版と食い違わないようにするため）
+- R1 ではレポートの削除を提供しない
 
 ---
 

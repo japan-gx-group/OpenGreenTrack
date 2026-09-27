@@ -37,6 +37,9 @@ erDiagram
     idea_factors ||--o{ activity_records : "Scope3積上げ参照"
     idea_factors ||--o{ emission_results : "適用(スナップショット併存)"
     fiscal_years ||--o{ scope3_category_methods : "割当"
+
+    organizations ||--o{ ssbj_reports : "SSBJレポート"
+    fiscal_years ||--o{ ssbj_reports : "対象年度"
 ```
 
 ---
@@ -258,6 +261,27 @@ Route Handler + service_role 限定）。詳細な確定 DDL は `idea-scope3-sp
 - ダッシュボード集計は独立関数 `refresh_dashboard_aggregates(p_organization_id, p_fiscal_year_id)`
   （EXECUTE は service_role 限定）へ切り出し、`run_calculation_commit` のほか方式切替・direct 値
   upsert（`POST /api/dashboard-aggregates/refresh`）からも実行する（`calculation-logic.md §4`）。
+
+### 3.11 SSBJ レポート (`ssbj_reports`) — SSBJ 開示レポート試行版（`supabase/migrations/20260927170328_ssbj_reports.sql`）
+SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず結び付き、後続の SSBJ 機能（文章・リスク・OGT 採用値・保存版）は
+この行の `id` から組織・年度を辿る。データ契約・保存境界は [`ssbj-spec.md`](ssbj-spec.md) を正とする。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | レポートID | UUID | Primary Key | |
+| `organizationId` | 組織ID | UUID | Foreign Key | 削除時: CASCADE |
+| `fiscalYearId` | 算定年度ID | UUID | Foreign Key | 削除時の指定なし（NO ACTION）。年度削除で連鎖削除しない。作成後は変更不可 |
+| `title` | レポート名 | VARCHAR(200) | NOT NULL, CHECK(空白のみ不可) | |
+| `purpose` | 作成目的 | TEXT | NULL | 仮置き（初回レポート例の合意待ち） |
+| `reportingScope` | 報告範囲 | TEXT | NULL | 仮置き |
+| `standardVersion` | 参照する基準の版 | VARCHAR(100) | NULL | 仮置き |
+| `createdByUserId` / `updatedByUserId` | 登録・更新操作者ID | UUID | NULL | `set_row_actor` トリガが auth.uid() で上書き |
+| `createdAt` / `updatedAt` | 作成・更新日時 | TIMESTAMPTZ | NOT NULL | `updatedAt` は `set_updated_at` トリガ |
+
+- RLS は select / insert / update を自組織に限定し、insert / update の with check で `fiscalYearId` が自組織の年度であることを
+  `exists` で検証する（FK は行の存在しか見ないため）。delete のポリシーと GRANT は持たない（R1 では削除を提供しない）。
+- `authenticated` への insert / update は列指定の GRANT。update は基本情報の列だけで、組織・年度は作成後に付け替えられない。
+- 年度を参照するため、年度削除の可否判定（`src/features/settings/services/fiscalYears.ts` の `REFERENCING_TABLES`）の対象に含める。
 
 ---
 
