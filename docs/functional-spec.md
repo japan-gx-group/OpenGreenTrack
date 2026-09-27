@@ -498,12 +498,13 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 | POST | `/api/idea-imports` | IDEA データベース（Excel）の取込開始（Storage 上のパスを JSON で受け取る。ファイル本体は送らない） |
 | DELETE | `/api/idea-imports/[id]` | IDEA 取込の削除（取込状態の取得は Supabase クライアントから直接読む） |
 | POST | `/api/dashboard-aggregates/refresh` | ダッシュボード集計の再計算 |
+| POST | `/api/ssbj/reports/[reportId]/versions` | SSBJ レポートの保存版（固定スナップショット）を作成する（`ssbj-spec.md` §8） |
 | POST | `/api/account/delete` | アカウント削除 |
 | GET | `/api/health` | ヘルスチェック |
 | POST | `/api/csp-report` | CSP 違反レポートの受信 |
 | GET | `/auth/callback` | Supabase Auth のコールバック |
 
-`/api/calculations`・`/api/calculations/provisional-recalculation`・`/api/dashboard-aggregates/refresh`・`/api/idea-imports/upload-url`・`/api/idea-imports`・`/api/idea-imports/[id]`・`/api/account/delete` の 7 本は `service_role` で RLS を越えて読み書きするため、Route Handler 側でログイン済み・自組織であることを検証する。この組織チェックは RLS では効かず、ここでしか担保できない。`/api/idea-imports/upload-url` は自組織フォルダ（`${organizationId}/idea-imports/<uuid>.xlsx`）にだけ署名付き URL を発行し、`/api/idea-imports` は受け取ったパスがその形であることを検証してから Storage に触れる。`/api/health` も `service_role` を使うが `organizations` を 1 行読む疎通確認のみで、組織データは返さない。
+`/api/calculations`・`/api/calculations/provisional-recalculation`・`/api/dashboard-aggregates/refresh`・`/api/idea-imports/upload-url`・`/api/idea-imports`・`/api/idea-imports/[id]`・`/api/account/delete`・`/api/ssbj/reports/[reportId]/versions` の 8 本は `service_role` で RLS を越えて読み書きするため、Route Handler 側でログイン済み・自組織であることを検証する。この組織チェックは RLS では効かず、ここでしか担保できない。`/api/idea-imports/upload-url` は自組織フォルダ（`${organizationId}/idea-imports/<uuid>.xlsx`）にだけ署名付き URL を発行し、`/api/idea-imports` は受け取ったパスがその形であることを検証してから Storage に触れる。`/api/health` も `service_role` を使うが `organizations` を 1 行読む疎通確認のみで、組織データは返さない。
 
 ### 6.3 主要な RPC
 
@@ -515,6 +516,7 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 | `complete_idea_import` / `delete_idea_import` | IDEA 取込の完了処理・削除 |
 | `dashboard_monthly_emissions` / `dashboard_location_emissions` / `dashboard_location_emissions_by_scope` / `dashboard_scope3_category_emissions` | ダッシュボードの読取集計 |
 | `report_location_scope_emissions` / `report_location_energy_usage` / `report_latest_calculation_batches` / `report_activity_calculation_coverage` / `report_scope3_activity_calculation_coverage` | レポートの読取集計 |
+| `create_ssbj_report_version` | SSBJ レポートの保存版（固定スナップショット）を採番・生成・insert まで単一トランザクションで作成。`draftRevision` の一致を見て競合を検知する。EXECUTE は `service_role` 限定（`ssbj-spec.md` §8） |
 
 読取系を RPC にしているのは、活動量や算定結果を全行ブラウザへ取得しないため（PostgREST の `max_rows` で黙って切り詰められると、集計が静かに欠ける）。
 

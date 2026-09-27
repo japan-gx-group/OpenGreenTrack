@@ -332,3 +332,19 @@ T01（初回のレポート例・対象範囲の合意）が未完了のため�
 - **年度の FK は `on delete` を指定しない（NO ACTION）。** `restrict` は即時検査のため、組織削除（デモ seed の再投入を含む）で年度とレポートが同じ文の中で連鎖削除されるときに失敗しうる。アプリからの年度削除は `fiscalYears.ts` の参照チェックで止める。
 - **一覧・詳細の年度表示は `fiscal_years` を埋め込んで取得する。** 画面の型 `SsbjReportRecord`（基本情報＋年度のラベル・期間）は保存版の `report` と同じ形にしている。
 - 版管理の列（`draftRevision`）と保存版は T06 が追加する（T04 には入れていない）。
+
+### 汎用の保存・版生成基盤（T06）
+
+| 対象 | 内容 |
+|---|---|
+| DB | `supabase/migrations/20260927180425_ssbj_report_versions.sql`。`ssbj_field_state` enum（§4）、`ssbj_reports."draftRevision"`、各機能テーブル用の共通トリガー関数 `bump_ssbj_draft_revision()`、`ssbj_report_versions` テーブル（RLS は select のみ authenticated・書き込みは RPC 経由）、版生成 RPC `create_ssbj_report_version`（`service_role` 限定） |
+| コード | `src/features/ssbj/services/versionServer.ts`（RPC 呼び出し・SQLSTATE マッピング）、Route Handler `src/app/api/ssbj/reports/[reportId]/versions/route.ts`（`POST`） |
+
+決めたこと:
+
+- **`ssbj_reports` 自身の基本情報の変更も `draftRevision` を進める。** BEFORE UPDATE トリガー（`bump_ssbj_reports_own_draft_revision`）が `title` / `purpose` / `reportingScope` / `standardVersion` のいずれかの変更時に `NEW."draftRevision"` を書き換える。authenticated の列 GRANT に `draftRevision` は含めていないが、`set_ssbj_reports_updated_at` が `updatedAt` を書けるのと同じ理由（BEFORE トリガーが NEW を直接書き換えるため、列 GRANT の対象外）で書き込める。
+- **各機能テーブル用の `bump_ssbj_draft_revision()` は `security definer` にする。** 呼び出し元（authenticated）は自分の機能テーブルへの書き込み権限しか持たず、`ssbj_reports.draftRevision` の列 GRANT も持たないため。対象は `NEW`/`OLD."reportId"` の行に限定し、他組織の `reportId` はここに到達する前に呼び出し元テーブルの RLS が拒否する。
+- **`ssbj_report_versions` の UPDATE はトリガーで全ロール拒否する（`service_role` も含む）。** RLS は select のみで insert/update/delete を authenticated に許可していない（default privileges により拒否）が、service_role は RLS を越えるため、不変性はトリガー（`reject_ssbj_report_version_update`）でも担保する。
+- **版生成 RPC は Route Handler から呼ぶ（`ssbj-spec.md` §8 の「Server Action」に相当）。** このリポジトリの既存の service_role 経路（`run_calculation_commit` 等）はすべて `src/app/api/**/route.ts` の Route Handler なので、同じ構成に揃えた。認証・組織チェックは `getCurrentProfile()` で Route Handler 側が行い、RPC には検証済みの `organizationId` / `actorUserId` を渡す（RPC 側も `p_organization_id` と行の組織帰属を突き合わせ、二重に確認する）。
+- **競合検知の SQLSTATE は `P2033` を新設。** 既存の `P2023`/`P2024`/`P2026`〜`P2028`/`P2031`/`P2032`（`apiRateLimit.ts` の `HEAVY_API_SQLSTATE`、`ideaImportServer.ts` の `IDEA_IMPORT_SQLSTATE`）と重複しない番号を選んだ。対応表は `src/features/ssbj/services/versionServer.ts` の `SSBJ_VERSION_SQLSTATE`。
+- **T06 自体は画面を持たない。** `create_ssbj_report_version` を呼ぶ「保存」操作の UI は、保存履歴・過去版からの新版作成を扱う T11（`/ssbj/[reportId]/versions`）が実装する。
