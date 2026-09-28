@@ -42,6 +42,7 @@ erDiagram
     fiscal_years ||--o{ ssbj_reports : "対象年度"
     ssbj_reports ||--o{ ssbj_report_versions : "保存版"
     ssbj_report_versions |o--o{ ssbj_report_versions : "復元元"
+    ssbj_reports ||--o{ ssbj_risks_opportunities : "リスク・機会"
 ```
 
 ---
@@ -306,6 +307,27 @@ SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず
 
 - 書き込みは RPC `create_ssbj_report_version`（EXECUTE は service_role 限定）だけ。`authenticated` には select のみ（自組織）。
 - UPDATE はトリガー `reject_ssbj_report_versions_update` で全ロール（service_role を含む）拒否する。
+
+### 3.13 SSBJ リスク・機会 (`ssbj_risks_opportunities`) — SSBJ レポートのリスク・機会（`supabase/migrations/20260928001521_ssbj_risks_opportunities.sql`）
+1 つのレポートに複数登録する作業中データ。変更のたびに `ssbj_reports.draftRevision` を進め、保存版には
+`ssbj_snapshot_section__risks_opportunities` で取り込む（[`ssbj-spec.md`](ssbj-spec.md) §10）。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | ID | UUID | Primary Key | |
+| `organizationId` | 組織ID | UUID | Foreign Key | 削除時: CASCADE |
+| `reportId` | レポートID | UUID | Foreign Key | 削除時: CASCADE。作成後は変更不可 |
+| `kind` | 区分 | VARCHAR(20) | NOT NULL, CHECK(`risk` / `opportunity`) | |
+| `title` | 名称 | VARCHAR(200) | NOT NULL, CHECK(空白のみ不可) | |
+| `descriptionState` / `descriptionText` | 説明（開示）の状態 / 本文 | `ssbj_field_state` / TEXT | CHECK(`answered` のときだけ本文が非 NULL・空白のみ不可) | |
+| `internalNote` | 内部メモ | TEXT | NULL | 開示しない |
+| `timeHorizonState` / `timeHorizon` | 時間軸の状態 / 区分 | `ssbj_field_state` / VARCHAR(20) | CHECK(`short_term` / `medium_term` / `long_term`。`answered` のときだけ非 NULL) | 仮置き |
+| `linkTargets` | 関連する章・項目 | TEXT[] | NOT NULL, DEFAULT '{}', CHECK(各要素が章 ID または項目 ID の形式・NULL 要素不可) | |
+| `createdByUserId` / `updatedByUserId` | 登録・更新操作者ID | UUID | NULL | `set_row_actor` トリガ |
+| `createdAt` / `updatedAt` | 作成・更新日時 | TIMESTAMPTZ | NOT NULL | `updatedAt` は `set_updated_at` トリガ |
+
+- RLS は select / insert / update / delete を自組織に限定し、insert / update の with check で `reportId` が自組織のレポートであることを `exists` で検証する。
+- `authenticated` への insert / update は列指定の GRANT。update は内容の列だけで、レポート・組織は作成後に付け替えられない。
 
 ---
 

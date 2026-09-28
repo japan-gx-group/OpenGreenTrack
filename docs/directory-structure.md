@@ -97,6 +97,7 @@ src/app/
 | `/settings/company` | `src/app/(app)/settings/company/page.tsx` | 企業情報設定 |
 | `/ssbj` | `src/app/(app)/ssbj/page.tsx` | SSBJ レポート一覧（試行版） |
 | `/ssbj/[reportId]` | `src/app/(app)/ssbj/[reportId]/page.tsx` | SSBJ レポート詳細（基本情報・保存版の作成） |
+| `/ssbj/[reportId]/risks` | `src/app/(app)/ssbj/[reportId]/risks/page.tsx` | SSBJ リスク・機会 |
 
 Route Handler（API）:
 

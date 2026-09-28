@@ -273,16 +273,67 @@ export type OgtSupplierReference = {
 };
 
 // ---------------------------------------------------------------------------
+// リスク・機会（T07）
+// ---------------------------------------------------------------------------
+
+/** リスクか機会か。 */
+export const SSBJ_RISK_OPPORTUNITY_KINDS = ['risk', 'opportunity'] as const;
+
+export type SsbjRiskOpportunityKind = (typeof SSBJ_RISK_OPPORTUNITY_KINDS)[number];
+
+export const SSBJ_RISK_OPPORTUNITY_KIND_LABELS: Record<SsbjRiskOpportunityKind, string> = {
+  risk: 'リスク',
+  opportunity: '機会',
+};
+
+/**
+ * 時間軸の区分。初回レポート例の合意待ちの仮置き（docs/ssbj-spec.md §12）で、各区分の期間の定義は持たない。
+ * DB は check 制約で持つ（区分を変えるときは制約を張り替える）。
+ */
+export const SSBJ_TIME_HORIZONS = ['short_term', 'medium_term', 'long_term'] as const;
+
+export type SsbjTimeHorizon = (typeof SSBJ_TIME_HORIZONS)[number];
+
+export const SSBJ_TIME_HORIZON_LABELS: Record<SsbjTimeHorizon, string> = {
+  short_term: '短期',
+  medium_term: '中期',
+  long_term: '長期',
+};
+
+/**
+ * リスク・機会の関連先。章だけに関連付けるなら章 ID、項目まで決まっていれば項目 ID。
+ * 章と項目を別々に持たないのは、項目 ID の接頭辞と食い違わせないため（§3。章は sectionOfItem で導出する）。
+ */
+export type SsbjLinkTarget = SsbjSectionId | SsbjItemId;
+
+/**
+ * リスク・機会 1 件。複数登録できる。リスクの分類（物理的 / 移行 など）は方針が未確定のため持たない
+ * （決まったら任意の項目として追加する）。
+ */
+export type SsbjRiskOpportunity = {
+  id: string;
+  kind: SsbjRiskOpportunityKind;
+  /** 名称（必須）。 */
+  title: string;
+  /** 開示する説明と内部メモ（§5）。 */
+  description: SsbjDisclosableText;
+  timeHorizon: SsbjFieldValue<SsbjTimeHorizon>;
+  /** 関連する章・項目（章の順、同じ章では章そのものを先に並べる）。 */
+  linkTargets: SsbjLinkTarget[];
+};
+
+// ---------------------------------------------------------------------------
 // 保存版（T06 が生成し、T11 / T12 / T13 が読む）
 // ---------------------------------------------------------------------------
 
 /**
  * 保存版に含める各機能のデータ。キーは DB 関数 ssbj_snapshot_section__<key> の <key> と一致させる。
- * T03 時点では空。各機能は自分のセクションのキーと型をここへ追記する
- * （例: T07 が `risks_opportunities: SsbjRiskOpportunity[]` を足す）。
+ * 各機能は自分のセクションのキーと型をここへ追記する。
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- 後続機能が宣言を追記する受け皿
-export interface SsbjSnapshotSections {}
+export interface SsbjSnapshotSections {
+  /** T07。ssbj_snapshot_section__risks_opportunities。作成順。 */
+  risks_opportunities: SsbjRiskOpportunity[];
+}
 
 /** 保存版の中身（ssbj_report_versions.snapshot）。形式を変えるときは schemaVersion を上げる。 */
 export type SsbjReportSnapshotV1 = {
