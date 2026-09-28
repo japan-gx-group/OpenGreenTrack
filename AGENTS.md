@@ -9,6 +9,7 @@ Codex / Claude Code / Fable など、**どのAIエージェントで作業する
 > - アーキテクチャ全体像 → [`docs/architecture.md`](docs/architecture.md)
 > - 画面・URL・バリデーション規則 → [`docs/functional-spec.md`](docs/functional-spec.md)
 > - DB マイグレーション・シードの運用 → [`supabase/README.md`](supabase/README.md)
+> - SSBJ 開示レポート（試行版）のデータ契約・保存境界 → [`docs/ssbj-spec.md`](docs/ssbj-spec.md)
 
 ---
 
