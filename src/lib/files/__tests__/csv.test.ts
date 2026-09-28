@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
-import { decodeCsvBuffer, splitCsvLine } from '../csv';
+import { describe, expect, it, vi } from 'vitest';
+import { decodeCsvBuffer, downloadCsv, splitCsvLine } from '../csv';
+
+vi.mock('../download', () => ({ downloadBlob: vi.fn() }));
+import { downloadBlob } from '../download';
 
 const utf8Buffer = (text: string): ArrayBuffer =>
   new TextEncoder().encode(text).buffer as ArrayBuffer;
@@ -46,5 +49,18 @@ describe('splitCsvLine', () => {
 
   it('区切り文字を指定するとタブ区切りも分割できる', () => {
     expect(splitCsvLine('東京本社\t電気\t100', '\t')).toEqual(['東京本社', '電気', '100']);
+  });
+});
+
+describe('downloadCsv', () => {
+  it('日本語・改行・引用符を保ち、空白の後の数式も無効化する', async () => {
+    downloadCsv('試験.csv', [['日本語', '説明'], ['本文\n"引用"', ' \n=1+1']]);
+    const blob = vi.mocked(downloadBlob).mock.calls[0]?.[0];
+    expect(blob).toBeDefined();
+    const bytes = await blob!.arrayBuffer();
+    expect(new Uint8Array(bytes).slice(0, 2)).toEqual(new Uint8Array([0xff, 0xfe]));
+    const body = new TextDecoder('utf-16le').decode(bytes);
+    expect(body).toContain('"本文\n""引用"""');
+    expect(body).toContain('"\' \n=1+1"');
   });
 });
