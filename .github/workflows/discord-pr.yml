@@ -1,0 +1,76 @@
+name: Discord PR Notification
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+
+permissions:
+  pull-requests: read
+  issues: read
+
+jobs:
+  notify:
+    # pull_request イベントでは fork の Secret を使えない。外部 PR のコードも実行しない。
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Notify Discord
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$DISCORD_WEBHOOK_URL" ]]; then
+            echo 'DISCORD_WEBHOOK_URL is unavailable; skipping notification.'
+            exit 0
+          fi
+
+          owner=${GITHUB_REPOSITORY%%/*}
+          repo=${GITHUB_REPOSITORY#*/}
+          number=$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")
+          action=$(jq -r '.action' "$GITHUB_EVENT_PATH")
+
+          gh api graphql --paginate --slurp \
+            -F owner="$owner" -F name="$repo" -F number="$number" \
+            -f query='
+              query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
+                repository(owner: $owner, name: $name) {
+                  pullRequest(number: $number) {
+                    number
+                    title
+                    url
+                    author { login }
+                    closingIssuesReferences(first: 100, after: $endCursor) {
+                      nodes { number title url }
+                      pageInfo { hasNextPage endCursor }
+                    }
+                  }
+                }
+              }
+            ' |
+            jq -c --arg repo "$GITHUB_REPOSITORY" --arg action "$action" '
+              .[0].data.repository.pullRequest as $pr |
+              [.[].data.repository.pullRequest.closingIssuesReferences.nodes[]] as $issues |
+              (if $action == "opened" then "PR作成" else "レビュー準備完了" end) as $event |
+              (if ($issues | length) == 0 then [[]]
+               else [range(0; ($issues | length); 9) as $i | $issues[$i:$i+9]] end)[] |
+              {
+                allowed_mentions: {parse: []},
+                embeds: ([{
+                  title: $pr.title,
+                  url: $pr.url,
+                  description: ("リポジトリ: " + $repo + "\nPR #" + ($pr.number | tostring) + "\n作成者: " + ($pr.author.login // "不明") + "\n" + $event)
+                }] +
+                (if length == 0 then [{title: "紐づくIssueなし"}]
+                 else map({title: .title, url: .url, description: ("Issue #" + (.number | tostring))}) end))
+              }
+            ' |
+            while IFS= read -r payload; do
+              curl --fail --silent --show-error --retry 3 \
+                --output /dev/null \
+                --header 'Content-Type: application/json' \
+                --data-binary "$payload" \
+                "$DISCORD_WEBHOOK_URL"
+            done
