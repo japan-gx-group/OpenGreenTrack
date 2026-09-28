@@ -309,7 +309,8 @@ T01（初回のレポート例・対象範囲の合意）が未完了のため�
 | 基本情報の項目名と必須性 | タイトル（必須）・作成目的・報告範囲・参照する基準の版（いずれも任意） | `types.ts` の `SsbjReportBasicInfo`、T04 |
 | R1 で扱う章・項目の範囲 | 四本柱の 4 章すべて。項目は架空データで使う数項目のみ | 架空データ、T05・T32a |
 | 架空の入力例・出力例 | §11 の架空サンプル株式会社・2024年度 | 架空データ |
-| リスク・機会の時間軸の区分 | 短期 / 中期 / 長期の 3 区分（各区分の期間の定義は持たない） | T07 |
+| リスク・機会の時間軸の区分 | 短期 / 中期 / 長期の 3 区分（各区分の期間の定義は持たない） | T07（check 制約。変更は制約の張り替え） |
+| リスクの分類 | 持たない（物理的 / 移行 などの区分にするか未確定） | T07（決まったら NULL 可の列を追加） |
 | 集計範囲 | 組織全体のみ（拠点別は扱わない） | §7、T08a |
 
 ## 13. 実装状況
@@ -352,3 +353,22 @@ T01（初回のレポート例・対象範囲の合意）が未完了のため�
 - **画面は読込時の `draftRevision` を `SsbjReportWorkingRecord`（`SsbjReportRecord` ＋ `draftRevision`）として持つ。** 保存版の `report` は `SsbjReportRecord` のままにし、版数を含めない。基本情報を保存すると DB のトリガーが版数を進めるため、更新 API の戻り値で保持値を差し替える（差し替えないと自分の編集直後の保存が競合になる）。
 - **基本情報の編集中は保存版を作れない。** 未保存のフォーム入力は作業中データに入っておらず、保存版にも入らないため、押せる状態にすると「入力したのに保存版に無い」ことが起きる。
 - 保存履歴の表示と過去版からの新版作成は T11（`/ssbj/[reportId]/versions`）が行う。RPC は `p_source_version_id` を受け付けるので、T11 は同じ RPC を使える。
+
+### リスク・機会（T07）
+
+| 対象 | 内容 |
+|---|---|
+| DB | `ssbj_risks_opportunities`（`supabase/migrations/20260928001521_ssbj_risks_opportunities.sql`）。RLS は select / insert / update / delete を自組織に限定し、レポートの組織帰属を `exists` で検証。`bump_ssbj_draft_revision` を付け、保存版には `ssbj_snapshot_section__risks_opportunities` で取り込む |
+| 画面 | `/ssbj/[reportId]/risks`（登録・編集・削除）。詳細画面の「レポートの内容」欄（`components/SsbjReportContentsNav.tsx`）から入る |
+| コード | `types.ts` の `SsbjRiskOpportunity`・`SsbjLinkTarget`、`utils/riskOpportunity.ts`（検証・正規化・関連先の並び）、`services/riskOpportunityService.ts`、`hooks/useSsbjRisksOpportunities.ts` / `useSsbjRiskOpportunityForm.ts` / `useSsbjRiskOpportunityDelete.ts`、`components/SsbjRisksOpportunities.client.tsx` ほか |
+| テスト | `scripts/db/__tests__/ssbjRisksOpportunitiesPolicy.test.ts`（RLS・GRANT・保存版連携・関連先の形式）、検証・変換・画面の単体テスト |
+| デモデータ | `supabase/seeds/demo/ssbj_demo.sql`（組織 A に 3 件、組織 B に 1 件） |
+
+決めたこと:
+
+- **区分（リスク / 機会）と時間軸は enum ではなく check 制約で持つ。** 時間軸は仮置き（§12）で、区分を変えるときに制約の張り替えだけで済ませるため（enum は値の削除・改名ができない）。
+- **リスクの分類（物理的 / 移行 など）は持たない。** 方針が未確定のため。決まったら NULL 可の列として追加する（既存行に影響しない）。
+- **章・項目への関連は 1 つの配列列 `linkTargets`（章 ID または項目 ID）で持つ。** 章と項目を別の列にすると項目 ID の接頭辞と食い違いうる（§3）。別テーブルにすると、リスク・機会本体と関連の保存が 2 回の通信に分かれ、片方だけ失敗しうるため、1 行の更新で済む配列にした。形式は check 制約（`utils/ids.ts` と同じ正規表現）で検証し、並び順（章の順、同じ章では章そのものを先に）は画面側で揃える。
+- **項目への関連付けは、章を選んで項目の識別子を入力する。** 項目の一覧（T32a の要求項目マスター・T05 の文章）がまだ無いため、形式だけを検証している。一覧ができたら選択式に差し替える（保存形式は変わらない）。
+- **説明は「入力済み」のときだけ本文を保存する。** 未確認・非該当・未入力に切り替えると本文は保存しない（未確認の下書きは内部メモに書く。§4）。
+- **過去版からの復元用の `ssbj_restore_section__risks_opportunities`（§10 の手順5）はまだ定義していない。** 復元の契約（作業中データを置き換えるか等）は T11 で確定するため、T11 の実装時に対で追加する。

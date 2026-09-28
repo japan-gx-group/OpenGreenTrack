@@ -17,6 +17,7 @@ import type {
   SsbjReportSnapshotV1,
   SsbjReportVersion,
   SsbjRequirementId,
+  SsbjRiskOpportunity,
 } from '../types';
 
 export const FICTIONAL_ORGANIZATION_ID = '5b1f0000-0000-4000-8000-000000000001';
@@ -79,6 +80,46 @@ export const fictionalRequirementLinks: { itemId: SsbjItemId; requirementIds: Ss
   { itemId: 'strategy.climate_resilience', requirementIds: ['REQ-CLM-002'] },
   { itemId: 'risk_management.process_integration', requirementIds: ['REQ-GEN-002'] },
   { itemId: 'metrics_targets.climate_targets', requirementIds: ['REQ-CLM-003'] },
+];
+
+/**
+ * リスク・機会（T07）。文章の項目（fictionalDisclosableTexts）への関連付けと、章だけへの関連付け、
+ * 関連なしの例を含む。説明・時間軸は回答済み / 未確認 / 未入力を含む。
+ */
+export const fictionalRisksOpportunities: SsbjRiskOpportunity[] = [
+  {
+    id: '5b1f0000-0000-4000-8000-000000000101',
+    kind: 'risk',
+    title: '炭素価格の導入による調達コストの上昇',
+    description: {
+      disclosure: {
+        state: 'answered',
+        value: '炭素価格が導入された場合、主要原材料の調達コストが上昇する可能性がある。',
+      },
+      internalNote: '影響額の試算は経営企画部で実施中（架空）。',
+    },
+    timeHorizon: { state: 'answered', value: 'medium_term' },
+    linkTargets: ['strategy', 'strategy.climate_resilience'],
+  },
+  {
+    id: '5b1f0000-0000-4000-8000-000000000102',
+    kind: 'opportunity',
+    title: '省エネルギー型製品の需要拡大',
+    description: {
+      disclosure: { state: 'unconfirmed' },
+      internalNote: '営業部に市場見通しを確認中。',
+    },
+    timeHorizon: { state: 'answered', value: 'long_term' },
+    linkTargets: ['metrics_targets.climate_targets'],
+  },
+  {
+    id: '5b1f0000-0000-4000-8000-000000000103',
+    kind: 'risk',
+    title: '豪雨による拠点の操業停止',
+    description: { disclosure: { state: 'unanswered' }, internalNote: null },
+    timeHorizon: { state: 'unanswered' },
+    linkTargets: [],
+  },
 ];
 
 const FICTIONAL_PERIOD = {
@@ -198,7 +239,7 @@ export const fictionalSupplierReferences: OgtSupplierReference[] = [
   },
 ];
 
-/** 保存版の中身の例。T03 時点ではセクションが未定義のため sections は空。 */
+/** 保存版の中身の例。セクションは実装済みの機能の分だけ入る（未実装の機能のキーは無い）。 */
 export const fictionalSnapshot: SsbjReportSnapshotV1 = {
   schemaVersion: 1,
   report: {
@@ -207,7 +248,9 @@ export const fictionalSnapshot: SsbjReportSnapshotV1 = {
     periodStart: FICTIONAL_FISCAL_YEAR.startDate,
     periodEnd: FICTIONAL_FISCAL_YEAR.endDate,
   },
-  sections: {},
+  sections: {
+    risks_opportunities: fictionalRisksOpportunities,
+  },
 };
 
 export const fictionalVersion: SsbjReportVersion = {

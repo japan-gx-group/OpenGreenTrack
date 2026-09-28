@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { isDecimalString } from '../../utils/decimal';
 import { fromFieldValue, toFieldValue } from '../../utils/fieldValue';
-import { isSsbjItemId, isSsbjRequirementId, sectionOfItem } from '../../utils/ids';
+import { isSsbjItemId, isSsbjRequirementId, isSsbjSectionId, sectionOfItem } from '../../utils/ids';
 import { checkOgtCandidateValue } from '../../utils/ogtValue';
 import type { SsbjFieldValue } from '../../types';
 import {
@@ -14,6 +14,7 @@ import {
   fictionalOgtCandidates,
   fictionalReportBasicInfo,
   fictionalRequirementLinks,
+  fictionalRisksOpportunities,
   fictionalSnapshot,
   fictionalSupplierReferences,
   fictionalVersion,
@@ -22,6 +23,8 @@ import {
 const allFieldValues = (): SsbjFieldValue<string>[] => [
   ...Object.values(fictionalDisclosableTexts).map(text => text.disclosure),
   ...fictionalOgtCandidates.map(candidate => candidate.value),
+  ...fictionalRisksOpportunities.map(item => item.description.disclosure),
+  ...fictionalRisksOpportunities.map(item => item.timeHorizon),
 ];
 
 describe('識別子', () => {
@@ -87,6 +90,29 @@ describe('開示文と内部記録', () => {
         expect(text.disclosure.value).not.toContain(text.internalNote);
       }
     }
+  });
+});
+
+describe('リスク・機会', () => {
+  it('リスクと機会の両方を含む', () => {
+    expect(new Set(fictionalRisksOpportunities.map(item => item.kind))).toEqual(new Set(['risk', 'opportunity']));
+  });
+
+  it('関連先は章 ID か項目 ID の形式', () => {
+    for (const target of fictionalRisksOpportunities.flatMap(item => item.linkTargets)) {
+      expect(isSsbjSectionId(target) || isSsbjItemId(target)).toBe(true);
+    }
+  });
+
+  it('文章の項目への関連付け・章だけへの関連付け・関連なしの例を含む', () => {
+    const targets = fictionalRisksOpportunities.flatMap(item => item.linkTargets);
+    expect(targets.some(target => target in fictionalDisclosableTexts)).toBe(true);
+    expect(targets.some(target => isSsbjSectionId(target))).toBe(true);
+    expect(fictionalRisksOpportunities.some(item => item.linkTargets.length === 0)).toBe(true);
+  });
+
+  it('保存版の例に含まれる', () => {
+    expect(fictionalSnapshot.sections.risks_opportunities).toEqual(fictionalRisksOpportunities);
   });
 });
 

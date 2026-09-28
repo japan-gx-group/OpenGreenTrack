@@ -20,6 +20,7 @@ import { useSsbjVersionSave } from '../hooks/useSsbjVersionSave';
 import { updateSsbjReportBasicInfo } from '../services/reportService';
 import { toSsbjReportFormValues } from '../utils/reportValidation';
 import { SsbjReportBasicInfo } from './SsbjReportBasicInfo';
+import { SsbjReportContentsNav } from './SsbjReportContentsNav';
 import { SsbjReportFormFields } from './SsbjReportFormFields.client';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
 import { SsbjVersionSaveCard } from './SsbjVersionSaveCard';
@@ -137,6 +138,7 @@ export const SsbjReportDetail = ({ reportId }: { reportId: string }) => {
                 <SsbjReportBasicInfo report={report} />
               )}
             </Card>
+            <SsbjReportContentsNav reportId={report.id} />
             <SsbjVersionSaveCard
               isSaving={versionSave.isSaving}
               errorMessage={versionSave.errorMessage}
