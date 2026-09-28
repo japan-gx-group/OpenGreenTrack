@@ -23,8 +23,10 @@ where id in (
 
 -- createdByUserId / updatedByUserId は set_row_actor トリガが auth.uid() で上書きするが、
 -- seed（auth.uid() = null）では与えた値がそのまま残る。
+-- 親会社との関係: 組織 A は親会社の連結子会社、組織 B は持分法適用関連会社（親会社名はいずれも架空）。
 insert into ssbj_reports (
   id, "organizationId", "fiscalYearId", title, purpose, "reportingScope", "standardVersion",
+  "parentCompanyName", "parentRelationship", "ownershipPercentage", "measurementApproach", "industryCode",
   "createdByUserId", "updatedByUserId", "createdAt", "updatedAt"
 )
 values
@@ -36,6 +38,11 @@ values
     '社内での記載内容の確認',
     '架空精密工業株式会社（単体）',
     null,
+    '架空ホールディングス株式会社',
+    'consolidated_subsidiary',
+    100,
+    'operational_control',
+    'RT-IG',
     'aaaaaaaa-0000-0000-0000-000000000001',
     'aaaaaaaa-0000-0000-0000-000000000001',
     '2025-06-02 10:00:00+09',
@@ -49,6 +56,11 @@ values
     null,
     null,
     null,
+    '架空商事株式会社',
+    'equity_method_affiliate',
+    35,
+    'equity_share',
+    'TR-RO',
     'bbbbbbbb-0000-0000-0000-000000000001',
     'bbbbbbbb-0000-0000-0000-000000000001',
     '2026-06-01 10:00:00+09',

@@ -44,6 +44,11 @@ export const fictionalReportBasicInfo: SsbjReportBasicInfo = {
   purpose: '社内での記載内容の確認',
   reportingScope: '架空サンプル株式会社（単体）',
   standardVersion: null,
+  parentCompanyName: '架空サンプルホールディングス株式会社',
+  parentRelationship: 'consolidated_subsidiary',
+  ownershipPercentage: '100',
+  measurementApproach: 'operational_control',
+  industryCode: 'RT-IG',
   createdAt: '2025-06-02T01:00:00.000Z',
   updatedAt: '2025-06-02T01:00:00.000Z',
 };

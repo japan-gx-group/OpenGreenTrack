@@ -104,10 +104,37 @@ export type SsbjDisclosableText = {
 // レポートの基本情報（T04 が作成・編集する）
 // ---------------------------------------------------------------------------
 
+/** 親会社との関係（docs/ssbj-r1-scope.md §2）。 */
+export const SSBJ_PARENT_RELATIONSHIPS = [
+  'consolidated_subsidiary',
+  'non_consolidated_subsidiary',
+  'equity_method_affiliate',
+  'other',
+] as const;
+
+export type SsbjParentRelationship = (typeof SSBJ_PARENT_RELATIONSHIPS)[number];
+
+export const SSBJ_PARENT_RELATIONSHIP_LABELS: Record<SsbjParentRelationship, string> = {
+  consolidated_subsidiary: '連結子会社',
+  non_consolidated_subsidiary: '非連結子会社',
+  equity_method_affiliate: '持分法適用関連会社',
+  other: 'その他',
+};
+
+/** 温室効果ガス排出の測定アプローチ（気候関連開示基準 第60項）。親会社の選択に合わせる。 */
+export const SSBJ_MEASUREMENT_APPROACHES = ['equity_share', 'operational_control', 'financial_control'] as const;
+
+export type SsbjMeasurementApproach = (typeof SSBJ_MEASUREMENT_APPROACHES)[number];
+
+export const SSBJ_MEASUREMENT_APPROACH_LABELS: Record<SsbjMeasurementApproach, string> = {
+  equity_share: '持分割合アプローチ',
+  operational_control: '経営支配力アプローチ',
+  financial_control: '財務支配力アプローチ',
+};
+
 /**
- * レポートの基本情報。組織と算定年度に必ず結び付く。
- * purpose / reportingScope / standardVersion の項目名と必須性は T01（初回のレポート例・対象範囲の合意）
- * 待ちの仮置き（docs/ssbj-spec.md §12）。
+ * レポートの基本情報。組織と算定年度に必ず結び付く。項目と必須性は T01 の合意（docs/ssbj-r1-scope.md）。
+ * 必須はレポート名だけで、ほかは任意（未入力は null）。
  */
 export type SsbjReportBasicInfo = {
   id: SsbjReportId;
@@ -121,6 +148,16 @@ export type SsbjReportBasicInfo = {
   reportingScope: string | null;
   /** 参照する基準の版（任意。仮置き）。 */
   standardVersion: string | null;
+  /** 親会社名（任意）。レポートの提出先。 */
+  parentCompanyName: string | null;
+  /** 親会社との関係（任意）。 */
+  parentRelationship: SsbjParentRelationship | null;
+  /** 親会社の持分比率（%、任意）。十進表記の文字列（例 "80.50"）。 */
+  ownershipPercentage: SsbjDecimalString | null;
+  /** 測定アプローチ（任意）。 */
+  measurementApproach: SsbjMeasurementApproach | null;
+  /** 業種（任意）。SICS の産業コード（例 "RT-IG"。utils/sicsIndustries.ts）。 */
+  industryCode: string | null;
   createdAt: string;
   updatedAt: string;
 };

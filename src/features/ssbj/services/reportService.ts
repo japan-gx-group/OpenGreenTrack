@@ -5,7 +5,12 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
-import type { SsbjReportRecord, SsbjReportWorkingRecord } from '../types';
+import type {
+  SsbjMeasurementApproach,
+  SsbjParentRelationship,
+  SsbjReportRecord,
+  SsbjReportWorkingRecord,
+} from '../types';
 import type { SsbjReportBasicInfoInput } from '../utils/reportValidation';
 
 type FiscalYearEmbed = { label: string; startDate: string; endDate: string };
@@ -18,6 +23,12 @@ export interface SsbjReportRow {
   purpose: string | null;
   reportingScope: string | null;
   standardVersion: string | null;
+  parentCompanyName: string | null;
+  parentRelationship: string | null;
+  /** 十進表記の文字列（select で text に変換して受け取る）。 */
+  ownershipPercentage: string | null;
+  measurementApproach: string | null;
+  industryCode: string | null;
   createdAt: string;
   updatedAt: string;
   draftRevision: number;
@@ -28,9 +39,11 @@ export interface SsbjReportRow {
 // 年度のラベルと期間は fiscal_years を埋め込んで同じ往復で取る（一覧の各行に年度名を出すため）。
 // draftRevision も同じ往復で取る。別の問い合わせにすると、表示した内容より新しい版数を保持してしまい、
 // 画面に出ていない変更を含む保存版を競合として検知できなくなる。
+// 持分比率（numeric）は text に変換して受け取る。number にすると桁の表記が揺れるため（docs/ssbj-spec.md §6）。
 const SELECT_COLUMNS =
-  'id, organizationId, fiscalYearId, title, purpose, reportingScope, standardVersion, createdAt, updatedAt, ' +
-  'draftRevision, fiscal_years(label, startDate, endDate)';
+  'id, organizationId, fiscalYearId, title, purpose, reportingScope, standardVersion, ' +
+  'parentCompanyName, parentRelationship, ownershipPercentage::text, measurementApproach, industryCode, ' +
+  'createdAt, updatedAt, draftRevision, fiscal_years(label, startDate, endDate)';
 
 /** DB 行 → SsbjReportRecord。年度が見えない行（通常は起こらない）は例外にする。 */
 export const toSsbjReportRecord = (row: SsbjReportRow): SsbjReportRecord => {
@@ -46,6 +59,12 @@ export const toSsbjReportRecord = (row: SsbjReportRow): SsbjReportRecord => {
     purpose: row.purpose,
     reportingScope: row.reportingScope,
     standardVersion: row.standardVersion,
+    parentCompanyName: row.parentCompanyName,
+    // 値の形式は DB の check 制約が保証している。
+    parentRelationship: row.parentRelationship as SsbjParentRelationship | null,
+    ownershipPercentage: row.ownershipPercentage,
+    measurementApproach: row.measurementApproach as SsbjMeasurementApproach | null,
+    industryCode: row.industryCode,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     fiscalYearLabel: fiscalYear.label,

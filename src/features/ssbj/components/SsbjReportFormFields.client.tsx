@@ -9,10 +9,18 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import type { SsbjReportFormController } from '../hooks/useSsbjReportForm';
 import {
+  SSBJ_MEASUREMENT_APPROACHES,
+  SSBJ_MEASUREMENT_APPROACH_LABELS,
+  SSBJ_PARENT_RELATIONSHIPS,
+  SSBJ_PARENT_RELATIONSHIP_LABELS,
+} from '../types';
+import {
+  SSBJ_REPORT_PARENT_COMPANY_NAME_MAX_LENGTH,
   SSBJ_REPORT_STANDARD_VERSION_MAX_LENGTH,
   SSBJ_REPORT_TEXT_MAX_LENGTH,
   SSBJ_REPORT_TITLE_MAX_LENGTH,
 } from '../utils/reportValidation';
+import { SICS_INDUSTRIES, SICS_SECTORS } from '../utils/sicsIndustries';
 
 export const SsbjReportFormFields = ({ form }: { form: SsbjReportFormController }) => {
   const id = useId();
@@ -74,6 +82,100 @@ export const SsbjReportFormFields = ({ form }: { form: SsbjReportFormController 
           disabled={form.isSaving}
           onChange={event => form.setField('standardVersion', event.target.value)}
         />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor={`${id}-parent-company-name`}>親会社名</Label>
+        <Input
+          id={`${id}-parent-company-name`}
+          name="parentCompanyName"
+          maxLength={SSBJ_REPORT_PARENT_COMPANY_NAME_MAX_LENGTH}
+          placeholder="例: 架空ホールディングス株式会社"
+          value={form.values.parentCompanyName}
+          disabled={form.isSaving}
+          onChange={event => form.setField('parentCompanyName', event.target.value)}
+        />
+      </div>
+
+      <div className="flex flex-wrap gap-4">
+        <div className="flex min-w-48 flex-1 flex-col gap-1.5">
+          <Label htmlFor={`${id}-parent-relationship`}>親会社との関係</Label>
+          <select
+            id={`${id}-parent-relationship`}
+            name="parentRelationship"
+            className="gt-field gt-field-select"
+            value={form.values.parentRelationship}
+            disabled={form.isSaving}
+            onChange={event => form.setField('parentRelationship', event.target.value)}
+          >
+            <option value="">未選択</option>
+            {SSBJ_PARENT_RELATIONSHIPS.map(relationship => (
+              <option key={relationship} value={relationship}>
+                {SSBJ_PARENT_RELATIONSHIP_LABELS[relationship]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex w-40 flex-col gap-1.5">
+          <Label htmlFor={`${id}-ownership-percentage`}>親会社の持分比率（%）</Label>
+          <Input
+            id={`${id}-ownership-percentage`}
+            name="ownershipPercentage"
+            inputMode="decimal"
+            placeholder="例: 80"
+            value={form.values.ownershipPercentage}
+            disabled={form.isSaving}
+            onChange={event => form.setField('ownershipPercentage', event.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor={`${id}-measurement-approach`}>測定アプローチ</Label>
+        <select
+          id={`${id}-measurement-approach`}
+          name="measurementApproach"
+          className="gt-field gt-field-select"
+          value={form.values.measurementApproach}
+          disabled={form.isSaving}
+          onChange={event => form.setField('measurementApproach', event.target.value)}
+        >
+          <option value="">未選択</option>
+          {SSBJ_MEASUREMENT_APPROACHES.map(approach => (
+            <option key={approach} value={approach}>
+              {SSBJ_MEASUREMENT_APPROACH_LABELS[approach]}
+            </option>
+          ))}
+        </select>
+        <p className="m-0 text-xs text-text-muted">
+          温室効果ガス排出を集計する範囲の決め方です。親会社が選んだアプローチに合わせてください。
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor={`${id}-industry-code`}>業種（SICS）</Label>
+        <select
+          id={`${id}-industry-code`}
+          name="industryCode"
+          className="gt-field gt-field-select"
+          value={form.values.industryCode}
+          disabled={form.isSaving}
+          onChange={event => form.setField('industryCode', event.target.value)}
+        >
+          <option value="">未選択</option>
+          {SICS_SECTORS.map(sector => (
+            <optgroup key={sector.prefix} label={sector.label}>
+              {SICS_INDUSTRIES.filter(industry => industry.code.startsWith(`${sector.prefix}-`)).map(industry => (
+                <option key={industry.code} value={industry.code}>
+                  {industry.code} {industry.name}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+        <p className="m-0 text-xs text-text-muted">
+          産業別ガイダンスで参照する産業です。複数の事業がある場合は主な事業の産業を選んでください。
+        </p>
       </div>
 
       {hasErrors && (

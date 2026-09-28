@@ -307,7 +307,7 @@ T06 の版生成関数は、`public` スキーマの `ssbj_snapshot_section__` �
 
 | 事項 | 確定した内容 | 反映先 |
 |---|---|---|
-| 基本情報の項目名と必須性 | タイトル（必須）・作成目的・報告範囲・参照する基準の版（いずれも任意）。子会社・関連会社の用途で必要な項目の追加は未決（`ssbj-r1-scope.md` §9） | `types.ts` の `SsbjReportBasicInfo`、T04 |
+| 基本情報の項目名と必須性 | タイトル（必須）・作成目的・報告範囲・参照する基準の版・親会社名・親会社との関係・親会社の持分比率・測定アプローチ・業種（SICS）（タイトル以外は任意） | `types.ts` の `SsbjReportBasicInfo`、T04 |
 | R1 で扱う章・項目の範囲 | 四本柱の 4 章。初回対象の要求は `ssbj-r1-scope.md` §5.1 | T05・T32a |
 | 架空の入力例・出力例 | 入力例はデモデータの架空精密工業株式会社・2024年度。出力の構成は `ssbj-r1-scope.md` §7 | デモデータ、T12・T13 |
 | リスク・機会の時間軸の区分 | 短期 / 中期 / 長期の 3 区分。各区分が指す期間は、レポートごとの「時間軸の定義」で持つ | T07（check 制約・`ssbj_report_time_horizons`） |
@@ -335,6 +335,26 @@ T06 の版生成関数は、`public` スキーマの `ssbj_snapshot_section__` �
 - **年度の FK は `on delete` を指定しない（NO ACTION）。** `restrict` は即時検査のため、組織削除（デモ seed の再投入を含む）で年度とレポートが同じ文の中で連鎖削除されるときに失敗しうる。アプリからの年度削除は `fiscalYears.ts` の参照チェックで止める。
 - **一覧・詳細の年度表示は `fiscal_years` を埋め込んで取得する。** 画面の型 `SsbjReportRecord`（基本情報＋年度のラベル・期間）は保存版の `report` と同じ形にしている。
 - 版管理の列（`draftRevision`）と保存版は T06 が追加する（T04 には入れていない）。
+
+#### T01 の合意を受けた追加（親会社との関係・測定アプローチ・業種）
+
+R1 のレポートは親会社の有価証券報告書に向けた子会社・関連会社の分の下地になるため（[`ssbj-r1-scope.md`](ssbj-r1-scope.md) §2）、
+親会社が連結の開示に合算・統合できる情報と、産業別ガイダンスの参照先を基本情報に追加した。
+
+| 対象 | 内容 |
+|---|---|
+| DB | `supabase/migrations/20260928154722_ssbj_report_parent_and_industry.sql`。`ssbj_reports` に `parentCompanyName` / `parentRelationship` / `ownershipPercentage`（numeric(5,2)）/ `measurementApproach` / `industryCode` を追加（いずれも NULL 可・check 制約）。列 GRANT に追加。`bump_ssbj_reports_own_draft_revision` と `create_ssbj_report_version` を置き換え、追加列を draftRevision の対象と保存版の `report` に含めた |
+| 画面 | 作成ダイアログと詳細画面の編集に 5 項目。詳細画面の業種には産業別ガイダンスの巻へのリンク |
+| コード | `types.ts` の `SsbjParentRelationship`・`SsbjMeasurementApproach`、`utils/sicsIndustries.ts`（68 産業・リンク）、`utils/reportValidation.ts`、`services/reportService.ts`、`components/SsbjReportFormFields.client.tsx` / `SsbjReportBasicInfo.tsx` |
+| テスト | `scripts/db/__tests__/ssbjReportParentPolicy.test.ts`、`utils/__tests__/sicsIndustries.test.ts`（DB の業種コードの制約と一覧の一致を含む）、検証・画面の単体テスト |
+
+決めたこと:
+
+- **5 項目とも任意（NULL 可）で、状態＋値の対にはしない。** 既存の基本情報（作成目的など）と同じ持ち方にした。
+- **持分比率は numeric(5,2) で持ち、画面・保存版では十進表記の文字列にする。** 取得時は `ownershipPercentage::text` で受け取り、保存版の `report` にも text で入れる（§6）。範囲は 0 超 100 以下。
+- **測定アプローチは親会社の選択に合わせる。** 選んだ理由（気候関連開示基準 第61項(2)）は親会社が開示するため、R1 では持たない。
+- **業種コードの一覧は DB の check 制約と `utils/sicsIndustries.ts` の 2 か所にある。** 一致はテストで確認している。
+- **版生成 RPC の置き換えは処理を変えず、`report` の項目だけを足した。** 関数名・引数・権限は変えていない。
 
 ### 汎用の保存・版生成基盤（T06）
 

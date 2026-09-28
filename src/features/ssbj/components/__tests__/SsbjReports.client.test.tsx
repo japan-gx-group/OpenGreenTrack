@@ -133,6 +133,11 @@ describe('SsbjReports 新規作成', () => {
       purpose: null,
       reportingScope: null,
       standardVersion: null,
+      parentCompanyName: null,
+      parentRelationship: null,
+      ownershipPercentage: null,
+      measurementApproach: null,
+      industryCode: null,
     });
     expect(container.querySelector(`a[href="/ssbj/${created.id}"]`)?.textContent).toBe('新しいレポート');
     expect(dialog()).toBeNull();

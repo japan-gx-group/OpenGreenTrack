@@ -278,7 +278,12 @@ SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず
 | `title` | レポート名 | VARCHAR(200) | NOT NULL, CHECK(空白のみ不可) | |
 | `purpose` | 作成目的 | TEXT | NULL | 仮置き（初回レポート例の合意待ち） |
 | `reportingScope` | 報告範囲 | TEXT | NULL | 仮置き |
-| `standardVersion` | 参照する基準の版 | VARCHAR(100) | NULL | 仮置き |
+| `standardVersion` | 参照する基準の版 | VARCHAR(100) | NULL | |
+| `parentCompanyName` | 親会社名 | VARCHAR(200) | NULL, CHECK(空白のみ不可) | `20260928154722_ssbj_report_parent_and_industry.sql` で追加（以下 4 列も同じ） |
+| `parentRelationship` | 親会社との関係 | VARCHAR(40) | NULL, CHECK(`consolidated_subsidiary` / `non_consolidated_subsidiary` / `equity_method_affiliate` / `other`) | |
+| `ownershipPercentage` | 親会社の持分比率（%） | NUMERIC(5,2) | NULL, CHECK(0 超 100 以下) | 画面・保存版では十進表記の文字列 |
+| `measurementApproach` | 測定アプローチ | VARCHAR(40) | NULL, CHECK(`equity_share` / `operational_control` / `financial_control`) | 気候関連開示基準 第60項 |
+| `industryCode` | 業種（SICS） | VARCHAR(10) | NULL, CHECK(SICS の 68 産業のコード) | 一覧は `src/features/ssbj/utils/sicsIndustries.ts` |
 | `createdByUserId` / `updatedByUserId` | 登録・更新操作者ID | UUID | NULL | `set_row_actor` トリガが auth.uid() で上書き |
 | `createdAt` / `updatedAt` | 作成・更新日時 | TIMESTAMPTZ | NOT NULL | `updatedAt` は `set_updated_at` トリガ |
 | `draftRevision` | 作業中データの版数 | INTEGER | NOT NULL, DEFAULT 1 | 基本情報の変更（`bump_ssbj_reports_draft_revision` トリガ）と各機能テーブルの変更（`bump_ssbj_draft_revision`）で +1。保存版作成時の競合検知に使う（`20260927180425_ssbj_report_versions.sql`） |
