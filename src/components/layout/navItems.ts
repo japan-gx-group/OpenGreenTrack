@@ -1,5 +1,6 @@
 import {
   Building2,
+  FileCheck2,
   FileEdit,
   FileText,
   LayoutDashboard,
@@ -42,7 +43,10 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: '出力',
-    items: [{ path: '/reports', label: 'レポート', icon: FileText }],
+    items: [
+      { path: '/reports', label: 'レポート', icon: FileText },
+      { path: '/ssbj', label: 'SSBJレポート', icon: FileCheck2 },
+    ],
   },
 ];
 
@@ -54,6 +58,7 @@ const EXTRA_PAGE_TITLES: { prefix: string; label: string }[] = [
   { prefix: '/settings/account', label: 'アカウント設定' },
   { prefix: '/settings', label: '設定' },
   { prefix: '/locations/', label: '拠点詳細' },
+  { prefix: '/ssbj/', label: 'SSBJレポート詳細' },
 ];
 
 export const getPageTitle = (pathname: string): string | null => {

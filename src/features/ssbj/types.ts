@@ -125,6 +125,16 @@ export type SsbjReportBasicInfo = {
   updatedAt: string;
 };
 
+/**
+ * 基本情報に算定年度の表示情報を添えたもの。画面の一覧・詳細と、保存版の report（SsbjReportSnapshotV1）で共通。
+ * 年度のラベルと期間を一緒に持つのは、年度が後から改名されても保存版では作成時点の表記を再現するため。
+ */
+export type SsbjReportRecord = SsbjReportBasicInfo & {
+  fiscalYearLabel: string;
+  periodStart: string;
+  periodEnd: string;
+};
+
 // ---------------------------------------------------------------------------
 // OGT の算定値（T08a が候補値を出し、T08b がレポートへ採用・固定する）
 // ---------------------------------------------------------------------------
@@ -269,11 +279,7 @@ export interface SsbjSnapshotSections {}
 /** 保存版の中身（ssbj_report_versions.snapshot）。形式を変えるときは schemaVersion を上げる。 */
 export type SsbjReportSnapshotV1 = {
   schemaVersion: 1;
-  report: SsbjReportBasicInfo & {
-    fiscalYearLabel: string;
-    periodStart: string;
-    periodEnd: string;
-  };
+  report: SsbjReportRecord;
   sections: Partial<SsbjSnapshotSections>;
 };
 

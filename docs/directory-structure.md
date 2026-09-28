@@ -95,6 +95,8 @@ src/app/
 | `/invite/[token]` | `src/app/(auth)/invite/[token]/page.tsx` | 招待受諾 |
 | `/settings/account` | `src/app/(app)/settings/account/page.tsx` | アカウント設定 |
 | `/settings/company` | `src/app/(app)/settings/company/page.tsx` | 企業情報設定 |
+| `/ssbj` | `src/app/(app)/ssbj/page.tsx` | SSBJ レポート一覧（試行版） |
+| `/ssbj/[reportId]` | `src/app/(app)/ssbj/[reportId]/page.tsx` | SSBJ レポート詳細（基本情報） |
 
 Route Handler（API）:
 
@@ -118,7 +120,7 @@ Route Handler（API）:
     - `utils/` — Supabase に触れない純粋なヘルパー（例: `factors/utils/factorSources.ts`、`scope-analysis/utils/treemapLayout.ts`）。`services/` は「データ取得・保存」、`utils/` は「入出力のない変換・計算」と使い分ける
     - `engine/` — 純粋な算定エンジン（`calculation/engine/` のみ。`computeEmissions` / `resolveEmissionFactor` / `units`）。DB アクセスは `calculation/services/` 側に置き、エンジンは入力→出力の純関数に保つ
 - **置かないもの:** 他の機能から使い回すもの（→ `src/components/` や `src/hooks/` へ）
-- 現在のdomain一覧: `auth`, `calculation`, `dashboard`, `data-input`, `factors`, `locations`, `notifications`, `reports`, `scope-analysis`, `settings`, `targets`
+- 現在のdomain一覧: `auth`, `calculation`, `dashboard`, `data-input`, `factors`, `locations`, `notifications`, `reports`, `scope-analysis`, `settings`, `ssbj`, `targets`
   - 必要なサブディレクトリだけを持つ（例: `notifications/` は `services/` のみ、`calculation/` は `engine/` と `services/` のみで `components/` を持たない）
 
 ```
