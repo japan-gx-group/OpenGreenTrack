@@ -3,9 +3,9 @@ import React, { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { click, render, setInputValue, type RenderResult } from '@/lib/testing/render';
 import { fictionalReportBasicInfo } from '../../__fixtures__/fictionalReport';
-import type { SsbjReportRecord } from '../../types';
+import type { SsbjReportWorkingRecord } from '../../types';
 
-// SSBJ レポート詳細画面: 基本情報の再表示・未入力の表示・Not Found・編集保存を検証する。
+// SSBJ レポート詳細画面: 基本情報の再表示・未入力の表示・Not Found・編集保存・保存版の作成を検証する。
 
 vi.mock('../../services/reportService', async importOriginal => ({
   ...(await importOriginal<typeof import('../../services/reportService')>()),
@@ -13,15 +13,21 @@ vi.mock('../../services/reportService', async importOriginal => ({
   updateSsbjReportBasicInfo: vi.fn(),
 }));
 
+vi.mock('../../services/versionClient', () => ({
+  saveSsbjReportVersion: vi.fn(),
+}));
+
 import { getSsbjReport, updateSsbjReportBasicInfo } from '../../services/reportService';
+import { saveSsbjReportVersion } from '../../services/versionClient';
 import { SsbjReportDetail } from '../SsbjReportDetail.client';
 
-const REPORT: SsbjReportRecord = {
+const REPORT: SsbjReportWorkingRecord = {
   ...fictionalReportBasicInfo,
   standardVersion: null,
   fiscalYearLabel: '2024年度',
   periodStart: '2024-04-01',
   periodEnd: '2025-03-31',
+  draftRevision: 3,
 };
 
 const flushPromises = async (): Promise<void> => {
@@ -85,7 +91,7 @@ describe('SsbjReportDetail', () => {
 
   it('編集して保存すると更新後の内容を再表示する', async () => {
     vi.mocked(getSsbjReport).mockResolvedValue(REPORT);
-    const updated: SsbjReportRecord = { ...REPORT, title: '改訂後のレポート名' };
+    const updated: SsbjReportWorkingRecord = { ...REPORT, title: '改訂後のレポート名', draftRevision: 4 };
     vi.mocked(updateSsbjReportBasicInfo).mockResolvedValue(updated);
     const { container } = await renderScreen();
 
@@ -106,5 +112,56 @@ describe('SsbjReportDetail', () => {
     });
     expect(container.querySelector('input[name="title"]')).toBeNull();
     expect(container.querySelector('dl')?.textContent).toContain('改訂後のレポート名');
+  });
+
+  it('保存版の作成は、読込時の draftRevision を渡して版番号を知らせる', async () => {
+    vi.mocked(getSsbjReport).mockResolvedValue(REPORT);
+    vi.mocked(saveSsbjReportVersion).mockResolvedValue({ id: 'version-1', versionNumber: 2 });
+    const { container } = await renderScreen();
+
+    click(findButton(container, '保存版を作成'));
+    await flushPromises();
+
+    expect(saveSsbjReportVersion).toHaveBeenCalledWith(REPORT.id, 3);
+    expect(container.textContent).toContain('版 2 として保存しました');
+  });
+
+  it('基本情報を保存した後は、更新後の draftRevision で保存版を作る', async () => {
+    vi.mocked(getSsbjReport).mockResolvedValue(REPORT);
+    vi.mocked(updateSsbjReportBasicInfo).mockResolvedValue({ ...REPORT, draftRevision: 4 });
+    vi.mocked(saveSsbjReportVersion).mockResolvedValue({ id: 'version-1', versionNumber: 1 });
+    const { container } = await renderScreen();
+
+    click(findButton(container, '編集'));
+    click(findButton(container, '変更を保存'));
+    await flushPromises();
+    click(findButton(container, '保存版を作成'));
+    await flushPromises();
+
+    expect(saveSsbjReportVersion).toHaveBeenCalledWith(REPORT.id, 4);
+  });
+
+  it('基本情報の編集中は保存版を作成できない（未保存の入力が保存版に入らないため）', async () => {
+    vi.mocked(getSsbjReport).mockResolvedValue(REPORT);
+    const { container } = await renderScreen();
+
+    click(findButton(container, '編集'));
+
+    expect(findButton(container, '保存版を作成').disabled).toBe(true);
+  });
+
+  it('競合などで保存できなかった理由を表示する', async () => {
+    vi.mocked(getSsbjReport).mockResolvedValue(REPORT);
+    vi.mocked(saveSsbjReportVersion).mockRejectedValue(
+      new Error('他の変更と競合しました。画面を開き直してから保存し直してください'),
+    );
+    const { container } = await renderScreen();
+
+    click(findButton(container, '保存版を作成'));
+    await flushPromises();
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      '他の変更と競合しました。画面を開き直してから保存し直してください',
+    );
   });
 });

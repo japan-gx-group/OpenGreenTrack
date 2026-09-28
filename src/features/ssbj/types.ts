@@ -135,6 +135,14 @@ export type SsbjReportRecord = SsbjReportBasicInfo & {
   periodEnd: string;
 };
 
+/**
+ * 画面が編集中に持つレポート。draftRevision は読込時点の作業状態の版数で、保存版を作るときに渡して
+ * 競合（別の画面・別の人の変更）を検知する（docs/ssbj-spec.md §8）。保存版の report には含めない。
+ */
+export type SsbjReportWorkingRecord = SsbjReportRecord & {
+  draftRevision: number;
+};
+
 // ---------------------------------------------------------------------------
 // OGT の算定値（T08a が候補値を出し、T08b がレポートへ採用・固定する）
 // ---------------------------------------------------------------------------

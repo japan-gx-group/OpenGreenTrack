@@ -338,7 +338,9 @@ T01（初回のレポート例・対象範囲の合意）が未完了のため�
 | 対象 | 内容 |
 |---|---|
 | DB | `supabase/migrations/20260927180425_ssbj_report_versions.sql`。`ssbj_field_state` enum（§4）、`ssbj_reports."draftRevision"`、各機能テーブル用の共通トリガー関数 `bump_ssbj_draft_revision()`、`ssbj_report_versions` テーブル（RLS は select のみ authenticated・書き込みは RPC 経由）、版生成 RPC `create_ssbj_report_version`（`service_role` 限定） |
-| コード | `src/features/ssbj/services/versionServer.ts`（RPC 呼び出し・SQLSTATE マッピング）、Route Handler `src/app/api/ssbj/reports/[reportId]/versions/route.ts`（`POST`） |
+| 画面 | `/ssbj/[reportId]` に「保存版の作成」欄（`components/SsbjVersionSaveCard.tsx`）。基本情報の編集中は押せない。成功時は「版 N として保存しました」、競合時は開き直しを促すメッセージを出す |
+| コード | `src/features/ssbj/services/versionServer.ts`（RPC 呼び出し・SQLSTATE マッピング）、Route Handler `src/app/api/ssbj/reports/[reportId]/versions/route.ts`（`POST`）、`services/versionClient.ts`・`hooks/useSsbjVersionSave.ts`（画面から API を呼ぶ側） |
+| テスト | `scripts/db/__tests__/ssbjReportVersionsPolicy.test.ts`（RLS・GRANT・不変性・RPC の権限と競合検知の机上検証）、Route Handler・サービス・画面の単体テスト |
 
 決めたこと:
 
@@ -347,4 +349,6 @@ T01（初回のレポート例・対象範囲の合意）が未完了のため�
 - **`ssbj_report_versions` の UPDATE はトリガーで全ロール拒否する（`service_role` も含む）。** RLS は select のみで insert/update/delete を authenticated に許可していない（default privileges により拒否）が、service_role は RLS を越えるため、不変性はトリガー（`reject_ssbj_report_version_update`）でも担保する。
 - **版生成 RPC は Route Handler から呼ぶ（`ssbj-spec.md` §8 の「Server Action」に相当）。** このリポジトリの既存の service_role 経路（`run_calculation_commit` 等）はすべて `src/app/api/**/route.ts` の Route Handler なので、同じ構成に揃えた。認証・組織チェックは `getCurrentProfile()` で Route Handler 側が行い、RPC には検証済みの `organizationId` / `actorUserId` を渡す（RPC 側も `p_organization_id` と行の組織帰属を突き合わせ、二重に確認する）。
 - **競合検知の SQLSTATE は `P2033` を新設。** 既存の `P2023`/`P2024`/`P2026`〜`P2028`/`P2031`/`P2032`（`apiRateLimit.ts` の `HEAVY_API_SQLSTATE`、`ideaImportServer.ts` の `IDEA_IMPORT_SQLSTATE`）と重複しない番号を選んだ。対応表は `src/features/ssbj/services/versionServer.ts` の `SSBJ_VERSION_SQLSTATE`。
-- **T06 自体は画面を持たない。** `create_ssbj_report_version` を呼ぶ「保存」操作の UI は、保存履歴・過去版からの新版作成を扱う T11（`/ssbj/[reportId]/versions`）が実装する。
+- **画面は読込時の `draftRevision` を `SsbjReportWorkingRecord`（`SsbjReportRecord` ＋ `draftRevision`）として持つ。** 保存版の `report` は `SsbjReportRecord` のままにし、版数を含めない。基本情報を保存すると DB のトリガーが版数を進めるため、更新 API の戻り値で保持値を差し替える（差し替えないと自分の編集直後の保存が競合になる）。
+- **基本情報の編集中は保存版を作れない。** 未保存のフォーム入力は作業中データに入っておらず、保存版にも入らないため、押せる状態にすると「入力したのに保存版に無い」ことが起きる。
+- 保存履歴の表示と過去版からの新版作成は T11（`/ssbj/[reportId]/versions`）が行う。RPC は `p_source_version_id` を受け付けるので、T11 は同じ RPC を使える。

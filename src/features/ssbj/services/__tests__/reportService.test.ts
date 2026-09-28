@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FICTIONAL_FISCAL_YEAR, fictionalReportBasicInfo } from '../../__fixtures__/fictionalReport';
-import { getSsbjReport, toSsbjReportRecord, type SsbjReportRow } from '../reportService';
+import {
+  getSsbjReport,
+  toSsbjReportRecord,
+  toSsbjReportWorkingRecord,
+  type SsbjReportRow,
+} from '../reportService';
 
 // Supabase への問い合わせは「取得結果 → 画面の型」への変換と、ID 不正時の扱いだけを検証する。
 const maybeSingle = vi.fn();
@@ -24,6 +29,7 @@ const row = (fiscalYears: SsbjReportRow['fiscal_years']): SsbjReportRow => ({
   standardVersion: null,
   createdAt: fictionalReportBasicInfo.createdAt,
   updatedAt: fictionalReportBasicInfo.updatedAt,
+  draftRevision: 3,
   fiscal_years: fiscalYears,
 });
 
@@ -55,6 +61,19 @@ describe('toSsbjReportRecord', () => {
   it('年度が取れない行は例外にする', () => {
     expect(() => toSsbjReportRecord(row(null))).toThrow('算定年度を取得できませんでした');
   });
+
+  it('draftRevision を含めない（保存版の report と同じ形を保つ）', () => {
+    expect(toSsbjReportRecord(row(EMBED))).not.toHaveProperty('draftRevision');
+  });
+});
+
+describe('toSsbjReportWorkingRecord', () => {
+  it('SsbjReportRecord に draftRevision を添える', () => {
+    expect(toSsbjReportWorkingRecord(row(EMBED))).toEqual({
+      ...toSsbjReportRecord(row(EMBED)),
+      draftRevision: 3,
+    });
+  });
 });
 
 describe('getSsbjReport', () => {
@@ -73,11 +92,12 @@ describe('getSsbjReport', () => {
     await expect(getSsbjReport(fictionalReportBasicInfo.id)).rejects.toThrow('SSBJレポートの取得に失敗しました');
   });
 
-  it('取得できた行は SsbjReportRecord に変換する', async () => {
+  it('取得できた行は draftRevision 付きのレコードに変換する', async () => {
     maybeSingle.mockResolvedValue({ data: row(EMBED), error: null });
     await expect(getSsbjReport(fictionalReportBasicInfo.id)).resolves.toMatchObject({
       id: fictionalReportBasicInfo.id,
       fiscalYearLabel: '2024年度',
+      draftRevision: 3,
     });
   });
 });

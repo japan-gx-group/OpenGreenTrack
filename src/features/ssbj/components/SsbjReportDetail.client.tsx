@@ -1,8 +1,9 @@
 'use client';
 
-// SSBJ レポートの詳細画面（/ssbj/[reportId]）。基本情報を表示し、編集できる。
+// SSBJ レポートの詳細画面（/ssbj/[reportId]）。基本情報を表示・編集し、手動保存で保存版を作る。
 // 存在しない・他組織のレポートは「見つかりません」を表示し、他組織のレポートの存在を示唆しない。
-// 読込は useSsbjReport、編集フォームは useSsbjReportForm が持ち、ここは組み立てるだけ。
+// 読込は useSsbjReport、編集フォームは useSsbjReportForm、保存版の作成は useSsbjVersionSave が持ち、
+// ここは組み立てるだけ。
 
 import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
@@ -15,11 +16,13 @@ import { Toast } from '@/components/ui/Toast.client';
 import { useToast } from '@/hooks/useToast';
 import { useSsbjReport } from '../hooks/useSsbjReport';
 import { useSsbjReportForm } from '../hooks/useSsbjReportForm';
+import { useSsbjVersionSave } from '../hooks/useSsbjVersionSave';
 import { updateSsbjReportBasicInfo } from '../services/reportService';
 import { toSsbjReportFormValues } from '../utils/reportValidation';
 import { SsbjReportBasicInfo } from './SsbjReportBasicInfo';
 import { SsbjReportFormFields } from './SsbjReportFormFields.client';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
+import { SsbjVersionSaveCard } from './SsbjVersionSaveCard';
 
 export const SsbjReportDetail = ({ reportId }: { reportId: string }) => {
   const { toast, showToast } = useToast();
@@ -38,9 +41,19 @@ export const SsbjReportDetail = ({ reportId }: { reportId: string }) => {
     setIsEditing(true);
   };
 
+  const versionSave = useSsbjVersionSave(reportId);
+
   const handleSave = async (event: FormEvent) => {
     if (await form.submit(event)) {
       setIsEditing(false);
+    }
+  };
+
+  const handleCreateVersion = async () => {
+    if (!report) return;
+    const version = await versionSave.save(report.draftRevision);
+    if (version) {
+      showToast(`版 ${version.versionNumber} として保存しました`, 'success');
     }
   };
 
@@ -88,41 +101,49 @@ export const SsbjReportDetail = ({ reportId }: { reportId: string }) => {
             </Link>
           </Card>
         ) : report ? (
-          <Card>
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="m-0 text-base font-bold">基本情報</h2>
-              {!isEditing && (
-                <Button type="button" variant="outline" size="sm" onClick={startEdit}>
-                  <Pencil size={14} />
-                  編集
-                </Button>
-              )}
-            </div>
+          <>
+            <Card>
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="m-0 text-base font-bold">基本情報</h2>
+                {!isEditing && (
+                  <Button type="button" variant="outline" size="sm" onClick={startEdit}>
+                    <Pencil size={14} />
+                    編集
+                  </Button>
+                )}
+              </div>
 
-            {isEditing ? (
-              <form onSubmit={event => void handleSave(event)} className="flex flex-col gap-4">
-                <SsbjReportFormFields form={form} />
-                <p className="m-0 text-xs text-text-muted">
-                  対象年度（{report.fiscalYearLabel}）は作成後に変更できません。
-                </p>
-                <div className="flex justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={form.isSaving}
-                    onClick={() => setIsEditing(false)}
-                  >
-                    キャンセル
-                  </Button>
-                  <Button type="submit" disabled={form.isSaving}>
-                    {form.isSaving ? '保存中...' : '変更を保存'}
-                  </Button>
-                </div>
-              </form>
-            ) : (
-              <SsbjReportBasicInfo report={report} />
-            )}
-          </Card>
+              {isEditing ? (
+                <form onSubmit={event => void handleSave(event)} className="flex flex-col gap-4">
+                  <SsbjReportFormFields form={form} />
+                  <p className="m-0 text-xs text-text-muted">
+                    対象年度（{report.fiscalYearLabel}）は作成後に変更できません。
+                  </p>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={form.isSaving}
+                      onClick={() => setIsEditing(false)}
+                    >
+                      キャンセル
+                    </Button>
+                    <Button type="submit" disabled={form.isSaving}>
+                      {form.isSaving ? '保存中...' : '変更を保存'}
+                    </Button>
+                  </div>
+                </form>
+              ) : (
+                <SsbjReportBasicInfo report={report} />
+              )}
+            </Card>
+            <SsbjVersionSaveCard
+              isSaving={versionSave.isSaving}
+              errorMessage={versionSave.errorMessage}
+              disabled={isEditing}
+              onSave={() => void handleCreateVersion()}
+            />
+          </>
         ) : null}
       </div>
     </div>
