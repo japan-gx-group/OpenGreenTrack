@@ -17,6 +17,7 @@ import {
   fictionalRisksOpportunities,
   fictionalSnapshot,
   fictionalSupplierReferences,
+  fictionalTimeHorizonDefinitions,
   fictionalVersion,
 } from '../fictionalReport';
 
@@ -25,6 +26,11 @@ const allFieldValues = (): SsbjFieldValue<string>[] => [
   ...fictionalOgtCandidates.map(candidate => candidate.value),
   ...fictionalRisksOpportunities.map(item => item.description.disclosure),
   ...fictionalRisksOpportunities.map(item => item.timeHorizon),
+  ...fictionalRisksOpportunities.map(item => item.riskType),
+  fictionalTimeHorizonDefinitions.shortTerm,
+  fictionalTimeHorizonDefinitions.mediumTerm,
+  fictionalTimeHorizonDefinitions.longTerm,
+  fictionalTimeHorizonDefinitions.planningHorizonRelation,
 ];
 
 describe('識別子', () => {
@@ -111,8 +117,20 @@ describe('リスク・機会', () => {
     expect(fictionalRisksOpportunities.some(item => item.linkTargets.length === 0)).toBe(true);
   });
 
+  it('リスクの種類は、リスクには物理的 / 移行（または未入力・未確認）、機会には非該当', () => {
+    for (const item of fictionalRisksOpportunities) {
+      if (item.kind === 'opportunity') {
+        expect(item.riskType).toEqual({ state: 'not_applicable' });
+      } else {
+        expect(item.riskType.state).not.toBe('not_applicable');
+      }
+    }
+    expect(fictionalRisksOpportunities.some(item => item.riskType.state === 'answered')).toBe(true);
+  });
+
   it('保存版の例に含まれる', () => {
     expect(fictionalSnapshot.sections.risks_opportunities).toEqual(fictionalRisksOpportunities);
+    expect(fictionalSnapshot.sections.time_horizons).toEqual(fictionalTimeHorizonDefinitions);
   });
 });
 

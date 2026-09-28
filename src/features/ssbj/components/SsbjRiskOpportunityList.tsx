@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   SSBJ_RISK_OPPORTUNITY_KIND_LABELS,
+  SSBJ_RISK_TYPE_LABELS,
   SSBJ_TIME_HORIZON_LABELS,
   type SsbjRiskOpportunity,
 } from '../types';
@@ -53,6 +54,13 @@ export const SsbjRiskOpportunityList = ({ items, onEdit, onDelete }: SsbjRiskOpp
             </div>
           </div>
           <dl className="m-0 flex flex-col gap-2">
+            {item.kind === 'risk' && (
+              <Row
+                label="リスクの種類"
+                value={formatFieldValue(item.riskType, value => SSBJ_RISK_TYPE_LABELS[value])}
+                muted={!isAnswered(item.riskType)}
+              />
+            )}
             <Row
               label="時間軸"
               value={formatFieldValue(item.timeHorizon, value => SSBJ_TIME_HORIZON_LABELS[value])}

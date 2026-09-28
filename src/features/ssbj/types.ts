@@ -287,7 +287,21 @@ export const SSBJ_RISK_OPPORTUNITY_KIND_LABELS: Record<SsbjRiskOpportunityKind, 
 };
 
 /**
- * 時間軸の区分。初回レポート例の合意待ちの仮置き（docs/ssbj-spec.md §12）で、各区分の期間の定義は持たない。
+ * リスクの種類（気候関連開示基準 第19項(2)。識別したリスクごとに開示する）。機会には持たない。
+ * DB は check 制約で持つ（区分を変えるときは制約を張り替える）。
+ */
+export const SSBJ_RISK_TYPES = ['physical', 'transition'] as const;
+
+export type SsbjRiskType = (typeof SSBJ_RISK_TYPES)[number];
+
+export const SSBJ_RISK_TYPE_LABELS: Record<SsbjRiskType, string> = {
+  physical: '物理的リスク',
+  transition: '移行リスク',
+};
+
+/**
+ * 時間軸の区分（気候関連開示基準 第19項(3)。短期・中期・長期で表す）。
+ * 各区分が何年を指すかはレポートごとの定義（SsbjTimeHorizonDefinitions）で持つ。
  * DB は check 制約で持つ（区分を変えるときは制約を張り替える）。
  */
 export const SSBJ_TIME_HORIZONS = ['short_term', 'medium_term', 'long_term'] as const;
@@ -306,20 +320,32 @@ export const SSBJ_TIME_HORIZON_LABELS: Record<SsbjTimeHorizon, string> = {
  */
 export type SsbjLinkTarget = SsbjSectionId | SsbjItemId;
 
-/**
- * リスク・機会 1 件。複数登録できる。リスクの分類（物理的 / 移行 など）は方針が未確定のため持たない
- * （決まったら任意の項目として追加する）。
- */
+/** リスク・機会 1 件。複数登録できる。 */
 export type SsbjRiskOpportunity = {
   id: string;
   kind: SsbjRiskOpportunityKind;
   /** 名称（必須）。 */
   title: string;
+  /** リスクの種類。機会は分類しないため `not_applicable`（旧データは `unanswered` のこともある）。 */
+  riskType: SsbjFieldValue<SsbjRiskType>;
   /** 開示する説明と内部メモ（§5）。 */
   description: SsbjDisclosableText;
   timeHorizon: SsbjFieldValue<SsbjTimeHorizon>;
   /** 関連する章・項目（章の順、同じ章では章そのものを先に並べる）。 */
   linkTargets: SsbjLinkTarget[];
+};
+
+/**
+ * レポートとしての時間軸の定義（気候関連開示基準 第19項(4)(5)、一般開示基準 第14項(3)(4)）。
+ * 「短期」「中期」「長期」がそれぞれ何を指すかと、その定義と戦略上の計画期間との関係。
+ */
+export type SsbjTimeHorizonDefinitions = {
+  shortTerm: SsbjFieldValue<string>;
+  mediumTerm: SsbjFieldValue<string>;
+  longTerm: SsbjFieldValue<string>;
+  planningHorizonRelation: SsbjFieldValue<string>;
+  /** 内部の検討メモ。開示しない（§5）。 */
+  internalNote: string | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -333,6 +359,8 @@ export type SsbjRiskOpportunity = {
 export interface SsbjSnapshotSections {
   /** T07。ssbj_snapshot_section__risks_opportunities。作成順。 */
   risks_opportunities: SsbjRiskOpportunity[];
+  /** T07。ssbj_snapshot_section__time_horizons。定義の行が無いレポートは全て未入力。 */
+  time_horizons: SsbjTimeHorizonDefinitions;
 }
 
 /** 保存版の中身（ssbj_report_versions.snapshot）。形式を変えるときは schemaVersion を上げる。 */

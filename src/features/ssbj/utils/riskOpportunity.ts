@@ -4,6 +4,7 @@
 // DB に上限が無いが、画面で扱える長さに抑えるため上限を設ける。
 
 import {
+  SSBJ_RISK_TYPES,
   SSBJ_SECTION_IDS,
   SSBJ_SECTION_LABELS,
   SSBJ_TIME_HORIZONS,
@@ -11,6 +12,7 @@ import {
   type SsbjLinkTarget,
   type SsbjRiskOpportunity,
   type SsbjRiskOpportunityKind,
+  type SsbjRiskType,
   type SsbjSectionId,
   type SsbjTimeHorizon,
 } from '../types';
@@ -22,10 +24,17 @@ export const SSBJ_RISK_TEXT_MAX_LENGTH = 4000;
 /** 時間軸の選択肢。区分を選べば回答済み、それ以外は値を持たない状態。 */
 export type SsbjTimeHorizonChoice = SsbjTimeHorizon | Exclude<SsbjFieldState, 'answered'>;
 
+/**
+ * リスクの種類の選択肢。種類を選べば回答済み。リスクは必ず物理的か移行のどちらかなので「非該当」は選ばせない
+ * （機会は保存時に自動で非該当にする）。
+ */
+export type SsbjRiskTypeChoice = SsbjRiskType | 'unanswered' | 'unconfirmed';
+
 /** フォームの入力値（未入力の文字列は空文字）。 */
 export type SsbjRiskOpportunityFormValues = {
   kind: SsbjRiskOpportunityKind;
   title: string;
+  riskType: SsbjRiskTypeChoice;
   descriptionState: SsbjFieldState;
   descriptionText: string;
   internalNote: string;
@@ -39,6 +48,7 @@ export type SsbjRiskOpportunityInput = Omit<SsbjRiskOpportunity, 'id'>;
 export const EMPTY_SSBJ_RISK_OPPORTUNITY_FORM_VALUES: SsbjRiskOpportunityFormValues = {
   kind: 'risk',
   title: '',
+  riskType: 'unanswered',
   descriptionState: 'unanswered',
   descriptionText: '',
   internalNote: '',
@@ -48,6 +58,9 @@ export const EMPTY_SSBJ_RISK_OPPORTUNITY_FORM_VALUES: SsbjRiskOpportunityFormVal
 
 const isTimeHorizon = (value: string): value is SsbjTimeHorizon =>
   (SSBJ_TIME_HORIZONS as readonly string[]).includes(value);
+
+const isRiskType = (value: string): value is SsbjRiskType =>
+  (SSBJ_RISK_TYPES as readonly string[]).includes(value);
 
 /** 関連先の章（章 ID ならそれ自身、項目 ID なら接頭辞）。 */
 export const sectionOfLinkTarget = (target: SsbjLinkTarget): SsbjSectionId =>
@@ -89,6 +102,7 @@ export const toLinkTarget = (section: SsbjSectionId, itemSlug: string): SsbjLink
 /**
  * 入力値を保存用に整える。説明は「入力済み」のときだけ本文を持ち、それ以外の状態では本文を捨てる
  * （未確認の下書きは内部メモに書く。docs/ssbj-spec.md §4）。未入力の内部メモは null にする。
+ * 機会にはリスクの種類が無いため、フォームの選択に関係なく非該当にする。
  */
 export const normalizeSsbjRiskOpportunityInput = (
   values: SsbjRiskOpportunityFormValues,
@@ -97,6 +111,12 @@ export const normalizeSsbjRiskOpportunityInput = (
   return {
     kind: values.kind,
     title: values.title.trim(),
+    riskType:
+      values.kind === 'opportunity'
+        ? { state: 'not_applicable' }
+        : isRiskType(values.riskType)
+          ? { state: 'answered', value: values.riskType }
+          : { state: values.riskType },
     description: {
       disclosure:
         values.descriptionState === 'answered'
@@ -142,6 +162,13 @@ export const toSsbjRiskOpportunityFormValues = (
   return {
     kind: item.kind,
     title: item.title,
+    // 機会の「非該当」はフォームの選択肢に無いため、未入力として戻す（機会の間は保存時に非該当へ戻る）。
+    riskType:
+      item.riskType.state === 'answered'
+        ? item.riskType.value
+        : item.riskType.state === 'not_applicable'
+          ? 'unanswered'
+          : item.riskType.state,
     descriptionState: disclosure.state,
     descriptionText: disclosure.state === 'answered' ? disclosure.value : '',
     internalNote: item.description.internalNote ?? '',

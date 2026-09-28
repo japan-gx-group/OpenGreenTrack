@@ -15,6 +15,8 @@ import {
   SSBJ_FIELD_STATES,
   SSBJ_RISK_OPPORTUNITY_KINDS,
   SSBJ_RISK_OPPORTUNITY_KIND_LABELS,
+  SSBJ_RISK_TYPES,
+  SSBJ_RISK_TYPE_LABELS,
   SSBJ_SECTION_IDS,
   SSBJ_SECTION_LABELS,
   SSBJ_TIME_HORIZONS,
@@ -29,6 +31,7 @@ import {
   SSBJ_RISK_TITLE_MAX_LENGTH,
   formatLinkTarget,
   toLinkTarget,
+  type SsbjRiskTypeChoice,
   type SsbjTimeHorizonChoice,
 } from '../utils/riskOpportunity';
 
@@ -150,6 +153,29 @@ export const SsbjRiskOpportunityFormFields = ({ form }: { form: SsbjRiskOpportun
           ))}
         </select>
       </div>
+
+      {/* 気候関連開示基準 第19項(2): リスクごとに物理的リスクか移行リスクかを開示する。機会には無い。 */}
+      {form.values.kind === 'risk' && (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={`${id}-risk-type`}>リスクの種類</Label>
+          <select
+            id={`${id}-risk-type`}
+            name="riskType"
+            className="gt-field gt-field-select"
+            value={form.values.riskType}
+            disabled={form.isSaving}
+            onChange={event => form.setField('riskType', event.target.value as SsbjRiskTypeChoice)}
+          >
+            {SSBJ_RISK_TYPES.map(riskType => (
+              <option key={riskType} value={riskType}>
+                {SSBJ_RISK_TYPE_LABELS[riskType]}
+              </option>
+            ))}
+            <option value="unanswered">{SSBJ_FIELD_STATE_LABELS.unanswered}</option>
+            <option value="unconfirmed">{SSBJ_FIELD_STATE_LABELS.unconfirmed}</option>
+          </select>
+        </div>
+      )}
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor={`${id}-title`}>

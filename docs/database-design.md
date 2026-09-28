@@ -43,6 +43,7 @@ erDiagram
     ssbj_reports ||--o{ ssbj_report_versions : "保存版"
     ssbj_report_versions |o--o{ ssbj_report_versions : "復元元"
     ssbj_reports ||--o{ ssbj_risks_opportunities : "リスク・機会"
+    ssbj_reports ||--o| ssbj_report_time_horizons : "時間軸の定義"
 ```
 
 ---
@@ -319,15 +320,34 @@ SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず
 | `reportId` | レポートID | UUID | Foreign Key | 削除時: CASCADE。作成後は変更不可 |
 | `kind` | 区分 | VARCHAR(20) | NOT NULL, CHECK(`risk` / `opportunity`) | |
 | `title` | 名称 | VARCHAR(200) | NOT NULL, CHECK(空白のみ不可) | |
+| `riskTypeState` / `riskType` | リスクの種類の状態 / 種類 | `ssbj_field_state` / VARCHAR(20) | NOT NULL DEFAULT 'unanswered' / CHECK(`physical` / `transition`。`answered` のときだけ非 NULL。区分が機会なら NULL) | 気候関連開示基準 第19項(2)。`20260928151241_ssbj_risk_type_and_time_horizons.sql` で追加 |
 | `descriptionState` / `descriptionText` | 説明（開示）の状態 / 本文 | `ssbj_field_state` / TEXT | CHECK(`answered` のときだけ本文が非 NULL・空白のみ不可) | |
 | `internalNote` | 内部メモ | TEXT | NULL | 開示しない |
-| `timeHorizonState` / `timeHorizon` | 時間軸の状態 / 区分 | `ssbj_field_state` / VARCHAR(20) | CHECK(`short_term` / `medium_term` / `long_term`。`answered` のときだけ非 NULL) | 仮置き |
+| `timeHorizonState` / `timeHorizon` | 時間軸の状態 / 区分 | `ssbj_field_state` / VARCHAR(20) | CHECK(`short_term` / `medium_term` / `long_term`。`answered` のときだけ非 NULL) | 各区分が指す期間は 3.14 の定義 |
 | `linkTargets` | 関連する章・項目 | TEXT[] | NOT NULL, DEFAULT '{}', CHECK(各要素が章 ID または項目 ID の形式・NULL 要素不可) | |
 | `createdByUserId` / `updatedByUserId` | 登録・更新操作者ID | UUID | NULL | `set_row_actor` トリガ |
 | `createdAt` / `updatedAt` | 作成・更新日時 | TIMESTAMPTZ | NOT NULL | `updatedAt` は `set_updated_at` トリガ |
 
 - RLS は select / insert / update / delete を自組織に限定し、insert / update の with check で `reportId` が自組織のレポートであることを `exists` で検証する。
 - `authenticated` への insert / update は列指定の GRANT。update は内容の列だけで、レポート・組織は作成後に付け替えられない。
+
+### 3.14 SSBJ 時間軸の定義 (`ssbj_report_time_horizons`) — レポートとしての「短期」「中期」「長期」の定義（`supabase/migrations/20260928151241_ssbj_risk_type_and_time_horizons.sql`）
+レポートごとに 1 行の作業中データ（気候関連開示基準 第19項(4)(5)）。変更のたびに `ssbj_reports.draftRevision` を進め、
+保存版には `ssbj_snapshot_section__time_horizons` で取り込む（行が無いレポートはすべて未入力として取り込む）。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `reportId` | レポートID | UUID | Primary Key, Foreign Key | 削除時: CASCADE。作成後は変更不可 |
+| `organizationId` | 組織ID | UUID | Foreign Key | 削除時: CASCADE |
+| `shortTermState` / `shortTerm` | 「短期」の定義 | `ssbj_field_state` / TEXT | CHECK(`answered` のときだけ本文が非 NULL・空白のみ不可) | 開示する文章 |
+| `mediumTermState` / `mediumTerm` | 「中期」の定義 | 同上 | 同上 | 同上 |
+| `longTermState` / `longTerm` | 「長期」の定義 | 同上 | 同上 | 同上 |
+| `planningHorizonRelationState` / `planningHorizonRelation` | 定義と戦略上の計画期間との関係 | 同上 | 同上 | 同上 |
+| `internalNote` | 内部メモ | TEXT | NULL | 開示しない |
+| `createdByUserId` / `updatedByUserId` | 登録・更新操作者ID | UUID | NULL | `set_row_actor` トリガ |
+| `createdAt` / `updatedAt` | 作成・更新日時 | TIMESTAMPTZ | NOT NULL | `updatedAt` は `set_updated_at` トリガ |
+
+- RLS・GRANT の考え方は 3.13 と同じ（自組織に限定、レポートの組織帰属を `exists` で検証、レポート・組織は作成後に変えない）。
 
 ---
 
