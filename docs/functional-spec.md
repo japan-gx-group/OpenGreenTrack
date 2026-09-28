@@ -214,7 +214,7 @@ erDiagram
 | `/factors` | 排出係数管理 | `emission_factors`、`idea_imports` |
 | `/locations` `/locations/[locationId]` | 拠点管理 | `locations` |
 | `/reports` `/reports/print` | レポート | 集計 RPC、`system_audit_logs`（履歴） |
-| `/ssbj` `/ssbj/[reportId]` | SSBJ レポート（試行版） | `ssbj_reports`、`fiscal_years` |
+| `/ssbj` `/ssbj/[reportId]` | SSBJ レポート（試行版） | `ssbj_reports`、`fiscal_years`、`ssbj_report_versions`（保存版） |
 | `/settings/company` `/settings/account` | 設定 | `organizations`、`profiles`、`fiscal_years`、`invites` |
 | `/login` `/signup` `/forgot-password` `/reset-password` `/invite/[token]` | 認証 | Supabase Auth、`invites` |
 
@@ -385,7 +385,7 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 | 画面 | 内容 |
 |---|---|
 | 一覧（`/ssbj`） | ヘッダーで選択中の年度のレポートを新しい順に表示し、新規作成する。レポートは選択中の年度に作る（作成ダイアログで対象年度を明示する）。年度が未登録なら企業設定へ案内する |
-| 詳細（`/ssbj/[reportId]`） | 基本情報（レポート名・対象年度と期間・作成目的・報告範囲・参照する基準の版）を表示・編集する。存在しない・他組織のレポートは「見つかりません」と表示し、存在を示唆しない |
+| 詳細（`/ssbj/[reportId]`） | 基本情報（レポート名・対象年度と期間・作成目的・報告範囲・参照する基準の版）を表示・編集する。「保存版を作成」で、あとから書き換えられない保存版を作る（基本情報の編集中は不可。読込後に別の画面・別の人が内容を変えていれば競合として拒否し、開き直しを促す）。存在しない・他組織のレポートは「見つかりません」と表示し、存在を示唆しない |
 
 - 基本情報の必須はレポート名のみ。任意項目の未入力は「未入力」と表示し、空欄や「なし」にしない（項目名と必須性は初回レポート例の合意待ちの仮置き。`ssbj-spec.md` §12）
 - 対象年度は作成後に変更できない（後続機能が採用するその年度の OGT 値・保存版と食い違わないようにするため）
@@ -498,12 +498,13 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 | POST | `/api/idea-imports` | IDEA データベース（Excel）の取込開始（Storage 上のパスを JSON で受け取る。ファイル本体は送らない） |
 | DELETE | `/api/idea-imports/[id]` | IDEA 取込の削除（取込状態の取得は Supabase クライアントから直接読む） |
 | POST | `/api/dashboard-aggregates/refresh` | ダッシュボード集計の再計算 |
+| POST | `/api/ssbj/reports/[reportId]/versions` | SSBJ レポートの保存版（固定スナップショット）を作成する（`ssbj-spec.md` §8） |
 | POST | `/api/account/delete` | アカウント削除 |
 | GET | `/api/health` | ヘルスチェック |
 | POST | `/api/csp-report` | CSP 違反レポートの受信 |
 | GET | `/auth/callback` | Supabase Auth のコールバック |
 
-`/api/calculations`・`/api/calculations/provisional-recalculation`・`/api/dashboard-aggregates/refresh`・`/api/idea-imports/upload-url`・`/api/idea-imports`・`/api/idea-imports/[id]`・`/api/account/delete` の 7 本は `service_role` で RLS を越えて読み書きするため、Route Handler 側でログイン済み・自組織であることを検証する。この組織チェックは RLS では効かず、ここでしか担保できない。`/api/idea-imports/upload-url` は自組織フォルダ（`${organizationId}/idea-imports/<uuid>.xlsx`）にだけ署名付き URL を発行し、`/api/idea-imports` は受け取ったパスがその形であることを検証してから Storage に触れる。`/api/health` も `service_role` を使うが `organizations` を 1 行読む疎通確認のみで、組織データは返さない。
+`/api/calculations`・`/api/calculations/provisional-recalculation`・`/api/dashboard-aggregates/refresh`・`/api/idea-imports/upload-url`・`/api/idea-imports`・`/api/idea-imports/[id]`・`/api/account/delete`・`/api/ssbj/reports/[reportId]/versions` の 8 本は `service_role` で RLS を越えて読み書きするため、Route Handler 側でログイン済み・自組織であることを検証する。この組織チェックは RLS では効かず、ここでしか担保できない。`/api/idea-imports/upload-url` は自組織フォルダ（`${organizationId}/idea-imports/<uuid>.xlsx`）にだけ署名付き URL を発行し、`/api/idea-imports` は受け取ったパスがその形であることを検証してから Storage に触れる。`/api/health` も `service_role` を使うが `organizations` を 1 行読む疎通確認のみで、組織データは返さない。
 
 ### 6.3 主要な RPC
 
@@ -515,6 +516,7 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 | `complete_idea_import` / `delete_idea_import` | IDEA 取込の完了処理・削除 |
 | `dashboard_monthly_emissions` / `dashboard_location_emissions` / `dashboard_location_emissions_by_scope` / `dashboard_scope3_category_emissions` | ダッシュボードの読取集計 |
 | `report_location_scope_emissions` / `report_location_energy_usage` / `report_latest_calculation_batches` / `report_activity_calculation_coverage` / `report_scope3_activity_calculation_coverage` | レポートの読取集計 |
+| `create_ssbj_report_version` | SSBJ レポートの保存版（固定スナップショット）を採番・生成・insert まで単一トランザクションで作成。`draftRevision` の一致を見て競合を検知する。EXECUTE は `service_role` 限定（`ssbj-spec.md` §8） |
 
 読取系を RPC にしているのは、活動量や算定結果を全行ブラウザへ取得しないため（PostgREST の `max_rows` で黙って切り詰められると、集計が静かに欠ける）。
 

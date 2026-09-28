@@ -40,6 +40,8 @@ erDiagram
 
     organizations ||--o{ ssbj_reports : "SSBJレポート"
     fiscal_years ||--o{ ssbj_reports : "対象年度"
+    ssbj_reports ||--o{ ssbj_report_versions : "保存版"
+    ssbj_report_versions |o--o{ ssbj_report_versions : "復元元"
 ```
 
 ---
@@ -277,11 +279,33 @@ SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず
 | `standardVersion` | 参照する基準の版 | VARCHAR(100) | NULL | 仮置き |
 | `createdByUserId` / `updatedByUserId` | 登録・更新操作者ID | UUID | NULL | `set_row_actor` トリガが auth.uid() で上書き |
 | `createdAt` / `updatedAt` | 作成・更新日時 | TIMESTAMPTZ | NOT NULL | `updatedAt` は `set_updated_at` トリガ |
+| `draftRevision` | 作業中データの版数 | INTEGER | NOT NULL, DEFAULT 1 | 基本情報の変更（`bump_ssbj_reports_draft_revision` トリガ）と各機能テーブルの変更（`bump_ssbj_draft_revision`）で +1。保存版作成時の競合検知に使う（`20260927180425_ssbj_report_versions.sql`） |
 
 - RLS は select / insert / update を自組織に限定し、insert / update の with check で `fiscalYearId` が自組織の年度であることを
   `exists` で検証する（FK は行の存在しか見ないため）。delete のポリシーと GRANT は持たない（R1 では削除を提供しない）。
 - `authenticated` への insert / update は列指定の GRANT。update は基本情報の列だけで、組織・年度は作成後に付け替えられない。
+  `draftRevision` も GRANT に含めず、トリガーだけが進める。
 - 年度を参照するため、年度削除の可否判定（`src/features/settings/services/fiscalYears.ts` の `REFERENCING_TABLES`）の対象に含める。
+
+### 3.12 SSBJ 保存版 (`ssbj_report_versions`) — SSBJ レポートの固定スナップショット（`supabase/migrations/20260927180425_ssbj_report_versions.sql`）
+利用者の手動保存で作る、書き換え不可の保存版。保存版のプレビュー・履歴・CSV はここから読み、OGT の最新値を再取得しない
+（[`ssbj-spec.md`](ssbj-spec.md) §8）。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | 保存版ID | UUID | Primary Key | |
+| `organizationId` | 組織ID | UUID | Foreign Key | 削除時: CASCADE |
+| `reportId` | レポートID | UUID | Foreign Key | 削除時: CASCADE |
+| `versionNumber` | 版番号 | INTEGER | NOT NULL, UNIQUE(`reportId`, `versionNumber`) | レポート内の連番（1 始まり）。RPC 内で採番 |
+| `snapshot` | 保存内容 | JSONB | NOT NULL | `SsbjReportSnapshotV1`（`{ schemaVersion, report, sections }`） |
+| `basedOnDraftRevision` | 元の作業版数 | INTEGER | NOT NULL | 保存時点の `ssbj_reports.draftRevision` |
+| `sourceVersionId` | 復元元の保存版ID | UUID | Foreign Key, NULL | 過去版から新版を作った場合の元の版（T11）。通常の保存では NULL |
+| `note` | メモ | TEXT | NULL | |
+| `createdByUserId` | 保存者ID | UUID | NULL | Route Handler が `getCurrentProfile()` で確定した値を RPC に渡す |
+| `createdAt` | 保存日時 | TIMESTAMPTZ | NOT NULL | |
+
+- 書き込みは RPC `create_ssbj_report_version`（EXECUTE は service_role 限定）だけ。`authenticated` には select のみ（自組織）。
+- UPDATE はトリガー `reject_ssbj_report_versions_update` で全ロール（service_role を含む）拒否する。
 
 ---
 

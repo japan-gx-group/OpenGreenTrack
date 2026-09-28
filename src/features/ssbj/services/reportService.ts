@@ -5,7 +5,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
-import type { SsbjReportRecord } from '../types';
+import type { SsbjReportRecord, SsbjReportWorkingRecord } from '../types';
 import type { SsbjReportBasicInfoInput } from '../utils/reportValidation';
 
 type FiscalYearEmbed = { label: string; startDate: string; endDate: string };
@@ -20,14 +20,17 @@ export interface SsbjReportRow {
   standardVersion: string | null;
   createdAt: string;
   updatedAt: string;
+  draftRevision: number;
   // 多対一の埋め込みはオブジェクトで返るが、型生成の揺れに備えて配列でも受ける。
   fiscal_years: FiscalYearEmbed | FiscalYearEmbed[] | null;
 }
 
 // 年度のラベルと期間は fiscal_years を埋め込んで同じ往復で取る（一覧の各行に年度名を出すため）。
+// draftRevision も同じ往復で取る。別の問い合わせにすると、表示した内容より新しい版数を保持してしまい、
+// 画面に出ていない変更を含む保存版を競合として検知できなくなる。
 const SELECT_COLUMNS =
   'id, organizationId, fiscalYearId, title, purpose, reportingScope, standardVersion, createdAt, updatedAt, ' +
-  'fiscal_years(label, startDate, endDate)';
+  'draftRevision, fiscal_years(label, startDate, endDate)';
 
 /** DB 行 → SsbjReportRecord。年度が見えない行（通常は起こらない）は例外にする。 */
 export const toSsbjReportRecord = (row: SsbjReportRow): SsbjReportRecord => {
@@ -50,6 +53,12 @@ export const toSsbjReportRecord = (row: SsbjReportRow): SsbjReportRecord => {
     periodEnd: fiscalYear.endDate,
   };
 };
+
+/** DB 行 → 編集画面用のレコード（保存版作成の競合検知に使う draftRevision を添える）。 */
+export const toSsbjReportWorkingRecord = (row: SsbjReportRow): SsbjReportWorkingRecord => ({
+  ...toSsbjReportRecord(row),
+  draftRevision: row.draftRevision,
+});
 
 // ログイン中ユーザーの所属組織ID。insert 時に組織を明示する必要がある（RLS の with check と一致させる）。
 // locationService.ts / targetService.ts と同じ手順。
@@ -93,7 +102,7 @@ export const listSsbjReports = async (fiscalYearId: string): Promise<SsbjReportR
  * 1 件取得。存在しない・他組織（RLS で不可視）のレポートは null を返し、
  * 「見つかりません」表示にして他組織のレポートの存在を示唆しない。
  */
-export const getSsbjReport = async (reportId: string): Promise<SsbjReportRecord | null> => {
+export const getSsbjReport = async (reportId: string): Promise<SsbjReportWorkingRecord | null> => {
   const supabase = createClient();
   const { data, error } = await supabase
     .from('ssbj_reports')
@@ -106,7 +115,7 @@ export const getSsbjReport = async (reportId: string): Promise<SsbjReportRecord 
     if (error.code === '22P02') return null;
     throw new Error('SSBJレポートの取得に失敗しました');
   }
-  return data ? toSsbjReportRecord(data as unknown as SsbjReportRow) : null;
+  return data ? toSsbjReportWorkingRecord(data as unknown as SsbjReportRow) : null;
 };
 
 /** 新規作成。組織はログインユーザーの所属組織から解決する（年度の組織帰属は RLS が検証する）。 */
@@ -129,11 +138,14 @@ export const createSsbjReport = async (
   return toSsbjReportRecord(data as unknown as SsbjReportRow);
 };
 
-/** 基本情報の更新。組織・年度は変更できない（列 GRANT で基本情報の列だけを許可している）。 */
+/**
+ * 基本情報の更新。組織・年度は変更できない（列 GRANT で基本情報の列だけを許可している）。
+ * 値が変わると DB のトリガーが draftRevision を進めるため、更新後の版数を返して画面の保持値を差し替えさせる。
+ */
 export const updateSsbjReportBasicInfo = async (
   reportId: string,
   input: SsbjReportBasicInfoInput,
-): Promise<SsbjReportRecord> => {
+): Promise<SsbjReportWorkingRecord> => {
   const supabase = createClient();
   const { data, error } = await supabase
     .from('ssbj_reports')
@@ -149,5 +161,5 @@ export const updateSsbjReportBasicInfo = async (
     // RLS で対象が見えない（削除済み・他組織）場合は 0 件更新になる。
     throw new Error('SSBJレポートが見つかりません。一覧から開き直してください');
   }
-  return toSsbjReportRecord(data as unknown as SsbjReportRow);
+  return toSsbjReportWorkingRecord(data as unknown as SsbjReportRow);
 };
