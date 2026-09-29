@@ -104,6 +104,5 @@ describe('保存版との連携', () => {
 
   it('共通関数は保存版セクションとして自動収集される名前にしない', () => {
     expect(body).toContain('create function ssbj_field_value_json(');
-    expect('ssbj_field_value_json'.startsWith('ssbj_snapshot_section__')).toBe(false);
   });
 });
