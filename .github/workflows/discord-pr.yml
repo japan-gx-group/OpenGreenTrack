@@ -1,0 +1,42 @@
+name: Discord PR Notification
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+
+permissions: {}
+
+jobs:
+  notify:
+    # pull_request イベントでは fork の Secret を使えない。外部 PR のコードも実行しない。
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Notify Discord
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$DISCORD_WEBHOOK_URL" ]]; then
+            echo 'DISCORD_WEBHOOK_URL is unavailable; skipping notification.'
+            exit 0
+          fi
+
+          payload=$(jq -c --arg repo "$GITHUB_REPOSITORY" '
+            .pull_request as $pr |
+            {
+              allowed_mentions: {parse: []},
+              embeds: [{
+                title: $pr.title,
+                url: $pr.html_url,
+                description: ("リポジトリ: " + $repo + "\nPR #" + ($pr.number | tostring) + "\n作成者: " + ($pr.user.login // "不明") + "\n" + (if .action == "opened" then "PR作成" else "レビュー準備完了" end))
+              }]
+            }
+          ' "$GITHUB_EVENT_PATH")
+          curl --fail --silent --show-error --retry 3 \
+            --output /dev/null \
+            --header 'Content-Type: application/json' \
+            --data-binary "$payload" \
+            "$DISCORD_WEBHOOK_URL"
