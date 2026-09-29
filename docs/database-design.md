@@ -314,6 +314,7 @@ SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず
 
 - 書き込みは RPC `create_ssbj_report_version`（EXECUTE は service_role 限定）だけ。`authenticated` には select のみ（自組織）。
 - UPDATE はトリガー `reject_ssbj_report_versions_update` で全ロール（service_role を含む）拒否する。
+- スナップショットの組み立ては `ssbj_build_report_snapshot`（`20260929182558_ssbj_report_preview.sql`）に一本化し、版生成 RPC とプレビュー（`preview_ssbj_report`。保存はしない）が同じ関数を使う。
 
 ### 3.13 SSBJ リスク・機会 (`ssbj_risks_opportunities`) — SSBJ レポートのリスク・機会（`supabase/migrations/20260928001521_ssbj_risks_opportunities.sql`）
 1 つのレポートに複数登録する作業中データ。変更のたびに `ssbj_reports.draftRevision` を進め、保存版には

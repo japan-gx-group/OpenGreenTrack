@@ -15,6 +15,11 @@ const SSBJ_REPORT_CONTENTS: { path: string; label: string; description: string }
     label: 'GHG排出量の候補値',
     description: 'OGTのScope別・カテゴリ別の値と算定条件を確認し、レポートに採用します。',
   },
+  {
+    path: 'preview',
+    label: 'プレビュー',
+    description: '作業中の内容または保存版を、レポートの形で確認し、印刷・PDFとして保存します。',
+  },
 ];
 
 export const SsbjReportContentsNav = ({ reportId }: { reportId: string }) => (
