@@ -63,3 +63,43 @@ describe('ssbjVersionToCsvRows', () => {
     expect(() => ssbjVersionToCsvRows({ ...fictionalVersion, snapshot }, GENERATED_AT)).toThrow('未対応');
   });
 });
+
+describe('ssbjVersionToCsvRows（GHG排出量）', () => {
+  it('採用値を区分ごとの行にし、未算定を 0 にせず、Scope 2 の基準不明と参考値を注記する', () => {
+    const rows = ssbjVersionToCsvRows(fictionalVersion, GENERATED_AT);
+    const ghg = rows.filter(row => row[0] === 'GHG排出量');
+    expect(ghg[0]).toEqual(['GHG排出量', fictionalVersion.reportId, '採用日時', '入力済み', '2025-06-03T02:00:00+00:00', '', '', '']);
+    expect(ghg.find(row => row[1] === 'scope1')?.slice(2, 6)).toEqual(['Scope 1', '算定済み', '812.345', 't-CO2e']);
+    const scope2 = ghg.find(row => row[1] === 'scope2');
+    expect(scope2?.[7]).toContain('基準不明');
+    expect(scope2?.[7]).toContain('基礎 120.500／調整後 1045.250／区分なし 0');
+    // 直接入力で確認した結果の 0（回答済み）は 0 のまま、未算定は空欄＋「未算定」。
+    expect(ghg.find(row => row[1] === 'scope3.category1')?.slice(3, 5)).toEqual(['算定済み', '0']);
+    expect(ghg.some(row => row[3] === '未算定' && row[4] === '')).toBe(true);
+    const reference = rows.find(row => row[0] === 'GHG排出量（参考値）');
+    expect(reference?.[7]).toContain('Scope 3 の合計には含めない');
+  });
+
+  it('採用していない版は「未採用」の 1 行にする（欠落と区別する）', () => {
+    const snapshot: SsbjReportSnapshotV1 = {
+      ...fictionalVersion.snapshot,
+      sections: { ...fictionalVersion.snapshot.sections, ghg: null },
+    };
+    const rows = ssbjVersionToCsvRows({ ...fictionalVersion, snapshot }, GENERATED_AT);
+    expect(rows.filter(row => row[0]?.startsWith('GHG排出量'))).toEqual([
+      ['GHG排出量', fictionalVersion.reportId, 'OGT の値', '未採用', '', '', '', 'OGT の候補値をレポートに採用していません'],
+    ]);
+  });
+
+  it('数値が十進表記でない採用値は出力せずエラーにする', () => {
+    const ghg = fictionalVersion.snapshot.sections.ghg!;
+    const snapshot: SsbjReportSnapshotV1 = {
+      ...fictionalVersion.snapshot,
+      sections: {
+        ...fictionalVersion.snapshot.sections,
+        ghg: { ...ghg, values: [{ ...ghg.values[0], value: { state: 'answered', value: '1e3' } }] },
+      },
+    };
+    expect(() => ssbjVersionToCsvRows({ ...fictionalVersion, snapshot }, GENERATED_AT)).toThrow('GHG排出量の保存内容が不正です');
+  });
+});

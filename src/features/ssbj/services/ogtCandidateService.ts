@@ -1,6 +1,7 @@
 // OGT の確定集計と算定状況を、SSBJ の参照専用候補値へ変換する。
 // 組織・年度は閲覧可能なレポートから受け取り、各問い合わせにも年度を指定する。
 
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { scope3CategoryIdForEnergyType } from '@/features/calculation/engine/scope3Category';
 import { scopeForEnergyTypeName } from '@/features/calculation/engine/energyTypeScope';
 import { SCOPE3_CATEGORY_IDS } from '@/features/scope-analysis/services/scopeAnalysisService';
@@ -159,8 +160,17 @@ export const buildOgtCandidates = (input: {
 };
 
 /** RLS を適用したブラウザクライアントから、レポート年度の候補値を取得する。 */
-export const getOgtCandidates = async (report: SsbjReportRecord): Promise<OgtCandidateData> => {
-  const supabase = createClient();
+export const getOgtCandidates = async (report: SsbjReportRecord): Promise<OgtCandidateData> =>
+  fetchOgtCandidates(createClient(), report);
+
+/**
+ * getOgtCandidates の本体。採用（T08b）ではサーバがセッションを引き継いだクライアントで同じ処理を呼び、
+ * 画面に表示したものと同じ組み立てで候補値を取り直す（クライアントから値を受け取らないため）。
+ */
+export const fetchOgtCandidates = async (
+  supabase: SupabaseClient,
+  report: SsbjReportRecord,
+): Promise<OgtCandidateData> => {
   const yearId = report.fiscalYearId;
   const [numeric, activityCoverage, scope3Coverage, methods, directRows, batches] = await Promise.all([
     supabase.rpc('ssbj_ogt_numeric_values', { p_fiscal_year_id: yearId }),

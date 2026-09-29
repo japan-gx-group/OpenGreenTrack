@@ -408,3 +408,35 @@ R1 の初回対象（[`ssbj-r1-scope.md`](ssbj-r1-scope.md) §5.1）に含める
 - **時間軸の定義は `ssbj_reports` の列にせず、別テーブルにした。** §10 の登録規約に乗せれば、版生成 RPC と T04 のテーブルを変えずに保存版へ取り込めるため。行が無いレポートの保存版には、すべて未入力の定義が入る（欠落と未入力を区別するため）。
 - **時間軸の定義は upsert ではなく「更新して、無ければ作る」で保存する。** PostgREST の upsert は衝突時の更新に `reportId` / `organizationId` も含めるが、両列は作成後に変えない前提で update の列 GRANT に入れていないため。
 - **状態＋値を jsonb にする処理は共通関数 `ssbj_field_value_json` にまとめた。** 後続の機能の保存版セクション関数も使える。名前を `ssbj_snapshot_section__` で始めないこと（版生成 RPC が自動収集してしまう）。
+
+### OGT の値の採用（T08b）
+
+「GHG排出量の候補値」画面（`/ssbj/[reportId]/ghg`。T08a）で確認した候補値を、利用者の明示の操作でレポートに採用する。
+採用値は OGT の元データから複写して持ち、保存版を作成した時点のものが固定される。
+
+| 対象 | 内容 |
+|---|---|
+| DB | `supabase/migrations/20260929180243_ssbj_ogt_adoptions.sql`。レポートごとに 1 行の `ssbj_ogt_adoptions`（RLS は select / delete を自組織に限定、insert / update は付与しない）、採用 RPC `adopt_ssbj_ogt_values`（service_role 限定。P2041 / P2042）、保存版セクション `ssbj_snapshot_section__ghg` |
+| API | `POST /api/ssbj/reports/[reportId]/ogt-adoption`（`services/ogtAdoptionServer.ts`） |
+| 画面 | `/ssbj/[reportId]/ghg` に「レポートへの採用」欄（`components/SsbjOgtAdoptionCard.client.tsx`。採用・採用し直し・取り消し、採用後に OGT の値が変わった区分の表示） |
+| コード | `types.ts` の `SsbjGhgAdoption`、`utils/ogtAdoption.ts`（指紋・変化の検出）、`services/ogtAdoptionService.ts`、`hooks/useOgtAdoption.ts` / `useOgtAdoptionActions.ts`、`services/versionCsvGhg.ts`（CSV の GHG の行）。候補値の取得（`fetchOgtCandidates`）とレポートの取得（`fetchSsbjReport`）は、サーバからも呼べるようクライアントを引数で受け取る形にした。表示名（`ogtValueLabel` など）と桁区切り（`formatDecimalForDisplay`）は画面・CSV・プレビューで共通にした |
+| テスト | `scripts/db/__tests__/ssbjOgtAdoptionPolicy.test.ts`（RLS・GRANT・RPC・保存版連携）、`services/__tests__/ogtAdoptionServer.test.ts`、Route Handler・指紋・CSV・画面の単体テスト |
+
+決めたこと:
+
+- **採用する値はクライアントから受け取らない。** 画面は表示した候補値の指紋（キーを並べ替えた JSON の FNV-1a 64 ビット）だけを送り、
+  サーバがセッションのクライアント（RLS あり）で OGT から候補値を取り直す。指紋が一致したときだけ、その取り直した値を
+  service_role 限定の RPC で保存する。一致しなければ 409 で拒否し、利用者に見ていない値を採用させない。
+  指紋は改ざん防止のためではなく「表示と同じか」の照合用で、改ざん防止はサーバが値を取り直すことで担保する
+  （Web Crypto は https / localhost 以外で使えないため、同期の単純なハッシュにした）。
+- **テーブルに insert / update の権限を与えない。** RLS は行の組織を検査できても、値が OGT 由来かは検査できないため。
+  取り消し（delete）は値を作らないので、画面から直接行ってよい。
+- **Scope 1・2・3 合計と Scope 3 の 15 カテゴリをまとめて採用する。** 区分ごとに採用できると、合計とカテゴリ別の値が
+  別の時点のものになり、食い違いうるため。採用し直すと行を置き換える。
+- **採用日時・採用者は RPC が付ける。** 行の `adoptedAt` と各値の `adoptedAt` を同じ時刻にそろえるため。
+- **OGT の値が変わっても採用値は自動では変えない（候補値の自動採用・自動上書きはしない）。** 画面で採用値と現在の候補値を
+  比べ、値・算定状態・採用方式・件数・参考値が変わった区分を表示し、採用し直すかは利用者が決める。取得時刻の違いだけでは変化にしない。
+- **採用していないレポートの保存版は `sections.ghg = null` にする。** CSV は「未採用」の 1 行を出し、欠落と区別する。
+- **算定済みの値が 1 つも無いときは採用できない。** 採用しても未算定しか残らないため。
+- **サプライヤー別の値は参考値として一緒に保存するが、合計には足さない（§7.2）。** CSV も参考値として別の行にする。
+- デモデータ（`ssbj_demo.sql`）には採用値を入れていない。18 件の値を手で書くと候補値の組み立てと食い違いうるため、画面から採用して確認する。

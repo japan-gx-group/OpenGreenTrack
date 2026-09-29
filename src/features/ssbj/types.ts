@@ -296,6 +296,18 @@ export type OgtAdoptedValue = OgtCandidateValue & {
 };
 
 /**
+ * レポートに採用した OGT の値一式（T08b。ssbj_ogt_adoptions の 1 行）。Scope 1・2・3 合計と Scope 3 の
+ * 15 カテゴリをまとめて採用する（合計とカテゴリ別の値を同じ時点にそろえるため）。
+ * 採用日時・採用者は DB が付ける。サプライヤー別の値は参考値で、合計には足さない。
+ */
+export type SsbjGhgAdoption = {
+  adoptedAt: string;
+  adoptedBy: string;
+  values: OgtAdoptedValue[];
+  supplierReferences: OgtSupplierReference[];
+};
+
+/**
  * サプライヤー別実排出量（supplier_emissions）。OGT では表示専用で scope3Total に算入していないため、
  * 採用値とは別の型にして合計へ足せないようにする（二重加算の防止）。
  */
@@ -398,6 +410,8 @@ export interface SsbjSnapshotSections {
   risks_opportunities: SsbjRiskOpportunity[];
   /** T07。ssbj_snapshot_section__time_horizons。定義の行が無いレポートは全て未入力。 */
   time_horizons: SsbjTimeHorizonDefinitions;
+  /** T08b。ssbj_snapshot_section__ghg。OGT の値を採用していないレポートは null。 */
+  ghg: SsbjGhgAdoption | null;
 }
 
 /** 保存版の中身（ssbj_report_versions.snapshot）。形式を変えるときは schemaVersion を上げる。 */

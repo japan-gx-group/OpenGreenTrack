@@ -10,6 +10,7 @@ import type { SsbjFieldValue } from '../../types';
 import {
   FICTIONAL_FISCAL_YEAR,
   fictionalDisclosableTexts,
+  fictionalGhgAdoption,
   fictionalOgtAdoptedValues,
   fictionalOgtCandidates,
   fictionalReportBasicInfo,
@@ -162,5 +163,17 @@ describe('OGT の値', () => {
       expect(reference.kind).toBe('supplier_reference');
       expect(isDecimalString(reference.emissions)).toBe(true);
     }
+  });
+});
+
+describe('OGT の採用値一式（T08b）', () => {
+  it('候補値をまとめて採用した形で、採用日時・採用者が各値とそろい、保存版の例に含まれる', () => {
+    expect(fictionalGhgAdoption.values).toHaveLength(fictionalOgtCandidates.length);
+    for (const value of fictionalGhgAdoption.values) {
+      expect(value.adoptedAt).toBe(fictionalGhgAdoption.adoptedAt);
+      expect(value.adoptedBy).toBe(fictionalGhgAdoption.adoptedBy);
+    }
+    expect(fictionalGhgAdoption.supplierReferences).toEqual(fictionalSupplierReferences);
+    expect(fictionalSnapshot.sections.ghg).toEqual(fictionalGhgAdoption);
   });
 });

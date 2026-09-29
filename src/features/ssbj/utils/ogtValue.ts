@@ -2,11 +2,13 @@
 // 候補値を出す側（T08a）と採用・固定する側（T08b）で判定がずれないよう、規則をここに一本化する
 // （規則の説明は docs/ssbj-spec.md §7）。
 
+import { SCOPE3_CATEGORY_NAMES } from '@/features/scope-analysis/services/scopeAnalysisService';
 import {
   OGT_EMISSION_UNIT,
   type OgtCalculationCoverage,
   type OgtCandidateValue,
   type OgtDataQuality,
+  type OgtValueSource,
 } from '../types';
 import { isDecimalString } from './decimal';
 
@@ -14,6 +16,34 @@ export const OGT_DATA_QUALITY_LABELS: Record<OgtDataQuality, string> = {
   all_calculated: '算定済み',
   partially_calculated: '一部未算定',
   not_calculated: '未算定',
+};
+
+// 以下の表示名は、候補値の画面・プレビュー・CSV で同じ表記にするためにここへまとめている。
+
+export const OGT_SOURCE_LABELS: Record<OgtValueSource['aggregate'], string> = {
+  dashboard_aggregates: '年度集計',
+  dashboard_scope3_category_emissions: 'カテゴリ別採用値',
+  scope3_category_emissions: 'カテゴリ別直接入力',
+};
+
+type OgtValueTarget = Pick<OgtCandidateValue, 'scope' | 'scope3CategoryId'>;
+
+/** 区分名（例「Scope 1」「カテゴリ 1：購入した製品・サービス」）。 */
+export const ogtValueLabel = (value: OgtValueTarget): string =>
+  value.scope3CategoryId === null
+    ? `Scope ${value.scope}`
+    : `カテゴリ ${value.scope3CategoryId}：${SCOPE3_CATEGORY_NAMES[value.scope3CategoryId] ?? ''}`;
+
+/** 区分の識別子（CSV の対象 ID。例 scope1 / scope3 / scope3.category1）。 */
+export const ogtValueKey = (value: OgtValueTarget): string =>
+  value.scope3CategoryId === null ? `scope${value.scope}` : `scope3.category${value.scope3CategoryId}`;
+
+/** 採用方式の表示名。 */
+export const ogtMethodLabel = (value: OgtCandidateValue): string => {
+  if (value.scope === 3 && value.scope3CategoryId !== null) {
+    return value.method.kind === 'direct' ? '直接入力' : '積上げ';
+  }
+  return value.scope === 3 ? 'カテゴリごとの採用方式' : '活動量 × 排出係数';
 };
 
 /**

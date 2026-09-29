@@ -12,6 +12,7 @@ import type {
   OgtSupplierReference,
   OgtValueSource,
   SsbjDisclosableText,
+  SsbjGhgAdoption,
   SsbjItemId,
   SsbjReportBasicInfo,
   SsbjReportSnapshotV1,
@@ -235,14 +236,15 @@ export const fictionalOgtCandidates: OgtCandidateValue[] = [
   },
 ];
 
-/** 採用値（T08b の出力例）。候補値のうち Scope 1・2 を利用者が明示的に採用した状態。 */
-export const fictionalOgtAdoptedValues: OgtAdoptedValue[] = fictionalOgtCandidates
-  .filter(candidate => candidate.scope !== 3)
-  .map(candidate => ({
-    ...candidate,
-    adoptedAt: '2025-06-03T02:00:00.000Z',
-    adoptedBy: FICTIONAL_USER_ID,
-  }));
+/**
+ * 採用値（T08b の出力例）。候補値を利用者が明示的に採用した状態。
+ * Scope 合計とカテゴリ別の値を同じ時点にそろえるため、候補値はまとめて採用する。
+ */
+export const fictionalOgtAdoptedValues: OgtAdoptedValue[] = fictionalOgtCandidates.map(candidate => ({
+  ...candidate,
+  adoptedAt: '2025-06-03T02:00:00+00:00',
+  adoptedBy: FICTIONAL_USER_ID,
+}));
 
 /** サプライヤー別実排出量（参考値）。Scope 3 の合計には足さない。 */
 export const fictionalSupplierReferences: OgtSupplierReference[] = [
@@ -257,6 +259,14 @@ export const fictionalSupplierReferences: OgtSupplierReference[] = [
   },
 ];
 
+/** レポートに採用した OGT の値一式（T08b。保存版の sections.ghg）。 */
+export const fictionalGhgAdoption: SsbjGhgAdoption = {
+  adoptedAt: '2025-06-03T02:00:00+00:00',
+  adoptedBy: FICTIONAL_USER_ID,
+  values: fictionalOgtAdoptedValues,
+  supplierReferences: fictionalSupplierReferences,
+};
+
 /** 保存版の中身の例。セクションは実装済みの機能の分だけ入る（未実装の機能のキーは無い）。 */
 export const fictionalSnapshot: SsbjReportSnapshotV1 = {
   schemaVersion: 1,
@@ -269,6 +279,7 @@ export const fictionalSnapshot: SsbjReportSnapshotV1 = {
   sections: {
     risks_opportunities: fictionalRisksOpportunities,
     time_horizons: fictionalTimeHorizonDefinitions,
+    ghg: fictionalGhgAdoption,
   },
 };
 

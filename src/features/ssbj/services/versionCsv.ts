@@ -12,6 +12,10 @@ import {
   type SsbjReportVersion,
 } from '../types';
 import { formatFieldValue } from '../utils/fieldValue';
+import { ghgAdoptionCsvRows } from './versionCsvGhg';
+
+// CSV に出せる保存版セクション。ここに無いセクションがあれば、出力漏れにせずエラーにする。
+const CSV_SECTIONS = new Set(['risks_opportunities', 'time_horizons', 'ghg']);
 
 export type SsbjCsvVersion = Pick<SsbjReportVersion, 'id' | 'reportId' | 'versionNumber' | 'snapshot'>;
 
@@ -24,7 +28,7 @@ export const ssbjVersionToCsvRows = (version: SsbjCsvVersion, generatedAt: strin
     throw new Error('保存版のレポートIDが一致しません');
   }
 
-  const unknownSections = Object.keys(snapshot.sections).filter(key => key !== 'risks_opportunities' && key !== 'time_horizons');
+  const unknownSections = Object.keys(snapshot.sections).filter(key => !CSV_SECTIONS.has(key));
   if (unknownSections.length > 0) {
     throw new Error(`CSVに未対応の保存項目があります: ${unknownSections.join(', ')}`);
   }
@@ -123,6 +127,8 @@ export const ssbjVersionToCsvRows = (version: SsbjCsvVersion, generatedAt: strin
     rows.push(['時間軸の定義', report.id, '内部メモ',
       timeHorizons.internalNote ? '入力済み' : '未入力', '', '', timeHorizons.internalNote ?? '', '']);
   }
+  const ghg = snapshot.sections.ghg;
+  if (ghg !== undefined) rows.push(...ghgAdoptionCsvRows(report.id, ghg));
   return rows;
 };
 
