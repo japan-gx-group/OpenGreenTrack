@@ -23,8 +23,10 @@ where id in (
 
 -- createdByUserId / updatedByUserId は set_row_actor トリガが auth.uid() で上書きするが、
 -- seed（auth.uid() = null）では与えた値がそのまま残る。
+-- 親会社との関係: 組織 A は親会社の連結子会社、組織 B は持分法適用関連会社（親会社名はいずれも架空）。
 insert into ssbj_reports (
   id, "organizationId", "fiscalYearId", title, purpose, "reportingScope", "standardVersion",
+  "parentCompanyName", "parentRelationship", "ownershipPercentage", "measurementApproach", "industryCode",
   "createdByUserId", "updatedByUserId", "createdAt", "updatedAt"
 )
 values
@@ -36,6 +38,11 @@ values
     '社内での記載内容の確認',
     '架空精密工業株式会社（単体）',
     null,
+    '架空ホールディングス株式会社',
+    'consolidated_subsidiary',
+    100,
+    'operational_control',
+    'RT-IG',
     'aaaaaaaa-0000-0000-0000-000000000001',
     'aaaaaaaa-0000-0000-0000-000000000001',
     '2025-06-02 10:00:00+09',
@@ -49,6 +56,11 @@ values
     null,
     null,
     null,
+    '架空商事株式会社',
+    'equity_method_affiliate',
+    35,
+    'equity_share',
+    'TR-RO',
     'bbbbbbbb-0000-0000-0000-000000000001',
     'bbbbbbbb-0000-0000-0000-000000000001',
     '2026-06-01 10:00:00+09',
@@ -56,10 +68,10 @@ values
   );
 
 -- リスク・機会（T07）。レポートの削除で連鎖削除されるため、先頭の delete で一緒に消える。
--- 組織 A: 項目への関連付け・章だけへの関連付け・関連なし、説明の回答済み / 未確認 / 未入力を含む。
+-- 組織 A: 項目への関連付け・章だけへの関連付け・関連なし、リスクの種類と説明の回答済み / 未確認 / 未入力を含む。
 -- 組織 B: 1 件（組織 A のユーザーから見えないことの確認用）。
 insert into ssbj_risks_opportunities (
-  id, "organizationId", "reportId", kind, title,
+  id, "organizationId", "reportId", kind, title, "riskTypeState", "riskType",
   "descriptionState", "descriptionText", "internalNote", "timeHorizonState", "timeHorizon", "linkTargets",
   "createdByUserId", "updatedByUserId", "createdAt", "updatedAt"
 )
@@ -70,6 +82,8 @@ values
     '5b1f0000-1111-4000-8000-000000000001',
     'risk',
     '炭素価格の導入による調達コストの上昇',
+    'answered',
+    'transition',
     'answered',
     '炭素価格が導入された場合、主要原材料の調達コストが上昇する可能性がある。',
     '影響額の試算は経営企画部で実施中（架空）。',
@@ -87,6 +101,8 @@ values
     '5b1f0000-1111-4000-8000-000000000001',
     'opportunity',
     '省エネルギー型製品の需要拡大',
+    'not_applicable',
+    null,
     'unconfirmed',
     null,
     '営業部に市場見通しを確認中。',
@@ -106,6 +122,8 @@ values
     '豪雨による拠点の操業停止',
     'unanswered',
     null,
+    'unanswered',
+    null,
     null,
     'unanswered',
     null,
@@ -122,6 +140,8 @@ values
     'risk',
     '燃料価格の変動による輸送コストの上昇',
     'answered',
+    'transition',
+    'answered',
     '燃料価格が上昇した場合、輸送コストが増加する可能性がある。',
     null,
     'answered',
@@ -132,3 +152,24 @@ values
     '2026-06-01 10:10:00+09',
     '2026-06-01 10:10:00+09'
   );
+
+-- 時間軸の定義（T07）。組織 A だけに入れる（組織 B は行が無い＝すべて未入力の表示を確認できる）。
+insert into ssbj_report_time_horizons (
+  "reportId", "organizationId",
+  "shortTermState", "shortTerm", "mediumTermState", "mediumTerm", "longTermState", "longTerm",
+  "planningHorizonRelationState", "planningHorizonRelation", "internalNote",
+  "createdByUserId", "updatedByUserId", "createdAt", "updatedAt"
+)
+values (
+  '5b1f0000-1111-4000-8000-000000000001',
+  '11111111-1111-1111-1111-111111111111',
+  'answered', '3年以内（中期経営計画の期間）',
+  'answered', '3年超10年以内',
+  'answered', '10年超（2050年まで）',
+  'unconfirmed', null,
+  '計画期間との関係は経営企画部に確認中（架空）。',
+  'aaaaaaaa-0000-0000-0000-000000000001',
+  'aaaaaaaa-0000-0000-0000-000000000001',
+  '2025-06-02 10:40:00+09',
+  '2025-06-02 10:40:00+09'
+);

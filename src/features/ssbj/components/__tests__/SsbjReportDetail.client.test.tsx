@@ -109,9 +109,59 @@ describe('SsbjReportDetail', () => {
       purpose: REPORT.purpose,
       reportingScope: REPORT.reportingScope,
       standardVersion: null,
+      parentCompanyName: REPORT.parentCompanyName,
+      parentRelationship: REPORT.parentRelationship,
+      ownershipPercentage: REPORT.ownershipPercentage,
+      measurementApproach: REPORT.measurementApproach,
+      industryCode: REPORT.industryCode,
     });
     expect(container.querySelector('input[name="title"]')).toBeNull();
     expect(container.querySelector('dl')?.textContent).toContain('改訂後のレポート名');
+  });
+
+  it('親会社との関係・持分比率・測定アプローチ・業種を表示し、業種には産業別ガイダンスの巻へのリンクを出す', async () => {
+    vi.mocked(getSsbjReport).mockResolvedValue(REPORT);
+    const { container } = await renderScreen();
+
+    const text = container.querySelector('dl')?.textContent ?? '';
+    expect(text).toContain('架空サンプルホールディングス株式会社');
+    expect(text).toContain('連結子会社');
+    expect(text).toContain('100%');
+    expect(text).toContain('経営支配力アプローチ');
+    expect(text).toContain('RT-IG 工業用機械及び製品');
+    const link = container.querySelector<HTMLAnchorElement>('dl a');
+    expect(link?.href).toBe('https://www.ssb-j.jp/jp/wp-content/uploads/sites/6/s2-50_20231020.pdf');
+    expect(link?.textContent).toContain('第50巻');
+  });
+
+  it('業種と持分比率を編集すると、選んだ値で保存する。持分比率の形式が違えば保存しない', async () => {
+    vi.mocked(getSsbjReport).mockResolvedValue(REPORT);
+    vi.mocked(updateSsbjReportBasicInfo).mockResolvedValue({ ...REPORT, industryCode: 'TR-RO', ownershipPercentage: '35' });
+    const { container } = await renderScreen();
+
+    click(findButton(container, '編集'));
+    const industry = container.querySelector<HTMLSelectElement>('select[name="industryCode"]');
+    const ownership = container.querySelector<HTMLInputElement>('input[name="ownershipPercentage"]');
+    if (!industry || !ownership) throw new Error('業種・持分比率の入力欄がありません');
+    const selectSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set;
+    act(() => {
+      selectSetter?.call(industry, 'TR-RO');
+      industry.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    setInputValue(ownership, '101');
+    click(findButton(container, '変更を保存'));
+    await flushPromises();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('持分比率は 0 より大きく 100 以下');
+    expect(updateSsbjReportBasicInfo).not.toHaveBeenCalled();
+
+    setInputValue(ownership, '35');
+    click(findButton(container, '変更を保存'));
+    await flushPromises();
+    expect(vi.mocked(updateSsbjReportBasicInfo).mock.calls[0][1]).toMatchObject({
+      industryCode: 'TR-RO',
+      ownershipPercentage: '35',
+    });
   });
 
   it('保存版の作成は、読込時の draftRevision を渡して版番号を知らせる', async () => {

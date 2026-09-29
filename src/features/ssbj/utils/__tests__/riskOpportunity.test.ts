@@ -16,6 +16,7 @@ import {
 const inputOf = (item: SsbjRiskOpportunity): SsbjRiskOpportunityInput => ({
   kind: item.kind,
   title: item.title,
+  riskType: item.riskType,
   description: item.description,
   timeHorizon: item.timeHorizon,
   linkTargets: item.linkTargets,
@@ -56,6 +57,19 @@ describe('normalizeSsbjRiskOpportunityInput', () => {
     const input = normalizeSsbjRiskOpportunityInput(values({ title: '  名称  ', internalNote: '   ' }));
     expect(input.title).toBe('名称');
     expect(input.description.internalNote).toBeNull();
+  });
+
+  it('リスクは選んだ種類を持ち、機会はフォームの選択に関係なく非該当にする', () => {
+    expect(normalizeSsbjRiskOpportunityInput(values({ kind: 'risk', riskType: 'physical' })).riskType).toEqual({
+      state: 'answered',
+      value: 'physical',
+    });
+    expect(normalizeSsbjRiskOpportunityInput(values({ kind: 'risk', riskType: 'unconfirmed' })).riskType).toEqual({
+      state: 'unconfirmed',
+    });
+    expect(
+      normalizeSsbjRiskOpportunityInput(values({ kind: 'opportunity', riskType: 'transition' })).riskType,
+    ).toEqual({ state: 'not_applicable' });
   });
 
   it('関連先を重複なく章の順に並べる', () => {

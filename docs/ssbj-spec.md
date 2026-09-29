@@ -9,7 +9,8 @@ SSBJ（サステナビリティ基準委員会）基準に沿った開示レポ�
 変更するときは、この文書・`types.ts`・架空データ・テストを同じ PR で揃えること。
 
 > 関連: 規約 [`AGENTS.md`](../AGENTS.md) / 画面・URL [`functional-spec.md`](functional-spec.md) /
-> OGT の算定範囲と制約 [`coverage-and-limitations.md`](coverage-and-limitations.md)
+> OGT の算定範囲と制約 [`coverage-and-limitations.md`](coverage-and-limitations.md) /
+> R1 の対象範囲（T01 の合意） [`ssbj-r1-scope.md`](ssbj-r1-scope.md)
 
 ---
 
@@ -282,7 +283,7 @@ T06 の版生成関数は、`public` スキーマの `ssbj_snapshot_section__` �
 - ローカル DB 用のデモデータは、テーブルができた時点で各タスクが `supabase/seeds/demo/ssbj_demo.sql` に追加する
   （T04 がファイルを作成。本番用の `seeds/production/` には入れない）。デモ組織 A・B の両方に入れ、組織分離を確認できるようにする。
 
-## 12. 確定事項と T01 合意待ち（仮置き）
+## 12. 確定事項と T01 の合意
 
 ### 確定事項
 
@@ -299,19 +300,10 @@ T06 の版生成関数は、`public` スキーマの `ssbj_snapshot_section__` �
 | 責務の方向（T04 → T06 → 各機能） | §9 |
 | 固定版セクションの登録規約 | §10 |
 
-### T01 合意待ち（仮置き）
+### T01 の合意（R1 の対象範囲）
 
-T01（初回のレポート例・対象範囲の合意）が未完了のため、次は仮の内容で進めている。合意後にこの一覧を見直し、
-差分を `types.ts`・架空データ・各機能に反映する。
-
-| 事項 | 仮の内容 | 反映先 |
-|---|---|---|
-| 基本情報の項目名と必須性 | タイトル（必須）・作成目的・報告範囲・参照する基準の版（いずれも任意） | `types.ts` の `SsbjReportBasicInfo`、T04 |
-| R1 で扱う章・項目の範囲 | 四本柱の 4 章すべて。項目は架空データで使う数項目のみ | 架空データ、T05・T32a |
-| 架空の入力例・出力例 | §11 の架空サンプル株式会社・2024年度 | 架空データ |
-| リスク・機会の時間軸の区分 | 短期 / 中期 / 長期の 3 区分（各区分の期間の定義は持たない） | T07（check 制約。変更は制約の張り替え） |
-| リスクの分類 | 持たない（物理的 / 移行 などの区分にするか未確定） | T07（決まったら NULL 可の列を追加） |
-| 集計範囲 | 組織全体のみ（拠点別は扱わない） | §7、T08a |
+対象利用者・利用場面・R1 の対象と対象外・初回対象の要求項目・入力例と出力例・産業別ガイダンスの参照は
+[`ssbj-r1-scope.md`](ssbj-r1-scope.md) を正とする。T01 の合意前に仮置きしていた事項の確定内容も同文書を見る。
 
 ## 13. 実装状況
 
@@ -333,6 +325,26 @@ T01（初回のレポート例・対象範囲の合意）が未完了のため�
 - **年度の FK は `on delete` を指定しない（NO ACTION）。** `restrict` は即時検査のため、組織削除（デモ seed の再投入を含む）で年度とレポートが同じ文の中で連鎖削除されるときに失敗しうる。アプリからの年度削除は `fiscalYears.ts` の参照チェックで止める。
 - **一覧・詳細の年度表示は `fiscal_years` を埋め込んで取得する。** 画面の型 `SsbjReportRecord`（基本情報＋年度のラベル・期間）は保存版の `report` と同じ形にしている。
 - 版管理の列（`draftRevision`）と保存版は T06 が追加する（T04 には入れていない）。
+
+#### T01 の合意を受けた追加（親会社との関係・測定アプローチ・業種）
+
+R1 のレポートは親会社の有価証券報告書に向けた子会社・関連会社の分の下地になるため（[`ssbj-r1-scope.md`](ssbj-r1-scope.md) §2）、
+親会社が連結の開示に合算・統合できる情報と、産業別ガイダンスの参照先を基本情報に追加した。
+
+| 対象 | 内容 |
+|---|---|
+| DB | `supabase/migrations/20260928154722_ssbj_report_parent_and_industry.sql`。`ssbj_reports` に `parentCompanyName` / `parentRelationship` / `ownershipPercentage`（numeric(5,2)）/ `measurementApproach` / `industryCode` を追加（いずれも NULL 可・check 制約）。列 GRANT に追加。`bump_ssbj_reports_own_draft_revision` と `create_ssbj_report_version` を置き換え、追加列を draftRevision の対象と保存版の `report` に含めた |
+| 画面 | 作成ダイアログと詳細画面の編集に 5 項目。詳細画面の業種には産業別ガイダンスの巻へのリンク |
+| コード | `types.ts` の `SsbjParentRelationship`・`SsbjMeasurementApproach`、`utils/sicsIndustries.ts`（68 産業・リンク）、`utils/reportValidation.ts`、`services/reportService.ts`、`components/SsbjReportFormFields.client.tsx` / `SsbjReportBasicInfo.tsx` |
+| テスト | `scripts/db/__tests__/ssbjReportParentPolicy.test.ts`、`utils/__tests__/sicsIndustries.test.ts`（DB の業種コードの制約と一覧の一致を含む）、検証・画面の単体テスト |
+
+決めたこと:
+
+- **5 項目とも任意（NULL 可）で、状態＋値の対にはしない。** 既存の基本情報（作成目的など）と同じ持ち方にした。
+- **持分比率は numeric(5,2) で持ち、画面・保存版では十進表記の文字列にする。** 取得時は `ownershipPercentage::text` で受け取り、保存版の `report` にも text で入れる（§6）。範囲は 0 超 100 以下。
+- **測定アプローチは親会社の選択に合わせる。** 選んだ理由（気候関連開示基準 第61項(2)）は親会社が開示するため、R1 では持たない。
+- **業種コードの一覧は DB の check 制約と `utils/sicsIndustries.ts` の 2 か所にある。** 一致はテストで確認している。
+- **版生成 RPC の置き換えは処理を変えず、`report` の項目だけを足した。** 関数名・引数・権限は変えていない。
 
 ### 汎用の保存・版生成基盤（T06）
 
@@ -367,8 +379,31 @@ T01（初回のレポート例・対象範囲の合意）が未完了のため�
 決めたこと:
 
 - **区分（リスク / 機会）と時間軸は enum ではなく check 制約で持つ。** 時間軸は仮置き（§12）で、区分を変えるときに制約の張り替えだけで済ませるため（enum は値の削除・改名ができない）。
-- **リスクの分類（物理的 / 移行 など）は持たない。** 方針が未確定のため。決まったら NULL 可の列として追加する（既存行に影響しない）。
+- **リスクの種類（物理的 / 移行）は後から追加した。** 最初の実装では方針が未確定で持たなかったが、T01 の合意で持つことになった（下の「T01 の合意を受けた追加」）。
 - **章・項目への関連は 1 つの配列列 `linkTargets`（章 ID または項目 ID）で持つ。** 章と項目を別の列にすると項目 ID の接頭辞と食い違いうる（§3）。別テーブルにすると、リスク・機会本体と関連の保存が 2 回の通信に分かれ、片方だけ失敗しうるため、1 行の更新で済む配列にした。形式は check 制約（`utils/ids.ts` と同じ正規表現）で検証し、並び順（章の順、同じ章では章そのものを先に）は画面側で揃える。
 - **項目への関連付けは、章を選んで項目の識別子を入力する。** 項目の一覧（T32a の要求項目マスター・T05 の文章）がまだ無いため、形式だけを検証している。一覧ができたら選択式に差し替える（保存形式は変わらない）。
 - **説明は「入力済み」のときだけ本文を保存する。** 未確認・非該当・未入力に切り替えると本文は保存しない（未確認の下書きは内部メモに書く。§4）。
 - **過去版からの復元用の `ssbj_restore_section__risks_opportunities`（§10 の手順5）はまだ定義していない。** 復元の契約（作業中データを置き換えるか等）は T11 で確定するため、T11 の実装時に対で追加する。
+
+#### T01 の合意を受けた追加（リスクの種類・時間軸の定義）
+
+気候関連開示基準は、リスクごとに物理的リスクか移行リスクかを（第19項(2)）、レポートとして「短期」「中期」「長期」の
+定義とその定義と戦略上の計画期間との関係を（第19項(4)(5)、一般開示基準 第14項(3)(4)）開示するよう求めている。
+R1 の初回対象（[`ssbj-r1-scope.md`](ssbj-r1-scope.md) §5.1）に含めるため追加した。
+
+| 対象 | 内容 |
+|---|---|
+| DB | `supabase/migrations/20260928151241_ssbj_risk_type_and_time_horizons.sql`。`ssbj_risks_opportunities` に `"riskTypeState"` / `"riskType"`、レポートごとに 1 行の `ssbj_report_time_horizons`（RLS・GRANT・`bump_ssbj_draft_revision`・保存版セクション `ssbj_snapshot_section__time_horizons`）、状態＋値を jsonb にする共通関数 `ssbj_field_value_json` |
+| 画面 | `/ssbj/[reportId]/risks` の登録・編集にリスクの種類（区分がリスクのときだけ）、画面上部に「時間軸の定義」欄（`components/SsbjTimeHorizonCard.client.tsx`） |
+| コード | `types.ts` の `SsbjRiskType`・`SsbjTimeHorizonDefinitions`、`utils/timeHorizons.ts`、`services/timeHorizonService.ts`、`hooks/useSsbjTimeHorizons.ts` / `useSsbjTimeHorizonForm.ts` |
+| テスト | `scripts/db/__tests__/ssbjTimeHorizonsPolicy.test.ts`、検証・変換・画面の単体テスト |
+| デモデータ | リスクの種類を追加。時間軸の定義は組織 A だけ（組織 B は「すべて未入力」の表示の確認用） |
+
+決めたこと:
+
+- **既存の行を書き換えない。** リスクの種類は状態＋値の対で追加し、既定は未入力にした（マイグレーションにデータを入れないため。AGENTS.md R12）。
+- **機会はリスクの種類を持たない。** DB は「区分が機会なら値は NULL」を制約で保証し、画面は保存時に機会を「非該当」にする。リスクの選択肢は物理的 / 移行 / 未入力 / 未確認で、非該当は選ばせない（リスクは必ずどちらかに当たるため）。
+- **急性 / 慢性、政策・法律・技術・市場・レピュテーションの細分類は持たない。** 基準は定義しているが、リスクごとの開示は求めていないため（第4項(2)(3)）。
+- **時間軸の定義は `ssbj_reports` の列にせず、別テーブルにした。** §10 の登録規約に乗せれば、版生成 RPC と T04 のテーブルを変えずに保存版へ取り込めるため。行が無いレポートの保存版には、すべて未入力の定義が入る（欠落と未入力を区別するため）。
+- **時間軸の定義は upsert ではなく「更新して、無ければ作る」で保存する。** PostgREST の upsert は衝突時の更新に `reportId` / `organizationId` も含めるが、両列は作成後に変えない前提で update の列 GRANT に入れていないため。
+- **状態＋値を jsonb にする処理は共通関数 `ssbj_field_value_json` にまとめた。** 後続の機能の保存版セクション関数も使える。名前を `ssbj_snapshot_section__` で始めないこと（版生成 RPC が自動収集してしまう）。

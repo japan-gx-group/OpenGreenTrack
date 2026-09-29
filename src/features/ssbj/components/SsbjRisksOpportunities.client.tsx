@@ -1,10 +1,11 @@
 'use client';
 
 // SSBJ レポートのリスク・機会画面（/ssbj/[reportId]/risks）。複数のリスク・機会を登録・編集・削除し、
-// 説明・時間軸・章 / 項目への関連を持たせる。変更は作業中の内容で、保存版はレポート詳細の手動保存で作る。
+// リスクの種類・説明・時間軸・章 / 項目への関連を持たせる。あわせてレポートとしての時間軸の定義を編集する。
+// 変更は作業中の内容で、保存版はレポート詳細の手動保存で作る。
 // 存在しない・他組織のレポートは「見つかりません」を表示し、他組織のレポートの存在を示唆しない。
-// 読込は useSsbjReport / useSsbjRisksOpportunities、入力は useSsbjRiskOpportunityForm、削除は
-// useSsbjRiskOpportunityDelete が持ち、ここは組み立てるだけ。
+// 読込は useSsbjReport / useSsbjRisksOpportunities / useSsbjTimeHorizons、入力は useSsbjRiskOpportunityForm /
+// useSsbjTimeHorizonForm、削除は useSsbjRiskOpportunityDelete が持ち、ここは組み立てるだけ。
 
 import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
@@ -19,12 +20,16 @@ import { useSsbjReport } from '../hooks/useSsbjReport';
 import { useSsbjRiskOpportunityDelete } from '../hooks/useSsbjRiskOpportunityDelete';
 import { useSsbjRiskOpportunityForm } from '../hooks/useSsbjRiskOpportunityForm';
 import { useSsbjRisksOpportunities } from '../hooks/useSsbjRisksOpportunities';
+import { useSsbjTimeHorizonForm } from '../hooks/useSsbjTimeHorizonForm';
+import { useSsbjTimeHorizons } from '../hooks/useSsbjTimeHorizons';
 import { createSsbjRiskOpportunity, updateSsbjRiskOpportunity } from '../services/riskOpportunityService';
+import { saveSsbjTimeHorizons } from '../services/timeHorizonService';
 import type { SsbjRiskOpportunity } from '../types';
 import { toSsbjRiskOpportunityFormValues } from '../utils/riskOpportunity';
 import { SsbjRiskOpportunityDeleteDialog } from './SsbjRiskOpportunityDeleteDialog.client';
 import { SsbjRiskOpportunityDialog } from './SsbjRiskOpportunityDialog.client';
 import { SsbjRiskOpportunityList } from './SsbjRiskOpportunityList';
+import { SsbjTimeHorizonCard } from './SsbjTimeHorizonCard.client';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
 
 export const SsbjRisksOpportunities = ({ reportId }: { reportId: string }) => {
@@ -34,6 +39,25 @@ export const SsbjRisksOpportunities = ({ reportId }: { reportId: string }) => {
   // null: ダイアログを閉じている / 'new': 登録 / それ以外: 編集中の対象
   const [editing, setEditing] = useState<SsbjRiskOpportunity | 'new' | null>(null);
   const deletion = useSsbjRiskOpportunityDelete();
+  const horizons = useSsbjTimeHorizons(reportId, report !== null);
+  const [isEditingHorizons, setIsEditingHorizons] = useState<boolean>(false);
+
+  const horizonForm = useSsbjTimeHorizonForm(async input => {
+    if (!report) return;
+    horizons.setDefinitions(await saveSsbjTimeHorizons(report, input));
+    showToast('時間軸の定義を保存しました', 'success');
+  });
+
+  const startEditHorizons = () => {
+    horizonForm.reset(horizons.definitions);
+    setIsEditingHorizons(true);
+  };
+
+  const handleSaveHorizons = async (event: FormEvent) => {
+    if (await horizonForm.submit(event)) {
+      setIsEditingHorizons(false);
+    }
+  };
 
   const form = useSsbjRiskOpportunityForm(async input => {
     if (!report) return;
@@ -69,8 +93,8 @@ export const SsbjRisksOpportunities = ({ reportId }: { reportId: string }) => {
     }
   };
 
-  const errorMessage = reportError || list.errorMessage;
-  const isLoading = isReportLoading || (report !== null && list.isLoading);
+  const errorMessage = reportError || list.errorMessage || horizons.errorMessage;
+  const isLoading = isReportLoading || (report !== null && (list.isLoading || horizons.isLoading));
 
   return (
     <div className="page-content gt-scroll relative">
@@ -121,11 +145,21 @@ export const SsbjRisksOpportunities = ({ reportId }: { reportId: string }) => {
               SSBJレポート一覧へ戻る
             </Link>
           </Card>
-        ) : report && !list.errorMessage ? (
-          <Card>
-            <h2 className="m-0 mb-4 text-base font-bold">登録済みのリスク・機会（{list.items.length}件）</h2>
-            <SsbjRiskOpportunityList items={list.items} onEdit={openEdit} onDelete={deletion.request} />
-          </Card>
+        ) : report && !list.errorMessage && !horizons.errorMessage ? (
+          <>
+            <SsbjTimeHorizonCard
+              definitions={horizons.definitions}
+              isEditing={isEditingHorizons}
+              form={horizonForm}
+              onStartEdit={startEditHorizons}
+              onCancel={() => setIsEditingHorizons(false)}
+              onSubmit={event => void handleSaveHorizons(event)}
+            />
+            <Card>
+              <h2 className="m-0 mb-4 text-base font-bold">登録済みのリスク・機会（{list.items.length}件）</h2>
+              <SsbjRiskOpportunityList items={list.items} onEdit={openEdit} onDelete={deletion.request} />
+            </Card>
+          </>
         ) : null}
       </div>
 

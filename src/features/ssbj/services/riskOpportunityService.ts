@@ -9,6 +9,7 @@ import {
   type SsbjLinkTarget,
   type SsbjRiskOpportunity,
   type SsbjRiskOpportunityKind,
+  type SsbjRiskType,
   type SsbjTimeHorizon,
 } from '../types';
 import { fromFieldValue, toFieldValue } from '../utils/fieldValue';
@@ -18,6 +19,8 @@ export interface SsbjRiskOpportunityRow {
   id: string;
   kind: string;
   title: string;
+  riskTypeState: string;
+  riskType: string | null;
   descriptionState: string;
   descriptionText: string | null;
   internalNote: string | null;
@@ -27,7 +30,8 @@ export interface SsbjRiskOpportunityRow {
 }
 
 const SELECT_COLUMNS =
-  'id, kind, title, descriptionState, descriptionText, internalNote, timeHorizonState, timeHorizon, linkTargets';
+  'id, kind, title, riskTypeState, riskType, descriptionState, descriptionText, internalNote, ' +
+  'timeHorizonState, timeHorizon, linkTargets';
 
 const isKind = (value: string): value is SsbjRiskOpportunityKind =>
   (SSBJ_RISK_OPPORTUNITY_KINDS as readonly string[]).includes(value);
@@ -44,6 +48,8 @@ export const toSsbjRiskOpportunity = (row: SsbjRiskOpportunityRow): SsbjRiskOppo
     id: row.id,
     kind: row.kind,
     title: row.title,
+    // 値の形式（physical / transition）は DB の check 制約が保証している。
+    riskType: toFieldValue<SsbjRiskType>(row.riskTypeState, row.riskType as SsbjRiskType | null),
     description: {
       disclosure: toFieldValue<string>(row.descriptionState, row.descriptionText),
       internalNote: row.internalNote,
@@ -56,11 +62,14 @@ export const toSsbjRiskOpportunity = (row: SsbjRiskOpportunityRow): SsbjRiskOppo
 
 /** SsbjRiskOpportunityInput → 書き込む列（状態列＋値列の対に分解する）。 */
 export const toSsbjRiskOpportunityColumns = (input: SsbjRiskOpportunityInput) => {
+  const riskType = fromFieldValue(input.riskType);
   const description = fromFieldValue(input.description.disclosure);
   const timeHorizon = fromFieldValue(input.timeHorizon);
   return {
     kind: input.kind,
     title: input.title,
+    riskTypeState: riskType.state,
+    riskType: riskType.value,
     descriptionState: description.state,
     descriptionText: description.value,
     internalNote: input.description.internalNote,
@@ -83,7 +92,7 @@ export const listSsbjRisksOpportunities = async (reportId: string): Promise<Ssbj
   if (error) {
     throw new Error('リスク・機会の取得に失敗しました');
   }
-  return ((data ?? []) as SsbjRiskOpportunityRow[]).map(toSsbjRiskOpportunity);
+  return ((data ?? []) as unknown as SsbjRiskOpportunityRow[]).map(toSsbjRiskOpportunity);
 };
 
 /** 登録。組織はレポートの組織を渡す（レポートの組織帰属は RLS の with check が検証する）。 */
@@ -101,7 +110,7 @@ export const createSsbjRiskOpportunity = async (
   if (error || !data) {
     throw new Error('リスク・機会の登録に失敗しました');
   }
-  return toSsbjRiskOpportunity(data as SsbjRiskOpportunityRow);
+  return toSsbjRiskOpportunity(data as unknown as SsbjRiskOpportunityRow);
 };
 
 /** 更新。レポート・組織は変更できない（列 GRANT で内容の列だけを許可している）。 */
@@ -124,7 +133,7 @@ export const updateSsbjRiskOpportunity = async (
     // RLS で対象が見えない（削除済み・他組織）場合は 0 件更新になる。
     throw new Error('リスク・機会が見つかりません。画面を開き直してください');
   }
-  return toSsbjRiskOpportunity(data as SsbjRiskOpportunityRow);
+  return toSsbjRiskOpportunity(data as unknown as SsbjRiskOpportunityRow);
 };
 
 /** 削除。 */

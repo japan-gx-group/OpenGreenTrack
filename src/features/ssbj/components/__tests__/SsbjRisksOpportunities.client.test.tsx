@@ -2,11 +2,16 @@
 import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { click, render, setInputValue, type RenderResult } from '@/lib/testing/render';
-import { fictionalReportBasicInfo, fictionalRisksOpportunities } from '../../__fixtures__/fictionalReport';
+import {
+  fictionalReportBasicInfo,
+  fictionalRisksOpportunities,
+  fictionalTimeHorizonDefinitions,
+} from '../../__fixtures__/fictionalReport';
 import type { SsbjReportWorkingRecord, SsbjRiskOpportunity } from '../../types';
 
-// SSBJ リスク・機会画面: 一覧の再表示（状態ラベル・内部メモの区別・関連先）、Not Found、
-// 登録（検証・関連付け・一覧への反映）、編集、削除を検証する。Supabase を呼ぶ I/O だけをモックする。
+// SSBJ リスク・機会画面: 一覧の再表示（状態ラベル・内部メモの区別・リスクの種類・関連先）、Not Found、
+// 登録（検証・関連付け・一覧への反映）、編集、削除、時間軸の定義の表示・保存を検証する。
+// Supabase を呼ぶ I/O だけをモックする。
 
 vi.mock('../../services/reportService', async importOriginal => ({
   ...(await importOriginal<typeof import('../../services/reportService')>()),
@@ -19,6 +24,11 @@ vi.mock('../../services/riskOpportunityService', async importOriginal => ({
   updateSsbjRiskOpportunity: vi.fn(),
   deleteSsbjRiskOpportunity: vi.fn(),
 }));
+vi.mock('../../services/timeHorizonService', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../services/timeHorizonService')>()),
+  getSsbjTimeHorizons: vi.fn(),
+  saveSsbjTimeHorizons: vi.fn(),
+}));
 
 import { getSsbjReport } from '../../services/reportService';
 import {
@@ -27,6 +37,7 @@ import {
   listSsbjRisksOpportunities,
   updateSsbjRiskOpportunity,
 } from '../../services/riskOpportunityService';
+import { getSsbjTimeHorizons, saveSsbjTimeHorizons } from '../../services/timeHorizonService';
 import { SsbjRisksOpportunities } from '../SsbjRisksOpportunities.client';
 
 const REPORT: SsbjReportWorkingRecord = {
@@ -93,6 +104,7 @@ const renderScreen = async (): Promise<RenderResult> => {
 beforeEach(() => {
   vi.mocked(getSsbjReport).mockResolvedValue(REPORT);
   vi.mocked(listSsbjRisksOpportunities).mockResolvedValue(fictionalRisksOpportunities);
+  vi.mocked(getSsbjTimeHorizons).mockResolvedValue(fictionalTimeHorizonDefinitions);
 });
 
 afterEach(() => {
@@ -107,6 +119,8 @@ describe('SsbjRisksOpportunities', () => {
 
     expect(listSsbjRisksOpportunities).toHaveBeenCalledWith(REPORT.id);
     const [answered, unconfirmed, unanswered] = itemCards().map(card => card.textContent ?? '');
+    expect(answered).toContain('移行リスク');
+    expect(unconfirmed).not.toContain('リスクの種類');
     expect(answered).toContain('中期');
     expect(answered).toContain('炭素価格が導入された場合');
     expect(answered).toContain('影響額の試算は経営企画部で実施中');
@@ -141,6 +155,7 @@ describe('SsbjRisksOpportunities', () => {
       id: 'new-item',
       kind: 'opportunity',
       title: '再生可能エネルギーの調達',
+      riskType: { state: 'not_applicable' },
       description: { disclosure: { state: 'answered', value: '調達コストの低減が見込まれる。' }, internalNote: null },
       timeHorizon: { state: 'answered', value: 'long_term' },
       linkTargets: ['strategy', 'strategy.climate_resilience'],
@@ -164,6 +179,7 @@ describe('SsbjRisksOpportunities', () => {
     expect(createSsbjRiskOpportunity).toHaveBeenCalledWith(REPORT, {
       kind: 'opportunity',
       title: '再生可能エネルギーの調達',
+      riskType: { state: 'not_applicable' },
       description: { disclosure: { state: 'answered', value: '調達コストの低減が見込まれる。' }, internalNote: null },
       timeHorizon: { state: 'answered', value: 'long_term' },
       linkTargets: ['strategy', 'strategy.climate_resilience'],
@@ -198,6 +214,7 @@ describe('SsbjRisksOpportunities', () => {
     expect(updateSsbjRiskOpportunity).toHaveBeenCalledWith(first.id, {
       kind: first.kind,
       title: '炭素価格の導入（改訂）',
+      riskType: first.riskType,
       description: first.description,
       timeHorizon: first.timeHorizon,
       linkTargets: first.linkTargets,
@@ -216,5 +233,55 @@ describe('SsbjRisksOpportunities', () => {
 
     expect(deleteSsbjRiskOpportunity).toHaveBeenCalledWith(fictionalRisksOpportunities[2].id);
     expect(itemCards()).toHaveLength(fictionalRisksOpportunities.length - 1);
+  });
+
+  it('リスクの種類は区分がリスクのときだけ選べ、選んだ種類で登録する', async () => {
+    const [first] = fictionalRisksOpportunities;
+    vi.mocked(createSsbjRiskOpportunity).mockResolvedValue({ ...first, id: 'new-risk' });
+    await renderScreen();
+
+    click(findButton('リスク・機会を追加'));
+    expect(dialog().querySelector('select[name="riskType"]')).not.toBeNull();
+    setSelectValue(field('select[name="kind"]'), 'opportunity');
+    expect(dialog().querySelector('select[name="riskType"]')).toBeNull();
+    setSelectValue(field('select[name="kind"]'), 'risk');
+    setSelectValue(field('select[name="riskType"]'), 'physical');
+    setInputValue(field('input[name="title"]'), '猛暑による生産性の低下');
+    click(findButton('登録する', dialog()));
+    await flushPromises();
+
+    expect(vi.mocked(createSsbjRiskOpportunity).mock.calls[0][1]).toMatchObject({
+      kind: 'risk',
+      riskType: { state: 'answered', value: 'physical' },
+    });
+  });
+
+  it('時間軸の定義を表示し、編集して保存すると保存後の内容を再表示する', async () => {
+    vi.mocked(saveSsbjTimeHorizons).mockImplementation(async (_report, input) => input);
+    await renderScreen();
+
+    const view = document.querySelector('[data-testid="ssbj-time-horizon-definitions"]');
+    expect(view?.textContent).toContain('3年以内（中期経営計画の期間）');
+    expect(view?.textContent).toContain('未確認');
+    expect(view?.textContent).toContain('計画期間との関係は経営企画部に確認中');
+
+    click(findButton('定義を編集'));
+    const form = document.querySelector<HTMLElement>('[data-testid="ssbj-time-horizon-form"]');
+    if (!form) throw new Error('時間軸の定義のフォームがありません');
+    const relationState = form.querySelector<HTMLSelectElement>('select[name="planningHorizonRelationState"]');
+    const relationText = form.querySelector<HTMLTextAreaElement>('textarea[name="planningHorizonRelation"]');
+    if (!relationState || !relationText) throw new Error('計画期間との関係の入力欄がありません');
+    setSelectValue(relationState, 'answered');
+    setTextareaValue(relationText, '短期は中期経営計画の期間と一致させている。');
+    click(findButton('定義を保存', form));
+    await flushPromises();
+
+    expect(saveSsbjTimeHorizons).toHaveBeenCalledWith(REPORT, {
+      ...fictionalTimeHorizonDefinitions,
+      planningHorizonRelation: { state: 'answered', value: '短期は中期経営計画の期間と一致させている。' },
+    });
+    expect(document.querySelector('[data-testid="ssbj-time-horizon-definitions"]')?.textContent).toContain(
+      '短期は中期経営計画の期間と一致させている。',
+    );
   });
 });

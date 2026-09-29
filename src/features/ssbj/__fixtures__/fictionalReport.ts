@@ -18,6 +18,7 @@ import type {
   SsbjReportVersion,
   SsbjRequirementId,
   SsbjRiskOpportunity,
+  SsbjTimeHorizonDefinitions,
 } from '../types';
 
 export const FICTIONAL_ORGANIZATION_ID = '5b1f0000-0000-4000-8000-000000000001';
@@ -43,6 +44,11 @@ export const fictionalReportBasicInfo: SsbjReportBasicInfo = {
   purpose: '社内での記載内容の確認',
   reportingScope: '架空サンプル株式会社（単体）',
   standardVersion: null,
+  parentCompanyName: '架空サンプルホールディングス株式会社',
+  parentRelationship: 'consolidated_subsidiary',
+  ownershipPercentage: '100',
+  measurementApproach: 'operational_control',
+  industryCode: 'RT-IG',
   createdAt: '2025-06-02T01:00:00.000Z',
   updatedAt: '2025-06-02T01:00:00.000Z',
 };
@@ -84,13 +90,14 @@ export const fictionalRequirementLinks: { itemId: SsbjItemId; requirementIds: Ss
 
 /**
  * リスク・機会（T07）。文章の項目（fictionalDisclosableTexts）への関連付けと、章だけへの関連付け、
- * 関連なしの例を含む。説明・時間軸は回答済み / 未確認 / 未入力を含む。
+ * 関連なしの例を含む。リスクの種類・説明・時間軸は回答済み / 未確認 / 未入力を含み、機会の種類は非該当。
  */
 export const fictionalRisksOpportunities: SsbjRiskOpportunity[] = [
   {
     id: '5b1f0000-0000-4000-8000-000000000101',
     kind: 'risk',
     title: '炭素価格の導入による調達コストの上昇',
+    riskType: { state: 'answered', value: 'transition' },
     description: {
       disclosure: {
         state: 'answered',
@@ -105,6 +112,7 @@ export const fictionalRisksOpportunities: SsbjRiskOpportunity[] = [
     id: '5b1f0000-0000-4000-8000-000000000102',
     kind: 'opportunity',
     title: '省エネルギー型製品の需要拡大',
+    riskType: { state: 'not_applicable' },
     description: {
       disclosure: { state: 'unconfirmed' },
       internalNote: '営業部に市場見通しを確認中。',
@@ -116,11 +124,21 @@ export const fictionalRisksOpportunities: SsbjRiskOpportunity[] = [
     id: '5b1f0000-0000-4000-8000-000000000103',
     kind: 'risk',
     title: '豪雨による拠点の操業停止',
+    riskType: { state: 'unanswered' },
     description: { disclosure: { state: 'unanswered' }, internalNote: null },
     timeHorizon: { state: 'unanswered' },
     linkTargets: [],
   },
 ];
+
+/** 時間軸の定義（T07）。回答済みと未確認、内部メモの併存を含む。 */
+export const fictionalTimeHorizonDefinitions: SsbjTimeHorizonDefinitions = {
+  shortTerm: { state: 'answered', value: '3年以内（中期経営計画の期間）' },
+  mediumTerm: { state: 'answered', value: '3年超10年以内' },
+  longTerm: { state: 'answered', value: '10年超（2050年まで）' },
+  planningHorizonRelation: { state: 'unconfirmed' },
+  internalNote: '計画期間との関係は経営企画部に確認中（架空）。',
+};
 
 const FICTIONAL_PERIOD = {
   startDate: FICTIONAL_FISCAL_YEAR.startDate,
@@ -250,6 +268,7 @@ export const fictionalSnapshot: SsbjReportSnapshotV1 = {
   },
   sections: {
     risks_opportunities: fictionalRisksOpportunities,
+    time_horizons: fictionalTimeHorizonDefinitions,
   },
 };
 
