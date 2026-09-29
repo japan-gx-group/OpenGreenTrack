@@ -217,6 +217,7 @@ erDiagram
 | `/ssbj` `/ssbj/[reportId]` | SSBJ レポート（試行版） | `ssbj_reports`、`fiscal_years`、`ssbj_report_versions`（保存版） |
 | `/ssbj/[reportId]/risks` | SSBJ リスク・機会 | `ssbj_risks_opportunities`、`ssbj_report_time_horizons` |
 | `/ssbj/[reportId]/versions` | SSBJ 保存履歴・CSV 出力 | `ssbj_report_versions`、`system_audit_logs` |
+| `/ssbj/[reportId]/ghg` | OGT の GHG 候補値 | `dashboard_aggregates`、算定・Scope 3 データ（参照のみ） |
 | `/settings/company` `/settings/account` | 設定 | `organizations`、`profiles`、`fiscal_years`、`invites` |
 | `/login` `/signup` `/forgot-password` `/reset-password` `/invite/[token]` | 認証 | Supabase Auth、`invites` |
 
@@ -391,6 +392,7 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 
 | リスク・機会（`/ssbj/[reportId]/risks`） | 詳細画面の「レポートの内容」から入る。リスク・機会を複数登録・編集・削除する。項目は区分（リスク / 機会・必須）・名称（必須）・リスクの種類（区分がリスクのときだけ。物理的リスク / 移行リスク、または未入力 / 未確認）・時間軸（短期 / 中期 / 長期、または未入力 / 未確認 / 非該当）・説明（開示する文章。状態を「入力済み」にしたときだけ本文を保存）・内部メモ（開示しない）・関連する章・項目（章 ID または項目 ID。複数可）。画面上部の「時間軸の定義」で、レポートとしての「短期」「中期」「長期」の定義と計画期間との関係を編集する（各欄は状態＋開示する文章、ほかに内部メモ）。変更は作業中の内容で、保存版には詳細画面の「保存版を作成」で残す |
 | 保存履歴・CSV（`/ssbj/[reportId]/versions`） | 固定版を選び、その版のスナップショットから社内確認用 CSV を出力する。版 ID・位置付け・単位を出力に明記し、生成履歴を表示する。履歴保存に失敗した場合はダウンロードしない |
+| GHG 候補値（`/ssbj/[reportId]/ghg`） | レポートの年度に結び付く Scope 1・2・3 合計と Scope 3 の15カテゴリを参照する。期間・組織全体の集計範囲・採用方式・未算定を表示する。Scope 2 の基準は不明として係数区分の内訳を補足し、サプライヤー値は合計に加えず参考表示する。候補値の採用・固定保存は別機能で行う |
 
 - 基本情報の必須はレポート名のみ。任意項目の未入力は「未入力」と表示し、空欄や「なし」にしない（項目名と必須性は T01 の合意。`ssbj-r1-scope.md`）
 - 親会社の持分比率は 0 より大きく 100 以下、小数点以下 2 桁まで。親会社との関係・測定アプローチ・業種は一覧から選ぶ（業種は SICS の 68 産業）

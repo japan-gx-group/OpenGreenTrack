@@ -10,6 +10,11 @@ const SSBJ_REPORT_CONTENTS: { path: string; label: string; description: string }
     label: 'リスク・機会',
     description: 'リスク・機会（種類・説明・時間軸・関連する章や項目）と、時間軸の定義を記録します。',
   },
+  {
+    path: 'ghg',
+    label: 'GHG排出量の候補値',
+    description: 'OGTのScope別・カテゴリ別の値と算定条件を確認します。',
+  },
 ];
 
 export const SsbjReportContentsNav = ({ reportId }: { reportId: string }) => (
