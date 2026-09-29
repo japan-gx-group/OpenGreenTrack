@@ -155,7 +155,7 @@ export const parseLocationCsvText = (
     throw new Error('CSVファイルが空です。');
   }
 
-  // 区切り文字の自動判別: エクスポート直後はタブ区切り、Excelで再保存するとカンマ区切りになる
+  // 区切り文字の自動判別: 旧形式のタブ区切りと現行のカンマ区切りを扱う
   const delimiter = lines[0].includes('\t') ? '\t' : ',';
   const headers = splitCsvLine(lines[0].trim(), delimiter).map(col => col.trim());
 

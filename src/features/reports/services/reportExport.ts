@@ -41,7 +41,7 @@ export const buildReportFileName = (reportDocument: ReportDocument, extension: s
 };
 
 // 引数名はグローバル document とのシャドーイングを避けて reportDocument とする。
-// エンコードは共通ヘルパー（UTF-16LE + BOM + タブ区切り）に統一し、Mac 版 Excel でも
+// エンコードは共通ヘルパー（UTF-16LE + BOM + カンマ区切り）に統一し、Mac 版 Excel でも
 // 文字化けしないようにする。
 export const downloadReportCsv = (reportDocument: ReportDocument): void => {
   downloadCsv(buildReportFileName(reportDocument, 'csv'), documentToRows(reportDocument));

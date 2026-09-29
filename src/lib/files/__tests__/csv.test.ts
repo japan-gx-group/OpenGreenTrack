@@ -53,14 +53,15 @@ describe('splitCsvLine', () => {
 });
 
 describe('downloadCsv', () => {
-  it('日本語・改行・引用符を保ち、空白の後の数式も無効化する', async () => {
-    downloadCsv('試験.csv', [['日本語', '説明'], ['本文\n"引用"', ' \n=1+1']]);
+  it('カンマで列を分け、日本語・改行・引用符を保ち、空白の後の数式も無効化する', async () => {
+    downloadCsv('試験.csv', [['日本語', '説明'], ['本文,\n"引用"', ' \n=1+1']]);
     const blob = vi.mocked(downloadBlob).mock.calls[0]?.[0];
     expect(blob).toBeDefined();
     const bytes = await blob!.arrayBuffer();
     expect(new Uint8Array(bytes).slice(0, 2)).toEqual(new Uint8Array([0xff, 0xfe]));
     const body = new TextDecoder('utf-16le').decode(bytes);
-    expect(body).toContain('"本文\n""引用"""');
+    expect(body).toContain('日本語,説明\r\n');
+    expect(body).toContain('"本文,\n""引用"""');
     expect(body).toContain('"\' \n=1+1"');
   });
 });

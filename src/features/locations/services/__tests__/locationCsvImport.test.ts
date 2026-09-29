@@ -8,7 +8,7 @@ import {
 } from '../locationCsvImport';
 import type { LocationRecord } from '../../types';
 
-// エクスポート（downloadCsv）と同じタブ区切りでCSVテキストを組み立てるヘルパー
+// 旧形式のタブ区切りでCSVテキストを組み立てるヘルパー
 const csv = (rows: string[][]): string =>
   [[...LOCATION_CSV_HEADERS], ...rows].map(row => row.join('\t')).join('\r\n');
 

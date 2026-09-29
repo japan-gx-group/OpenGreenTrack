@@ -730,7 +730,7 @@ export const Reports = () => {
                 </button>
 
                 <p className="text-[10px] text-text-muted text-center leading-normal">
-                  ※ CSVはExcelでそのまま開ける形式（UTF-16LE・BOM付き・タブ区切り）で出力します。他システムへ取り込む場合はこの形式に合わせてください。PDFは新規タブで印刷用ビューを開き、印刷ダイアログの「PDFとして保存」で出力してください。生成条件は履歴に記録されます。
+                  ※ CSVはExcelでそのまま開ける形式（UTF-16LE・BOM付き・カンマ区切り）で出力します。他システムへ取り込む場合はこの形式に合わせてください。PDFは新規タブで印刷用ビューを開き、印刷ダイアログの「PDFとして保存」で出力してください。生成条件は履歴に記録されます。
                 </p>
               </div>
             </Card>
