@@ -15,6 +15,7 @@ vi.mock('../../services/versionCsv', async importOriginal => ({
   ...(await importOriginal<typeof import('../../services/versionCsv')>()),
   downloadSsbjVersionCsv: vi.fn(),
 }));
+vi.mock('../../services/versionClient', () => ({ saveSsbjReportVersion: vi.fn() }));
 
 import { useSsbjReport } from '../../hooks/useSsbjReport';
 import {
@@ -24,6 +25,7 @@ import {
   recordSsbjCsvGeneration,
 } from '../../services/versionExportService';
 import { downloadSsbjVersionCsv } from '../../services/versionCsv';
+import { saveSsbjReportVersion } from '../../services/versionClient';
 import { SsbjVersions } from '../SsbjVersions.client';
 
 let rendered: RenderResult | null = null;
@@ -36,7 +38,15 @@ const renderScreen = async () => {
     errorMessage: '',
     isNotFound: false,
   });
-  vi.mocked(listSsbjVersions).mockResolvedValue([{ id: fictionalVersion.id, versionNumber: 1, createdAt: fictionalVersion.createdAt, note: null }]);
+  vi.mocked(listSsbjVersions).mockResolvedValue([{
+    id: fictionalVersion.id,
+    versionNumber: 1,
+    createdAt: fictionalVersion.createdAt,
+    note: null,
+    sourceVersionId: null,
+    createdByUserId: 'user-1',
+    creatorName: '作成者',
+  }]);
   vi.mocked(listSsbjCsvHistory).mockResolvedValue([]);
   vi.mocked(getSsbjCsvVersion).mockResolvedValue(fictionalVersion);
   rendered = render(<SsbjVersions reportId={fictionalVersion.reportId} />);
@@ -88,5 +98,28 @@ describe('SsbjVersions', () => {
     expect(downloadSsbjVersionCsv).toHaveBeenCalledOnce();
     expect(container.textContent).toContain('CSV生成履歴');
     expect(container.textContent).toContain(fictionalVersion.id);
+  });
+
+  it('保存版の内容と内部メモを表示する', async () => {
+    const { container } = await renderScreen();
+    const button = Array.from(container.querySelectorAll('button')).find(item => item.textContent?.includes('内容を見る'));
+    if (!button) throw new Error('内容表示ボタンがありません');
+    await act(async () => { click(button); await Promise.resolve(); });
+    expect(container.textContent).toContain(`版 ${fictionalVersion.versionNumber} の保存内容`);
+    expect(container.textContent).toContain('内部メモ（開示しない）');
+    expect(container.textContent).toContain('影響額の試算は経営企画部で実施中（架空）。');
+  });
+
+  it('確認後に元版を指定して新版を作り、作業中データを変更しないと表示する', async () => {
+    vi.mocked(saveSsbjReportVersion).mockResolvedValue({ id: fictionalVersion.id, versionNumber: 2 });
+    const { container } = await renderScreen();
+    const button = Array.from(container.querySelectorAll('button')).find(item => item.textContent?.includes('この版から新版を作成'));
+    if (!button) throw new Error('新版作成ボタンがありません');
+    await act(async () => { click(button); await Promise.resolve(); });
+    const confirm = Array.from(document.querySelectorAll('button')).find(item => item.textContent === '新版を作成');
+    if (!confirm) throw new Error('確認ボタンがありません');
+    await act(async () => { click(confirm); await Promise.resolve(); });
+    expect(saveSsbjReportVersion).toHaveBeenCalledWith(fictionalVersion.reportId, 3, fictionalVersion.id);
+    expect(container.textContent).toContain('作業中データは変更されていません');
   });
 });

@@ -9,17 +9,19 @@ export interface SavedSsbjReportVersion {
 }
 
 /**
- * 保存版を作る。expectedDraftRevision は画面が読込時（または直前の基本情報保存時）に受け取った版数。
+ * 保存版を作る。sourceVersionId を渡すと、その固定版の内容を新版へ複製する。
+ * expectedDraftRevision は画面が読込時（または直前の基本情報保存時）に受け取った版数。
  * 他の画面・他の人の変更で版数が進んでいれば、サーバが 409 で拒否し、そのメッセージを例外にする。
  */
 export const saveSsbjReportVersion = async (
   reportId: string,
   expectedDraftRevision: number,
+  sourceVersionId?: string,
 ): Promise<SavedSsbjReportVersion> => {
   const response = await fetch(`/api/ssbj/reports/${encodeURIComponent(reportId)}/versions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ expectedDraftRevision }),
+    body: JSON.stringify({ expectedDraftRevision, sourceVersionId }),
   });
   const body = (await response.json().catch(() => null)) as
     | { id?: string; versionNumber?: number; error?: string }

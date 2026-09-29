@@ -115,4 +115,16 @@ describe('POST /api/ssbj/reports/[reportId]/versions', () => {
       p_source_version_id: null,
     });
   });
+
+  it('元版を指定した場合も自組織スコープでRPCを呼ぶ', async () => {
+    const sourceVersionId = '019890ab-1234-4cde-8f01-23456789abce';
+    const supabase = stubSupabase({ data: { id: 'version-2', versionNumber: 2 }, error: null });
+    mocks.createAdminClient.mockReturnValue(supabase);
+    const response = await POST(request({ expectedDraftRevision: 1, sourceVersionId }), params());
+    expect(response.status).toBe(201);
+    expect(supabase.rpc).toHaveBeenCalledWith('create_ssbj_report_version', expect.objectContaining({
+      p_organization_id: 'org-1',
+      p_source_version_id: sourceVersionId,
+    }));
+  });
 });
