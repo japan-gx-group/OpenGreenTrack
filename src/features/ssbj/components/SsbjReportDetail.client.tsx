@@ -145,6 +145,9 @@ export const SsbjReportDetail = ({ reportId }: { reportId: string }) => {
               disabled={isEditing}
               onSave={() => void handleCreateVersion()}
             />
+            <Button asChild variant="outline">
+              <Link href={`/ssbj/${encodeURIComponent(report.id)}/versions`}>保存履歴とCSV出力を見る</Link>
+            </Button>
           </>
         ) : null}
       </div>

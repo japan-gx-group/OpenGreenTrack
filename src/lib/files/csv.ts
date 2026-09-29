@@ -13,12 +13,12 @@ import { downloadBlob } from '@/lib/files/download';
 type CsvCell = string | number | null | undefined;
 
 // セル内にタブ・改行・ダブルクォートを含む値を RFC4180 準拠でクォートする。
-// フォーミュラインジェクション緩和: 文字列セルが = + - @ で始まる場合は先頭に ' を付し、
+// フォーミュラインジェクション緩和: 空白・改行の後に = + - @ が続く文字列にも先頭に ' を付し、
 // Excel 等が数式として評価しないようにする（数値セルは対象外）。
 const escapeCell = (value: CsvCell): string => {
   if (value == null) return '';
   if (typeof value === 'number') return String(value);
-  const text = /^[=+\-@]/.test(value) ? `'${value}` : value;
+  const text = /^\s*[=+\-@]/u.test(value) ? `'${value}` : value;
   if (/[\t"\r\n]/.test(text)) {
     return `"${text.replace(/"/g, '""')}"`;
   }
