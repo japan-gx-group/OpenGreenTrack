@@ -62,4 +62,13 @@ describe('ssbjVersionToCsvRows', () => {
     } as unknown as SsbjReportSnapshotV1;
     expect(() => ssbjVersionToCsvRows({ ...fictionalVersion, snapshot }, GENERATED_AT)).toThrow('未対応');
   });
+
+  it('根拠文書の内部保管先を開示内容欄に混ぜず、固定版の値だけを出す', () => {
+    const rows = ssbjVersionToCsvRows(fictionalVersion, GENERATED_AT);
+    const evidence = rows.find(row => row[0] === '根拠文書' && row[1] === 'governance.oversight_body');
+    expect(evidence?.[4]).toBe('取締役会の開催記録に基づく。');
+    expect(evidence?.[4]).not.toContain('社内共有フォルダ');
+    expect(evidence?.[6]).toContain('保管先: 社内共有フォルダ/議事録（架空）');
+    expect(rows.filter(row => row[0] === '根拠文書')).toHaveLength(2);
+  });
 });

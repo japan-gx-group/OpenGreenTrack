@@ -98,6 +98,7 @@ src/app/
 | `/ssbj` | `src/app/(app)/ssbj/page.tsx` | SSBJ レポート一覧（試行版） |
 | `/ssbj/[reportId]` | `src/app/(app)/ssbj/[reportId]/page.tsx` | SSBJ レポート詳細（基本情報・保存版の作成） |
 | `/ssbj/[reportId]/risks` | `src/app/(app)/ssbj/[reportId]/risks/page.tsx` | SSBJ リスク・機会 |
+| `/ssbj/[reportId]/evidence` | `src/app/(app)/ssbj/[reportId]/evidence/page.tsx` | SSBJ 根拠文書・主管部署 |
 | `/ssbj/[reportId]/versions` | `src/app/(app)/ssbj/[reportId]/versions/page.tsx` | SSBJ 固定版の選択・社内確認用 CSV 出力・生成履歴 |
 | `/ssbj/[reportId]/ghg` | `src/app/(app)/ssbj/[reportId]/ghg/page.tsx` | OGT の GHG 候補値・算定条件の参照 |
 
