@@ -62,6 +62,66 @@ export type SsbjReportId = string;
 export type SsbjVersionId = string;
 
 // ---------------------------------------------------------------------------
+// 要求項目マスター（T32a。データは utils/requirementMaster.ts）
+// ---------------------------------------------------------------------------
+
+/**
+ * 項番号を示すときの基準。要求 ID の基準コードに、実務対応基準第1号（PRA1）を加えたもの。
+ * 実務対応基準は要求 ID を作らず、関係する気候基準の要求の参照先として持つ（docs/ssbj-r1-scope.md §4）。
+ */
+export const SSBJ_REFERENCE_STANDARDS = ['APP', 'GEN', 'CLM', 'PRA1'] as const;
+
+export type SsbjReferenceStandard = (typeof SSBJ_REFERENCE_STANDARDS)[number];
+
+/** 基準の項番号の参照（例 `{ standard: 'CLM', paragraphs: '19(2)' }`）。本文は持たない（§1）。 */
+export type SsbjParagraphReference = {
+  standard: SsbjReferenceStandard;
+  paragraphs: string;
+};
+
+/** 初回対象としての重み。core = 親会社への提出の中心（◎）、basic = 答えやすいため含める（○）。 */
+export type SsbjRequirementPriority = 'core' | 'basic';
+
+/**
+ * 要求にどこで答えるか。narrative は四本柱の文章（T05）の項目、それ以外は既存の機能か固定の注記。
+ * notice は利用者の入力ではなく、プレビュー・出力の注記で扱うもの（OGT が対応していない要求など）。
+ */
+export type SsbjRequirementInputTarget =
+  | { kind: 'narrative'; itemId: SsbjItemId }
+  | { kind: 'basic_info' }
+  | { kind: 'risks_opportunities' }
+  | { kind: 'time_horizons' }
+  | { kind: 'ghg' }
+  | { kind: 'notice' };
+
+/** 要求項目マスターの 1 行（基準が求めること 1 つ）。 */
+export type SsbjRequirement = {
+  id: SsbjRequirementId;
+  /** 属する章。報告企業・比較情報など章にまたがる全般の要求は null。 */
+  sectionId: SsbjSectionId | null;
+  /** 要求の要約（基準の本文ではなく、この試行版の言葉で書く）。 */
+  summary: string;
+  references: SsbjParagraphReference[];
+  priority: SsbjRequirementPriority;
+  inputTarget: SsbjRequirementInputTarget;
+  /** 記載ガイド（何を書くか・OGT の制約・「していない」場合の書き方）。 */
+  guide: string;
+};
+
+/**
+ * 四本柱の文章（T05）の項目。1 つの項目で複数の要求に答えられる（一般開示基準と気候関連開示基準の
+ * 共通記載を二重に入力しないため）。company_supplement は要求に対応しない企業固有の補足。
+ */
+export type SsbjNarrativeItem = {
+  id: SsbjItemId;
+  kind: 'requirement' | 'company_supplement';
+  label: string;
+  requirementIds: SsbjRequirementId[];
+  /** 記載例（架空の会社の文例）。 */
+  example: string;
+};
+
+// ---------------------------------------------------------------------------
 // 値の状態
 // ---------------------------------------------------------------------------
 
