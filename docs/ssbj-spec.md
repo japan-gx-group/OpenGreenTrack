@@ -415,7 +415,7 @@ R1 の初回対象（[`ssbj-r1-scope.md`](ssbj-r1-scope.md) §5.1）に含める
 |---|---|
 | DB | `ssbj_evidence`（`supabase/migrations/20260929150000_ssbj_evidence.sql`）。項目IDごとに複数件を持つ。RLSで組織とレポートの帰属を検証し、変更時は `draftRevision` を進める。`ssbj_snapshot_section__evidence` が保存版の `sections.evidence` に取り込む |
 | 画面 | `/ssbj/[reportId]/evidence` で資料名・版・内部保管先・参照位置・主管部署・開示用参照文を登録、編集、削除する |
-| 出力 | 社内確認用CSVでは開示用参照文だけを開示内容欄に、資料の参照情報は内部記録欄に入れる |
+| 出力 | 社内確認用CSVでは開示用参照文だけを開示内容欄に、資料の参照情報は項目ごとに別行の内部記録欄に入れる |
 | デモ | `supabase/seeds/demo/ssbj_demo.sql`。組織Aには同じ項目の2資料、組織Bにも1資料を置く |
 
 - 必須は項目IDと資料名。主管部署を含む残りの参照情報は任意。主管部署を将来必須にするかは別Issueで判断する。

@@ -136,16 +136,21 @@ export const ssbjVersionToCsvRows = (version: SsbjCsvVersion, generatedAt: strin
         '根拠文書', item.itemId, '開示用参照文',
         formatFieldValue(item.disclosure, () => '入力済み'),
         formatFieldValue(item.disclosure),
-        '',
-        [
-          `資料名: ${item.documentTitle}`,
-          `版: ${item.documentVersion ?? '未入力'}`,
-          `保管先: ${item.internalLocation ?? '未入力'}`,
-          `参照位置: ${item.referencePosition ?? '未入力'}`,
-          `主管部署: ${item.ownerDepartment ?? '未入力'}`,
-        ].join('\n'),
-        `根拠ID: ${item.id}`,
+        '', '', `根拠ID: ${item.id}`,
       ]);
+      for (const [name, value] of [
+        ['資料名', item.documentTitle],
+        ['版', item.documentVersion],
+        ['保管先', item.internalLocation],
+        ['参照位置', item.referencePosition],
+        ['主管部署', item.ownerDepartment],
+      ] as const) {
+        rows.push([
+          '根拠文書', item.itemId, name,
+          value === null ? '未入力' : '入力済み',
+          '', '', value ?? '', `根拠ID: ${item.id}`,
+        ]);
+      }
     }
   }
   return rows;
