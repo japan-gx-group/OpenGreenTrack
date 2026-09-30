@@ -62,4 +62,17 @@ describe('ssbjVersionToCsvRows', () => {
     } as unknown as SsbjReportSnapshotV1;
     expect(() => ssbjVersionToCsvRows({ ...fictionalVersion, snapshot }, GENERATED_AT)).toThrow('未対応');
   });
+
+  it('根拠文書の参照情報を項目ごとの行に分け、開示内容欄に混ぜない', () => {
+    const rows = ssbjVersionToCsvRows(fictionalVersion, GENERATED_AT);
+    const evidence = rows.filter(row => row[0] === '根拠文書' && row[7] === '根拠ID: 5b1f0000-1111-4000-8000-000000000201');
+    expect(evidence).toHaveLength(6);
+    expect(evidence.find(row => row[2] === '開示用参照文')?.[4]).toBe('取締役会の開催記録に基づく。');
+    expect(evidence.find(row => row[2] === '開示用参照文')?.[6]).toBe('');
+    expect(evidence.find(row => row[2] === '資料名')?.[6]).toBe('取締役会議事録（架空）');
+    expect(evidence.find(row => row[2] === '保管先')?.[6]).toBe('社内共有フォルダ/議事録（架空）');
+    expect(evidence.find(row => row[2] === '主管部署')?.[6]).toBe('総務部');
+    expect(evidence.every(row => row.every(cell => !cell.includes('\n')))).toBe(true);
+    expect(rows.filter(row => row[0] === '根拠文書')).toHaveLength(12);
+  });
 });

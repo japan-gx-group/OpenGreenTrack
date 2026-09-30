@@ -417,6 +417,18 @@ export const SSBJ_TIME_HORIZON_LABELS: Record<SsbjTimeHorizon, string> = {
  */
 export type SsbjLinkTarget = SsbjSectionId | SsbjItemId;
 
+/** 項目に紐付く根拠文書の参照情報。保管先などは開示文と分けて保持する。 */
+export type SsbjEvidence = {
+  id: string;
+  itemId: SsbjItemId;
+  documentTitle: string;
+  documentVersion: string | null;
+  internalLocation: string | null;
+  referencePosition: string | null;
+  ownerDepartment: string | null;
+  disclosure: SsbjFieldValue<string>;
+};
+
 /** リスク・機会 1 件。複数登録できる。 */
 export type SsbjRiskOpportunity = {
   id: string;
@@ -458,6 +470,8 @@ export interface SsbjSnapshotSections {
   risks_opportunities: SsbjRiskOpportunity[];
   /** T07。ssbj_snapshot_section__time_horizons。定義の行が無いレポートは全て未入力。 */
   time_horizons: SsbjTimeHorizonDefinitions;
+  /** T10。ssbj_snapshot_section__evidence。項目ID・作成順。 */
+  evidence: SsbjEvidence[];
 }
 
 /** 保存版の中身（ssbj_report_versions.snapshot）。形式を変えるときは schemaVersion を上げる。 */
