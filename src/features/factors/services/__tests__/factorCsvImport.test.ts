@@ -9,7 +9,7 @@ import {
 } from '../factorCsvImport';
 import type { EmissionFactor } from '../factorService';
 
-// 旧形式のタブ区切りでCSVテキストを組み立てるヘルパー
+// エクスポート（downloadCsv）と同じタブ区切りでCSVテキストを組み立てるヘルパー
 const tsv = (rows: (string | number)[][]): string =>
   [FACTOR_CSV_HEADERS.join('\t'), ...rows.map(row => row.join('\t'))].join('\r\n');
 
@@ -136,7 +136,7 @@ describe('parseFactorCsvText', () => {
     expect(() => parseFactorCsvText(text)).toThrow(/ヘッダー列が一致しません/);
   });
 
-  it('旧形式のタブ区切りとカンマ区切りの両方をパースできる', () => {
+  it('タブ区切り（エクスポート形式）とカンマ区切りの両方をパースできる', () => {
     for (const text of [tsv([customRow()]), csv([customRow()])]) {
       const { rows, errors } = parseFactorCsvText(text);
       expect(errors).toHaveLength(0);

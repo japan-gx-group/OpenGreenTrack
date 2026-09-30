@@ -4,20 +4,22 @@
 //
 // 背景: Mac 版 Excel は UTF-8 の BOM を無視して開くことがあり、日本語が文字化けする。
 // これを確実に避けるため、UTF-16LE + BOM(FF FE) でエンコードする（Excel はこの BOM を
-// 確実に判別して Unicode として開く）。.csv に合わせて列はカンマで区切る。
+// 確実に判別して Unicode として開く）。併せて区切り文字はカンマではなくタブにする。
+// Excel は Unicode テキストのフィールド分割を、ロケールのリスト区切り設定に依存せず
+// タブで安定して行うため。拡張子は .csv のままで Excel / Numbers とも問題なく開ける。
 
 import { downloadBlob } from '@/lib/files/download';
 
 type CsvCell = string | number | null | undefined;
 
-// セル内にカンマ・タブ・改行・ダブルクォートを含む値を RFC4180 準拠でクォートする。
+// セル内にタブ・改行・ダブルクォートを含む値を RFC4180 準拠でクォートする。
 // フォーミュラインジェクション緩和: 空白・改行の後に = + - @ が続く文字列にも先頭に ' を付し、
 // Excel 等が数式として評価しないようにする（数値セルは対象外）。
 const escapeCell = (value: CsvCell): string => {
   if (value == null) return '';
   if (typeof value === 'number') return String(value);
   const text = /^\s*[=+\-@]/u.test(value) ? `'${value}` : value;
-  if (/[,\t"\r\n]/.test(text)) {
+  if (/[\t"\r\n]/.test(text)) {
     return `"${text.replace(/"/g, '""')}"`;
   }
   return text;
@@ -38,7 +40,7 @@ const encodeUtf16leWithBom = (text: string): ArrayBuffer => {
 
 // 2 次元配列（先頭行はヘッダー想定）を CSV としてダウンロードさせる。
 export const downloadCsv = (fileName: string, rows: CsvCell[][]): void => {
-  const content = rows.map((row) => row.map(escapeCell).join(',')).join('\r\n');
+  const content = rows.map((row) => row.map(escapeCell).join('\t')).join('\r\n');
   const blob = new Blob([encodeUtf16leWithBom(content)], {
     type: 'text/csv;charset=utf-16le;',
   });
@@ -81,7 +83,8 @@ export const decodeCsvBufferAllowingUtf16 = (buffer: ArrayBuffer): string => {
 // ダブルクォートで囲まれたフィールド内のカンマ（桁区切りや期間表記など）を列区切りとして
 // 誤認しないようにする。囲みクォート内の "" は 1 つの " へアンエスケープする。
 // 返り値は囲みクォートを取り除いた各フィールド。
-// 旧形式のタブ区切り CSV も扱えるよう、区切り文字を引数で指定できる。
+// 排出係数CSVインポート（factors/services/factorCsvImport.ts）が downloadCsv 出力形式の
+// タブ区切りも扱えるよう、区切り文字を引数で指定できる。
 export const splitCsvLine = (line: string, delimiter: string = ','): string[] => {
   const result: string[] = [];
   let current = '';

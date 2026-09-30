@@ -2,7 +2,7 @@
 //
 // 対象フォーマットは排出係数管理画面のCSVエクスポート（Factors.client.tsx の handleExportCSV）と
 // 同じ列構成。エクスポート→Excel等で編集→インポートのラウンドトリップを想定する。
-// エクスポート（lib/files/csv.ts の downloadCsv）は UTF-16LE + カンマ区切りで出力するが、
+// エクスポート（lib/files/csv.ts の downloadCsv）は UTF-16LE + タブ区切りで出力するが、
 // Excel で再保存すると UTF-8 / Shift_JIS のカンマ区切りになることが多いため、
 // 文字コード・区切り文字の両方を自動判別する。
 //
@@ -196,7 +196,7 @@ export const parseFactorCsvText = (
     throw new Error('CSVファイルが空です。');
   }
 
-  // 区切り文字の自動判別: 旧形式のタブ区切りと現行のカンマ区切りを扱う
+  // 区切り文字の自動判別: エクスポート直後はタブ区切り、Excelで再保存するとカンマ区切りになる
   const delimiter = lines[0].includes('\t') ? '\t' : ',';
   const headers = splitCsvLine(lines[0].trim(), delimiter).map(col => col.trim());
 
