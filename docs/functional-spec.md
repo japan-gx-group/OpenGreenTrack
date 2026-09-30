@@ -218,6 +218,7 @@ erDiagram
 | `/ssbj/[reportId]/risks` | SSBJ リスク・機会 | `ssbj_risks_opportunities`、`ssbj_report_time_horizons` |
 | `/ssbj/[reportId]/versions` | SSBJ 保存履歴・CSV 出力 | `ssbj_report_versions`、`system_audit_logs` |
 | `/ssbj/[reportId]/ghg` | OGT の GHG 候補値・採用 | `dashboard_aggregates`、算定・Scope 3 データ（参照のみ）、`ssbj_ogt_adoptions`（採用値） |
+| `/ssbj/[reportId]/preview` `/ssbj/[reportId]/preview/print` | SSBJ プレビュー・印刷（PDF） | 作業中の内容（保存版と同じ組み立て）、`ssbj_report_versions`（保存版） |
 | `/settings/company` `/settings/account` | 設定 | `organizations`、`profiles`、`fiscal_years`、`invites` |
 | `/login` `/signup` `/forgot-password` `/reset-password` `/invite/[token]` | 認証 | Supabase Auth、`invites` |
 
@@ -394,6 +395,7 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 | 根拠文書・主管部署（`/ssbj/[reportId]/evidence`） | 項目IDごとに根拠文書を複数登録・編集・削除する。項目IDと資料名は必須。版・内部保管先・参照位置・主管部署は任意。開示用参照文は状態付きの別欄で持ち、保管先などの内部記録を開示内容欄に混ぜない。変更は作業中の内容として保存し、保存版作成時に固定する |
 | 保存履歴・CSV（`/ssbj/[reportId]/versions`） | 固定版の一覧・内容・作成者・由来を確認し、過去版のスナップショットから新しい固定版を作る（作業中データは変更しない）。固定版を選び、その版のスナップショットから社内確認用 CSV を出力する。版 ID・位置付け・単位を出力に明記し、生成履歴を表示する。履歴保存に失敗した場合はダウンロードしない |
 | GHG 候補値（`/ssbj/[reportId]/ghg`） | レポートの年度に結び付く Scope 1・2・3 合計と Scope 3 の15カテゴリを参照する。期間・組織全体の集計範囲・採用方式・未算定を表示する。Scope 2 の基準は不明として係数区分の内訳を補足し、サプライヤー値は合計に加えず参考表示する。「表示中の候補値を採用する」で、Scope 1・2・3 合計と 15 カテゴリをまとめてレポートに採用する（確認ダイアログあり。採用し直す・取り消すこともできる）。採用値は OGT で算定し直しても自動では変わらず、変わったときは変わった区分を表示する。採用値は保存版を作成した時点で固定される |
+| プレビュー（`/ssbj/[reportId]/preview`） | 「表示する内容」で作業中の内容（未保存の変更を含む）か保存版 1 件を選び、基本情報・四本柱（戦略のリスク・機会と時間軸の定義、指標及び目標の GHG 排出量）・根拠文書（開示用参照文）・注記をレポートの形で表示する。先頭に作業中か保存版（版番号・保存日時・版 ID）かを必ず出す。未入力は「未入力」、未算定は「未算定」と出し、0 や空欄にしない。内部メモと根拠文書の内部記録（資料名・保管先・主管部署など）は既定で出さず、「内部メモも表示する」を選んだときだけ「開示しない」と明示して出す。表示に対応していない項目は名前を出して知らせる。「印刷・PDFとして保存」で印刷ビュー（`/preview/print`）を別タブで開き、ブラウザの印刷ダイアログから PDF として保存する |
 
 - 基本情報の必須はレポート名のみ。任意項目の未入力は「未入力」と表示し、空欄や「なし」にしない（項目名と必須性は T01 の合意。`ssbj-r1-scope.md`）
 - 親会社の持分比率は 0 より大きく 100 以下、小数点以下 2 桁まで。親会社との関係・測定アプローチ・業種は一覧から選ぶ（業種は SICS の 68 産業）
@@ -509,12 +511,13 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 | POST | `/api/dashboard-aggregates/refresh` | ダッシュボード集計の再計算 |
 | POST | `/api/ssbj/reports/[reportId]/versions` | SSBJ レポートの保存版（固定スナップショット）を作成する（`ssbj-spec.md` §8） |
 | POST | `/api/ssbj/reports/[reportId]/ogt-adoption` | SSBJ レポートに OGT の候補値を採用する。受け取るのは画面が表示した候補値の指紋だけで、値はサーバが OGT から取り直す（`ssbj-spec.md` §13） |
+| GET | `/api/ssbj/reports/[reportId]/preview` | SSBJ レポートの作業中の内容を、保存版と同じ形で返す（保存はしない。`ssbj-spec.md` §13） |
 | POST | `/api/account/delete` | アカウント削除 |
 | GET | `/api/health` | ヘルスチェック |
 | POST | `/api/csp-report` | CSP 違反レポートの受信 |
 | GET | `/auth/callback` | Supabase Auth のコールバック |
 
-`/api/calculations`・`/api/calculations/provisional-recalculation`・`/api/dashboard-aggregates/refresh`・`/api/idea-imports/upload-url`・`/api/idea-imports`・`/api/idea-imports/[id]`・`/api/account/delete`・`/api/ssbj/reports/[reportId]/versions`・`/api/ssbj/reports/[reportId]/ogt-adoption` の 9 本は `service_role` で RLS を越えて読み書きするため、Route Handler 側でログイン済み・自組織であることを検証する。この組織チェックは RLS では効かず、ここでしか担保できない。`/api/idea-imports/upload-url` は自組織フォルダ（`${organizationId}/idea-imports/<uuid>.xlsx`）にだけ署名付き URL を発行し、`/api/idea-imports` は受け取ったパスがその形であることを検証してから Storage に触れる。`/api/health` も `service_role` を使うが `organizations` を 1 行読む疎通確認のみで、組織データは返さない。
+`/api/calculations`・`/api/calculations/provisional-recalculation`・`/api/dashboard-aggregates/refresh`・`/api/idea-imports/upload-url`・`/api/idea-imports`・`/api/idea-imports/[id]`・`/api/account/delete`・`/api/ssbj/reports/[reportId]/versions`・`/api/ssbj/reports/[reportId]/ogt-adoption`・`/api/ssbj/reports/[reportId]/preview` の 10 本は `service_role` で RLS を越えて読み書きするため、Route Handler 側でログイン済み・自組織であることを検証する。この組織チェックは RLS では効かず、ここでしか担保できない。`/api/idea-imports/upload-url` は自組織フォルダ（`${organizationId}/idea-imports/<uuid>.xlsx`）にだけ署名付き URL を発行し、`/api/idea-imports` は受け取ったパスがその形であることを検証してから Storage に触れる。`/api/health` も `service_role` を使うが `organizations` を 1 行読む疎通確認のみで、組織データは返さない。
 
 ### 6.3 主要な RPC
 

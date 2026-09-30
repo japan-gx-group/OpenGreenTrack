@@ -101,6 +101,8 @@ src/app/
 | `/ssbj/[reportId]/evidence` | `src/app/(app)/ssbj/[reportId]/evidence/page.tsx` | SSBJ 根拠文書・主管部署 |
 | `/ssbj/[reportId]/versions` | `src/app/(app)/ssbj/[reportId]/versions/page.tsx` | SSBJ 固定版の選択・社内確認用 CSV 出力・生成履歴 |
 | `/ssbj/[reportId]/ghg` | `src/app/(app)/ssbj/[reportId]/ghg/page.tsx` | OGT の GHG 候補値・算定条件の参照と、レポートへの採用 |
+| `/ssbj/[reportId]/preview` | `src/app/(app)/ssbj/[reportId]/preview/page.tsx` | SSBJ レポートのプレビュー（作業中の内容 / 保存版） |
+| `/ssbj/[reportId]/preview/print` | `src/app/(app)/ssbj/[reportId]/preview/print/page.tsx` | SSBJ レポートのプレビューの印刷ビュー（PDF 保存） |
 
 Route Handler（API）:
 
@@ -114,6 +116,7 @@ Route Handler（API）:
 | `/api/idea-imports/[id]` | `src/app/api/idea-imports/[id]/route.ts` | IDEA 取込の削除 |
 | `/api/ssbj/reports/[reportId]/versions` | `src/app/api/ssbj/reports/[reportId]/versions/route.ts` | SSBJ レポートの保存版（固定スナップショット）の作成 |
 | `/api/ssbj/reports/[reportId]/ogt-adoption` | `src/app/api/ssbj/reports/[reportId]/ogt-adoption/route.ts` | SSBJ レポートへの OGT の候補値の採用 |
+| `/api/ssbj/reports/[reportId]/preview` | `src/app/api/ssbj/reports/[reportId]/preview/route.ts` | SSBJ レポートの作業中の内容を保存版と同じ形で返す（プレビュー用） |
 | `/api/account/delete` | `src/app/api/account/delete/route.ts` | アカウント削除 |
 | `/api/health` | `src/app/api/health/route.ts` | ヘルスチェック（DB接続確認・readiness probe） |
 | `/api/csp-report` | `src/app/api/csp-report/route.ts` | CSP違反レポートの受信（本体は `src/lib/security/cspReport.ts`） |

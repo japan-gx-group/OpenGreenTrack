@@ -20,6 +20,11 @@ const SSBJ_REPORT_CONTENTS: { path: string; label: string; description: string }
     label: '根拠文書・主管部署',
     description: '項目ごとの資料名、参照位置、主管部署を記録します。',
   },
+  {
+    path: 'preview',
+    label: 'プレビュー',
+    description: '作業中の内容または保存版を、レポートの形で確認し、印刷・PDFとして保存します。',
+  },
 ];
 
 export const SsbjReportContentsNav = ({ reportId }: { reportId: string }) => (

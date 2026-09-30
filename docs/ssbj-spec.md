@@ -40,6 +40,7 @@ SSBJ（サステナビリティ基準委員会）基準に沿った開示レポ�
 | `/ssbj/[reportId]/evidence` | 根拠文書・主管部署 | T10 |
 | `/ssbj/[reportId]/versions` | 保存履歴・過去版からの新版作成・CSV 出力 | T11 / T13 |
 | `/ssbj/[reportId]/preview` | 簡易プレビュー | T12 |
+| `/ssbj/[reportId]/preview/print` | プレビューの印刷ビュー（PDF） | T12 |
 
 機能コードはすべて `src/features/ssbj/` に置く（1 ドメイン。関心ごとはファイル名で分ける）。
 
@@ -480,3 +481,34 @@ R1 の初回対象（[`ssbj-r1-scope.md`](ssbj-r1-scope.md) §5.1）に含める
 - **算定済みの値が 1 つも無いときは採用できない。** 採用しても未算定しか残らないため。
 - **サプライヤー別の値は参考値として一緒に保存するが、合計には足さない（§7.2）。** CSV も参考値として別の行にする。
 - デモデータ（`ssbj_demo.sql`）には採用値を入れていない。18 件の値を手で書くと候補値の組み立てと食い違いうるため、画面から採用して確認する。
+
+### プレビュー（T12）
+
+作業中の内容と保存版を切り替えて、レポートの形で確認する画面（`/ssbj/[reportId]/preview`）と、PDF として保存するための
+印刷ビュー（`/ssbj/[reportId]/preview/print`）。
+
+| 対象 | 内容 |
+|---|---|
+| DB | `supabase/migrations/20260929182558_ssbj_report_preview.sql`。スナップショットの組み立て関数 `ssbj_build_report_snapshot`、作業中の内容を返す RPC `preview_ssbj_report`（ともに service_role 限定）、版生成 RPC `create_ssbj_report_version` を組み立て関数を使う形に置き換え（引数・検証・採番・戻り値と、T11 の過去版の複製は同じ） |
+| API | `GET /api/ssbj/reports/[reportId]/preview`（`services/previewServer.ts`） |
+| 画面 | `components/SsbjPreview.client.tsx`（表示する内容の選択・内部メモの表示・印刷ビューへのリンク）、`SsbjPreviewDocument.tsx`（本文。画面と印刷ビューで共通）、`SsbjPreviewStrategy.tsx`・`SsbjPreviewGhg.tsx`・`SsbjPreviewEvidence.tsx`、`SsbjPreviewPrintView.client.tsx`。レポートの内容の入口に「プレビュー」 |
+| コード | `services/previewService.ts`（`SsbjPreviewSource`）、`hooks/useSsbjPreviewSource.ts`・`useSsbjVersionSummaries.ts`、`utils/preview.ts` |
+| テスト | `scripts/db/__tests__/ssbjReportPreviewPolicy.test.ts`（組み立て関数の一本化・置き換えた版生成 RPC の検証の残存・権限）、本文・画面・印刷ビュー・Route Handler・サーバ処理の単体テスト |
+
+決めたこと:
+
+- **作業中の内容も、保存版と同じ組み立て（`ssbj_build_report_snapshot`）で作る。** 画面が各テーブルを個別に読んで組み立てると、
+  保存版の形と食い違いうる。版生成 RPC も同じ関数を使うように置き換え、組み立てを 1 か所にした
+  （基本情報の項目を足したときに片方だけ直す事故を防ぐ）。作業中の内容は保存しない。
+- **表示している内容が作業中か保存版かを、本文の先頭に必ず出す。** 保存版は版番号・保存日時・版 ID を出す。作業中の内容は
+  保存版になっていない変更を含むと明示する。
+- **内部メモは既定で出さない。** 「内部メモも表示する」を選んだときだけ、開示する文章とは別の行に「開示しない」と明示して出す（§5）。
+  印刷ビューにも同じ選択を渡す。
+- **PDF は新しいライブラリを使わず、本体のレポートと同じ印刷ビュー方式（`window.print()` と `report-print-*` のクラス）で出す。**
+  `ssbj-r1-scope.md` で R1 の出力に PDF を含めたため、T12 の範囲に入れた。
+- **プレビューが描けないセクションは、黙って落とさず名前を出す。** 文章（T05）・判断（T09）などが加わったとき、
+  その機能の PR で描画を足すまでの間も、出力漏れに気づけるようにするため。
+- **根拠文書（T10）は、開示用参照文だけを常に出す。** 資料名・版・保管先・参照位置・主管部署は内部記録として、
+  「内部メモも表示する」を選んだときだけ「開示しない」と明示して出す（T10 の画面の区分と同じ）。
+- **四本柱のうち、まだ入力欄の無い章（ガバナンス・リスク管理）は、その旨を表示する。** 空欄にすると「記載なし」と読めるため。
+- 表示する保存版の選択は、Radix のセレクトの操作が jsdom で難しいため、画面のテストではなく印刷ビューのテスト（URL の `source`）で確かめている。
