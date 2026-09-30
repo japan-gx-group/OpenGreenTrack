@@ -5,6 +5,9 @@ import {
   checkOgtCandidateValue,
   deriveDirectInputDataQuality,
   deriveOgtDataQuality,
+  ogtMethodLabel,
+  ogtValueKey,
+  ogtValueLabel,
 } from '../ogtValue';
 
 describe('deriveOgtDataQuality', () => {
@@ -84,5 +87,21 @@ describe('checkOgtCandidateValue', () => {
       method: { kind: 'calculated' },
     };
     expect(checkOgtCandidateValue(invalid)).toContain('Scope 3 カテゴリは 1〜15 です: 16');
+  });
+});
+
+describe('表示名', () => {
+  it('区分名と対象 ID は Scope 合計とカテゴリで分ける', () => {
+    expect(ogtValueLabel({ scope: 1, scope3CategoryId: null })).toBe('Scope 1');
+    expect(ogtValueLabel({ scope: 3, scope3CategoryId: 1 })).toBe('カテゴリ 1：購入した製品・サービス');
+    expect(ogtValueKey({ scope: 3, scope3CategoryId: null })).toBe('scope3');
+    expect(ogtValueKey({ scope: 3, scope3CategoryId: 6 })).toBe('scope3.category6');
+  });
+
+  it('採用方式は Scope 1・2 は活動量ベース、Scope 3 カテゴリは直接入力 / 積上げ', () => {
+    const scope1 = fictionalOgtCandidates.find(candidate => candidate.scope === 1)!;
+    const category1 = fictionalOgtCandidates.find(candidate => candidate.scope3CategoryId === 1)!;
+    expect(ogtMethodLabel(scope1)).toBe('活動量 × 排出係数');
+    expect(ogtMethodLabel(category1)).toBe('直接入力');
   });
 });

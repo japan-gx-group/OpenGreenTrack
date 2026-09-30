@@ -1,0 +1,692 @@
+// 初回対象（R1）の要求項目マスター: 要求 ID・記載ガイド・基準の項番号・入力先の対応（docs/ssbj-r1-scope.md §5.1）。
+//
+// ⚠️ 暫定版。項目 ID・要求 ID は、文章（T05）・判断（T09）の実装と突き合わせて確定する。
+// 確定までは ID を変えうるため、保存版に残すときは SSBJ_REQUIREMENT_MASTER_VERSION も一緒に残すこと。
+//
+// - 要約・記載ガイドはこの試行版の言葉で書いたもので、基準の本文ではない（本文は転載しない。docs/ssbj-spec.md §1）。
+//   項番号は下の SSBJ_REFERENCE_STANDARD_DOCUMENTS の版で確認したもの。
+// - 一般開示基準と気候関連開示基準がほぼ同じことを求める要求は、要求 ID を基準ごとに分け、
+//   同じ文章の項目に対応させる（利用者は 1 つの文章で両方に答える）。
+// - 記載例は架空の会社の文例で、実在の企業・開示とは無関係。
+
+import type {
+  SsbjItemId,
+  SsbjNarrativeItem,
+  SsbjParagraphReference,
+  SsbjReferenceStandard,
+  SsbjRequirement,
+  SsbjRequirementId,
+  SsbjSectionId,
+} from '../types';
+import { sectionOfItem } from './ids';
+
+/** マスターの版。ID や入力先を変えたら上げる（保存版にどの版のマスターで作ったかを残すため）。 */
+export const SSBJ_REQUIREMENT_MASTER_VERSION = 'r1-provisional-1';
+
+/** 項番号を確認した基準の版（docs/ssbj-r1-scope.md §4）。 */
+export const SSBJ_REFERENCE_STANDARD_DOCUMENTS: Record<
+  SsbjReferenceStandard,
+  { name: string; shortLabel: string; version: string }
+> = {
+  APP: {
+    name: 'サステナビリティ開示ユニバーサル基準「サステナビリティ開示基準の適用」',
+    shortLabel: '適用基準',
+    version: '2026年3月13日改正',
+  },
+  GEN: {
+    name: 'サステナビリティ開示テーマ別基準第1号「一般開示基準」',
+    shortLabel: '一般基準',
+    version: '2026年3月13日改正',
+  },
+  CLM: {
+    name: 'サステナビリティ開示テーマ別基準第2号「気候関連開示基準」',
+    shortLabel: '気候基準',
+    version: '2026年3月13日改正',
+  },
+  PRA1: {
+    name: 'サステナビリティ開示実務対応基準第1号（温対法の SHK 制度の方法で測定した排出を用いる場合の開示）',
+    shortLabel: '実務対応基準第1号',
+    version: '2026年6月11日',
+  },
+};
+
+// 一般開示基準の要求に共通の注意（気候以外のテーマも対象になる）。
+const GENERAL_THEME_NOTE =
+  '気候以外のサステナビリティのテーマも対象になる。初年度に気候関連だけを開示する経過措置（適用基準 第94項）を使う場合は、気候について書けばよい。';
+
+export const SSBJ_REQUIREMENTS: readonly SsbjRequirement[] = [
+  // ---- ガバナンス ----
+  {
+    id: 'REQ-GEN-001',
+    sectionId: 'governance',
+    summary: 'サステナビリティ関連のリスク・機会を監督する機関の名称、または責任者の役職名',
+    references: [{ standard: 'GEN', paragraphs: '9(1)' }],
+    priority: 'basic',
+    inputTarget: { kind: 'narrative', itemId: 'governance.oversight_body' },
+    guide: `取締役会・委員会などの機関名、または個人が担う場合はその役職名を書く。氏名ではなく役職で書く。${GENERAL_THEME_NOTE}`,
+  },
+  {
+    id: 'REQ-CLM-001',
+    sectionId: 'governance',
+    summary: '気候関連のリスク・機会を監督する機関の名称、または責任者の役職名',
+    references: [{ standard: 'CLM', paragraphs: '10(1)' }],
+    priority: 'basic',
+    inputTarget: { kind: 'narrative', itemId: 'governance.oversight_body' },
+    guide: '気候関連を監督する機関名、または責任者の役職名を書く。サステナビリティ全般と同じ機関が監督しているなら、一般基準の記載と共通でよい。',
+  },
+  {
+    id: 'REQ-GEN-002',
+    sectionId: 'governance',
+    summary: '監督する機関・責任者が、リスク・機会の情報をどのように、どの頻度で受け取っているか',
+    references: [{ standard: 'GEN', paragraphs: '9(4)' }],
+    priority: 'basic',
+    inputTarget: { kind: 'narrative', itemId: 'governance.oversight_information' },
+    guide: `報告の経路（誰がどの会議体へ報告するか）と頻度（年何回・四半期ごとなど）を具体的に書く。${GENERAL_THEME_NOTE}`,
+  },
+  {
+    id: 'REQ-CLM-002',
+    sectionId: 'governance',
+    summary: '監督する機関・責任者が、気候関連の情報をどのように、どの頻度で受け取っているか',
+    references: [{ standard: 'CLM', paragraphs: '10(4)' }],
+    priority: 'basic',
+    inputTarget: { kind: 'narrative', itemId: 'governance.oversight_information' },
+    guide: '気候関連の情報の報告経路と頻度を書く。定例の報告が無く必要に応じて報告している場合は、その運用をそのまま書く。',
+  },
+  {
+    id: 'REQ-GEN-003',
+    sectionId: 'governance',
+    summary: 'リスク・機会の管理における経営者の役割（委任先と監督の方法、統制と手続）',
+    references: [{ standard: 'GEN', paragraphs: '10' }],
+    priority: 'basic',
+    inputTarget: { kind: 'narrative', itemId: 'governance.management_role' },
+    guide: `役割を特定の役員・委員会に任せている場合は、その役職名・名称と、任せた先をどう監督しているかを書く。任せていない場合や、所定の統制・手続を使っていない場合は「任せていない」「用いていない」と書く（非該当ではなく回答として扱う）。${GENERAL_THEME_NOTE}`,
+  },
+  {
+    id: 'REQ-CLM-003',
+    sectionId: 'governance',
+    summary: '気候関連のリスク・機会の管理における経営者の役割（委任先と監督の方法、統制と手続）',
+    references: [{ standard: 'CLM', paragraphs: '11' }],
+    priority: 'basic',
+    inputTarget: { kind: 'narrative', itemId: 'governance.management_role' },
+    guide: '気候関連の管理を任せている役員・委員会と、その監督の方法を書く。任せていない、または所定の統制・手続を使っていない場合はその旨を書く。',
+  },
+
+  // ---- 戦略 ----
+  {
+    id: 'REQ-GEN-004',
+    sectionId: 'strategy',
+    summary: '企業の見通しに影響しうると識別したリスク・機会',
+    references: [{ standard: 'GEN', paragraphs: '14(1)' }],
+    priority: 'core',
+    inputTarget: { kind: 'risks_opportunities' },
+    guide: `「リスク・機会」の画面で 1 件ずつ登録する。${GENERAL_THEME_NOTE}`,
+  },
+  {
+    id: 'REQ-CLM-005',
+    sectionId: 'strategy',
+    summary: '企業の見通しに影響しうると識別した気候関連のリスク・機会',
+    references: [{ standard: 'CLM', paragraphs: '19(1)' }],
+    priority: 'core',
+    inputTarget: { kind: 'risks_opportunities' },
+    guide: '「リスク・機会」の画面で 1 件ずつ登録する。識別にあたっては、業種に対応する産業別ガイダンスの開示トピックも参照する（基本情報の業種から該当する巻を開ける）。',
+  },
+  {
+    id: 'REQ-CLM-006',
+    sectionId: 'strategy',
+    summary: '識別したリスクごとの種類（物理的リスクか移行リスクか）',
+    references: [{ standard: 'CLM', paragraphs: '19(2)' }],
+    priority: 'core',
+    inputTarget: { kind: 'risks_opportunities' },
+    guide: '「リスク・機会」の画面で、区分がリスクの行に種類を選ぶ。機会には種類を付けない。',
+  },
+  {
+    id: 'REQ-GEN-005',
+    sectionId: 'strategy',
+    summary: 'リスク・機会ごとに、影響が見込まれる時間軸（短期・中期・長期）',
+    references: [{ standard: 'GEN', paragraphs: '14(2)' }],
+    priority: 'core',
+    inputTarget: { kind: 'risks_opportunities' },
+    guide: `「リスク・機会」の画面で、行ごとに時間軸を選ぶ。${GENERAL_THEME_NOTE}`,
+  },
+  {
+    id: 'REQ-CLM-007',
+    sectionId: 'strategy',
+    summary: '気候関連のリスク・機会ごとに、影響が見込まれる時間軸（短期・中期・長期）',
+    references: [{ standard: 'CLM', paragraphs: '19(3)' }],
+    priority: 'core',
+    inputTarget: { kind: 'risks_opportunities' },
+    guide: '「リスク・機会」の画面で、行ごとに時間軸を選ぶ。',
+  },
+  {
+    id: 'REQ-GEN-006',
+    sectionId: 'strategy',
+    summary: '「短期」「中期」「長期」の定義と、戦略上の計画期間との関係',
+    references: [{ standard: 'GEN', paragraphs: '14(3)(4)' }],
+    priority: 'basic',
+    inputTarget: { kind: 'time_horizons' },
+    guide: `「リスク・機会」の画面上部の「時間軸の定義」に書く。${GENERAL_THEME_NOTE}`,
+  },
+  {
+    id: 'REQ-CLM-008',
+    sectionId: 'strategy',
+    summary: '気候関連の「短期」「中期」「長期」の定義と、戦略上の計画期間との関係',
+    references: [{ standard: 'CLM', paragraphs: '19(4)(5)' }],
+    priority: 'basic',
+    inputTarget: { kind: 'time_horizons' },
+    guide: '「時間軸の定義」に、各区分が何年を指すかと、中期経営計画などの計画期間との関係を書く。親会社の定義に合わせる場合はそのように書く。',
+  },
+  {
+    id: 'REQ-GEN-007',
+    sectionId: 'strategy',
+    summary: 'リスク・機会がビジネス・モデルとバリュー・チェーンに与えている影響・与えると見込まれる影響と、集中している部分',
+    references: [{ standard: 'GEN', paragraphs: '15' }],
+    priority: 'basic',
+    inputTarget: { kind: 'narrative', itemId: 'strategy.business_model_impact' },
+    guide: `現在の影響と将来見込まれる影響を分けて書き、影響が特定の事業・拠点・調達先などに集中していればその部分を書く。${GENERAL_THEME_NOTE}`,
+  },
+  {
+    id: 'REQ-CLM-009',
+    sectionId: 'strategy',
+    summary: '気候関連のリスク・機会がビジネス・モデルとバリュー・チェーンに与えている影響・与えると見込まれる影響と、集中している部分',
+    references: [{ standard: 'CLM', paragraphs: '20' }],
+    priority: 'basic',
+    inputTarget: { kind: 'narrative', itemId: 'strategy.business_model_impact' },
+    guide: '登録したリスク・機会のうち影響の大きいものについて、現在と将来の影響、影響が集中している部分を書く。',
+  },
+  {
+    id: 'REQ-GEN-008',
+    sectionId: 'strategy',
+    summary: '戦略・意思決定でリスク・機会にどう対応してきたか・今後の計画、過去の計画の進捗、考慮したトレードオフ',
+    references: [{ standard: 'GEN', paragraphs: '23' }],
+    priority: 'basic',
+    inputTarget: { kind: 'narrative', itemId: 'strategy.response_plans' },
+    guide: `これまでの対応と今後の計画を書く。前年までに計画を示していれば、その進捗も書く。${GENERAL_THEME_NOTE}`,
+  },
+  {
+    id: 'REQ-CLM-010',
+    sectionId: 'strategy',
+    summary: '気候関連のリスク・機会への対応と計画（ビジネス・モデルの変更、緩和・適応の取組み、移行計画、目標を達成する計画、資源の確保、進捗、トレードオフ）',
+    references: [{ standard: 'CLM', paragraphs: '28・29' }],
+    priority: 'basic',
+    inputTarget: { kind: 'narrative', itemId: 'strategy.response_plans' },
+    guide: '省エネ設備の導入・再生可能エネルギーの調達などの取組みと、それに充てる予算・人員の確保を書く。移行計画や排出目標がある場合は、達成の計画も書く。',
+  },
+  {
+    id: 'REQ-CLM-004',
+    sectionId: 'strategy',
+    summary: '産業別ガイダンスの開示トピックの参照と、適用できるかの検討',
+    references: [
+      { standard: 'CLM', paragraphs: '16・17' },
+      { standard: 'APP', paragraphs: '41' },
+    ],
+    priority: 'basic',
+    inputTarget: { kind: 'basic_info' },
+    guide: '基本情報で業種（SICS）を選び、該当する巻の開示トピックを確認する。R1 では業種ごとに入力欄を出し分けないため、検討の結果はリスク・機会や文章に反映する。',
+  },
+
+  // ---- リスク管理 ----
+  {
+    id: 'REQ-GEN-009',
+    sectionId: 'risk_management',
+    summary: 'リスクを識別・評価・優先順位付け・モニタリングするプロセス（シナリオ分析の利用の有無、前期からの変更の有無を含む）',
+    references: [{ standard: 'GEN', paragraphs: '29(1)' }],
+    priority: 'basic',
+    inputTarget: { kind: 'narrative', itemId: 'risk_management.risk_process' },
+    guide: `使うデータ・対象範囲、評価の方法、優先順位の付け方、モニタリングの方法を書く。シナリオ分析を使っていない、前期からプロセスを変えていない、ほかのリスクより高い優先順位を付けていない場合は、それぞれその旨を書く。${GENERAL_THEME_NOTE}`,
+  },
+  {
+    id: 'REQ-CLM-011',
+    sectionId: 'risk_management',
+    summary: '気候関連のリスクを識別・評価・優先順位付け・モニタリングするプロセス',
+    references: [{ standard: 'CLM', paragraphs: '41(1)' }],
+    priority: 'basic',
+    inputTarget: { kind: 'narrative', itemId: 'risk_management.risk_process' },
+    guide: '気候関連のリスクについて、識別から見直しまでの流れを書く。全社のリスク評価の中で扱っている場合は、その中での扱いを書けばよい。',
+  },
+  {
+    id: 'REQ-GEN-010',
+    sectionId: 'risk_management',
+    summary: '機会を識別・評価・優先順位付け・モニタリングするプロセス',
+    references: [{ standard: 'GEN', paragraphs: '29(2)' }],
+    priority: 'basic',
+    inputTarget: { kind: 'narrative', itemId: 'risk_management.opportunity_process' },
+    guide: `機会をどこで見つけ、どう評価・管理しているかを書く。リスクと同じプロセスなら、そのように書く。${GENERAL_THEME_NOTE}`,
+  },
+  {
+    id: 'REQ-CLM-012',
+    sectionId: 'risk_management',
+    summary: '気候関連の機会を識別・評価・優先順位付け・モニタリングするプロセス',
+    references: [{ standard: 'CLM', paragraphs: '41(2)' }],
+    priority: 'basic',
+    inputTarget: { kind: 'narrative', itemId: 'risk_management.opportunity_process' },
+    guide: '省エネ製品の需要拡大など、気候関連の機会をどう見つけ、評価・管理しているかを書く。',
+  },
+  {
+    id: 'REQ-GEN-011',
+    sectionId: 'risk_management',
+    summary: 'リスク・機会のプロセスが全社のリスク管理にどの程度・どのように統合されているか',
+    references: [{ standard: 'GEN', paragraphs: '29(3)' }],
+    priority: 'basic',
+    inputTarget: { kind: 'narrative', itemId: 'risk_management.integration' },
+    guide: `全社のリスク管理（リスク管理委員会・内部統制など）との関係を書く。統合していない場合は、その旨と現在の扱いを書く。${GENERAL_THEME_NOTE}`,
+  },
+  {
+    id: 'REQ-CLM-013',
+    sectionId: 'risk_management',
+    summary: '気候関連のプロセスが全社のリスク管理にどの程度・どのように統合されているか',
+    references: [{ standard: 'CLM', paragraphs: '41(3)' }],
+    priority: 'basic',
+    inputTarget: { kind: 'narrative', itemId: 'risk_management.integration' },
+    guide: '気候関連のリスク・機会の管理が、全社のリスク管理とどうつながっているかを書く。',
+  },
+
+  // ---- 指標及び目標（温室効果ガス排出） ----
+  {
+    id: 'REQ-CLM-014',
+    sectionId: 'metrics_targets',
+    summary: 'スコープ 1・2・3 の温室効果ガス排出の絶対総量',
+    references: [{ standard: 'CLM', paragraphs: '47' }],
+    priority: 'core',
+    inputTarget: { kind: 'ghg' },
+    guide: '「GHG排出量の候補値」の画面で OGT の値を確認し、採用する。OGT の値は組織全体の年度集計で、公式係数は実質 CO2 のみを対象にしている。',
+  },
+  {
+    id: 'REQ-CLM-015',
+    sectionId: 'metrics_targets',
+    summary: '排出量の単位（CO2 相当のトン）と、単位の明示',
+    references: [
+      { standard: 'CLM', paragraphs: '48' },
+      { standard: 'APP', paragraphs: '9・10' },
+    ],
+    priority: 'core',
+    inputTarget: { kind: 'ghg' },
+    guide: 'OGT の値は t-CO2e で表示・出力する。単位はプレビューと出力に自動で付く。',
+  },
+  {
+    id: 'REQ-CLM-016',
+    sectionId: 'metrics_targets',
+    summary: '測定方法（GHG プロトコルか、法域が求める方法か）と、方法ごとの内訳・説明',
+    references: [
+      { standard: 'CLM', paragraphs: '49〜51・62' },
+      { standard: 'PRA1', paragraphs: '7〜9' },
+    ],
+    priority: 'core',
+    inputTarget: { kind: 'narrative', itemId: 'metrics_targets.ghg_measurement_method' },
+    guide: 'OGT の公式係数は温対法の算定・報告・公表制度（SHK 制度）の係数一覧・電気事業者別係数に基づく。SHK 制度の方法で測定した値として扱う場合は、その旨と選んだ理由、適用した測定アプローチを書き、実務対応基準第1号の定めに従う。親会社が方法を指定している場合はそれに合わせる。',
+  },
+  {
+    id: 'REQ-CLM-017',
+    sectionId: 'metrics_targets',
+    summary: 'スコープ 1・2 の、連結会計グループとその他の投資先への分解',
+    references: [{ standard: 'CLM', paragraphs: '52' }],
+    priority: 'basic',
+    inputTarget: { kind: 'narrative', itemId: 'metrics_targets.ghg_consolidation_split' },
+    guide: '親会社の連結の中での当社の位置付けを書く（基本情報の「親会社との関係」と合わせる）。連結子会社なら当社の排出はすべて連結会計グループの分に含まれ、非連結子会社・関連会社ならその他の投資先の分になる。',
+  },
+  {
+    id: 'REQ-CLM-018',
+    sectionId: 'metrics_targets',
+    summary: 'ロケーション基準によるスコープ 2 の排出量',
+    references: [{ standard: 'CLM', paragraphs: '53' }],
+    priority: 'core',
+    inputTarget: { kind: 'notice' },
+    guide: 'OGT はロケーション基準とマーケット基準を区別していないため、R1 ではこの値を出さない。出力には、スコープ 2 の基準が不明であることと、係数の種類ごとの内訳を注記する。',
+  },
+  {
+    id: 'REQ-CLM-019',
+    sectionId: 'metrics_targets',
+    summary: '契約証書の情報、またはマーケット基準によるスコープ 2 の排出量',
+    references: [{ standard: 'CLM', paragraphs: '54' }],
+    priority: 'basic',
+    inputTarget: { kind: 'notice' },
+    guide: 'OGT はマーケット基準の値と契約証書の情報を持たないため、R1 では扱わない（出力に注記する）。',
+  },
+  {
+    id: 'REQ-CLM-020',
+    sectionId: 'metrics_targets',
+    summary: 'スコープ 3 のカテゴリー別の内訳',
+    references: [{ standard: 'CLM', paragraphs: '55・56' }],
+    priority: 'core',
+    inputTarget: { kind: 'ghg' },
+    guide: '「GHG排出量の候補値」の画面で、15 カテゴリの値と採用方式（直接入力 / 積上げ）を確認して採用する。未算定のカテゴリは 0 ではなく未算定として出る。',
+  },
+  {
+    id: 'REQ-CLM-021',
+    sectionId: 'metrics_targets',
+    summary: '測定アプローチ（持分割合 / 経営支配力 / 財務支配力）と、選んだ理由',
+    references: [{ standard: 'CLM', paragraphs: '60・61' }],
+    priority: 'core',
+    inputTarget: { kind: 'basic_info' },
+    guide: '基本情報の「測定アプローチ」で、親会社が選んだアプローチを選ぶ。選んだ理由は親会社が開示する。',
+  },
+  {
+    id: 'REQ-CLM-022',
+    sectionId: 'metrics_targets',
+    summary: '測定方法の説明（使った活動量・排出係数、置いた仮定、選んだ理由、変更の有無）',
+    references: [{ standard: 'CLM', paragraphs: '63' }],
+    priority: 'core',
+    inputTarget: { kind: 'narrative', itemId: 'metrics_targets.ghg_measurement_inputs' },
+    guide: '活動量の出所（請求書・メーター値など）、使った排出係数（OGT の公式係数か自社設定か、年度）、推計を置いた部分とその仮定を書く。前期から方法を変えた場合は内容と理由を書く。',
+  },
+  {
+    id: 'REQ-CLM-023',
+    sectionId: 'metrics_targets',
+    summary: '算定期間が異なるバリュー・チェーン上の企業の情報を使う場合の条件と影響',
+    references: [{ standard: 'CLM', paragraphs: '64' }],
+    priority: 'basic',
+    inputTarget: { kind: 'narrative', itemId: 'metrics_targets.value_chain_period' },
+    guide: '取引先から受け取った排出量などの算定期間が当社の報告期間と違う場合に、その扱いと、期間の差の間に起きた重大な変化の影響を書く。そうした情報を使っていない場合はその旨を書く。',
+  },
+  {
+    id: 'REQ-CLM-024',
+    sectionId: 'metrics_targets',
+    summary: '7 種類の温室効果ガスの CO2 相当への集約と、地球温暖化係数',
+    references: [{ standard: 'CLM', paragraphs: '65〜68' }],
+    priority: 'core',
+    inputTarget: { kind: 'notice' },
+    guide: 'OGT の公式係数は実質 CO2 のみで、CH4・N2O・フロン類などは含まない。出力にこの制約を注記する。',
+  },
+  {
+    id: 'REQ-CLM-025',
+    sectionId: 'metrics_targets',
+    summary: 'スコープ 3 のデータの選び方と、1 次データ・検証済みデータを使った範囲',
+    references: [{ standard: 'CLM', paragraphs: '69〜73' }],
+    priority: 'core',
+    inputTarget: { kind: 'narrative', itemId: 'metrics_targets.scope3_data' },
+    guide: 'スコープ 3 に使ったデータの種類（取引先から受け取った 1 次データか、金額 × 排出原単位などの 2 次データか）、1 次データ・第三者が検証したデータを使った範囲を書く。一部を見積れない場合は、その部分をどう管理しているかを書く。',
+  },
+  {
+    id: 'REQ-CLM-026',
+    sectionId: 'metrics_targets',
+    summary: '内部炭素価格（意思決定に使っているか、使っていればその方法と価格）',
+    references: [{ standard: 'CLM', paragraphs: '83' }],
+    priority: 'basic',
+    inputTarget: { kind: 'narrative', itemId: 'metrics_targets.internal_carbon_price' },
+    guide: '使っていない場合は「内部炭素価格を用いていない」と書く（非該当ではなく回答として扱う）。使っている場合は、適用の方法（投資判断など）と、排出 1 トンあたりの価格を書く。',
+  },
+  {
+    id: 'REQ-CLM-027',
+    sectionId: 'metrics_targets',
+    summary: '役員報酬との関係（気候関連の評価項目を組み込んでいるか）',
+    references: [{ standard: 'CLM', paragraphs: '84・85' }],
+    priority: 'basic',
+    inputTarget: { kind: 'narrative', itemId: 'metrics_targets.remuneration' },
+    guide: '組み込んでいない場合は「役員報酬に気候関連の評価項目を組み込んでいない」と書く。組み込んでいる場合は、その方法と、当期の報酬のうち結び付いている割合を書く。',
+  },
+  {
+    id: 'REQ-GEN-012',
+    sectionId: 'metrics_targets',
+    summary: 'リスク・機会とパフォーマンスをモニタリングする指標（自社で作った指標の定義と算定方法、外部の情報源から得た指標を含む）',
+    references: [{ standard: 'GEN', paragraphs: '32・35〜38' }],
+    priority: 'basic',
+    inputTarget: { kind: 'narrative', itemId: 'metrics_targets.other_metrics' },
+    guide: `温室効果ガス排出量以外に管理している指標があれば、その定義、絶対値か原単位か、第三者の認証の有無、算定方法を書く。定義を変えた場合は内容と理由を書く。${GENERAL_THEME_NOTE}`,
+  },
+  {
+    id: 'REQ-CLM-028',
+    sectionId: 'metrics_targets',
+    summary: '気候関連のリスク・機会とパフォーマンスをモニタリングする指標',
+    references: [{ standard: 'CLM', paragraphs: '87〜91' }],
+    priority: 'basic',
+    inputTarget: { kind: 'narrative', itemId: 'metrics_targets.other_metrics' },
+    guide: 'エネルギー使用量・再生可能エネルギー比率など、気候関連で管理している指標の定義と算定方法を書く。',
+  },
+  {
+    id: 'REQ-GEN-013',
+    sectionId: 'metrics_targets',
+    summary: '目標（使う指標、数値、期間、基準期間、中間目標、実績と推移、変更）',
+    references: [{ standard: 'GEN', paragraphs: '39' }],
+    priority: 'core',
+    inputTarget: { kind: 'narrative', itemId: 'metrics_targets.targets' },
+    guide: `目標ごとに、使う指標、目標値、対象期間、基準年度、中間目標、今期の実績とこれまでの推移を書く。目標を変えた場合はその旨と内容を書く。${GENERAL_THEME_NOTE}`,
+  },
+  {
+    id: 'REQ-CLM-029',
+    sectionId: 'metrics_targets',
+    summary: '気候関連の目標（目的、対象範囲、期間、絶対量か原単位か、設定・見直しの方法、第三者の認証、実績と推移）',
+    references: [{ standard: 'CLM', paragraphs: '92〜96' }],
+    priority: 'core',
+    inputTarget: { kind: 'narrative', itemId: 'metrics_targets.targets' },
+    guide: 'OGT の削減目標（基準年度と年度ごとの削減率）を登録していれば参考になる。目的（緩和・適応など）、対象が会社全体か一部か、絶対量か原単位か、見直しの方法、第三者の認証の有無も書く。',
+  },
+  {
+    id: 'REQ-CLM-030',
+    sectionId: 'metrics_targets',
+    summary: '温室効果ガス排出目標（対象のガス・スコープ、総量か純量か、カーボン・クレジットの使い方）',
+    references: [{ standard: 'CLM', paragraphs: '97〜99' }],
+    priority: 'core',
+    inputTarget: { kind: 'narrative', itemId: 'metrics_targets.ghg_targets' },
+    guide: 'OGT の削減目標は「基準年度からの削減率」だけを持つため、対象のガス、対象のスコープ、総量（グロス）か純量（ネット）か、セクター別脱炭素アプローチを使ったかは文章で書く。純量目標でカーボン・クレジットを使う計画があれば、その内容を書く。',
+  },
+
+  // ---- 全般 ----
+  {
+    id: 'REQ-APP-001',
+    sectionId: null,
+    summary: '報告企業（財務諸表と同じ範囲）と、関連する財務諸表',
+    references: [{ standard: 'APP', paragraphs: '5〜8' }],
+    priority: 'basic',
+    inputTarget: { kind: 'basic_info' },
+    guide: '基本情報の「報告範囲」に、財務諸表と同じ範囲（単体など）を書く。',
+  },
+  {
+    id: 'REQ-APP-002',
+    sectionId: null,
+    summary: '前期の比較情報（任意で開示する場合は省略できる）',
+    references: [{ standard: 'APP', paragraphs: '73' }],
+    priority: 'basic',
+    inputTarget: { kind: 'narrative', itemId: 'metrics_targets.comparative_information' },
+    guide: '前期の数値と比べて示す場合はその内容を書く。任意の開示で比較情報を示さない場合は、その旨を書く。',
+  },
+  {
+    id: 'REQ-APP-003',
+    sectionId: null,
+    summary: '準拠の表明（すべての定めに従わない限り、準拠していると書かない）',
+    references: [{ standard: 'APP', paragraphs: '78・79' }],
+    priority: 'core',
+    inputTarget: { kind: 'notice' },
+    guide: 'R1 はすべての定めを満たせないため、準拠しているとは書かない。プレビューと出力に「準拠や提出の完了を保証しない」注記を付ける。',
+  },
+  {
+    id: 'REQ-APP-004',
+    sectionId: null,
+    summary: '測定の不確実性（不確実性の高い数値、その源泉と置いた仮定）',
+    references: [{ standard: 'APP', paragraphs: '83・84' }],
+    priority: 'basic',
+    inputTarget: { kind: 'narrative', itemId: 'metrics_targets.measurement_uncertainty' },
+    guide: '見積りを含む数値（スコープ 3 の 2 次データ、推計した活動量など）を挙げ、不確実性の源泉と置いた仮定を書く。',
+  },
+];
+
+// 項目の記載例は架空の会社（当社）の文例。
+export const SSBJ_NARRATIVE_ITEMS: readonly SsbjNarrativeItem[] = [
+  {
+    id: 'governance.oversight_body',
+    kind: 'requirement',
+    label: '監督する機関・責任者',
+    requirementIds: ['REQ-GEN-001', 'REQ-CLM-001'],
+    example: '当社では、取締役会がサステナビリティ関連（気候関連を含む）のリスク及び機会を監督している。',
+  },
+  {
+    id: 'governance.oversight_information',
+    kind: 'requirement',
+    label: '監督のための情報の入手方法と頻度',
+    requirementIds: ['REQ-GEN-002', 'REQ-CLM-002'],
+    example: '管理本部長が年 2 回、取締役会に温室効果ガス排出量と主要なリスクの状況を報告している。',
+  },
+  {
+    id: 'governance.management_role',
+    kind: 'requirement',
+    label: '経営者の役割',
+    requirementIds: ['REQ-GEN-003', 'REQ-CLM-003'],
+    example: '気候関連の取組みの管理は管理本部長に委任しており、取締役会は上記の報告を通じて監督している。専用の統制・手続は設けていない。',
+  },
+  {
+    id: 'governance.company_supplement',
+    kind: 'company_supplement',
+    label: 'ガバナンスの補足（企業固有）',
+    requirementIds: [],
+    example: '親会社のサステナビリティ委員会に、当社の管理本部長が委員として参加している。',
+  },
+  {
+    id: 'strategy.business_model_impact',
+    kind: 'requirement',
+    label: 'ビジネス・モデルとバリュー・チェーンへの影響',
+    requirementIds: ['REQ-GEN-007', 'REQ-CLM-009'],
+    example: '主力の金属加工品は電力を多く使うため、電力価格の上昇が製造原価に影響している。影響は電力使用量の多い第一工場に集中している。',
+  },
+  {
+    id: 'strategy.response_plans',
+    kind: 'requirement',
+    label: '戦略・意思決定での対応と計画',
+    requirementIds: ['REQ-GEN-008', 'REQ-CLM-010'],
+    example: '2025年度から第一工場の空調・照明を高効率機器に更新しており、今後 3 年間で設備投資予算の一部を省エネ設備に充てる計画である。',
+  },
+  {
+    id: 'strategy.company_supplement',
+    kind: 'company_supplement',
+    label: '戦略の補足（企業固有）',
+    requirementIds: [],
+    example: '主要な取引先から、製品単位の排出量の開示を求められることが増えている。',
+  },
+  {
+    id: 'risk_management.risk_process',
+    kind: 'requirement',
+    label: 'リスクの識別・評価・管理のプロセス',
+    requirementIds: ['REQ-GEN-009', 'REQ-CLM-011'],
+    example: '年 1 回、各部門へのヒアリングでリスクを洗い出し、発生可能性と影響の大きさで評価している。シナリオ分析は用いていない。前期からプロセスを変更していない。',
+  },
+  {
+    id: 'risk_management.opportunity_process',
+    kind: 'requirement',
+    label: '機会の識別・評価・管理のプロセス',
+    requirementIds: ['REQ-GEN-010', 'REQ-CLM-012'],
+    example: '機会はリスクと同じヒアリングで洗い出し、営業部門が売上への影響を評価している。',
+  },
+  {
+    id: 'risk_management.integration',
+    kind: 'requirement',
+    label: '全社のリスク管理への統合',
+    requirementIds: ['REQ-GEN-011', 'REQ-CLM-013'],
+    example: '洗い出したリスクは全社のリスク一覧に登録し、リスク管理委員会で他のリスクと同じ基準で管理している。',
+  },
+  {
+    id: 'risk_management.company_supplement',
+    kind: 'company_supplement',
+    label: 'リスク管理の補足（企業固有）',
+    requirementIds: [],
+    example: '豪雨による操業停止のリスクについては、事業継続計画の見直しを進めている。',
+  },
+  {
+    id: 'metrics_targets.ghg_measurement_method',
+    kind: 'requirement',
+    label: '温室効果ガス排出の測定方法',
+    requirementIds: ['REQ-CLM-016'],
+    example: 'スコープ 1・2 は温対法の算定・報告・公表制度（SHK 制度）の方法で測定している。親会社の指定に従い、この方法を選択した。',
+  },
+  {
+    id: 'metrics_targets.ghg_consolidation_split',
+    kind: 'requirement',
+    label: '連結会計グループとその他の投資先への分解',
+    requirementIds: ['REQ-CLM-017'],
+    example: '当社は親会社の連結子会社であり、当社のスコープ 1・2 の排出はすべて連結会計グループに含まれる。',
+  },
+  {
+    id: 'metrics_targets.ghg_measurement_inputs',
+    kind: 'requirement',
+    label: '測定に使った活動量・排出係数と仮定',
+    requirementIds: ['REQ-CLM-022'],
+    example: '電力・燃料の使用量は請求書の値を用い、排出係数は国が公表する係数を用いた。一部の拠点の 3 月分は前年同月の値で推計した。',
+  },
+  {
+    id: 'metrics_targets.value_chain_period',
+    kind: 'requirement',
+    label: '算定期間が異なるバリュー・チェーンの情報',
+    requirementIds: ['REQ-CLM-023'],
+    example: '主要な仕入先 2 社から受け取った排出量は暦年（1〜12 月）の値であり、当社の報告期間との差の間に重大な変化は生じていない。',
+  },
+  {
+    id: 'metrics_targets.scope3_data',
+    kind: 'requirement',
+    label: 'スコープ 3 のデータの選び方',
+    requirementIds: ['REQ-CLM-025'],
+    example: 'カテゴリ 1 は購入金額に排出原単位を乗じた 2 次データを用い、主要な仕入先 2 社分は仕入先から受け取った 1 次データを用いた。第三者が検証したデータは用いていない。',
+  },
+  {
+    id: 'metrics_targets.internal_carbon_price',
+    kind: 'requirement',
+    label: '内部炭素価格',
+    requirementIds: ['REQ-CLM-026'],
+    example: '当社は内部炭素価格を用いていない。',
+  },
+  {
+    id: 'metrics_targets.remuneration',
+    kind: 'requirement',
+    label: '役員報酬との関係',
+    requirementIds: ['REQ-CLM-027'],
+    example: '当社は役員報酬に気候関連の評価項目を組み込んでいない。',
+  },
+  {
+    id: 'metrics_targets.other_metrics',
+    kind: 'requirement',
+    label: 'その他の指標',
+    requirementIds: ['REQ-GEN-012', 'REQ-CLM-028'],
+    example: '売上高あたりの電力使用量（kWh/百万円）を自社で定義し、毎月集計している。第三者の認証は受けていない。',
+  },
+  {
+    id: 'metrics_targets.targets',
+    kind: 'requirement',
+    label: '目標',
+    requirementIds: ['REQ-GEN-013', 'REQ-CLM-029'],
+    example: '2030年度までにスコープ 1・2 の排出量を 2022年度比で 30% 削減する目標を、会社全体を対象に設定している。当期は 2022年度比 8% の削減だった。',
+  },
+  {
+    id: 'metrics_targets.ghg_targets',
+    kind: 'requirement',
+    label: '温室効果ガス排出目標の詳細',
+    requirementIds: ['REQ-CLM-030'],
+    example: '上記の目標は CO2 のみを対象とした総量（グロス）目標であり、カーボン・クレジットの使用は計画していない。',
+  },
+  {
+    id: 'metrics_targets.comparative_information',
+    kind: 'requirement',
+    label: '比較情報',
+    requirementIds: ['REQ-APP-002'],
+    example: '当期が初めての開示であるため、比較情報は示していない。',
+  },
+  {
+    id: 'metrics_targets.measurement_uncertainty',
+    kind: 'requirement',
+    label: '測定の不確実性',
+    requirementIds: ['REQ-APP-004'],
+    example: 'スコープ 3 のカテゴリ 1 は購入金額に基づく推計であり、実際の排出量と差がありうる。',
+  },
+  {
+    id: 'metrics_targets.company_supplement',
+    kind: 'company_supplement',
+    label: '指標及び目標の補足（企業固有）',
+    requirementIds: [],
+    example: '2026年度から主要拠点で再生可能エネルギー由来の電力の購入を始める予定である。',
+  },
+];
+
+export const findSsbjRequirement = (id: SsbjRequirementId): SsbjRequirement | undefined =>
+  SSBJ_REQUIREMENTS.find(requirement => requirement.id === id);
+
+export const findSsbjNarrativeItem = (id: SsbjItemId): SsbjNarrativeItem | undefined =>
+  SSBJ_NARRATIVE_ITEMS.find(item => item.id === id);
+
+/** 章の文章項目（マスターの並び順）。 */
+export const ssbjNarrativeItemsOfSection = (sectionId: SsbjSectionId): SsbjNarrativeItem[] =>
+  SSBJ_NARRATIVE_ITEMS.filter(item => sectionOfItem(item.id) === sectionId);
+
+/** 項目が答える要求（項目に書いた順）。 */
+export const ssbjRequirementsOfItem = (itemId: SsbjItemId): SsbjRequirement[] =>
+  (findSsbjNarrativeItem(itemId)?.requirementIds ?? []).flatMap(id => {
+    const requirement = findSsbjRequirement(id);
+    return requirement ? [requirement] : [];
+  });
+
+/** 表示用（例「気候基準 19(2)」）。 */
+export const formatParagraphReference = (reference: SsbjParagraphReference): string =>
+  `${SSBJ_REFERENCE_STANDARD_DOCUMENTS[reference.standard].shortLabel} ${reference.paragraphs}`;

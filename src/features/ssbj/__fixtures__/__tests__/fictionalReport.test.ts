@@ -10,6 +10,8 @@ import type { SsbjFieldValue } from '../../types';
 import {
   FICTIONAL_FISCAL_YEAR,
   fictionalDisclosableTexts,
+  fictionalEvidence,
+  fictionalGhgAdoption,
   fictionalOgtAdoptedValues,
   fictionalOgtCandidates,
   fictionalReportBasicInfo,
@@ -31,6 +33,7 @@ const allFieldValues = (): SsbjFieldValue<string>[] => [
   fictionalTimeHorizonDefinitions.mediumTerm,
   fictionalTimeHorizonDefinitions.longTerm,
   fictionalTimeHorizonDefinitions.planningHorizonRelation,
+  ...fictionalEvidence.map(item => item.disclosure),
 ];
 
 describe('識別子', () => {
@@ -134,6 +137,15 @@ describe('リスク・機会', () => {
   });
 });
 
+describe('根拠文書', () => {
+  it('1項目に複数資料を関連付け、主管部署なしも固定版に含める', () => {
+    expect(fictionalEvidence.every(item => isSsbjItemId(item.itemId))).toBe(true);
+    expect(new Set(fictionalEvidence.map(item => item.itemId)).size).toBeLessThan(fictionalEvidence.length);
+    expect(fictionalEvidence.some(item => item.ownerDepartment === null)).toBe(true);
+    expect(fictionalSnapshot.sections.evidence).toEqual(fictionalEvidence);
+  });
+});
+
 describe('OGT の値', () => {
   it('候補値・採用値が契約を満たす', () => {
     for (const value of [...fictionalOgtCandidates, ...fictionalOgtAdoptedValues]) {
@@ -162,5 +174,17 @@ describe('OGT の値', () => {
       expect(reference.kind).toBe('supplier_reference');
       expect(isDecimalString(reference.emissions)).toBe(true);
     }
+  });
+});
+
+describe('OGT の採用値一式（T08b）', () => {
+  it('候補値をまとめて採用した形で、採用日時・採用者が各値とそろい、保存版の例に含まれる', () => {
+    expect(fictionalGhgAdoption.values).toHaveLength(fictionalOgtCandidates.length);
+    for (const value of fictionalGhgAdoption.values) {
+      expect(value.adoptedAt).toBe(fictionalGhgAdoption.adoptedAt);
+      expect(value.adoptedBy).toBe(fictionalGhgAdoption.adoptedBy);
+    }
+    expect(fictionalGhgAdoption.supplierReferences).toEqual(fictionalSupplierReferences);
+    expect(fictionalSnapshot.sections.ghg).toEqual(fictionalGhgAdoption);
   });
 });

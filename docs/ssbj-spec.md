@@ -272,6 +272,7 @@ T06 の版生成関数は、`public` スキーマの `ssbj_snapshot_section__` �
 | `fictionalReportBasicInfo` | 基本情報 |
 | `fictionalDisclosableTexts` | 四本柱の各章に 1 項目ずつの文章（開示文＋内部メモ / 未確認 / 非該当 / 未入力） |
 | `fictionalRequirementLinks` | 文章と要求項目の対応（1 つの文章が 2 つの要求に対応する例を含む） |
+| `fictionalEvidence` | 同じ項目に複数の根拠文書、主管部署あり / なし、開示用参照文と内部保管先の分離 |
 | `fictionalOgtCandidates` | OGT 候補値（Scope 1 算定済み / Scope 2 基準不明・一部未算定 / Scope 3 直接入力の回答済み 0 / 積上げの未算定 / 積上げの算定済み） |
 | `fictionalOgtAdoptedValues` | Scope 1・2 を採用した採用値 |
 | `fictionalSupplierReferences` | サプライヤー別実排出量（参考値） |
@@ -406,3 +407,76 @@ R1 の初回対象（[`ssbj-r1-scope.md`](ssbj-r1-scope.md) §5.1）に含める
 - **時間軸の定義は `ssbj_reports` の列にせず、別テーブルにした。** §10 の登録規約に乗せれば、版生成 RPC と T04 のテーブルを変えずに保存版へ取り込めるため。行が無いレポートの保存版には、すべて未入力の定義が入る（欠落と未入力を区別するため）。
 - **時間軸の定義は upsert ではなく「更新して、無ければ作る」で保存する。** PostgREST の upsert は衝突時の更新に `reportId` / `organizationId` も含めるが、両列は作成後に変えない前提で update の列 GRANT に入れていないため。
 - **状態＋値を jsonb にする処理は共通関数 `ssbj_field_value_json` にまとめた。** 後続の機能の保存版セクション関数も使える。名前を `ssbj_snapshot_section__` で始めないこと（版生成 RPC が自動収集してしまう）。
+### 根拠文書・主管部署（T10）
+
+| 対象 | 内容 |
+|---|---|
+| DB | `ssbj_evidence`（`supabase/migrations/20260929150000_ssbj_evidence.sql`）。項目IDごとに複数件を持つ。RLSで組織とレポートの帰属を検証し、変更時は `draftRevision` を進める。`ssbj_snapshot_section__evidence` が保存版の `sections.evidence` に取り込む |
+| 画面 | `/ssbj/[reportId]/evidence` で資料名・版・内部保管先・参照位置・主管部署・開示用参照文を登録、編集、削除する |
+| 出力 | 社内確認用CSVでは開示用参照文だけを開示内容欄に、資料の参照情報は項目ごとに別行の内部記録欄に入れる |
+| デモ | `supabase/seeds/demo/ssbj_demo.sql`。組織Aには同じ項目の2資料、組織Bにも1資料を置く |
+
+- 必須は項目IDと資料名。主管部署を含む残りの参照情報は任意。主管部署を将来必須にするかは別Issueで判断する。
+- 項目マスターがまだ無いため、項目IDは§3の形式だけを検証する。章だけへの紐付けはしない。
+- 内部保管先は開示用参照文と別列・別プロパティにする（§5）。開示用参照文には§4の4状態を使う。
+- 保存版の既存形式は `sections` が任意キーを受け付けるため `schemaVersion: 1` を維持する。過去版からの復元関数は復元契約が確定したときに追加する。
+
+### 要求項目マスター（T32a・暫定）
+
+初回対象の要求（[`ssbj-r1-scope.md`](ssbj-r1-scope.md) §5.1）ごとに、要求 ID・要約・基準の項番号・記載ガイド・入力先を
+対応させた一覧。文章（T05）・判断（T09）・プレビュー（T12）が同じ ID で要求を扱うための土台になる。
+
+| 対象 | 内容 |
+|---|---|
+| コード | `utils/requirementMaster.ts`（要求 47 件: 一般 13・気候 30・適用 4。文章の項目 24 件: 要求に対応する 20 件と、章ごとの企業固有の補足 4 件）、`types.ts` の `SsbjRequirement`・`SsbjNarrativeItem`・`SsbjParagraphReference` |
+| テスト | `utils/__tests__/requirementMaster.test.ts`（ID の形式と重複、要求と項目の相互参照、章ごとの補足、件数） |
+
+決めたこと:
+
+- **暫定版として出す。** 項目 ID・要求 ID は文章・判断の実装と突き合わせて確定する。確定までは変えうるため、
+  マスターの版（`SSBJ_REQUIREMENT_MASTER_VERSION`）を上げて区別する。保存版に要求 ID を残す機能は、この版も一緒に残す。
+- **DB ではなくコードの定数に置く。** 全組織で共通の固定データで、組織分離が要らない。PR でレビューでき、
+  型検査が効く。マイグレーションにはデータを入れられない（AGENTS.md R12）。業種一覧（`utils/sicsIndustries.ts`）と同じ置き方。
+- **要求 ID は基準ごとに分け、同じ趣旨の要求は 1 つの文章の項目に対応させる。** 一般開示基準と気候関連開示基準が
+  ほぼ同じことを求める要求（監督機関、リスク管理のプロセスなど）は、利用者が 1 つの文章で両方に答える（二重入力しない）。
+- **要約・記載ガイドはこの試行版の言葉で書き、基準の本文は転載しない（§1）。** 項番号は
+  `SSBJ_REFERENCE_STANDARD_DOCUMENTS` の版（適用・一般・気候は 2026年3月13日改正、実務対応基準第1号は 2026年6月11日）で確認した。
+- **章にまたがる全般の要求は `sectionId: null` にする。** 文章で答える比較情報・測定の不確実性は、数値にかかわる内容のため
+  指標及び目標の章の項目にした。
+- **温室効果ガスの説明（測定方法、活動量・係数と仮定、スコープ 3 のデータの選び方、連結の分解、算定期間の差）は文章の項目にした。**
+  数値（T08b）ではなく、利用者が書く文章だから。数値はスコープ 1・2・3 の総量・単位・カテゴリ別の内訳だけを T08b で扱う。
+- **OGT が対応していない要求（ロケーション基準・マーケット基準のスコープ 2、7 種類のガスの集約）と準拠の表明は、入力先を `notice` にした。**
+  利用者は入力せず、プレビュー・出力の注記で扱う。
+- **「〜していない場合はその旨」を求める要求は、記載ガイドで「していない」と書くよう案内する。** 非該当ではなく回答として扱う（`ssbj-r1-scope.md` §5）。
+
+### OGT の値の採用（T08b）
+
+「GHG排出量の候補値」画面（`/ssbj/[reportId]/ghg`。T08a）で確認した候補値を、利用者の明示の操作でレポートに採用する。
+採用値は OGT の元データから複写して持ち、保存版を作成した時点のものが固定される。
+
+| 対象 | 内容 |
+|---|---|
+| DB | `supabase/migrations/20260929180243_ssbj_ogt_adoptions.sql`。レポートごとに 1 行の `ssbj_ogt_adoptions`（RLS は select / delete を自組織に限定、insert / update は付与しない）、採用 RPC `adopt_ssbj_ogt_values`（service_role 限定。P2041 / P2042）、保存版セクション `ssbj_snapshot_section__ghg` |
+| API | `POST /api/ssbj/reports/[reportId]/ogt-adoption`（`services/ogtAdoptionServer.ts`） |
+| 画面 | `/ssbj/[reportId]/ghg` に「レポートへの採用」欄（`components/SsbjOgtAdoptionCard.client.tsx`。採用・採用し直し・取り消し、採用後に OGT の値が変わった区分の表示） |
+| コード | `types.ts` の `SsbjGhgAdoption`、`utils/ogtAdoption.ts`（指紋・変化の検出）、`services/ogtAdoptionService.ts`、`hooks/useOgtAdoption.ts` / `useOgtAdoptionActions.ts`、`services/versionCsvGhg.ts`（CSV の GHG の行）。候補値の取得（`fetchOgtCandidates`）とレポートの取得（`fetchSsbjReport`）は、サーバからも呼べるようクライアントを引数で受け取る形にした。表示名（`ogtValueLabel` など）と桁区切り（`formatDecimalForDisplay`）は画面・CSV・プレビューで共通にした |
+| テスト | `scripts/db/__tests__/ssbjOgtAdoptionPolicy.test.ts`（RLS・GRANT・RPC・保存版連携）、`services/__tests__/ogtAdoptionServer.test.ts`、Route Handler・指紋・CSV・画面の単体テスト |
+
+決めたこと:
+
+- **採用する値はクライアントから受け取らない。** 画面は表示した候補値の指紋（キーを並べ替えた JSON の FNV-1a 64 ビット）だけを送り、
+  サーバがセッションのクライアント（RLS あり）で OGT から候補値を取り直す。指紋が一致したときだけ、その取り直した値を
+  service_role 限定の RPC で保存する。一致しなければ 409 で拒否し、利用者に見ていない値を採用させない。
+  指紋は改ざん防止のためではなく「表示と同じか」の照合用で、改ざん防止はサーバが値を取り直すことで担保する
+  （Web Crypto は https / localhost 以外で使えないため、同期の単純なハッシュにした）。
+- **テーブルに insert / update の権限を与えない。** RLS は行の組織を検査できても、値が OGT 由来かは検査できないため。
+  取り消し（delete）は値を作らないので、画面から直接行ってよい。
+- **Scope 1・2・3 合計と Scope 3 の 15 カテゴリをまとめて採用する。** 区分ごとに採用できると、合計とカテゴリ別の値が
+  別の時点のものになり、食い違いうるため。採用し直すと行を置き換える。
+- **採用日時・採用者は RPC が付ける。** 行の `adoptedAt` と各値の `adoptedAt` を同じ時刻にそろえるため。
+- **OGT の値が変わっても採用値は自動では変えない（候補値の自動採用・自動上書きはしない）。** 画面で採用値と現在の候補値を
+  比べ、値・算定状態・採用方式・件数・参考値が変わった区分を表示し、採用し直すかは利用者が決める。取得時刻の違いだけでは変化にしない。
+- **採用していないレポートの保存版は `sections.ghg = null` にする。** CSV は「未採用」の 1 行を出し、欠落と区別する。
+- **算定済みの値が 1 つも無いときは採用できない。** 採用しても未算定しか残らないため。
+- **サプライヤー別の値は参考値として一緒に保存するが、合計には足さない（§7.2）。** CSV も参考値として別の行にする。
+- デモデータ（`ssbj_demo.sql`）には採用値を入れていない。18 件の値を手で書くと候補値の組み立てと食い違いうるため、画面から採用して確認する。

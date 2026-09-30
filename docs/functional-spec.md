@@ -217,7 +217,7 @@ erDiagram
 | `/ssbj` `/ssbj/[reportId]` | SSBJ レポート（試行版） | `ssbj_reports`、`fiscal_years`、`ssbj_report_versions`（保存版） |
 | `/ssbj/[reportId]/risks` | SSBJ リスク・機会 | `ssbj_risks_opportunities`、`ssbj_report_time_horizons` |
 | `/ssbj/[reportId]/versions` | SSBJ 保存履歴・CSV 出力 | `ssbj_report_versions`、`system_audit_logs` |
-| `/ssbj/[reportId]/ghg` | OGT の GHG 候補値 | `dashboard_aggregates`、算定・Scope 3 データ（参照のみ） |
+| `/ssbj/[reportId]/ghg` | OGT の GHG 候補値・採用 | `dashboard_aggregates`、算定・Scope 3 データ（参照のみ）、`ssbj_ogt_adoptions`（採用値） |
 | `/settings/company` `/settings/account` | 設定 | `organizations`、`profiles`、`fiscal_years`、`invites` |
 | `/login` `/signup` `/forgot-password` `/reset-password` `/invite/[token]` | 認証 | Supabase Auth、`invites` |
 
@@ -391,8 +391,9 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 | 詳細（`/ssbj/[reportId]`） | 基本情報（レポート名・対象年度と期間・作成目的・報告範囲・参照する基準の版・親会社名・親会社との関係・親会社の持分比率・測定アプローチ・業種（SICS））を表示・編集する。業種には産業別ガイダンスの該当する巻へのリンクを出す。「保存版を作成」で、あとから書き換えられない保存版を作る（基本情報の編集中は不可。読込後に別の画面・別の人が内容を変えていれば競合として拒否し、開き直しを促す）。存在しない・他組織のレポートは「見つかりません」と表示し、存在を示唆しない |
 
 | リスク・機会（`/ssbj/[reportId]/risks`） | 詳細画面の「レポートの内容」から入る。リスク・機会を複数登録・編集・削除する。項目は区分（リスク / 機会・必須）・名称（必須）・リスクの種類（区分がリスクのときだけ。物理的リスク / 移行リスク、または未入力 / 未確認）・時間軸（短期 / 中期 / 長期、または未入力 / 未確認 / 非該当）・説明（開示する文章。状態を「入力済み」にしたときだけ本文を保存）・内部メモ（開示しない）・関連する章・項目（章 ID または項目 ID。複数可）。画面上部の「時間軸の定義」で、レポートとしての「短期」「中期」「長期」の定義と計画期間との関係を編集する（各欄は状態＋開示する文章、ほかに内部メモ）。変更は作業中の内容で、保存版には詳細画面の「保存版を作成」で残す |
+| 根拠文書・主管部署（`/ssbj/[reportId]/evidence`） | 項目IDごとに根拠文書を複数登録・編集・削除する。項目IDと資料名は必須。版・内部保管先・参照位置・主管部署は任意。開示用参照文は状態付きの別欄で持ち、保管先などの内部記録を開示内容欄に混ぜない。変更は作業中の内容として保存し、保存版作成時に固定する |
 | 保存履歴・CSV（`/ssbj/[reportId]/versions`） | 固定版の一覧・内容・作成者・由来を確認し、過去版のスナップショットから新しい固定版を作る（作業中データは変更しない）。固定版を選び、その版のスナップショットから社内確認用 CSV を出力する。版 ID・位置付け・単位を出力に明記し、生成履歴を表示する。履歴保存に失敗した場合はダウンロードしない |
-| GHG 候補値（`/ssbj/[reportId]/ghg`） | レポートの年度に結び付く Scope 1・2・3 合計と Scope 3 の15カテゴリを参照する。期間・組織全体の集計範囲・採用方式・未算定を表示する。Scope 2 の基準は不明として係数区分の内訳を補足し、サプライヤー値は合計に加えず参考表示する。候補値の採用・固定保存は別機能で行う |
+| GHG 候補値（`/ssbj/[reportId]/ghg`） | レポートの年度に結び付く Scope 1・2・3 合計と Scope 3 の15カテゴリを参照する。期間・組織全体の集計範囲・採用方式・未算定を表示する。Scope 2 の基準は不明として係数区分の内訳を補足し、サプライヤー値は合計に加えず参考表示する。「表示中の候補値を採用する」で、Scope 1・2・3 合計と 15 カテゴリをまとめてレポートに採用する（確認ダイアログあり。採用し直す・取り消すこともできる）。採用値は OGT で算定し直しても自動では変わらず、変わったときは変わった区分を表示する。採用値は保存版を作成した時点で固定される |
 
 - 基本情報の必須はレポート名のみ。任意項目の未入力は「未入力」と表示し、空欄や「なし」にしない（項目名と必須性は T01 の合意。`ssbj-r1-scope.md`）
 - 親会社の持分比率は 0 より大きく 100 以下、小数点以下 2 桁まで。親会社との関係・測定アプローチ・業種は一覧から選ぶ（業種は SICS の 68 産業）
@@ -507,12 +508,13 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 | DELETE | `/api/idea-imports/[id]` | IDEA 取込の削除（取込状態の取得は Supabase クライアントから直接読む） |
 | POST | `/api/dashboard-aggregates/refresh` | ダッシュボード集計の再計算 |
 | POST | `/api/ssbj/reports/[reportId]/versions` | SSBJ レポートの保存版（固定スナップショット）を作成する（`ssbj-spec.md` §8） |
+| POST | `/api/ssbj/reports/[reportId]/ogt-adoption` | SSBJ レポートに OGT の候補値を採用する。受け取るのは画面が表示した候補値の指紋だけで、値はサーバが OGT から取り直す（`ssbj-spec.md` §13） |
 | POST | `/api/account/delete` | アカウント削除 |
 | GET | `/api/health` | ヘルスチェック |
 | POST | `/api/csp-report` | CSP 違反レポートの受信 |
 | GET | `/auth/callback` | Supabase Auth のコールバック |
 
-`/api/calculations`・`/api/calculations/provisional-recalculation`・`/api/dashboard-aggregates/refresh`・`/api/idea-imports/upload-url`・`/api/idea-imports`・`/api/idea-imports/[id]`・`/api/account/delete`・`/api/ssbj/reports/[reportId]/versions` の 8 本は `service_role` で RLS を越えて読み書きするため、Route Handler 側でログイン済み・自組織であることを検証する。この組織チェックは RLS では効かず、ここでしか担保できない。`/api/idea-imports/upload-url` は自組織フォルダ（`${organizationId}/idea-imports/<uuid>.xlsx`）にだけ署名付き URL を発行し、`/api/idea-imports` は受け取ったパスがその形であることを検証してから Storage に触れる。`/api/health` も `service_role` を使うが `organizations` を 1 行読む疎通確認のみで、組織データは返さない。
+`/api/calculations`・`/api/calculations/provisional-recalculation`・`/api/dashboard-aggregates/refresh`・`/api/idea-imports/upload-url`・`/api/idea-imports`・`/api/idea-imports/[id]`・`/api/account/delete`・`/api/ssbj/reports/[reportId]/versions`・`/api/ssbj/reports/[reportId]/ogt-adoption` の 9 本は `service_role` で RLS を越えて読み書きするため、Route Handler 側でログイン済み・自組織であることを検証する。この組織チェックは RLS では効かず、ここでしか担保できない。`/api/idea-imports/upload-url` は自組織フォルダ（`${organizationId}/idea-imports/<uuid>.xlsx`）にだけ署名付き URL を発行し、`/api/idea-imports` は受け取ったパスがその形であることを検証してから Storage に触れる。`/api/health` も `service_role` を使うが `organizations` を 1 行読む疎通確認のみで、組織データは返さない。
 
 ### 6.3 主要な RPC
 

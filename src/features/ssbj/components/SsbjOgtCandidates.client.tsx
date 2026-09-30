@@ -1,6 +1,7 @@
 'use client';
 
-// OGT の GHG 候補値を参照する画面。採用・固定保存はここでは行わない。
+// OGT の GHG 候補値を参照し、レポートに採用する画面（T08a の表示に T08b の採用欄を加えたもの）。
+// 採用した値の固定保存は、レポート詳細の「保存版を作成」で行う。
 
 import Link from 'next/link';
 import { ArrowLeft, FileCheck2, RefreshCw } from 'lucide-react';
@@ -9,45 +10,27 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { LoadingIndicator } from '@/components/ui/PageLoading';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { SCOPE3_CATEGORY_NAMES } from '@/features/scope-analysis/services/scopeAnalysisService';
 import { formatDateTime } from '@/lib/datetime';
+import { useOgtAdoption } from '../hooks/useOgtAdoption';
+import { useOgtAdoptionActions } from '../hooks/useOgtAdoptionActions';
 import { useOgtCandidates } from '../hooks/useOgtCandidates';
 import { useSsbjReport } from '../hooks/useSsbjReport';
 import type { OgtCandidateValue } from '../types';
-import { OGT_DATA_QUALITY_LABELS } from '../utils/ogtValue';
+import { formatDecimalForDisplay } from '../utils/decimal';
+import { changedOgtValueLabels, hasAdoptableOgtValue } from '../utils/ogtAdoption';
+import { OGT_DATA_QUALITY_LABELS, OGT_SOURCE_LABELS, ogtMethodLabel, ogtValueLabel } from '../utils/ogtValue';
+import { SsbjOgtAdoptionCard } from './SsbjOgtAdoptionCard.client';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
-
-const formatDecimal = (value: string): string => {
-  const [integer, fraction] = value.split('.');
-  return integer.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (fraction === undefined ? '' : `.${fraction}`);
-};
-
-const label = (candidate: OgtCandidateValue): string =>
-  candidate.scope3CategoryId === null ? `Scope ${candidate.scope}`
-    : `カテゴリ ${candidate.scope3CategoryId}：${SCOPE3_CATEGORY_NAMES[candidate.scope3CategoryId]}`;
-
-const methodLabel = (candidate: OgtCandidateValue): string => {
-  if (candidate.scope === 3 && candidate.scope3CategoryId !== null) {
-    return candidate.method.kind === 'direct' ? '直接入力' : '積上げ';
-  }
-  return candidate.scope === 3 ? 'カテゴリごとの採用方式' : '活動量 × 排出係数';
-};
-
-const sourceLabel: Record<OgtCandidateValue['source']['aggregate'], string> = {
-  dashboard_aggregates: '年度集計',
-  dashboard_scope3_category_emissions: 'カテゴリ別採用値',
-  scope3_category_emissions: 'カテゴリ別直接入力',
-};
 
 const CandidateRow = ({ candidate }: { candidate: OgtCandidateValue }) => (
   <TableRow>
-    <TableCell className="whitespace-normal font-medium">{label(candidate)}</TableCell>
+    <TableCell className="whitespace-normal font-medium">{ogtValueLabel(candidate)}</TableCell>
     <TableCell className="text-right tabular-nums">
-      {candidate.value.state === 'answered' ? `${formatDecimal(candidate.value.value)} ${candidate.unit}` : '未算定'}
+      {candidate.value.state === 'answered' ? `${formatDecimalForDisplay(candidate.value.value)} ${candidate.unit}` : '未算定'}
     </TableCell>
     <TableCell>{OGT_DATA_QUALITY_LABELS[candidate.dataQuality]}</TableCell>
-    <TableCell>{methodLabel(candidate)}</TableCell>
-    <TableCell>{sourceLabel[candidate.source.aggregate]}</TableCell>
+    <TableCell>{ogtMethodLabel(candidate)}</TableCell>
+    <TableCell>{OGT_SOURCE_LABELS[candidate.source.aggregate]}</TableCell>
     <TableCell>
       {candidate.coverage
         ? `算定済み ${candidate.coverage.calculatedCount} 件／未算定 ${candidate.coverage.uncalculatedCount} 件`
@@ -59,6 +42,8 @@ const CandidateRow = ({ candidate }: { candidate: OgtCandidateValue }) => (
 export const SsbjOgtCandidates = ({ reportId }: { reportId: string }) => {
   const { report, isLoading: reportLoading, errorMessage: reportError, isNotFound } = useSsbjReport(reportId);
   const { data, isLoading: candidatesLoading, errorMessage: candidateError, refresh } = useOgtCandidates(report);
+  const { adoption, isLoading: adoptionLoading, errorMessage: adoptionError, reload: reloadAdoption } = useOgtAdoption(report?.id ?? null);
+  const adoptionActions = useOgtAdoptionActions(reportId);
   const scope2 = data?.candidates.find(candidate => candidate.scope === 2);
   const latestBatch = data?.candidates[0]?.source.latestBatch;
   const updatedAt = data?.candidates[0]?.source.aggregateUpdatedAt;
@@ -77,12 +62,12 @@ export const SsbjOgtCandidates = ({ reportId }: { reportId: string }) => {
           <ArrowLeft size={16} /> レポート詳細へ戻る
         </Link>
         <SsbjTrialNotice />
-        {(reportError || candidateError) && (
+        {(reportError || candidateError || adoptionError) && (
           <div role="alert" className="rounded-md bg-danger-light px-4 py-3 text-sm text-danger">
-            {reportError || candidateError}
+            {reportError || candidateError || adoptionError}
           </div>
         )}
-        {reportLoading || candidatesLoading ? (
+        {reportLoading || candidatesLoading || adoptionLoading ? (
           <Card><LoadingIndicator label="GHG候補値を読み込んでいます..." /></Card>
         ) : isNotFound ? (
           <Card className="flex flex-col items-center justify-center py-16 text-center">
@@ -104,6 +89,23 @@ export const SsbjOgtCandidates = ({ reportId }: { reportId: string }) => {
                 <p role="alert" className="mt-3 text-sm text-danger">最新の算定バッチが完了していません。候補値を確認してください。</p>
               )}
             </Card>
+            <SsbjOgtAdoptionCard
+              adoption={adoption}
+              changedLabels={adoption ? changedOgtValueLabels(adoption, data.candidates, data.suppliers) : []}
+              canAdopt={hasAdoptableOgtValue(data.candidates)}
+              isSubmitting={adoptionActions.isSubmitting}
+              errorMessage={adoptionActions.errorMessage}
+              onAdopt={async () => {
+                const done = await adoptionActions.adopt(data.candidates, data.suppliers);
+                if (done) reloadAdoption();
+                return done;
+              }}
+              onClear={async () => {
+                const done = await adoptionActions.clear();
+                if (done) reloadAdoption();
+                return done;
+              }}
+            />
             <Card>
               <h2 className="m-0 mb-3 text-base font-bold">Scope別の候補値</h2>
               <Table><TableHeader><TableRow>
@@ -115,7 +117,7 @@ export const SsbjOgtCandidates = ({ reportId }: { reportId: string }) => {
               </TableBody></Table>
               <p className="mt-3 text-sm text-text-muted">Scope 2 のロケーション基準・マーケット基準は不明です。以下は適用係数の区分であり、両基準の算定値ではありません。</p>
               {scope2?.scope === 2 && scope2.method.factorTypeBreakdown && (
-                <p className="mt-1 text-sm text-text-muted">Scope 2 係数内訳：基礎 {formatDecimal(scope2.method.factorTypeBreakdown.basic)}／調整後 {formatDecimal(scope2.method.factorTypeBreakdown.adjusted)}／区分なし {formatDecimal(scope2.method.factorTypeBreakdown.unclassified)} t-CO2e</p>
+                <p className="mt-1 text-sm text-text-muted">Scope 2 係数内訳：基礎 {formatDecimalForDisplay(scope2.method.factorTypeBreakdown.basic)}／調整後 {formatDecimalForDisplay(scope2.method.factorTypeBreakdown.adjusted)}／区分なし {formatDecimalForDisplay(scope2.method.factorTypeBreakdown.unclassified)} t-CO2e</p>
               )}
             </Card>
             <Card>
@@ -135,10 +137,10 @@ export const SsbjOgtCandidates = ({ reportId }: { reportId: string }) => {
               <Table><TableHeader><TableRow><TableHead>カテゴリ</TableHead><TableHead>サプライヤー</TableHead><TableHead className="text-right">排出量</TableHead></TableRow></TableHeader>
                 <TableBody>{data.suppliers.map(item => <TableRow key={`${item.supplierId}-${item.scope3CategoryId}`}>
                   <TableCell>{item.scope3CategoryId}</TableCell><TableCell>{item.supplierName}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatDecimal(item.emissions)} {item.unit}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatDecimalForDisplay(item.emissions)} {item.unit}</TableCell>
                 </TableRow>)}</TableBody></Table>
             </Card>}
-            <p className="text-xs text-text-muted">「算定済み」は登録されたデータの状態です。未登録データの網羅性は判定できません。OGT の公式係数は実質 CO2 のみで、他の温室効果ガスは含みません。ここでの値は参照用候補であり、レポートへの採用・固定保存は行っていません。</p>
+            <p className="text-xs text-text-muted">「算定済み」は登録されたデータの状態です。未登録データの網羅性は判定できません。OGT の公式係数は実質 CO2 のみで、他の温室効果ガスは含みません。候補値は「採用」するまでレポートに入りません。</p>
           </>
         ) : null}
       </div>

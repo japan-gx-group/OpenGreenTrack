@@ -62,4 +62,57 @@ describe('ssbjVersionToCsvRows', () => {
     } as unknown as SsbjReportSnapshotV1;
     expect(() => ssbjVersionToCsvRows({ ...fictionalVersion, snapshot }, GENERATED_AT)).toThrow('未対応');
   });
+
+  it('根拠文書の参照情報を項目ごとの行に分け、開示内容欄に混ぜない', () => {
+    const rows = ssbjVersionToCsvRows(fictionalVersion, GENERATED_AT);
+    const evidence = rows.filter(row => row[0] === '根拠文書' && row[7] === '根拠ID: 5b1f0000-1111-4000-8000-000000000201');
+    expect(evidence).toHaveLength(6);
+    expect(evidence.find(row => row[2] === '開示用参照文')?.[4]).toBe('取締役会の開催記録に基づく。');
+    expect(evidence.find(row => row[2] === '開示用参照文')?.[6]).toBe('');
+    expect(evidence.find(row => row[2] === '資料名')?.[6]).toBe('取締役会議事録（架空）');
+    expect(evidence.find(row => row[2] === '保管先')?.[6]).toBe('社内共有フォルダ/議事録（架空）');
+    expect(evidence.find(row => row[2] === '主管部署')?.[6]).toBe('総務部');
+    expect(evidence.every(row => row.every(cell => !cell.includes('\n')))).toBe(true);
+    expect(rows.filter(row => row[0] === '根拠文書')).toHaveLength(12);
+  });
+});
+
+describe('ssbjVersionToCsvRows（GHG排出量）', () => {
+  it('採用値を区分ごとの行にし、未算定を 0 にせず、Scope 2 の基準不明と参考値を注記する', () => {
+    const rows = ssbjVersionToCsvRows(fictionalVersion, GENERATED_AT);
+    const ghg = rows.filter(row => row[0] === 'GHG排出量');
+    expect(ghg[0]).toEqual(['GHG排出量', fictionalVersion.reportId, '採用日時', '入力済み', '2025-06-03T02:00:00+00:00', '', '', '']);
+    expect(ghg.find(row => row[1] === 'scope1')?.slice(2, 6)).toEqual(['Scope 1', '算定済み', '812.345', 't-CO2e']);
+    const scope2 = ghg.find(row => row[1] === 'scope2');
+    expect(scope2?.[7]).toContain('基準不明');
+    expect(scope2?.[7]).toContain('基礎 120.500／調整後 1045.250／区分なし 0');
+    // 直接入力で確認した結果の 0（回答済み）は 0 のまま、未算定は空欄＋「未算定」。
+    expect(ghg.find(row => row[1] === 'scope3.category1')?.slice(3, 5)).toEqual(['算定済み', '0']);
+    expect(ghg.some(row => row[3] === '未算定' && row[4] === '')).toBe(true);
+    const reference = rows.find(row => row[0] === 'GHG排出量（参考値）');
+    expect(reference?.[7]).toContain('Scope 3 の合計には含めない');
+  });
+
+  it('採用していない版は「未採用」の 1 行にする（欠落と区別する）', () => {
+    const snapshot: SsbjReportSnapshotV1 = {
+      ...fictionalVersion.snapshot,
+      sections: { ...fictionalVersion.snapshot.sections, ghg: null },
+    };
+    const rows = ssbjVersionToCsvRows({ ...fictionalVersion, snapshot }, GENERATED_AT);
+    expect(rows.filter(row => row[0]?.startsWith('GHG排出量'))).toEqual([
+      ['GHG排出量', fictionalVersion.reportId, 'OGT の値', '未採用', '', '', '', 'OGT の候補値をレポートに採用していません'],
+    ]);
+  });
+
+  it('数値が十進表記でない採用値は出力せずエラーにする', () => {
+    const ghg = fictionalVersion.snapshot.sections.ghg!;
+    const snapshot: SsbjReportSnapshotV1 = {
+      ...fictionalVersion.snapshot,
+      sections: {
+        ...fictionalVersion.snapshot.sections,
+        ghg: { ...ghg, values: [{ ...ghg.values[0], value: { state: 'answered', value: '1e3' } }] },
+      },
+    };
+    expect(() => ssbjVersionToCsvRows({ ...fictionalVersion, snapshot }, GENERATED_AT)).toThrow('GHG排出量の保存内容が不正です');
+  });
 });

@@ -1,5 +1,6 @@
 // SSBJ レポート（ssbj_reports）の取得・作成・基本情報の更新サービス。
 // ブラウザの Supabase クライアント（= Client Component）からのみ呼ぶこと。
+// 例外は fetchSsbjReport で、クライアントを引数で受け取るため、サーバからはサーバ用クライアントを渡して呼べる。
 // 組織分離は RLS が強制する（他組織のレポートは select で 0 件になり、他組織の年度を指す insert は拒否される）。
 // DB の行（年度を埋め込んだ形）と画面・保存版で使う SsbjReportRecord の相互変換もここで行う。
 
@@ -121,8 +122,17 @@ export const listSsbjReports = async (fiscalYearId: string): Promise<SsbjReportR
  * 1 件取得。存在しない・他組織（RLS で不可視）のレポートは null を返し、
  * 「見つかりません」表示にして他組織のレポートの存在を示唆しない。
  */
-export const getSsbjReport = async (reportId: string): Promise<SsbjReportWorkingRecord | null> => {
-  const supabase = createClient();
+export const getSsbjReport = async (reportId: string): Promise<SsbjReportWorkingRecord | null> =>
+  fetchSsbjReport(createClient(), reportId);
+
+/**
+ * getSsbjReport の本体。渡したクライアントの RLS で読むため、サーバ（Route Handler）からはセッションを引き継いだ
+ * サーバ用クライアントを渡す（他組織のレポートは null になる）。
+ */
+export const fetchSsbjReport = async (
+  supabase: SupabaseClient,
+  reportId: string,
+): Promise<SsbjReportWorkingRecord | null> => {
   const { data, error } = await supabase
     .from('ssbj_reports')
     .select(SELECT_COLUMNS)
