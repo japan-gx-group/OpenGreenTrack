@@ -13,7 +13,7 @@ const SSBJ_REPORT_CONTENTS: { path: string; label: string; description: string }
   {
     path: 'ghg',
     label: 'GHG排出量の候補値',
-    description: 'OGTのScope別・カテゴリ別の値と算定条件を確認します。',
+    description: 'OGTのScope別・カテゴリ別の値と算定条件を確認し、レポートに採用します。',
   },
   {
     path: 'evidence',
