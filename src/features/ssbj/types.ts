@@ -495,14 +495,14 @@ export type SsbjReportSnapshotV1 = {
   sections: Partial<SsbjSnapshotSections>;
 };
 
-/** 保存版。作成後は書き換えない（過去版からの復元も新しい版として作る）。 */
+/** 保存版。作成後は書き換えない（過去版からの新版作成も新しい行として作る）。 */
 export type SsbjReportVersion = {
   id: SsbjVersionId;
   reportId: SsbjReportId;
   /** レポート内の連番（1 始まり）。 */
   versionNumber: number;
   snapshot: SsbjReportSnapshotV1;
-  /** どの作業状態（ssbj_reports.draftRevision）から作った版か。 */
+  /** スナップショットの元になった作業状態。過去版からの複製では元版の値を引き継ぐ。 */
   basedOnDraftRevision: number;
   /** 過去版から作った場合の元の版。通常の保存では null。 */
   sourceVersionId: SsbjVersionId | null;

@@ -222,7 +222,7 @@ T08a が OGT から**候補値**（`OgtCandidateValue`）を取得・表示し�
 - **書き込み経路:** 作業中データは `authenticated` + RLS（組織分離）。固定版は `service_role` 限定の RPC を
   Server Action から呼ぶ。呼び出し前に `getCurrentProfile()` で呼び出し元の組織をサーバ側で確定する。
 - **不変性:** `ssbj_report_versions` は `authenticated` に SELECT のみ。UPDATE はトリガーで全ロール拒否。
-  過去版からの復元（T11）も、旧版を書き換えず新しい版として作る（`sourceVersionId` に元の版を残す）。
+  過去版からの新版作成（T11）は旧版のスナップショットをそのまま複製し、旧版と作業中データを変更しない（`sourceVersionId` に元の版を残す）。
 - 保存版の形式を変えるときは `schemaVersion` を上げ、読み込み側で旧形式も読めるようにする。
 
 **なぜ:** 作業中データを直接出力に使うと、OGT の値や他の人の編集で出力が後から変わり、
@@ -253,8 +253,7 @@ T04（レポートの作成・識別） ─▶ T06（汎用の保存・版生成
 3. マイグレーションで `ssbj_snapshot_section__<key>(p_report_id uuid) returns jsonb` を定義する。
    EXECUTE は `service_role` のみ（`public` / `anon` / `authenticated` から revoke）。
 4. `types.ts` の `SsbjSnapshotSections` に `<key>` とその型を追記する（`<key>` と関数名の `<key>` を一致させる）。
-5. 復元（T11）用に `ssbj_restore_section__<key>(p_report_id uuid, p_payload jsonb)` を対で定義する（詳細は T11 で確定）。
-6. 値の状態は `ssbj_field_state`（§4）、開示文と内部記録は別の列（§5）で持つ。
+5. 値の状態は `ssbj_field_state`（§4）、開示文と内部記録は別の列（§5）で持つ。
 
 T06 の版生成関数は、`public` スキーマの `ssbj_snapshot_section__` で始まる関数を名前順に集め、
 結果を `snapshot.sections.<key>` に入れる。
@@ -366,7 +365,7 @@ R1 のレポートは親会社の有価証券報告書に向けた子会社・�
 - **競合検知の SQLSTATE は `P2033` を新設。** 既存の `P2023`/`P2024`/`P2026`〜`P2028`/`P2031`/`P2032`（`apiRateLimit.ts` の `HEAVY_API_SQLSTATE`、`ideaImportServer.ts` の `IDEA_IMPORT_SQLSTATE`）と重複しない番号を選んだ。対応表は `src/features/ssbj/services/versionServer.ts` の `SSBJ_VERSION_SQLSTATE`。
 - **画面は読込時の `draftRevision` を `SsbjReportWorkingRecord`（`SsbjReportRecord` ＋ `draftRevision`）として持つ。** 保存版の `report` は `SsbjReportRecord` のままにし、版数を含めない。基本情報を保存すると DB のトリガーが版数を進めるため、更新 API の戻り値で保持値を差し替える（差し替えないと自分の編集直後の保存が競合になる）。
 - **基本情報の編集中は保存版を作れない。** 未保存のフォーム入力は作業中データに入っておらず、保存版にも入らないため、押せる状態にすると「入力したのに保存版に無い」ことが起きる。
-- 保存履歴の表示と過去版からの新版作成は T11（`/ssbj/[reportId]/versions`）が行う。RPC は `p_source_version_id` を受け付けるので、T11 は同じ RPC を使える。
+- 保存履歴の表示と過去版からの新版作成は T11（`/ssbj/[reportId]/versions`）が行う。RPC は `p_source_version_id` を受け付け、指定版のスナップショットと `basedOnDraftRevision` を複製する。版番号・作成者・作成日時は新たに記録する。作業中データは変更しない。
 
 ### リスク・機会（T07）
 
@@ -385,7 +384,6 @@ R1 のレポートは親会社の有価証券報告書に向けた子会社・�
 - **章・項目への関連は 1 つの配列列 `linkTargets`（章 ID または項目 ID）で持つ。** 章と項目を別の列にすると項目 ID の接頭辞と食い違いうる（§3）。別テーブルにすると、リスク・機会本体と関連の保存が 2 回の通信に分かれ、片方だけ失敗しうるため、1 行の更新で済む配列にした。形式は check 制約（`utils/ids.ts` と同じ正規表現）で検証し、並び順（章の順、同じ章では章そのものを先に）は画面側で揃える。
 - **項目への関連付けは、章を選んで項目の識別子を入力する。** 項目の一覧（T32a の要求項目マスター・T05 の文章）がまだ無いため、形式だけを検証している。一覧ができたら選択式に差し替える（保存形式は変わらない）。
 - **説明は「入力済み」のときだけ本文を保存する。** 未確認・非該当・未入力に切り替えると本文は保存しない（未確認の下書きは内部メモに書く。§4）。
-- **過去版からの復元用の `ssbj_restore_section__risks_opportunities`（§10 の手順5）はまだ定義していない。** 復元の契約（作業中データを置き換えるか等）は T11 で確定するため、T11 の実装時に対で追加する。
 
 #### T01 の合意を受けた追加（リスクの種類・時間軸の定義）
 

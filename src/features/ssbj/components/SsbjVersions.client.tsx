@@ -1,13 +1,14 @@
 'use client';
 
-// 固定版を指定して CSV を生成する画面。CSV は選んだ版の snapshot のみから作る。
+// 固定版の履歴・内容・複製と CSV 出力の画面。内容と CSV は固定版の snapshot のみから作る。
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Download, FileCheck2 } from 'lucide-react';
+import { ArrowLeft, Copy, Download, FileCheck2 } from 'lucide-react';
 import { PageHeading } from '@/components/layout/PageHeading';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { LoadingIndicator } from '@/components/ui/PageLoading';
 import { useSsbjReport } from '../hooks/useSsbjReport';
 import {
@@ -19,6 +20,9 @@ import {
   type SsbjVersionSummary,
 } from '../services/versionExportService';
 import { downloadSsbjVersionCsv, ssbjVersionToCsvRows } from '../services/versionCsv';
+import type { SsbjCsvVersion } from '../services/versionCsv';
+import { saveSsbjReportVersion } from '../services/versionClient';
+import { SsbjVersionContents } from './SsbjVersionContents';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
 
 export const SsbjVersions = ({ reportId }: { reportId: string }) => {
@@ -28,6 +32,9 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [busyVersionId, setBusyVersionId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
+  const [selectedVersion, setSelectedVersion] = useState<SsbjCsvVersion | null>(null);
+  const [confirmVersionId, setConfirmVersionId] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState('');
 
   useEffect(() => {
     if (!report) return;
@@ -65,6 +72,46 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
     }
   };
 
+  const handleInspect = async (versionId: string) => {
+    setBusyVersionId(versionId);
+    setErrorMessage('');
+    try {
+      setSelectedVersion(await getSsbjCsvVersion(reportId, versionId));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '保存版の取得に失敗しました');
+    } finally {
+      setBusyVersionId(null);
+    }
+  };
+
+  const handleCopy = async () => {
+    if (!report || !confirmVersionId || busyVersionId !== null) return;
+    setBusyVersionId(confirmVersionId);
+    setErrorMessage('');
+    setSuccessMessage('');
+    try {
+      const created = await saveSsbjReportVersion(reportId, report.draftRevision, confirmVersionId);
+      setSuccessMessage(`版 ${created.versionNumber} を作成しました。作業中データは変更されていません。`);
+      try {
+        const [savedVersions, copiedVersion] = await Promise.all([
+          listSsbjVersions(reportId),
+          getSsbjCsvVersion(reportId, created.id),
+        ]);
+        setVersions(savedVersions);
+        setSelectedVersion(copiedVersion);
+      } catch {
+        setErrorMessage('新版は作成されましたが、履歴の再取得に失敗しました。画面を再読み込みしてください。');
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '保存版の作成に失敗しました');
+    } finally {
+      setConfirmVersionId(null);
+      setBusyVersionId(null);
+    }
+  };
+
+  const sourceVersion = versions.find(version => version.id === confirmVersionId);
+
   return (
     <div className="page-content gt-scroll relative">
       <PageHeading title="保存履歴とCSV出力" description={report?.title ?? 'SSBJレポート'} showFiscalYear={false} primaryAction={null} />
@@ -74,6 +121,7 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
         </Link>
         <SsbjTrialNotice />
         {(reportError || errorMessage) && <div role="alert" className="rounded-md bg-danger-light px-4 py-3 text-sm text-danger">{reportError || errorMessage}</div>}
+        {successMessage && <div role="status" className="rounded-md bg-primary-bg px-4 py-3 text-sm text-success">{successMessage}</div>}
         {isReportLoading || (report && isLoading) ? (
           <Card><LoadingIndicator label="保存履歴を読み込んでいます..." /></Card>
         ) : isNotFound ? (
@@ -92,16 +140,32 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
                       <div className="min-w-0 text-sm">
                         <p className="m-0 font-semibold">版 {version.versionNumber}</p>
                         <p className="m-0 text-text-muted">{new Date(version.createdAt).toLocaleString('ja-JP')} · {version.id}</p>
+                        <p className="m-0 text-text-muted">作成者: {version.creatorName}</p>
+                        {version.sourceVersionId && <p className="m-0 text-text-muted">版 {versions.find(item => item.id === version.sourceVersionId)?.versionNumber ?? version.sourceVersionId} から作成</p>}
                         {version.note && <p className="m-0 text-text-muted">{version.note}</p>}
                       </div>
-                      <Button type="button" size="sm" disabled={busyVersionId !== null} onClick={() => void handleDownload(version.id)}>
-                        <Download size={14} /> {busyVersionId === version.id ? '出力中...' : 'CSVを出力'}
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" size="sm" variant="outline" disabled={busyVersionId !== null} onClick={() => void handleInspect(version.id)}>
+                          内容を見る
+                        </Button>
+                        <Button type="button" size="sm" variant="outline" disabled={busyVersionId !== null} onClick={() => setConfirmVersionId(version.id)}>
+                          <Copy size={14} /> この版から新版を作成
+                        </Button>
+                        <Button type="button" size="sm" disabled={busyVersionId !== null} onClick={() => void handleDownload(version.id)}>
+                          <Download size={14} /> {busyVersionId === version.id ? '処理中...' : 'CSVを出力'}
+                        </Button>
+                      </div>
                     </li>
                   ))}
                 </ul>
               )}
             </Card>
+            {selectedVersion && (
+              <Card>
+                <h2 className="m-0 mb-4 text-base font-bold">版 {selectedVersion.versionNumber} の保存内容</h2>
+                <SsbjVersionContents version={selectedVersion} />
+              </Card>
+            )}
             <Card>
               <h2 className="m-0 mb-3 text-base font-bold">CSV生成履歴（直近20件）</h2>
               {history.length === 0 ? <p className="text-sm text-text-muted">生成履歴はありません。</p> : (
@@ -113,6 +177,22 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
           </>
         ) : null}
       </div>
+      <Dialog open={confirmVersionId !== null} onOpenChange={open => { if (!open && busyVersionId === null) setConfirmVersionId(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>版 {sourceVersion?.versionNumber} から新版を作成</DialogTitle>
+            <DialogDescription>
+              この版の保存内容を新しい固定版として複製します。元の版と現在の作業中データは変更されません。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={busyVersionId !== null} onClick={() => setConfirmVersionId(null)}>キャンセル</Button>
+            <Button type="button" disabled={busyVersionId !== null} onClick={() => void handleCopy()}>
+              {busyVersionId !== null ? '作成中...' : '新版を作成'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

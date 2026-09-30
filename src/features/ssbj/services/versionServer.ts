@@ -26,7 +26,7 @@ export interface CreateSsbjReportVersionParams {
   /** 画面が読込時に保持していた ssbj_reports.draftRevision。 */
   expectedDraftRevision: number;
   note?: string | null;
-  /** 過去版からの新版作成（T11 の復元）のときだけ渡す。通常の保存では省略する。 */
+  /** 過去版のスナップショットから新版を作るときだけ渡す。作業中データは変更しない。 */
   sourceVersionId?: string | null;
 }
 

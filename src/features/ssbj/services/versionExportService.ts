@@ -11,6 +11,9 @@ export type SsbjVersionSummary = {
   versionNumber: number;
   createdAt: string;
   note: string | null;
+  sourceVersionId: string | null;
+  createdByUserId: string | null;
+  creatorName: string;
 };
 
 export type SsbjCsvHistory = {
@@ -21,13 +24,26 @@ export type SsbjCsvHistory = {
 };
 
 export const listSsbjVersions = async (reportId: string): Promise<SsbjVersionSummary[]> => {
-  const { data, error } = await createClient()
+  const supabase = createClient();
+  const { data, error } = await supabase
     .from('ssbj_report_versions')
-    .select('id, versionNumber, createdAt, note')
+    .select('id, versionNumber, createdAt, note, sourceVersionId, createdByUserId')
     .eq('reportId', reportId)
     .order('versionNumber', { ascending: false });
   if (error) throw new Error('保存履歴の取得に失敗しました');
-  return (data ?? []) as SsbjVersionSummary[];
+  const rows = (data ?? []) as Omit<SsbjVersionSummary, 'creatorName'>[];
+  const userIds = [...new Set(rows.flatMap(row => row.createdByUserId ? [row.createdByUserId] : []))];
+  if (userIds.length === 0) return rows.map(row => ({ ...row, creatorName: '不明' }));
+  const { data: profiles, error: profileError } = await supabase
+    .from('profiles')
+    .select('id, fullName, email')
+    .in('id', userIds);
+  if (profileError) return rows.map(row => ({ ...row, creatorName: '不明' }));
+  const names = new Map((profiles ?? []).map(profile => [profile.id, profile.fullName || profile.email]));
+  return rows.map(row => ({
+    ...row,
+    creatorName: row.createdByUserId ? names.get(row.createdByUserId) ?? '不明' : '不明',
+  }));
 };
 
 export const getSsbjCsvVersion = async (reportId: string, versionId: string): Promise<SsbjCsvVersion> => {
