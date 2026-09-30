@@ -5,7 +5,7 @@
 //
 // 固定すること:
 //   - スナップショットの組み立ては ssbj_build_report_snapshot の 1 か所で、版生成 RPC もプレビューもそれを使う
-//   - 置き換えた版生成 RPC に、ロック・組織帰属・競合検知・採番が残っている
+//   - 置き換えた版生成 RPC に、ロック・組織帰属・競合検知・採番と、過去版の複製が残っている
 //   - 組み立て関数・プレビュー RPC は service_role 限定で、プレビューは組織の一致を検証する
 
 import { readdirSync, readFileSync } from 'node:fs';
@@ -76,8 +76,16 @@ describe('create_ssbj_report_version（組み立て関数を使う形に置き�
     expect(rpc).toContain('v_report."draftRevision" <> p_expected_draft_revision');
     expect(rpc).toContain(`errcode = '${SSBJ_VERSION_SQLSTATE.draftRevisionConflict}'`);
     expect(rpc).toContain(`errcode = '${SSBJ_VERSION_SQLSTATE.reportInvalid}'`);
-    expect(rpc).toContain('where id = p_source_version_id and "reportId" = p_report_id;');
+    expect(rpc).toContain(
+      'where id = p_source_version_id and "reportId" = p_report_id and "organizationId" = p_organization_id;',
+    );
     expect(rpc).toContain('coalesce(max("versionNumber"), 0) + 1');
+  });
+
+  it('過去版からの新版作成は、元版のスナップショットと元になった作業状態をそのまま複製する（作業中データは読まない）', () => {
+    expect(rpc).toContain('v_snapshot := v_source.snapshot;');
+    expect(rpc).toContain('v_based_on_draft_revision := v_source."basedOnDraftRevision";');
+    expect(rpc).toContain('v_based_on_draft_revision, p_source_version_id, p_note, p_actor_user_id');
   });
 
   it('service_role 限定のまま', () => {

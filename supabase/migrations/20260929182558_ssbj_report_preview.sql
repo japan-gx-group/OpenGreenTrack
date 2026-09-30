@@ -2,7 +2,9 @@
 --
 -- プレビューの「作業中」表示は、保存版とまったく同じ形（SsbjReportSnapshotV1）で作業中データを組み立てて返す。
 -- 形を保存版と一致させるため、スナップショットの組み立てを ssbj_build_report_snapshot に切り出し、
--- 版生成 RPC（create_ssbj_report_version）もこれを使うように置き換える（振る舞いは変えない）。
+-- 版生成 RPC（create_ssbj_report_version）もこれを使うように置き換える（振る舞いは変えない。
+-- 過去版からの新版作成（20260929182127_restore_ssbj_version.sql）で入った「元版のスナップショットを
+-- そのまま複製する」処理も残す）。
 -- 組み立てを 2 か所に書くと、基本情報の項目を足したときなどに片方だけ直す事故が起きるため。
 
 -- §1 スナップショットの組み立て（service_role 限定。組織の検証は呼び出し側の RPC が行う）
@@ -81,7 +83,7 @@ comment on function ssbj_build_report_snapshot(uuid) is
 revoke execute on function ssbj_build_report_snapshot(uuid) from public, anon, authenticated;
 grant execute on function ssbj_build_report_snapshot(uuid) to service_role;
 
--- §2 版生成 RPC を組み立て関数を使う形に置き換える（引数・検証・採番・戻り値は変えない）
+-- §2 版生成 RPC を組み立て関数を使う形に置き換える（引数・検証・採番・戻り値と、過去版の複製は変えない）
 
 create or replace function create_ssbj_report_version(
   p_report_id uuid,
@@ -100,6 +102,8 @@ declare
   v_next_version_number integer;
   v_version_id uuid;
   v_snapshot jsonb;
+  v_source ssbj_report_versions%rowtype;
+  v_based_on_draft_revision integer;
 begin
   -- レポート行をロックし、組織帰属と draftRevision の一致を確認する（§8 の競合防止）。
   select * into v_report
@@ -119,15 +123,22 @@ begin
   end if;
 
   if p_source_version_id is not null then
-    perform 1 from ssbj_report_versions
-    where id = p_source_version_id and "reportId" = p_report_id;
+    select * into v_source
+    from ssbj_report_versions
+    where id = p_source_version_id
+      and "reportId" = p_report_id
+      and "organizationId" = p_organization_id;
     if not found then
       raise exception '復元元の保存版が見つかりません: %', p_source_version_id
         using errcode = 'P2031';
     end if;
+    -- 固定版の内容をそのまま複製する。現在の作業中データは変更しない。
+    v_snapshot := v_source.snapshot;
+    v_based_on_draft_revision := v_source."basedOnDraftRevision";
+  else
+    v_snapshot := ssbj_build_report_snapshot(p_report_id);
+    v_based_on_draft_revision := v_report."draftRevision";
   end if;
-
-  v_snapshot := ssbj_build_report_snapshot(p_report_id);
 
   select coalesce(max("versionNumber"), 0) + 1
     into v_next_version_number
@@ -139,7 +150,7 @@ begin
      "basedOnDraftRevision", "sourceVersionId", note, "createdByUserId")
   values
     (gen_random_uuid(), p_organization_id, p_report_id, v_next_version_number, v_snapshot,
-     v_report."draftRevision", p_source_version_id, p_note, p_actor_user_id)
+     v_based_on_draft_revision, p_source_version_id, p_note, p_actor_user_id)
   returning id into v_version_id;
 
   return jsonb_build_object(

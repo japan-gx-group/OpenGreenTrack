@@ -32,7 +32,10 @@ beforeEach(() => {
     createdAt: fictionalVersion.createdAt, snapshot: fictionalVersion.snapshot,
   });
   vi.mocked(listSsbjVersions).mockResolvedValue([
-    { id: fictionalVersion.id, versionNumber: 1, createdAt: fictionalVersion.createdAt, note: null },
+    {
+      id: fictionalVersion.id, versionNumber: 1, createdAt: fictionalVersion.createdAt, note: null,
+      sourceVersionId: null, createdByUserId: null, creatorName: '不明',
+    },
   ]);
 });
 afterEach(() => { rendered?.unmount(); rendered = null; vi.clearAllMocks(); });

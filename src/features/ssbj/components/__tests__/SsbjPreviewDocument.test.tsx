@@ -73,15 +73,29 @@ describe('SsbjPreviewDocument', () => {
   it('表示に対応していないセクションは黙って落とさず、名前を出す', () => {
     const snapshot = {
       ...fictionalSnapshot,
-      sections: { ...fictionalSnapshot.sections, evidence: [] },
+      sections: { ...fictionalSnapshot.sections, judgements: [] },
     } as unknown as SsbjReportSnapshotV1;
     rendered = render(<SsbjPreviewDocument source={working(snapshot)} showInternalNotes={false} />);
     const alert = rendered.container.querySelector('[role="alert"]');
-    expect(alert?.textContent).toContain('evidence');
+    expect(alert?.textContent).toContain('judgements');
   });
 
   it('準拠や提出の完了を保証しない注記を必ず出す', () => {
     rendered = render(<SsbjPreviewDocument source={saved} showInternalNotes={false} />);
     expect(text()).toContain('SSBJ 基準への準拠や、対外提出の完了を保証しません');
+  });
+});
+
+describe('SsbjPreviewDocument（根拠文書）', () => {
+  it('開示用参照文は常に出し、資料名・保管先などの内部記録は選んだときだけ出す', () => {
+    rendered = render(<SsbjPreviewDocument source={working()} showInternalNotes={false} />);
+    expect(text()).toContain('取締役会の開催記録に基づく。');
+    expect(text()).toContain('未確認');
+    expect(text()).not.toContain('社内共有フォルダ/議事録（架空）');
+    expect(rendered.container.querySelector('[role="alert"]')).toBeNull();
+    rendered.unmount();
+    rendered = render(<SsbjPreviewDocument source={working()} showInternalNotes />);
+    expect(text()).toContain('保管先（内部記録・開示しない）');
+    expect(text()).toContain('社内共有フォルダ/議事録（架空）');
   });
 });

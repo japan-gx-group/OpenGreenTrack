@@ -6,6 +6,7 @@ import { formatDateTime } from '@/lib/datetime';
 import type { SsbjPreviewSource } from '../services/previewService';
 import { SSBJ_SECTION_LABELS } from '../types';
 import { unsupportedPreviewSections } from '../utils/preview';
+import { SsbjPreviewEvidence } from './SsbjPreviewEvidence';
 import { SsbjPreviewGhg } from './SsbjPreviewGhg';
 import { SsbjPreviewRisks, SsbjPreviewTimeHorizons } from './SsbjPreviewStrategy';
 import { SsbjReportBasicInfo } from './SsbjReportBasicInfo';
@@ -76,6 +77,10 @@ export const SsbjPreviewDocument = ({
       <Section title={SSBJ_SECTION_LABELS.metrics_targets}>
         <h3 className="m-0 text-sm font-bold">温室効果ガス排出</h3>
         <SsbjPreviewGhg ghg={sections.ghg} />
+      </Section>
+
+      <Section title="根拠文書">
+        <SsbjPreviewEvidence items={sections.evidence} showInternalNotes={showInternalNotes} />
       </Section>
 
       {unsupported.length > 0 && (

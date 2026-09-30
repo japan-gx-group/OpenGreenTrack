@@ -30,6 +30,16 @@ describe('saveSsbjReportVersion', () => {
     });
   });
 
+  it('元版を指定して新版を作る', async () => {
+    const fetchMock = mockFetch(201, { id: 'version-2', versionNumber: 3 });
+    await saveSsbjReportVersion(REPORT_ID, 5, 'version-1');
+    expect(fetchMock).toHaveBeenCalledWith(`/api/ssbj/reports/${REPORT_ID}/versions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expectedDraftRevision: 5, sourceVersionId: 'version-1' }),
+    });
+  });
+
   it('競合（409）はサーバのメッセージを例外にする', async () => {
     mockFetch(409, { error: '他の変更と競合しました。画面を開き直してから保存し直してください' });
 
