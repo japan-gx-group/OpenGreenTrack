@@ -12,6 +12,7 @@ import type {
   OgtSupplierReference,
   OgtValueSource,
   SsbjDisclosableText,
+  SsbjEvidence,
   SsbjGhgAdoption,
   SsbjItemId,
   SsbjReportBasicInfo,
@@ -87,6 +88,30 @@ export const fictionalRequirementLinks: { itemId: SsbjItemId; requirementIds: Ss
   { itemId: 'strategy.climate_resilience', requirementIds: ['REQ-CLM-002'] },
   { itemId: 'risk_management.process_integration', requirementIds: ['REQ-GEN-002'] },
   { itemId: 'metrics_targets.climate_targets', requirementIds: ['REQ-CLM-003'] },
+];
+
+/** 項目ごとの根拠文書（すべて架空）。同じ項目に複数登録でき、主管部署は任意。 */
+export const fictionalEvidence: SsbjEvidence[] = [
+  {
+    id: '5b1f0000-1111-4000-8000-000000000201',
+    itemId: 'governance.oversight_body',
+    documentTitle: '取締役会議事録（架空）',
+    documentVersion: '2024年度版',
+    internalLocation: '社内共有フォルダ/議事録（架空）',
+    referencePosition: '第2章',
+    ownerDepartment: '総務部',
+    disclosure: { state: 'answered', value: '取締役会の開催記録に基づく。' },
+  },
+  {
+    id: '5b1f0000-1111-4000-8000-000000000202',
+    itemId: 'governance.oversight_body',
+    documentTitle: '監督体制メモ（架空）',
+    documentVersion: null,
+    internalLocation: null,
+    referencePosition: null,
+    ownerDepartment: null,
+    disclosure: { state: 'unconfirmed' },
+  },
 ];
 
 /**
@@ -279,6 +304,7 @@ export const fictionalSnapshot: SsbjReportSnapshotV1 = {
   sections: {
     risks_opportunities: fictionalRisksOpportunities,
     time_horizons: fictionalTimeHorizonDefinitions,
+    evidence: fictionalEvidence,
     ghg: fictionalGhgAdoption,
   },
 };

@@ -10,6 +10,7 @@ import type { SsbjFieldValue } from '../../types';
 import {
   FICTIONAL_FISCAL_YEAR,
   fictionalDisclosableTexts,
+  fictionalEvidence,
   fictionalGhgAdoption,
   fictionalOgtAdoptedValues,
   fictionalOgtCandidates,
@@ -32,6 +33,7 @@ const allFieldValues = (): SsbjFieldValue<string>[] => [
   fictionalTimeHorizonDefinitions.mediumTerm,
   fictionalTimeHorizonDefinitions.longTerm,
   fictionalTimeHorizonDefinitions.planningHorizonRelation,
+  ...fictionalEvidence.map(item => item.disclosure),
 ];
 
 describe('識別子', () => {
@@ -132,6 +134,15 @@ describe('リスク・機会', () => {
   it('保存版の例に含まれる', () => {
     expect(fictionalSnapshot.sections.risks_opportunities).toEqual(fictionalRisksOpportunities);
     expect(fictionalSnapshot.sections.time_horizons).toEqual(fictionalTimeHorizonDefinitions);
+  });
+});
+
+describe('根拠文書', () => {
+  it('1項目に複数資料を関連付け、主管部署なしも固定版に含める', () => {
+    expect(fictionalEvidence.every(item => isSsbjItemId(item.itemId))).toBe(true);
+    expect(new Set(fictionalEvidence.map(item => item.itemId)).size).toBeLessThan(fictionalEvidence.length);
+    expect(fictionalEvidence.some(item => item.ownerDepartment === null)).toBe(true);
+    expect(fictionalSnapshot.sections.evidence).toEqual(fictionalEvidence);
   });
 });
 
