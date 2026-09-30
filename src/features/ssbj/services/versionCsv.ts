@@ -15,7 +15,7 @@ import { formatFieldValue } from '../utils/fieldValue';
 import { ghgAdoptionCsvRows } from './versionCsvGhg';
 
 // CSV に出せる保存版セクション。ここに無いセクションがあれば、出力漏れにせずエラーにする。
-const CSV_SECTIONS = new Set(['risks_opportunities', 'time_horizons', 'ghg']);
+const CSV_SECTIONS = new Set(['risks_opportunities', 'time_horizons', 'evidence', 'ghg']);
 
 export type SsbjCsvVersion = Pick<SsbjReportVersion, 'id' | 'reportId' | 'versionNumber' | 'snapshot'>;
 
@@ -126,6 +126,36 @@ export const ssbjVersionToCsvRows = (version: SsbjCsvVersion, generatedAt: strin
     definition('戦略上の計画期間との関係', timeHorizons.planningHorizonRelation);
     rows.push(['時間軸の定義', report.id, '内部メモ',
       timeHorizons.internalNote ? '入力済み' : '未入力', '', '', timeHorizons.internalNote ?? '', '']);
+  }
+  const evidence = snapshot.sections.evidence;
+  if (evidence !== undefined) {
+    if (!Array.isArray(evidence)) throw new Error('根拠文書の保存内容が不正です');
+    for (const item of evidence) {
+      if (!item.id || !item.itemId || !item.documentTitle || !item.disclosure ||
+        !['unanswered', 'unconfirmed', 'not_applicable', 'answered'].includes(item.disclosure.state) ||
+        (item.disclosure.state === 'answered' && !item.disclosure.value?.trim())) {
+        throw new Error('根拠文書の保存内容が不正です');
+      }
+      rows.push([
+        '根拠文書', item.itemId, '開示用参照文',
+        formatFieldValue(item.disclosure, () => '入力済み'),
+        formatFieldValue(item.disclosure),
+        '', '', `根拠ID: ${item.id}`,
+      ]);
+      for (const [name, value] of [
+        ['資料名', item.documentTitle],
+        ['版', item.documentVersion],
+        ['保管先', item.internalLocation],
+        ['参照位置', item.referencePosition],
+        ['主管部署', item.ownerDepartment],
+      ] as const) {
+        rows.push([
+          '根拠文書', item.itemId, name,
+          value === null ? '未入力' : '入力済み',
+          '', '', value ?? '', `根拠ID: ${item.id}`,
+        ]);
+      }
+    }
   }
   const ghg = snapshot.sections.ghg;
   if (ghg !== undefined) rows.push(...ghgAdoptionCsvRows(report.id, ghg));
