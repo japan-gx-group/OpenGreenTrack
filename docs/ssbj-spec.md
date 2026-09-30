@@ -273,6 +273,7 @@ T06 の版生成関数は、`public` スキーマの `ssbj_snapshot_section__` �
 | `fictionalReportBasicInfo` | 基本情報 |
 | `fictionalDisclosableTexts` | 四本柱の各章に 1 項目ずつの文章（開示文＋内部メモ / 未確認 / 非該当 / 未入力） |
 | `fictionalRequirementLinks` | 文章と要求項目の対応（1 つの文章が 2 つの要求に対応する例を含む） |
+| `fictionalEvidence` | 同じ項目に複数の根拠文書、主管部署あり / なし、開示用参照文と内部保管先の分離 |
 | `fictionalOgtCandidates` | OGT 候補値（Scope 1 算定済み / Scope 2 基準不明・一部未算定 / Scope 3 直接入力の回答済み 0 / 積上げの未算定 / 積上げの算定済み） |
 | `fictionalOgtAdoptedValues` | Scope 1・2 を採用した採用値 |
 | `fictionalSupplierReferences` | サプライヤー別実排出量（参考値） |
@@ -408,3 +409,16 @@ R1 の初回対象（[`ssbj-r1-scope.md`](ssbj-r1-scope.md) §5.1）に含める
 - **時間軸の定義は `ssbj_reports` の列にせず、別テーブルにした。** §10 の登録規約に乗せれば、版生成 RPC と T04 のテーブルを変えずに保存版へ取り込めるため。行が無いレポートの保存版には、すべて未入力の定義が入る（欠落と未入力を区別するため）。
 - **時間軸の定義は upsert ではなく「更新して、無ければ作る」で保存する。** PostgREST の upsert は衝突時の更新に `reportId` / `organizationId` も含めるが、両列は作成後に変えない前提で update の列 GRANT に入れていないため。
 - **状態＋値を jsonb にする処理は共通関数 `ssbj_field_value_json` にまとめた。** 後続の機能の保存版セクション関数も使える。名前を `ssbj_snapshot_section__` で始めないこと（版生成 RPC が自動収集してしまう）。
+### 根拠文書・主管部署（T10）
+
+| 対象 | 内容 |
+|---|---|
+| DB | `ssbj_evidence`（`supabase/migrations/20260929150000_ssbj_evidence.sql`）。項目IDごとに複数件を持つ。RLSで組織とレポートの帰属を検証し、変更時は `draftRevision` を進める。`ssbj_snapshot_section__evidence` が保存版の `sections.evidence` に取り込む |
+| 画面 | `/ssbj/[reportId]/evidence` で資料名・版・内部保管先・参照位置・主管部署・開示用参照文を登録、編集、削除する |
+| 出力 | 社内確認用CSVでは開示用参照文だけを開示内容欄に、資料の参照情報は項目ごとに別行の内部記録欄に入れる |
+| デモ | `supabase/seeds/demo/ssbj_demo.sql`。組織Aには同じ項目の2資料、組織Bにも1資料を置く |
+
+- 必須は項目IDと資料名。主管部署を含む残りの参照情報は任意。主管部署を将来必須にするかは別Issueで判断する。
+- 項目マスターがまだ無いため、項目IDは§3の形式だけを検証する。章だけへの紐付けはしない。
+- 内部保管先は開示用参照文と別列・別プロパティにする（§5）。開示用参照文には§4の4状態を使う。
+- 保存版の既存形式は `sections` が任意キーを受け付けるため `schemaVersion: 1` を維持する。過去版からの復元関数は復元契約が確定したときに追加する。
