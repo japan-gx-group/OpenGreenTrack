@@ -4,7 +4,9 @@
 // 要求項目マスターの文章の項目を章ごとに並べ、項目ごとに開示する文章と内部メモを編集する。
 // 同じ章で文章以外の画面で答える要求（リスク・機会、GHG、基本情報など）は、どこで答えるかを案内する。
 // 変更は作業中の内容で、保存版にはレポート詳細の「保存版を作成」で残す（docs/ssbj-spec.md §8）。
+// 右側（SsbjEditorLayout）に、編集中の文章をその場で反映したプレビューと、OGT の値（参照用）を出す。
 
+import { useCallback, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, FileCheck2 } from 'lucide-react';
 import { PageHeading } from '@/components/layout/PageHeading';
@@ -21,8 +23,11 @@ import {
   type SsbjRequirement,
   type SsbjSectionId,
 } from '../types';
-import { ssbjNarrativeEntriesOfSection } from '../utils/narrative';
+import { mergeSsbjNarrativeDrafts, ssbjNarrativeEntriesOfSection } from '../utils/narrative';
+import { isSsbjReportLocked } from '../utils/reportStatus';
 import { SSBJ_REQUIREMENTS } from '../utils/requirementMaster';
+import { SsbjEditorLayout } from './SsbjEditorLayout.client';
+import { SsbjLockedNotice } from './SsbjLockedNotice';
 import { SsbjNarrativeItemCard } from './SsbjNarrativeItemCard.client';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
 
@@ -69,6 +74,20 @@ export const SsbjNarratives = ({ reportId }: { reportId: string }) => {
   const { narratives, isLoading: narrativesLoading, errorMessage: narrativesError, replace } =
     useSsbjNarratives(report?.id ?? null);
 
+  // 編集中（未保存）の文章。プレビューにだけ反映する。
+  const [drafts, setDrafts] = useState<Partial<Record<SsbjItemId, SsbjDisclosableText>>>({});
+  const handleDraftChange = useCallback((itemId: SsbjItemId, text: SsbjDisclosableText | null) => {
+    setDrafts(prev => {
+      if (text === null) {
+        if (!(itemId in prev)) return prev;
+        const next = { ...prev };
+        delete next[itemId];
+        return next;
+      }
+      return { ...prev, [itemId]: text };
+    });
+  }, []);
+
   const save = async (itemId: SsbjItemId, text: SsbjDisclosableText) => {
     if (!report) return;
     replace(await saveSsbjNarrative(report, itemId, text));
@@ -88,6 +107,7 @@ export const SsbjNarratives = ({ reportId }: { reportId: string }) => {
           <ArrowLeft size={16} /> レポート詳細へ戻る
         </Link>
         <SsbjTrialNotice />
+        {report && <SsbjLockedNotice report={report} />}
         {(reportError || narrativesError) && (
           <div role="alert" className="rounded-md bg-danger-light px-4 py-3 text-sm text-danger">
             {reportError || narrativesError}
@@ -101,7 +121,11 @@ export const SsbjNarratives = ({ reportId }: { reportId: string }) => {
             <p className="text-lg font-bold text-text-muted">SSBJレポートが見つかりません</p>
           </Card>
         ) : report && !narrativesError ? (
-          <>
+          <SsbjEditorLayout
+            report={report}
+            overrides={{ narratives: mergeSsbjNarrativeDrafts(narratives, drafts) }}
+            hasUnsavedDrafts={Object.keys(drafts).length > 0}
+          >
             <Card>
               <p className="m-0 text-sm text-text-muted">
                 要求項目マスター（暫定版）の項目ごとに、開示する文章を書きます。1 つの文章で、一般開示基準と気候関連開示基準の
@@ -120,7 +144,13 @@ export const SsbjNarratives = ({ reportId }: { reportId: string }) => {
               <section key={sectionId} id={`ssbj-narratives-${sectionId}`} className="flex flex-col gap-3">
                 <h2 className="m-0 text-base font-bold">{SSBJ_SECTION_LABELS[sectionId]}</h2>
                 {ssbjNarrativeEntriesOfSection(sectionId, narratives).map(entry => (
-                  <SsbjNarrativeItemCard key={entry.itemId} entry={entry} onSave={save} />
+                  <SsbjNarrativeItemCard
+                    key={entry.itemId}
+                    entry={entry}
+                    onSave={save}
+                    readOnly={isSsbjReportLocked(report.review)}
+                    onDraftChange={handleDraftChange}
+                  />
                 ))}
                 <OtherRequirements reportId={reportId} requirements={requirementsOf(sectionId)} />
               </section>
@@ -129,7 +159,7 @@ export const SsbjNarratives = ({ reportId }: { reportId: string }) => {
               <h2 className="m-0 text-base font-bold">全般</h2>
               <OtherRequirements reportId={reportId} requirements={requirementsOf(null)} />
             </section>
-          </>
+          </SsbjEditorLayout>
         ) : null}
       </div>
     </div>

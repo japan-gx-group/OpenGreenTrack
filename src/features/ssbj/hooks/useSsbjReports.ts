@@ -7,21 +7,21 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAppRefresh } from '@/hooks/useAppRefresh';
 import type { ShowToast } from '@/hooks/useToast';
 import { listSsbjReports } from '../services/reportService';
-import type { SsbjReportRecord } from '../types';
+import type { SsbjReportWorkingRecord } from '../types';
 
 export interface SsbjReportsState {
   /** 選択中の年度のレポートだけ（年度切替直後に前の年度の行が混ざらないよう絞ってから返す）。 */
-  reports: SsbjReportRecord[];
+  reports: SsbjReportWorkingRecord[];
   /** 取得中（初回・年度切替・更新ボタン）。 */
   isLoading: boolean;
   /** 1 回でも取得が終わったか（取得前の空一覧を「0 件」と誤表示しないため）。 */
   hasFetchedOnce: boolean;
-  addReport: (report: SsbjReportRecord) => void;
+  addReport: (report: SsbjReportWorkingRecord) => void;
 }
 
 export function useSsbjReports(fiscalYearId: string | null, showToast: ShowToast): SsbjReportsState {
   const { refreshToken } = useAppRefresh();
-  const [allReports, setAllReports] = useState<SsbjReportRecord[]>([]);
+  const [allReports, setAllReports] = useState<SsbjReportWorkingRecord[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [hasFetchedOnce, setHasFetchedOnce] = useState<boolean>(false);
 
@@ -56,7 +56,7 @@ export function useSsbjReports(fiscalYearId: string | null, showToast: ShowToast
     };
   }, [fiscalYearId, refreshToken, showToast]);
 
-  const addReport = useCallback((report: SsbjReportRecord) => {
+  const addReport = useCallback((report: SsbjReportWorkingRecord) => {
     setAllReports(prev => [report, ...prev.filter(existing => existing.id !== report.id)]);
   }, []);
 

@@ -31,6 +31,9 @@ import { SsbjRiskOpportunityDialog } from './SsbjRiskOpportunityDialog.client';
 import { SsbjRiskOpportunityList } from './SsbjRiskOpportunityList';
 import { SsbjTimeHorizonCard } from './SsbjTimeHorizonCard.client';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
+import { isSsbjReportLocked } from '../utils/reportStatus';
+import { SsbjLockedNotice } from './SsbjLockedNotice';
+import { SsbjEditorLayout } from './SsbjEditorLayout.client';
 
 export const SsbjRisksOpportunities = ({ reportId }: { reportId: string }) => {
   const { toast, showToast } = useToast();
@@ -103,7 +106,7 @@ export const SsbjRisksOpportunities = ({ reportId }: { reportId: string }) => {
         description={report ? report.title : 'SSBJレポートのリスク・機会'}
         showFiscalYear={false}
         primaryAction={
-          report ? (
+          report && !isSsbjReportLocked(report.review) ? (
             <Button type="button" onClick={openCreate}>
               <Plus size={16} />
               リスク・機会を追加
@@ -123,6 +126,7 @@ export const SsbjRisksOpportunities = ({ reportId }: { reportId: string }) => {
         </Link>
 
         <SsbjTrialNotice />
+        {report && <SsbjLockedNotice report={report} />}
 
         {errorMessage && (
           <div role="alert" className="rounded-md bg-danger-light px-4 py-3 text-sm text-danger">
@@ -146,7 +150,10 @@ export const SsbjRisksOpportunities = ({ reportId }: { reportId: string }) => {
             </Link>
           </Card>
         ) : report && !list.errorMessage && !horizons.errorMessage ? (
-          <>
+          <SsbjEditorLayout
+            report={report}
+            overrides={{ risks_opportunities: list.items, time_horizons: horizons.definitions }}
+          >
             <SsbjTimeHorizonCard
               definitions={horizons.definitions}
               isEditing={isEditingHorizons}
@@ -154,12 +161,18 @@ export const SsbjRisksOpportunities = ({ reportId }: { reportId: string }) => {
               onStartEdit={startEditHorizons}
               onCancel={() => setIsEditingHorizons(false)}
               onSubmit={event => void handleSaveHorizons(event)}
+              readOnly={isSsbjReportLocked(report.review)}
             />
             <Card>
               <h2 className="m-0 mb-4 text-base font-bold">登録済みのリスク・機会（{list.items.length}件）</h2>
-              <SsbjRiskOpportunityList items={list.items} onEdit={openEdit} onDelete={deletion.request} />
+              <SsbjRiskOpportunityList
+                items={list.items}
+                onEdit={openEdit}
+                onDelete={deletion.request}
+                readOnly={isSsbjReportLocked(report.review)}
+              />
             </Card>
-          </>
+          </SsbjEditorLayout>
         ) : null}
       </div>
 

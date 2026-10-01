@@ -2,7 +2,7 @@
 import React, { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { click, render, setInputValue, type RenderResult } from '@/lib/testing/render';
-import { fictionalReportBasicInfo } from '../../__fixtures__/fictionalReport';
+import { FICTIONAL_DRAFT_REVIEW, fictionalReportBasicInfo } from '../../__fixtures__/fictionalReport';
 import type { SsbjReportWorkingRecord } from '../../types';
 
 // SSBJ レポート詳細画面: 基本情報の再表示・未入力の表示・Not Found・編集保存・保存版の作成を検証する。
@@ -17,6 +17,20 @@ vi.mock('../../services/versionClient', () => ({
   saveSsbjReportVersion: vi.fn(),
 }));
 
+vi.mock('../../services/memberService', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../services/memberService')>()),
+  listSsbjMembers: vi.fn(async () => [
+    { id: 'user-admin', name: '環境 太郎', role: 'admin' },
+    { id: 'user-logger', name: '算定 花子', role: 'logger' },
+  ]),
+  getCurrentSsbjUserId: vi.fn(async () => 'user-logger'),
+}));
+
+vi.mock('../../services/reportWorkflowClient', () => ({
+  changeSsbjReportStatus: vi.fn(),
+}));
+
+import { changeSsbjReportStatus } from '../../services/reportWorkflowClient';
 import { getSsbjReport, updateSsbjReportBasicInfo } from '../../services/reportService';
 import { saveSsbjReportVersion } from '../../services/versionClient';
 import { SsbjReportDetail } from '../SsbjReportDetail.client';
@@ -28,6 +42,7 @@ const REPORT: SsbjReportWorkingRecord = {
   periodStart: '2024-04-01',
   periodEnd: '2025-03-31',
   draftRevision: 3,
+  review: FICTIONAL_DRAFT_REVIEW,
 };
 
 const flushPromises = async (): Promise<void> => {
@@ -213,5 +228,71 @@ describe('SsbjReportDetail', () => {
     expect(container.querySelector('[role="alert"]')?.textContent).toBe(
       '他の変更と競合しました。画面を開き直してから保存し直してください',
     );
+  });
+});
+
+describe('SsbjReportDetail（状態と承認）', () => {
+  const setSelect = (select: HTMLSelectElement, value: string) => {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set;
+    act(() => {
+      setter?.call(select, value);
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  };
+
+  it('作成中は承認者を選んでレビューを依頼する（選ばなければ送らない）。依頼したらレポートを読み直す', async () => {
+    vi.mocked(getSsbjReport).mockResolvedValue(REPORT);
+    vi.mocked(changeSsbjReportStatus).mockResolvedValue({
+      status: 'in_review', approverUserId: 'user-admin', approvedVersionId: null, approvedVersionNumber: null,
+    });
+    const { container } = await renderScreen();
+    await flushPromises();
+    const card = container.querySelector<HTMLElement>('[data-testid="ssbj-report-status-card"]')!;
+    expect(card.textContent).toContain('作成中');
+
+    await act(async () => { click(findButton(card, 'レビューを依頼する')); });
+    expect(changeSsbjReportStatus).not.toHaveBeenCalled();
+    expect(card.querySelector('[role="alert"]')?.textContent).toContain('承認者を選んでください');
+
+    setSelect(card.querySelector<HTMLSelectElement>('#ssbj-status-approver')!, 'user-admin');
+    await act(async () => { click(findButton(card, 'レビューを依頼する')); });
+    await flushPromises();
+    expect(changeSsbjReportStatus).toHaveBeenCalledWith(REPORT.id, {
+      action: 'submit', expectedDraftRevision: 3, approverUserId: 'user-admin', comment: null,
+    });
+    expect(getSsbjReport).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toContain('レビューを依頼しました');
+  });
+
+  it('レビュー中: 承認者でも管理者でもない人には承認・差戻しを押させず、理由を出す（取り下げはできる）', async () => {
+    vi.mocked(getSsbjReport).mockResolvedValue({
+      ...REPORT, review: { ...REPORT.review, status: 'in_review', approverUserId: 'user-admin' },
+    });
+    const { container } = await renderScreen();
+    await flushPromises();
+    const card = container.querySelector<HTMLElement>('[data-testid="ssbj-report-status-card"]')!;
+    expect(findButton(card, '承認する').disabled).toBe(true);
+    expect(findButton(card, '差戻す').disabled).toBe(true);
+    expect(findButton(card, '依頼を取り下げる').disabled).toBe(false);
+    expect(card.textContent).toContain('指定された承認者か、管理者だけが操作できます');
+    expect(card.textContent).toContain('環境 太郎');
+  });
+
+  it('承認済みは基本情報を編集させず、ロックの案内と承認した保存版へのリンクを出す', async () => {
+    vi.mocked(getSsbjReport).mockResolvedValue({
+      ...REPORT,
+      review: {
+        status: 'approved', approverUserId: 'user-logger', approvedAt: '2025-06-05T00:00:00.000Z',
+        approvedByUserId: 'user-logger', approvedVersionId: '5b1f0000-0000-4000-8000-000000000004', statusChangedAt: null,
+      },
+    });
+    const { container } = await renderScreen();
+    await flushPromises();
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent?.trim() === '編集')).toBe(false);
+    expect(container.querySelector('[data-testid="ssbj-locked-notice"]')).not.toBeNull();
+    const link = Array.from(container.querySelectorAll('a')).find(a => a.textContent === '承認した保存版を見る');
+    expect(link?.getAttribute('href')).toBe(`/ssbj/${REPORT.id}/preview?source=5b1f0000-0000-4000-8000-000000000004`);
+    // 承認者本人には差戻しを押させる。
+    expect(findButton(container.querySelector('[data-testid="ssbj-report-status-card"]')!, '差戻す').disabled).toBe(false);
   });
 });

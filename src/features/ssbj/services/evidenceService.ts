@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/client';
 import type { SsbjEvidence, SsbjItemId } from '../types';
 import { fromFieldValue, toFieldValue } from '../utils/fieldValue';
 import type { SsbjEvidenceInput } from '../utils/evidence';
+import { ssbjWriteErrorMessage } from '../utils/writeError';
 
 type SsbjEvidenceRow = {
   id: string;
@@ -56,20 +57,20 @@ export const createSsbjEvidence = async (
   const { data, error } = await createClient().from('ssbj_evidence')
     .insert({ ...toColumns(input), organizationId: report.organizationId, reportId: report.id })
     .select(SELECT_COLUMNS).single();
-  if (error || !data) throw new Error('根拠文書の登録に失敗しました');
+  if (error || !data) throw new Error(ssbjWriteErrorMessage(error, '根拠文書の登録に失敗しました'));
   return toEvidence(data as SsbjEvidenceRow);
 };
 
 export const updateSsbjEvidence = async (id: string, input: SsbjEvidenceInput): Promise<SsbjEvidence> => {
   const { data, error } = await createClient().from('ssbj_evidence')
     .update(toColumns(input)).eq('id', id).select(SELECT_COLUMNS).maybeSingle();
-  if (error) throw new Error('根拠文書の更新に失敗しました');
+  if (error) throw new Error(ssbjWriteErrorMessage(error, '根拠文書の更新に失敗しました'));
   if (!data) throw new Error('根拠文書が見つかりません。画面を開き直してください');
   return toEvidence(data as SsbjEvidenceRow);
 };
 
 export const deleteSsbjEvidence = async (id: string): Promise<void> => {
   const { data, error } = await createClient().from('ssbj_evidence').delete().eq('id', id).select('id');
-  if (error) throw new Error('根拠文書の削除に失敗しました');
+  if (error) throw new Error(ssbjWriteErrorMessage(error, '根拠文書の削除に失敗しました'));
   if (!data?.length) throw new Error('根拠文書が見つかりません。画面を開き直してください');
 };

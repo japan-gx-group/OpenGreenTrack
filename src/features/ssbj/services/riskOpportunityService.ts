@@ -14,6 +14,7 @@ import {
 } from '../types';
 import { fromFieldValue, toFieldValue } from '../utils/fieldValue';
 import type { SsbjRiskOpportunityInput } from '../utils/riskOpportunity';
+import { ssbjWriteErrorMessage } from '../utils/writeError';
 
 export interface SsbjRiskOpportunityRow {
   id: string;
@@ -108,7 +109,7 @@ export const createSsbjRiskOpportunity = async (
     .single();
 
   if (error || !data) {
-    throw new Error('リスク・機会の登録に失敗しました');
+    throw new Error(ssbjWriteErrorMessage(error, 'リスク・機会の登録に失敗しました'));
   }
   return toSsbjRiskOpportunity(data as unknown as SsbjRiskOpportunityRow);
 };
@@ -127,7 +128,7 @@ export const updateSsbjRiskOpportunity = async (
     .maybeSingle();
 
   if (error) {
-    throw new Error('リスク・機会の更新に失敗しました');
+    throw new Error(ssbjWriteErrorMessage(error, 'リスク・機会の更新に失敗しました'));
   }
   if (!data) {
     // RLS で対象が見えない（削除済み・他組織）場合は 0 件更新になる。
@@ -141,6 +142,6 @@ export const deleteSsbjRiskOpportunity = async (id: string): Promise<void> => {
   const supabase = createClient();
   const { error } = await supabase.from('ssbj_risks_opportunities').delete().eq('id', id);
   if (error) {
-    throw new Error('リスク・機会の削除に失敗しました');
+    throw new Error(ssbjWriteErrorMessage(error, 'リスク・機会の削除に失敗しました'));
   }
 };

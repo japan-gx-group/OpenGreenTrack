@@ -3,6 +3,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  FICTIONAL_DRAFT_REVIEW,
   fictionalOgtCandidates,
   fictionalReportBasicInfo,
   fictionalSupplierReferences,
@@ -29,6 +30,7 @@ const report = {
   periodStart: '2024-04-01',
   periodEnd: '2025-03-31',
   draftRevision: 3,
+  review: FICTIONAL_DRAFT_REVIEW,
 };
 const displayedFingerprint = ogtCandidateFingerprint(fictionalOgtCandidates, fictionalSupplierReferences);
 const params = {

@@ -17,6 +17,8 @@ export interface SsbjNarrativeFormController {
   setState: (state: SsbjFieldState) => void;
   setText: (text: string) => void;
   setInternalNote: (internalNote: string) => void;
+  /** 穴埋めテンプレートを本文に入れる（状態は「入力済み」にする）。 */
+  applyTemplate: (template: string) => void;
   /** 入力エラー・保存エラー（画面にそのまま並べる）。 */
   errors: string[];
   isSaving: boolean;
@@ -65,6 +67,7 @@ export function useSsbjNarrativeForm(
     setState: state => setValues(prev => ({ ...prev, state })),
     setText: text => setValues(prev => ({ ...prev, text })),
     setInternalNote: internalNote => setValues(prev => ({ ...prev, internalNote })),
+    applyTemplate: template => setValues(prev => ({ ...prev, state: 'answered', text: template })),
     errors,
     isSaving,
     reset,

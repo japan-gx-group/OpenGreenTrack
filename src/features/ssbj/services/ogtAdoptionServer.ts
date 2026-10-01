@@ -11,6 +11,7 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { ogtCandidateFingerprint } from '../utils/ogtAdoption';
+import { SSBJ_LOCKED_MESSAGE, SSBJ_LOCKED_SQLSTATE } from '../utils/writeError';
 import { fetchOgtCandidates } from './ogtCandidateService';
 import { fetchSsbjReport } from './reportService';
 
@@ -25,7 +26,7 @@ export const SSBJ_OGT_ADOPTION_SQLSTATE = {
   candidatesInvalid: 'P2042',
 } as const;
 
-export type SsbjOgtAdoptionFailure = 'report_not_found' | 'candidates_changed';
+export type SsbjOgtAdoptionFailure = 'report_not_found' | 'candidates_changed' | 'locked';
 
 /** 採用できなかった理由（Route Handler が HTTP ステータスに変換する）。 */
 export class SsbjOgtAdoptionError extends Error {
@@ -53,6 +54,10 @@ export const adoptOgtCandidates = async (params: AdoptOgtCandidatesParams): Prom
   if (!report || report.organizationId !== params.organizationId) {
     throw new SsbjOgtAdoptionError('report_not_found', 'SSBJレポートが見つかりません');
   }
+  // 承認済みのレポートは DB も変更を止めるが、OGT の値を取りに行く前に断る。
+  if (report.review.status === 'approved') {
+    throw new SsbjOgtAdoptionError('locked', SSBJ_LOCKED_MESSAGE);
+  }
 
   const { candidates, suppliers } = await fetchOgtCandidates(supabase, report);
   if (ogtCandidateFingerprint(candidates, suppliers) !== params.expectedFingerprint) {
@@ -73,6 +78,9 @@ export const adoptOgtCandidates = async (params: AdoptOgtCandidatesParams): Prom
   if (error) {
     if (error.code === SSBJ_OGT_ADOPTION_SQLSTATE.reportInvalid) {
       throw new SsbjOgtAdoptionError('report_not_found', 'SSBJレポートが見つかりません');
+    }
+    if (error.code === SSBJ_LOCKED_SQLSTATE) {
+      throw new SsbjOgtAdoptionError('locked', SSBJ_LOCKED_MESSAGE);
     }
     throw new Error(`OGT の値の採用に失敗しました: ${error.message}`);
   }

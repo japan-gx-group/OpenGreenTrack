@@ -101,7 +101,8 @@ src/app/
 | `/ssbj/[reportId]/risks` | `src/app/(app)/ssbj/[reportId]/risks/page.tsx` | SSBJ リスク・機会 |
 | `/ssbj/[reportId]/judgements` | `src/app/(app)/ssbj/[reportId]/judgements/page.tsx` | SSBJ 該当性・重要性・記載しない理由 |
 | `/ssbj/[reportId]/evidence` | `src/app/(app)/ssbj/[reportId]/evidence/page.tsx` | SSBJ 根拠文書・主管部署 |
-| `/ssbj/[reportId]/versions` | `src/app/(app)/ssbj/[reportId]/versions/page.tsx` | SSBJ 固定版の選択・社内確認用 CSV 出力・生成履歴 |
+| `/ssbj/[reportId]/versions` | `src/app/(app)/ssbj/[reportId]/versions/page.tsx` | SSBJ 固定版の選択・復元・社内確認用 CSV / Excel 出力・出力履歴 |
+| `/ssbj/[reportId]/history` | `src/app/(app)/ssbj/[reportId]/history/page.tsx` | SSBJ 操作履歴（誰が・いつ・何をしたか） |
 | `/ssbj/[reportId]/ghg` | `src/app/(app)/ssbj/[reportId]/ghg/page.tsx` | OGT の GHG 候補値・算定条件の参照と、レポートへの採用 |
 | `/ssbj/[reportId]/preview` | `src/app/(app)/ssbj/[reportId]/preview/page.tsx` | SSBJ レポートのプレビュー（作業中の内容 / 保存版） |
 | `/ssbj/[reportId]/preview/print` | `src/app/(app)/ssbj/[reportId]/preview/print/page.tsx` | SSBJ レポートのプレビューの印刷ビュー（PDF 保存） |

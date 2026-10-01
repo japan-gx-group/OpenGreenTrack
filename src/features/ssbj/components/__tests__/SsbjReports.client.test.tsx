@@ -3,8 +3,8 @@ import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { click, render, setInputValue, type RenderResult } from '@/lib/testing/render';
 import type { FiscalYearOption } from '@/contexts/fiscalYearContextValue';
-import { fictionalReportBasicInfo } from '../../__fixtures__/fictionalReport';
-import type { SsbjReportRecord } from '../../types';
+import { FICTIONAL_DRAFT_REVIEW, fictionalReportBasicInfo } from '../../__fixtures__/fictionalReport';
+import type { SsbjReportWorkingRecord } from '../../types';
 
 // SSBJ レポート一覧画面: 年度ごとの一覧表示・0 件表示・年度未登録・新規作成（検証と一覧への反映）を検証する。
 // Supabase を呼ぶ I/O（一覧取得・作成）と年度 Context だけをモックする。
@@ -33,13 +33,15 @@ vi.mock('../../services/reportService', async importOriginal => ({
 import { createSsbjReport, listSsbjReports } from '../../services/reportService';
 import { SsbjReports } from '../SsbjReports.client';
 
-const REPORT: SsbjReportRecord = {
+const REPORT: SsbjReportWorkingRecord = {
   ...fictionalReportBasicInfo,
   fiscalYearId: 'fy-2024',
   reportingScope: null,
   fiscalYearLabel: '2024年度',
   periodStart: '2024-04-01',
   periodEnd: '2025-03-31',
+  draftRevision: 1,
+  review: FICTIONAL_DRAFT_REVIEW,
 };
 
 const flushPromises = async (): Promise<void> => {
@@ -115,7 +117,7 @@ describe('SsbjReports 一覧', () => {
 
 describe('SsbjReports 新規作成', () => {
   it('入力を正規化して選択中の年度に作成し、一覧へ反映してダイアログを閉じる', async () => {
-    const created: SsbjReportRecord = { ...REPORT, id: '5b1f0000-0000-4000-8000-0000000000aa', title: '新しいレポート' };
+    const created: SsbjReportWorkingRecord = { ...REPORT, id: '5b1f0000-0000-4000-8000-0000000000aa', title: '新しいレポート' };
     vi.mocked(createSsbjReport).mockResolvedValue(created);
     const { container } = await renderScreen();
 

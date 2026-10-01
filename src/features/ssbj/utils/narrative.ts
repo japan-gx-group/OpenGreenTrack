@@ -14,6 +14,12 @@ import { SSBJ_NARRATIVE_ITEMS, findSsbjNarrativeItem } from './requirementMaster
 
 export const SSBJ_NARRATIVE_TEXT_MAX_LENGTH = 5000;
 
+// 穴埋めテンプレート（requirementMaster.ts の template）の、埋める部分の書き方。
+const TEMPLATE_PLACEHOLDER = /【[^【】]*】/g;
+
+/** 本文に残っている、テンプレートの埋める部分（【 】）。 */
+export const ssbjTemplatePlaceholders = (text: string): string[] => text.match(TEMPLATE_PLACEHOLDER) ?? [];
+
 /** 1 項目の編集フォームの値。本文は「入力済み」のときだけ保存する。 */
 export type SsbjNarrativeFormValues = { state: SsbjFieldState; text: string; internalNote: string };
 
@@ -47,6 +53,14 @@ export const validateSsbjNarrativeInput = (itemId: string, input: SsbjDisclosabl
     } else if (input.disclosure.value.length > SSBJ_NARRATIVE_TEXT_MAX_LENGTH) {
       errors.push(`開示する文章は${SSBJ_NARRATIVE_TEXT_MAX_LENGTH}文字以内で入力してください`);
     }
+    // テンプレートの埋める部分が残ったまま「入力済み」にさせない（下書きは状態を「未確認」にすれば保存できる）。
+    const placeholders = ssbjTemplatePlaceholders(input.disclosure.value);
+    if (placeholders.length > 0) {
+      errors.push(
+        `テンプレートの【 】の部分（${placeholders.length} か所）を自社の内容に置き換えてください` +
+        '（書きかけで保存する場合は、状態を「未確認」にしてください）',
+      );
+    }
   }
   if ((input.internalNote?.length ?? 0) > SSBJ_NARRATIVE_TEXT_MAX_LENGTH) {
     errors.push(`内部メモは${SSBJ_NARRATIVE_TEXT_MAX_LENGTH}文字以内で入力してください`);
@@ -75,4 +89,22 @@ export const ssbjNarrativeEntriesOfSection = (
     }
   }
   return entries;
+};
+
+/**
+ * 保存済みの文章に、編集中（未保存）の文章を重ねる（2 画面エディタのプレビュー用）。保存はしない。
+ * 編集中の項目は、保存済みの文章の代わりに編集中の内容を出す。
+ */
+export const mergeSsbjNarrativeDrafts = (
+  narratives: readonly SsbjNarrative[],
+  drafts: Readonly<Partial<Record<SsbjItemId, SsbjDisclosableText>>>,
+): SsbjNarrative[] => {
+  const draftIds = Object.keys(drafts) as SsbjItemId[];
+  if (draftIds.length === 0) return [...narratives];
+  const merged = narratives.filter(narrative => !(narrative.itemId in drafts));
+  for (const itemId of draftIds) {
+    const text = drafts[itemId];
+    if (text) merged.push({ itemId, text });
+  }
+  return merged;
 };
