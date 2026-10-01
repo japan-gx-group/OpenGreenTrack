@@ -566,3 +566,53 @@ R1 の初回対象（[`ssbj-r1-scope.md`](ssbj-r1-scope.md) §5.1）に含める
   プレビューは本文が埋もれないよう、判断を記録した要求だけを表にし、判断が済んでいない要求は件数で出す。マスターに無い要求の判断も黙って落とさない。
 - **保存は要求ごとに「更新して、無ければ作る」**（文章と同じ理由）。
 - 区分の表示名は画面・プレビュー・CSV で同じもの（`utils/judgement.ts`）を使う。
+
+### R1 の全体テスト（T14）
+
+作成から CSV までの主要な使い方と、境界条件・セキュリティ条件を、実画面・実データ（ローカル Supabase のデモシード）で確かめる。
+
+| 対象 | 内容 |
+|---|---|
+| 全体テスト（ローカルのみ） | `e2e/ssbj/r1-acceptance.e2e.ts`（16 手順を順に実行）、`e2e/ssbj/support.ts`・`global-setup.ts`・`global-teardown.ts`。設定は `playwright.ssbj.config.ts` |
+| 単体テスト（CI で実行） | `__fixtures__/fictionalReportTexts.ts`（架空の保存版の値を「開示する内容」「内部記録」「GHG の数値」に分けた一覧）を使い、`versionCsv.test.ts`・`SsbjPreviewDocument.test.tsx` で欠落と取り違えを、`ogtCandidateService.test.ts` で二重加算を、`fictionalReport.test.ts` で架空の保存版が全セクションを含むことを確かめる |
+| 修正 | レポートの新規作成ダイアログが、高さ 720px 程度の画面で「作成する」まで届かなかった（ダイアログの中をスクロールできるようにした） |
+
+実行方法（ローカル Supabase が起動し、デモシード `supabase/seeds/demo/demo.sql` が入っていること。SSBJ のデモデータ `ssbj_demo.sql` は使わない）:
+
+```bash
+npx playwright test -c playwright.ssbj.config.ts
+# 別ポートで動かしている dev サーバと、インストール済みの Edge を使う場合
+E2E_BASE_URL=http://localhost:3100 E2E_BROWSER_CHANNEL=msedge npx playwright test -c playwright.ssbj.config.ts
+```
+
+T14 の確認事項と、確かめている場所:
+
+| 確認事項 | 全体テスト（手順） | 単体テスト |
+|---|---|---|
+| 主要な使い方（作成 → 文章 → リスク・機会 → OGT 採用 → 判断 → 根拠 → 保存 → 履歴 → プレビュー → CSV） | 1〜10 | — |
+| 再表示（開き直しても入力が残る） | 2・7 | — |
+| 他組織からのアクセスの拒否（画面 8 つ・API 3 つ・テーブル 8 つ・書き込み・service_role 限定の RPC） | 15 | 各テーブルの `scripts/db/__tests__/ssbj*Policy.test.ts` |
+| 欠損と 0 の区別（書いていない項目は「未入力」、判断していない要求は「未確認」、算定値の無い区分は「未算定」で値は空） | 16 | `versionCsv.test.ts` |
+| 二重加算が無い（採用し直しても 1 件、Scope 3 の合計＝カテゴリ別の合計、サプライヤー別の値は合計に足さない） | 11 | `ogtCandidateService.test.ts`・`versionCsv.test.ts` |
+| 同時保存（読み込んだ後に別の画面で内容が変わったら、保存版の作成を競合として止める） | 13 | 保存 API の `route.test.ts` |
+| 元データ更新後も保存版が変わらない（作業中の文章・OGT の値を変えても、保存版の DB・印刷ビュー・CSV が同じ） | 12・14 | — |
+| 全入力項目がプレビューと CSV に欠落なく出る（内部記録は開示内容の欄に混ざらない） | 9・10 | `versionCsv.test.ts`・`SsbjPreviewDocument.test.tsx` |
+
+テストデータの扱い:
+
+- テストは名前が `[e2e-ssbj]` で始まるレポートを作り、終了時と次回の開始時に削除する（保存版・文章・判断なども連鎖削除される）。
+  画面で中身を見たいときは `E2E_SSBJ_KEEP=1` を付けると残す。
+- 手順 12 は、OGT の Scope 3 の直接入力（2024 年度）の 1 件を一時的に 1 t-CO2e 増やし、終わったら元の値に戻す（更新日時だけが変わる）。
+  変える前に元の値を一時ファイルに控え、手順の途中で失敗・中断しても、終了時か次回の開始時に元の値へ戻す。
+- CSV の生成履歴（`system_audit_logs`）は監査ログのため消さない（本体のスモークと同じ扱い）。
+
+決めたこと:
+
+- **CI では走らせず、ローカルだけで実行する。** CI で Supabase を起動するには本体と共通の `.github/workflows/ci.yml` を変える必要があるため
+  （本体の E2E と同じ方針。[`e2e-testing.md`](e2e-testing.md)）。CI では単体テストの側で欠落・取り違え・二重加算を確かめる。
+- **本体のスモーク（`npm run test:e2e`）に含めない。** 設定ファイルを分け、ファイル名を `*.e2e.ts` にして本体の `testMatch`（`*.spec.ts`）に掛からないようにした。
+- **service_role キーは後片付けにだけ使う。** SSBJ のレポートは利用者が削除できない作りのため（保存版を消させない）。
+  画面の操作と組織分離の確認は、デモユーザーのログイン（RLS の下）で行う。
+- **入力する文は実行ごとに一意にする。** 開示する内容と内部記録が出力で取り違えられていないかを、CSV の列単位で見分けるため。
+- **架空の保存版の値の一覧は、保存版のセクションの型（`SsbjSnapshotSections`）を網羅しないと型エラーになるようにした。**
+  セクションを足したときに、プレビュー・CSV の欠落確認を足し忘れないため。

@@ -3,8 +3,10 @@ import React from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { render, type RenderResult } from '@/lib/testing/render';
 import { fictionalSnapshot, fictionalVersion } from '../../__fixtures__/fictionalReport';
+import { fictionalDisclosedTexts, fictionalGhgValues, fictionalInternalTexts } from '../../__fixtures__/fictionalReportTexts';
 import type { SsbjPreviewSource } from '../../services/previewService';
 import type { SsbjReportSnapshotV1 } from '../../types';
+import { formatDecimalForDisplay } from '../../utils/decimal';
 import { SsbjPreviewDocument } from '../SsbjPreviewDocument';
 
 let rendered: RenderResult | null = null;
@@ -141,5 +143,22 @@ describe('SsbjPreviewDocument（該当性・重要性の判断）', () => {
     rendered = render(<SsbjPreviewDocument source={working({ ...fictionalSnapshot, sections: withoutJudgements })} showInternalNotes={false} />);
     expect(text()).toContain('この版には該当性・重要性の判断が含まれていません');
     expect(rendered.container.querySelector('[role="alert"]')).toBeNull();
+  });
+});
+
+describe('SsbjPreviewDocument（R1 の全体確認）', () => {
+  it('入力した開示内容と GHG の値をすべて出す（欠落しない）。表示に未対応の項目は無い', () => {
+    rendered = render(<SsbjPreviewDocument source={saved} showInternalNotes={false} />);
+    expect(fictionalDisclosedTexts.filter(value => !text().includes(value))).toEqual([]);
+    expect(fictionalGhgValues.map(formatDecimalForDisplay).filter(value => !text().includes(`${value} t-CO2e`))).toEqual([]);
+    expect(text()).not.toContain('プレビューに表示していない項目');
+  });
+
+  it('内部記録は「内部メモも表示する」を選んだときだけ出す', () => {
+    rendered = render(<SsbjPreviewDocument source={saved} showInternalNotes={false} />);
+    expect(fictionalInternalTexts.filter(value => text().includes(value))).toEqual([]);
+    rendered.unmount();
+    rendered = render(<SsbjPreviewDocument source={saved} showInternalNotes />);
+    expect(fictionalInternalTexts.filter(value => !text().includes(value))).toEqual([]);
   });
 });

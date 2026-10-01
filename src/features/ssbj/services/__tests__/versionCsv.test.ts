@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fictionalVersion } from '../../__fixtures__/fictionalReport';
+import { fictionalDisclosedTexts, fictionalGhgValues, fictionalInternalTexts } from '../../__fixtures__/fictionalReportTexts';
 import type { SsbjReportSnapshotV1 } from '../../types';
 import { ssbjVersionToCsvRows } from '../versionCsv';
 
@@ -164,5 +165,51 @@ describe('ssbjVersionToCsvRows（該当性・重要性の判断）', () => {
     } as unknown as SsbjReportSnapshotV1;
     expect(() => ssbjVersionToCsvRows({ ...fictionalVersion, snapshot }, GENERATED_AT))
       .toThrow('該当性・重要性の判断の保存内容が不正です');
+  });
+});
+
+describe('ssbjVersionToCsvRows（R1 の全体確認）', () => {
+  // 列: 章 / 対象ID / 項目 / 状態 / 開示内容 / 単位 / 内部記録 / 注記
+  const DISCLOSURE = 4;
+  const INTERNAL = 6;
+  const rows = () => ssbjVersionToCsvRows(fictionalVersion, GENERATED_AT);
+
+  it('入力した開示内容をすべて開示内容の列に出す（欠落しない）', () => {
+    const disclosed = new Set(rows().map(row => row[DISCLOSURE]));
+    expect(fictionalDisclosedTexts.length).toBeGreaterThan(10);
+    expect(fictionalDisclosedTexts.filter(text => !disclosed.has(text))).toEqual([]);
+  });
+
+  it('内部記録はすべて内部記録の列に出し、開示内容の列には混ぜない', () => {
+    const internal = new Set(rows().map(row => row[INTERNAL]));
+    const disclosed = new Set(rows().map(row => row[DISCLOSURE]));
+    expect(fictionalInternalTexts.length).toBeGreaterThan(5);
+    expect(fictionalInternalTexts.filter(text => !internal.has(text))).toEqual([]);
+    expect(fictionalInternalTexts.filter(text => disclosed.has(text))).toEqual([]);
+  });
+
+  it('GHG の採用値・参考値をすべて出し、回答済みの 0 と未算定を区別する', () => {
+    const ghgRows = rows().filter(row => row[0]?.startsWith('GHG排出量'));
+    const values = ghgRows.map(row => row[DISCLOSURE]);
+    expect(fictionalGhgValues.filter(value => !values.includes(value))).toEqual([]);
+    expect(ghgRows.find(row => row[1] === 'scope3.category1')?.slice(3, 5)).toEqual(['算定済み', '0']);
+    expect(ghgRows.find(row => row[1] === 'scope3.category4')?.slice(3, 5)).toEqual(['未算定', '']);
+  });
+
+  it('採用値は 1 区分 1 行で、サプライヤー別の値は参考値として別の章に出す（二重加算しない）', () => {
+    const ghg = fictionalVersion.snapshot.sections.ghg!;
+    const adopted = rows().filter(row => row[0] === 'GHG排出量' && row[2] !== '採用日時');
+    const references = rows().filter(row => row[0] === 'GHG排出量（参考値）');
+    expect(adopted).toHaveLength(ghg.values.length);
+    expect(new Set(adopted.map(row => row[1])).size).toBe(adopted.length);
+    expect(references).toHaveLength(ghg.supplierReferences.length);
+    expect(references.every(row => row[7].includes('Scope 3 の合計には含めない'))).toBe(true);
+  });
+
+  it('文章と判断は、入力の無い項目・要求も「未入力」「未確認」の行として出す（出力から消さない）', () => {
+    const all = rows();
+    expect(all.filter(row => row[0] === '該当性・重要性の判断' && row[2] === '該当性' && row[3] === '未確認').length)
+      .toBeGreaterThan(0);
+    expect(all.filter(row => row[1] === 'governance.management_role')[0]?.[3]).toBe('未入力');
   });
 });
