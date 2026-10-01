@@ -116,3 +116,17 @@ describe('ssbjVersionToCsvRows（GHG排出量）', () => {
     expect(() => ssbjVersionToCsvRows({ ...fictionalVersion, snapshot }, GENERATED_AT)).toThrow('GHG排出量の保存内容が不正です');
   });
 });
+
+describe('ssbjVersionToCsvRows（四本柱の文章）', () => {
+  it('マスターの全項目を章ごとに出し、文章の無い項目も未入力の行にする。内部メモは別列、要求 ID は注記', () => {
+    const rows = ssbjVersionToCsvRows(fictionalVersion, GENERATED_AT);
+    const oversight = rows.find(row => row[1] === 'governance.oversight_body' && row[2] === '監督する機関・責任者');
+    expect(oversight).toEqual([
+      'ガバナンス', 'governance.oversight_body', '監督する機関・責任者', '入力済み',
+      '当社では、取締役会が気候関連のリスク及び機会を監督している。', '',
+      '親会社のサステナビリティ委員会との関係は確認中（架空）。', '要求: REQ-GEN-001、REQ-CLM-001',
+    ]);
+    expect(rows.find(row => row[1] === 'governance.management_role')?.slice(3, 5)).toEqual(['未入力', '未入力']);
+    expect(rows.find(row => row[1] === 'strategy.company_supplement')?.[7]).toBe('企業固有の補足');
+  });
+});

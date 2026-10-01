@@ -512,3 +512,28 @@ R1 の初回対象（[`ssbj-r1-scope.md`](ssbj-r1-scope.md) §5.1）に含める
   「内部メモも表示する」を選んだときだけ「開示しない」と明示して出す（T10 の画面の区分と同じ）。
 - **四本柱のうち、まだ入力欄の無い章（ガバナンス・リスク管理）は、その旨を表示する。** 空欄にすると「記載なし」と読めるため。
 - 表示する保存版の選択は、Radix のセレクトの操作が jsdom で難しいため、画面のテストではなく印刷ビューのテスト（URL の `source`）で確かめている。
+
+### 四本柱と企業固有の補足の文章（T05）
+
+要求項目マスター（T32a・暫定）の文章の項目ごとに、開示する文章と内部メモを書く画面（`/ssbj/[reportId]/narratives`）。
+
+| 対象 | 内容 |
+|---|---|
+| DB | `supabase/migrations/20261001003809_ssbj_narratives.sql`。レポートと項目 ID の組ごとに 1 行の `ssbj_narratives`（RLS・列 GRANT・`bump_ssbj_draft_revision`・保存版セクション `ssbj_snapshot_section__narratives`） |
+| 画面 | `components/SsbjNarratives.client.tsx`（章ごとの項目と、文章以外の画面で答える要求の案内）、`SsbjNarrativeItemCard.client.tsx`（要求・項番号・記載ガイド・記載例、文章の表示と編集）。レポートの内容の入口の先頭に「四本柱の文章」 |
+| コード | `types.ts` の `SsbjNarrative`、`utils/narrative.ts`（正規化・検証、マスターの項目への当てはめ）、`services/narrativeService.ts`、`hooks/useSsbjNarratives.ts` / `useSsbjNarrativeForm.ts`、プレビューの `SsbjPreviewNarratives.tsx`、CSV の `services/versionCsvNarratives.ts` |
+| テスト | `scripts/db/__tests__/ssbjNarrativesPolicy.test.ts`（制約・RLS・GRANT・保存版連携）、正規化・保存・画面・CSV・プレビューの単体テスト |
+| デモデータ | 組織 A に 6 件（入力済み・「していない」の回答・未確認・非該当を含む。残りの項目は未入力の表示）、組織 B に 1 件 |
+
+決めたこと:
+
+- **要求 ID ではなく項目 ID で持つ。** 1 つの文章で一般開示基準と気候関連開示基準の同じ趣旨の要求に答える（二重入力しない）ため。
+  項目と要求の対応はマスターが持つ。
+- **項目 ID がマスターにあるかはアプリで検証し、DB は形式だけを検証する。** マスターはコードの定数で、DB からは見えないため。
+- **行の無い項目は保存版に含めず、画面・プレビュー・CSV がマスターの全項目を並べて「未入力」と出す（`utils/narrative.ts`）。**
+  入力の無い項目が出力から消えて見落とされないようにするため。マスターに無い項目の文章（ID の見直しで消えた項目など）も、黙って落とさず最後に出す。
+- **保存は項目ごとに「更新して、無ければ作る」。** PostgREST の upsert は衝突時の更新にレポート・組織・項目の列も含めるが、
+  3 列は作成後に変えない前提で update の列 GRANT に入れていないため（時間軸の定義と同じ）。
+- **「〜していない」は非該当ではなく入力済みとして書く。** 画面の説明と記載ガイドで案内する（`ssbj-r1-scope.md` §5）。
+- **文章以外の画面で答える要求は、章ごとに案内を出す。** 利用者がこの画面だけを見て「書く欄が無い」と誤解しないため。
+- OGT の削減目標を「目標」の項目に参考表示する案は、記載ガイドでの案内にとどめた（画面には出していない）。

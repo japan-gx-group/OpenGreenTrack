@@ -6,6 +6,11 @@ import { Card } from '@/components/ui/card';
 
 const SSBJ_REPORT_CONTENTS: { path: string; label: string; description: string }[] = [
   {
+    path: 'narratives',
+    label: '四本柱の文章',
+    description: 'ガバナンス・戦略・リスク管理・指標及び目標の文章を、要求項目と記載ガイドを見ながら書きます。',
+  },
+  {
     path: 'risks',
     label: 'リスク・機会',
     description: 'リスク・機会（種類・説明・時間軸・関連する章や項目）と、時間軸の定義を記録します。',

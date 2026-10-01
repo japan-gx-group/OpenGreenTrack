@@ -160,6 +160,15 @@ export type SsbjDisclosableText = {
   internalNote: string | null;
 };
 
+/**
+ * 四本柱・企業固有の補足の文章 1 項目（T05。ssbj_narratives の 1 行）。項目 ID は要求項目マスター
+ * （utils/requirementMaster.ts）の文章の項目。1 つの項目で複数の要求に答える。
+ */
+export type SsbjNarrative = {
+  itemId: SsbjItemId;
+  text: SsbjDisclosableText;
+};
+
 // ---------------------------------------------------------------------------
 // レポートの基本情報（T04 が作成・編集する）
 // ---------------------------------------------------------------------------
@@ -486,6 +495,8 @@ export interface SsbjSnapshotSections {
   evidence: SsbjEvidence[];
   /** T08b。ssbj_snapshot_section__ghg。OGT の値を採用していないレポートは null。 */
   ghg: SsbjGhgAdoption | null;
+  /** T05。ssbj_snapshot_section__narratives。項目 ID の順。行の無い項目は含まない（表示側で未入力とする）。 */
+  narratives: SsbjNarrative[];
 }
 
 /** 保存版の中身（ssbj_report_versions.snapshot）。形式を変えるときは schemaVersion を上げる。 */
