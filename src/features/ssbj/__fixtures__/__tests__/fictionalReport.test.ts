@@ -26,6 +26,7 @@ import {
 } from '../fictionalReport';
 import { isSsbjOmissionStatementMissing, normalizeSsbjJudgementInput, toSsbjJudgementFormValues, validateSsbjJudgementInput } from '../../utils/judgement';
 import { findSsbjNarrativeItem } from '../../utils/requirementMaster';
+import { SSBJ_SNAPSHOT_SECTION_KEYS } from '../fictionalReportTexts';
 
 const allFieldValues = (): SsbjFieldValue<string>[] => [
   ...Object.values(fictionalDisclosableTexts).map(text => text.disclosure),
@@ -219,5 +220,11 @@ describe('該当性・重要性の判断（T09）', () => {
     expect(transition.some(judgement => !isSsbjOmissionStatementMissing(judgement))).toBe(true);
     expect(transition.some(judgement => isSsbjOmissionStatementMissing(judgement))).toBe(true);
     expect(fictionalJudgements.some(judgement => judgement.omissionReason === 'not_material')).toBe(true);
+  });
+});
+
+describe('保存版の例（R1 の全体確認）', () => {
+  it('保存版のすべてのセクションを含む（プレビュー・CSV の欠落確認がすべてのセクションに及ぶように）', () => {
+    expect(Object.keys(fictionalSnapshot.sections).sort()).toEqual([...SSBJ_SNAPSHOT_SECTION_KEYS].sort());
   });
 });

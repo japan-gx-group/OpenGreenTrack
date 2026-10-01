@@ -183,7 +183,7 @@ src/features/locations/
 
 ### `e2e/`
 
-- **置くもの:** Playwright のE2Eスモークテスト（`*.spec.ts` / `auth.setup.ts` / `support/`）
+- **置くもの:** Playwright のE2Eスモークテスト（`*.spec.ts` / `auth.setup.ts` / `support/`）、SSBJ 開示レポート（試行版）の全体テスト（`ssbj/*.e2e.ts`。設定は `playwright.ssbj.config.ts` で、本体のスモークとは別に実行する。前提・実行方法は [`docs/ssbj-spec.md`](ssbj-spec.md) §13）
 - **置かないもの:** 純関数・UIコンポーネントの単体テスト（→ 対象コードと同じディレクトリの `__tests__/` に `*.test.ts` / `*.test.tsx` として置く。`AGENTS.md` R13）
 - 前提・実行方法は [`docs/e2e-testing.md`](e2e-testing.md) を参照
 

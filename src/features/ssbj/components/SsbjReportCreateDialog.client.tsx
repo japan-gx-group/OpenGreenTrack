@@ -34,7 +34,8 @@ export const SsbjReportCreateDialog = ({
 }: SsbjReportCreateDialogProps) => (
   // 保存中は閉じさせない（作成結果を受け取る前に閉じると、作成済みか分からなくなるため）。
   <Dialog open={open} onOpenChange={next => !form.isSaving && onOpenChange(next)}>
-    <DialogContent className="sm:max-w-lg">
+    {/* 入力欄が多く、ノート PC の画面（高さ 720px 程度）では収まらないため、ダイアログの中をスクロールできるようにする。 */}
+    <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
         <DialogHeader>
           <DialogTitle>SSBJレポートの新規作成</DialogTitle>

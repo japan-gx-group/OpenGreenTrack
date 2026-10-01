@@ -59,3 +59,21 @@ describe('buildOgtCandidates', () => {
     expect(candidates[2].value).toEqual({ state: 'unanswered' });
   });
 });
+
+describe('buildOgtCandidates（二重加算の防止）', () => {
+  it('サプライヤー別の値（参考値）を Scope 3 の合計にもカテゴリの値にも足さない', () => {
+    const { candidates, suppliers } = buildOgtCandidates(input());
+    const scope3Total = candidates.find(candidate => candidate.scope === 3 && candidate.scope3CategoryId === null);
+    const category6 = candidates.find(candidate => candidate.scope3CategoryId === 6);
+    expect(suppliers.map(supplier => supplier.emissions)).toEqual(['99.000']);
+    expect(scope3Total?.value).toEqual({ state: 'answered', value: '7.000' });
+    expect(category6?.value).toEqual({ state: 'answered', value: '7.000' });
+  });
+
+  it('区分ごとに候補値は 1 つだけ（Scope 1・2・3 合計と 15 カテゴリ）', () => {
+    const { candidates } = buildOgtCandidates(input());
+    const keys = candidates.map(candidate => `${candidate.scope}:${candidate.scope3CategoryId ?? 'total'}`);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys).toHaveLength(18);
+  });
+});
