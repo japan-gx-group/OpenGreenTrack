@@ -8,6 +8,7 @@ import { SSBJ_SECTION_LABELS } from '../types';
 import { unsupportedPreviewSections } from '../utils/preview';
 import { SsbjPreviewEvidence } from './SsbjPreviewEvidence';
 import { SsbjPreviewGhg } from './SsbjPreviewGhg';
+import { SsbjPreviewJudgements } from './SsbjPreviewJudgements';
 import { SsbjPreviewNarratives } from './SsbjPreviewNarratives';
 import { SsbjPreviewRisks, SsbjPreviewTimeHorizons } from './SsbjPreviewStrategy';
 import { SsbjReportBasicInfo } from './SsbjReportBasicInfo';
@@ -81,6 +82,10 @@ export const SsbjPreviewDocument = ({
         <SsbjPreviewGhg ghg={sections.ghg} />
         <h3 className="m-0 mt-2 text-sm font-bold">そのほかの指標・目標・測定方法の説明</h3>
         <SsbjPreviewNarratives sectionId="metrics_targets" narratives={sections.narratives} showInternalNotes={showInternalNotes} />
+      </Section>
+
+      <Section title="該当性・重要性・記載しない理由">
+        <SsbjPreviewJudgements judgements={sections.judgements} showInternalNotes={showInternalNotes} />
       </Section>
 
       <Section title="根拠文書">

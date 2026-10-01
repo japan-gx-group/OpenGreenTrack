@@ -130,3 +130,39 @@ describe('ssbjVersionToCsvRows（四本柱の文章）', () => {
     expect(rows.find(row => row[1] === 'strategy.company_supplement')?.[7]).toBe('企業固有の補足');
   });
 });
+
+describe('ssbjVersionToCsvRows（該当性・重要性の判断）', () => {
+  const judgementRows = (rows: string[][], requirementId: string) =>
+    rows.filter(row => row[0] === '該当性・重要性の判断' && row[1] === requirementId);
+
+  it('マスターの全要求を 4 行ずつ出し、判断の無い要求も未確認の行にする。内部の検討理由は別列', () => {
+    const rows = ssbjVersionToCsvRows(fictionalVersion, GENERATED_AT);
+    const clm020 = judgementRows(rows, 'REQ-CLM-020');
+    expect(clm020.map(row => row.slice(2, 5))).toEqual([
+      ['該当性', '入力済み', '該当'],
+      ['重要性', '入力済み', '重要性あり'],
+      ['記載しない理由', '入力済み', '経過措置を適用'],
+      ['開示する説明', '入力済み', '適用初年度の経過措置により、スコープ 3 のカテゴリー別の内訳を開示していない。'],
+    ]);
+    expect(clm020[3][6]).toBe('Scope 3 の算定体制を整備中（架空）。');
+    expect(clm020[0][7]).toContain('指標及び目標／気候基準');
+    expect(judgementRows(rows, 'REQ-GEN-002').map(row => row.slice(2, 5))).toEqual([
+      ['該当性', '未確認', '未確認'],
+      ['重要性', '未確認', '未確認'],
+      ['記載しない理由', '入力済み', '記載する'],
+      ['開示する説明', '未入力', '未入力'],
+    ]);
+  });
+
+  it('区分の値が不正な判断はエラーにする（黙って出力しない）', () => {
+    const snapshot = {
+      ...fictionalVersion.snapshot,
+      sections: {
+        ...fictionalVersion.snapshot.sections,
+        judgements: [{ ...fictionalVersion.snapshot.sections.judgements![0], applicability: 'maybe' }],
+      },
+    } as unknown as SsbjReportSnapshotV1;
+    expect(() => ssbjVersionToCsvRows({ ...fictionalVersion, snapshot }, GENERATED_AT))
+      .toThrow('該当性・重要性の判断の保存内容が不正です');
+  });
+});

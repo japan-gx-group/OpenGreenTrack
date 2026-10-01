@@ -12,6 +12,7 @@ import {
   fictionalDisclosableTexts,
   fictionalEvidence,
   fictionalGhgAdoption,
+  fictionalJudgements,
   fictionalNarratives,
   fictionalOgtAdoptedValues,
   fictionalOgtCandidates,
@@ -23,6 +24,7 @@ import {
   fictionalTimeHorizonDefinitions,
   fictionalVersion,
 } from '../fictionalReport';
+import { isSsbjOmissionStatementMissing, normalizeSsbjJudgementInput, toSsbjJudgementFormValues, validateSsbjJudgementInput } from '../../utils/judgement';
 import { findSsbjNarrativeItem } from '../../utils/requirementMaster';
 
 const allFieldValues = (): SsbjFieldValue<string>[] => [
@@ -197,5 +199,25 @@ describe('四本柱の文章（T05）', () => {
       expect(findSsbjNarrativeItem(narrative.itemId), narrative.itemId).toBeDefined();
     }
     expect(fictionalSnapshot.sections.narratives).toEqual(fictionalNarratives);
+  });
+});
+
+describe('該当性・重要性の判断（T09）', () => {
+  it('要求 ID の順に並び、どれも入力の検証を通り、保存版の例に含まれる', () => {
+    const ids = fictionalJudgements.map(judgement => judgement.requirementId);
+    expect(ids).toEqual([...ids].sort());
+    for (const judgement of fictionalJudgements) {
+      const normalized = normalizeSsbjJudgementInput(judgement.requirementId, toSsbjJudgementFormValues(judgement));
+      expect(normalized, judgement.requirementId).toEqual(judgement);
+      expect(validateSsbjJudgementInput(judgement), judgement.requirementId).toEqual([]);
+    }
+    expect(fictionalSnapshot.sections.judgements).toEqual(fictionalJudgements);
+  });
+
+  it('経過措置で記載しない旨を説明した例と、説明がまだの例を含む', () => {
+    const transition = fictionalJudgements.filter(judgement => judgement.omissionReason === 'transition_relief');
+    expect(transition.some(judgement => !isSsbjOmissionStatementMissing(judgement))).toBe(true);
+    expect(transition.some(judgement => isSsbjOmissionStatementMissing(judgement))).toBe(true);
+    expect(fictionalJudgements.some(judgement => judgement.omissionReason === 'not_material')).toBe(true);
   });
 });

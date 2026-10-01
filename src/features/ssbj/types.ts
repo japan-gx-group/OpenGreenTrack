@@ -170,6 +170,37 @@ export type SsbjNarrative = {
 };
 
 // ---------------------------------------------------------------------------
+// 該当性・重要性・記載しない理由（T09）
+// ---------------------------------------------------------------------------
+
+/** 該当性。この会社に当てはまる要求か。既定は未確認（ソフトは判断しない）。 */
+export const SSBJ_APPLICABILITIES = ['unconfirmed', 'applicable', 'not_applicable'] as const;
+export type SsbjApplicability = (typeof SSBJ_APPLICABILITIES)[number];
+
+/** 重要性。情報に重要性があるか（適用基準 第22項）。既定は未確認。 */
+export const SSBJ_MATERIALITIES = ['unconfirmed', 'material', 'not_material'] as const;
+export type SsbjMateriality = (typeof SSBJ_MATERIALITIES)[number];
+
+/**
+ * 記載しない理由。none = 記載する / not_material = 重要性がない（適用基準 第22項）/ transition_relief = 経過措置
+ * （適用基準 第94項、気候関連開示基準 第103項）/ commercial_sensitivity = 機会の情報の商業上の機密（適用基準 第13項）/ other。
+ */
+export const SSBJ_OMISSION_REASONS = ['none', 'not_material', 'transition_relief', 'commercial_sensitivity', 'other'] as const;
+export type SsbjOmissionReason = (typeof SSBJ_OMISSION_REASONS)[number];
+
+/**
+ * 要求 1 件についての判断（ssbj_judgements の 1 行）。explanation の disclosure は開示する説明（例: 経過措置を適用している旨）、
+ * internalNote は内部の検討理由（開示しない）。リスクの識別（T07）とは別の概念として持つ。
+ */
+export type SsbjJudgement = {
+  requirementId: SsbjRequirementId;
+  applicability: SsbjApplicability;
+  materiality: SsbjMateriality;
+  omissionReason: SsbjOmissionReason;
+  explanation: SsbjDisclosableText;
+};
+
+// ---------------------------------------------------------------------------
 // レポートの基本情報（T04 が作成・編集する）
 // ---------------------------------------------------------------------------
 
@@ -497,6 +528,8 @@ export interface SsbjSnapshotSections {
   ghg: SsbjGhgAdoption | null;
   /** T05。ssbj_snapshot_section__narratives。項目 ID の順。行の無い項目は含まない（表示側で未入力とする）。 */
   narratives: SsbjNarrative[];
+  /** T09。ssbj_snapshot_section__judgements。要求 ID の順。行の無い要求は含まない（表示側で未確認とする）。 */
+  judgements: SsbjJudgement[];
 }
 
 /** 保存版の中身（ssbj_report_versions.snapshot）。形式を変えるときは schemaVersion を上げる。 */

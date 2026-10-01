@@ -47,6 +47,7 @@ erDiagram
     ssbj_reports ||--o{ ssbj_evidence : "根拠文書"
     ssbj_reports ||--o| ssbj_ogt_adoptions : "OGT採用値"
     ssbj_reports ||--o{ ssbj_narratives : "四本柱の文章"
+    ssbj_reports ||--o{ ssbj_judgements : "該当性・重要性の判断"
 ```
 
 ---
@@ -407,6 +408,27 @@ RLSは自組織に限定し、レポートの組織帰属も検証する。変�
 | `createdAt` / `updatedAt` | 作成・更新日時 | TIMESTAMPTZ | NOT NULL | `updatedAt` は `set_updated_at` トリガ |
 
 - RLS・GRANT の考え方は 3.13 と同じ（自組織に限定、レポートの組織帰属を `exists` で検証）。update の列 GRANT は文章の列だけで、レポート・組織・項目は作成後に変えない。
+
+### 3.18 SSBJ 該当性・重要性の判断 (`ssbj_judgements`) — 要求ごとの該当性・重要性・記載しない理由（`supabase/migrations/20261001005308_ssbj_judgements.sql`）
+レポートと要求 ID の組ごとに 1 行の作業中データ。ソフトは判断を自動で決めない（既定はすべて未確認）。変更のたびに
+`ssbj_reports.draftRevision` を進め、保存版には `ssbj_snapshot_section__judgements` で取り込む（行の無い要求は含めず、表示側で未確認とする）。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | ID | UUID | Primary Key | |
+| `organizationId` | 組織ID | UUID | Foreign Key | 削除時: CASCADE |
+| `reportId` | レポートID | UUID | Foreign Key, UNIQUE(`reportId`, `requirementId`) | 削除時: CASCADE。作成後は変更不可 |
+| `requirementId` | 要求ID | VARCHAR(20) | NOT NULL, CHECK(要求 ID の形式) | 要求項目マスター（`src/features/ssbj/utils/requirementMaster.ts`）の要求。マスターにあるかはアプリが検証する。作成後は変更不可 |
+| `applicability` | 該当性 | VARCHAR(20) | NOT NULL, DEFAULT `unconfirmed`, CHECK | `unconfirmed` / `applicable` / `not_applicable` |
+| `materiality` | 重要性 | VARCHAR(20) | NOT NULL, DEFAULT `unconfirmed`, CHECK | `unconfirmed` / `material` / `not_material` |
+| `omissionReason` | 記載しない理由 | VARCHAR(30) | NOT NULL, DEFAULT `none`, CHECK | `none` / `not_material` / `transition_relief` / `commercial_sensitivity` / `other`。`not_material` は `materiality = 'not_material'` のときだけ |
+| `explanationState` / `explanationText` | 開示する説明の状態 / 本文 | `ssbj_field_state` / TEXT | CHECK(`answered` のときだけ本文が非 NULL・空白のみ不可) | 記載しない旨の説明など |
+| `internalReason` | 内部の検討理由 | TEXT | NULL | 開示しない |
+| `createdByUserId` / `updatedByUserId` | 登録・更新操作者ID | UUID | NULL | `set_row_actor` トリガ |
+| `createdAt` / `updatedAt` | 作成・更新日時 | TIMESTAMPTZ | NOT NULL | `updatedAt` は `set_updated_at` トリガ |
+
+- RLS・GRANT の考え方は 3.13 と同じ。update の列 GRANT は判断の列だけで、レポート・組織・要求は作成後に変えない。
+- 区分は enum ではなく CHECK 制約にする（区分を見直すとき、enum は値の削除・改名ができないため）。
 
 ---
 

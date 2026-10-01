@@ -120,3 +120,26 @@ describe('SsbjPreviewDocument（四本柱の文章）', () => {
     expect(text()).toContain('この版には四本柱の文章が含まれていません');
   });
 });
+
+describe('SsbjPreviewDocument（該当性・重要性の判断）', () => {
+  it('判断を記録した要求を表で出し、判断が済んでいない要求は件数で出す。内部の検討理由は選んだときだけ出す', () => {
+    rendered = render(<SsbjPreviewDocument source={working()} showInternalNotes={false} />);
+    expect(text()).toContain('該当性・重要性・記載しない理由');
+    expect(text()).toContain('適用初年度の経過措置により、スコープ 3 のカテゴリー別の内訳を開示していない。');
+    expect(text()).toContain('その旨の説明が未入力');
+    expect(rendered.container.querySelector('[data-testid="ssbj-preview-judgement-pending"]')?.textContent)
+      .toMatch(/判断が済んでいない要求: \d+ \/ \d+ 件/);
+    expect(text()).not.toContain('Scope 3 の算定体制を整備中（架空）。');
+    rendered.unmount();
+    rendered = render(<SsbjPreviewDocument source={working()} showInternalNotes />);
+    expect(text()).toContain('Scope 3 の算定体制を整備中（架空）。');
+  });
+
+  it('判断を含まない古い版は、その旨を出す（表示に未対応とは扱わない）', () => {
+    const withoutJudgements = { ...fictionalSnapshot.sections };
+    delete withoutJudgements.judgements;
+    rendered = render(<SsbjPreviewDocument source={working({ ...fictionalSnapshot, sections: withoutJudgements })} showInternalNotes={false} />);
+    expect(text()).toContain('この版には該当性・重要性の判断が含まれていません');
+    expect(rendered.container.querySelector('[role="alert"]')).toBeNull();
+  });
+});
