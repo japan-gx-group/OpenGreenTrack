@@ -2,8 +2,9 @@
 
 // SSBJ レポートの詳細画面（/ssbj/[reportId]）。基本情報を表示・編集し、手動保存で保存版を作る。
 // 存在しない・他組織のレポートは「見つかりません」を表示し、他組織のレポートの存在を示唆しない。
-// 読込は useSsbjReport、編集フォームは useSsbjReportForm、保存版の作成は useSsbjVersionSave が持ち、
-// ここは組み立てるだけ。
+// 読込は useSsbjReport、編集フォームは useSsbjReportForm、保存版の作成は useSsbjVersionSave、
+// 状態の変更（レビュー依頼・承認・差戻し）は SsbjReportStatusCard が持ち、ここは組み立てるだけ。
+// 承認済みの間は基本情報を編集させない（DB も変更を止める）。
 
 import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
@@ -17,17 +18,21 @@ import { useToast } from '@/hooks/useToast';
 import { useSsbjReport } from '../hooks/useSsbjReport';
 import { useSsbjReportForm } from '../hooks/useSsbjReportForm';
 import { useSsbjVersionSave } from '../hooks/useSsbjVersionSave';
+import type { SsbjReportStatusChangeResult } from '../services/reportWorkflowClient';
 import { updateSsbjReportBasicInfo } from '../services/reportService';
+import { isSsbjReportLocked } from '../utils/reportStatus';
 import { toSsbjReportFormValues } from '../utils/reportValidation';
+import { SsbjLockedNotice } from './SsbjLockedNotice';
 import { SsbjReportBasicInfo } from './SsbjReportBasicInfo';
 import { SsbjReportContentsNav } from './SsbjReportContentsNav';
 import { SsbjReportFormFields } from './SsbjReportFormFields.client';
+import { SsbjReportStatusCard } from './SsbjReportStatusCard.client';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
 import { SsbjVersionSaveCard } from './SsbjVersionSaveCard';
 
 export const SsbjReportDetail = ({ reportId }: { reportId: string }) => {
   const { toast, showToast } = useToast();
-  const { report, setReport, isLoading, errorMessage, isNotFound } = useSsbjReport(reportId);
+  const { report, setReport, reload, isLoading, errorMessage, isNotFound } = useSsbjReport(reportId);
   const [isEditing, setIsEditing] = useState<boolean>(false);
 
   const form = useSsbjReportForm(async input => {
@@ -48,6 +53,14 @@ export const SsbjReportDetail = ({ reportId }: { reportId: string }) => {
     if (await form.submit(event)) {
       setIsEditing(false);
     }
+  };
+
+  const handleStatusChanged = (result: SsbjReportStatusChangeResult) => {
+    reload();
+    const message = result.status === 'approved'
+      ? `承認しました（承認した内容を 版 ${result.approvedVersionNumber} として保存しました）`
+      : result.status === 'in_review' ? 'レビューを依頼しました' : '作成中に戻しました';
+    showToast(message, 'success');
   };
 
   const handleCreateVersion = async () => {
@@ -103,10 +116,11 @@ export const SsbjReportDetail = ({ reportId }: { reportId: string }) => {
           </Card>
         ) : report ? (
           <>
+            <SsbjLockedNotice report={report} />
             <Card>
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="m-0 text-base font-bold">基本情報</h2>
-                {!isEditing && (
+                {!isEditing && !isSsbjReportLocked(report.review) && (
                   <Button type="button" variant="outline" size="sm" onClick={startEdit}>
                     <Pencil size={14} />
                     編集
@@ -138,6 +152,7 @@ export const SsbjReportDetail = ({ reportId }: { reportId: string }) => {
                 <SsbjReportBasicInfo report={report} />
               )}
             </Card>
+            <SsbjReportStatusCard report={report} disabled={isEditing} onChanged={handleStatusChanged} />
             <SsbjReportContentsNav reportId={report.id} />
             <SsbjVersionSaveCard
               isSaving={versionSave.isSaving}
@@ -145,9 +160,6 @@ export const SsbjReportDetail = ({ reportId }: { reportId: string }) => {
               disabled={isEditing}
               onSave={() => void handleCreateVersion()}
             />
-            <Button asChild variant="outline">
-              <Link href={`/ssbj/${encodeURIComponent(report.id)}/versions`}>保存履歴とCSV出力を見る</Link>
-            </Button>
           </>
         ) : null}
       </div>

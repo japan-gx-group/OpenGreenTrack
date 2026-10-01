@@ -506,6 +506,7 @@ export const SSBJ_NARRATIVE_ITEMS: readonly SsbjNarrativeItem[] = [
     label: '監督する機関・責任者',
     requirementIds: ['REQ-GEN-001', 'REQ-CLM-001'],
     example: '当社では、取締役会がサステナビリティ関連（気候関連を含む）のリスク及び機会を監督している。',
+    template: 'サステナビリティ関連（気候関連を含む）のリスク及び機会は、【監督する機関の名称（例: 取締役会）、または責任者の役職名】が監督している。',
   },
   {
     id: 'governance.oversight_information',
@@ -513,6 +514,7 @@ export const SSBJ_NARRATIVE_ITEMS: readonly SsbjNarrativeItem[] = [
     label: '監督のための情報の入手方法と頻度',
     requirementIds: ['REQ-GEN-002', 'REQ-CLM-002'],
     example: '管理本部長が年 2 回、取締役会に温室効果ガス排出量と主要なリスクの状況を報告している。',
+    template: '【報告する人の役職（例: 管理本部長）】が【頻度（例: 年 2 回）】、【監督する機関の名称】に【報告する内容（例: 温室効果ガス排出量と主要なリスクの状況）】を報告している。',
   },
   {
     id: 'governance.management_role',
@@ -520,6 +522,7 @@ export const SSBJ_NARRATIVE_ITEMS: readonly SsbjNarrativeItem[] = [
     label: '経営者の役割',
     requirementIds: ['REQ-GEN-003', 'REQ-CLM-003'],
     example: '気候関連の取組みの管理は管理本部長に委任しており、取締役会は上記の報告を通じて監督している。専用の統制・手続は設けていない。',
+    template: 'リスク及び機会の管理は【任せている役員・会議体（例: 管理本部長）】に任せており、【監督する機関の名称】は【監督の方法（例: 定期的な報告）】を通じて監督している。管理のための統制・手続は【内容。設けていない場合は「設けていない」】。',
   },
   {
     id: 'governance.company_supplement',
@@ -527,6 +530,7 @@ export const SSBJ_NARRATIVE_ITEMS: readonly SsbjNarrativeItem[] = [
     label: 'ガバナンスの補足（企業固有）',
     requirementIds: [],
     example: '親会社のサステナビリティ委員会に、当社の管理本部長が委員として参加している。',
+    template: '【ガバナンスについて、親会社との関係など自社固有の補足】',
   },
   {
     id: 'strategy.business_model_impact',
@@ -534,6 +538,7 @@ export const SSBJ_NARRATIVE_ITEMS: readonly SsbjNarrativeItem[] = [
     label: 'ビジネス・モデルとバリュー・チェーンへの影響',
     requirementIds: ['REQ-GEN-007', 'REQ-CLM-009'],
     example: '主力の金属加工品は電力を多く使うため、電力価格の上昇が製造原価に影響している。影響は電力使用量の多い第一工場に集中している。',
+    template: '【リスク・機会の内容】により、【影響を受ける事業・製品】に【影響の内容（例: 製造原価の上昇）】が生じている（または見込まれる）。影響は【影響が集中している事業所・地域・工程】に集中している。',
   },
   {
     id: 'strategy.response_plans',
@@ -541,6 +546,7 @@ export const SSBJ_NARRATIVE_ITEMS: readonly SsbjNarrativeItem[] = [
     label: '戦略・意思決定での対応と計画',
     requirementIds: ['REQ-GEN-008', 'REQ-CLM-010'],
     example: '2025年度から第一工場の空調・照明を高効率機器に更新しており、今後 3 年間で設備投資予算の一部を省エネ設備に充てる計画である。',
+    template: '【リスク・機会】に対応するため、【これまでの取組み（例: 設備の更新）】を行っている。今後は【今後の計画と期間】を計画している。前期までの計画の進捗は【進捗の内容】である。',
   },
   {
     id: 'strategy.company_supplement',
@@ -548,6 +554,7 @@ export const SSBJ_NARRATIVE_ITEMS: readonly SsbjNarrativeItem[] = [
     label: '戦略の補足（企業固有）',
     requirementIds: [],
     example: '主要な取引先から、製品単位の排出量の開示を求められることが増えている。',
+    template: '【戦略について自社固有の補足（例: 取引先からの要請の状況）】',
   },
   {
     id: 'risk_management.risk_process',
@@ -555,6 +562,7 @@ export const SSBJ_NARRATIVE_ITEMS: readonly SsbjNarrativeItem[] = [
     label: 'リスクの識別・評価・管理のプロセス',
     requirementIds: ['REQ-GEN-009', 'REQ-CLM-011'],
     example: '年 1 回、各部門へのヒアリングでリスクを洗い出し、発生可能性と影響の大きさで評価している。シナリオ分析は用いていない。前期からプロセスを変更していない。',
+    template: '【頻度（例: 年 1 回）】、【識別の方法（例: 各部門へのヒアリング）】でリスクを識別し、【評価の基準（例: 発生可能性と影響の大きさ）】で評価・優先順位付けしている。シナリオ分析は【用いている・用いていない】。前期からプロセスを【変更していない、または変更した点】。',
   },
   {
     id: 'risk_management.opportunity_process',
@@ -562,6 +570,7 @@ export const SSBJ_NARRATIVE_ITEMS: readonly SsbjNarrativeItem[] = [
     label: '機会の識別・評価・管理のプロセス',
     requirementIds: ['REQ-GEN-010', 'REQ-CLM-012'],
     example: '機会はリスクと同じヒアリングで洗い出し、営業部門が売上への影響を評価している。',
+    template: '機会は【識別の方法】で識別し、【評価する部門・基準】で評価・優先順位付けしている。',
   },
   {
     id: 'risk_management.integration',
@@ -569,6 +578,7 @@ export const SSBJ_NARRATIVE_ITEMS: readonly SsbjNarrativeItem[] = [
     label: '全社のリスク管理への統合',
     requirementIds: ['REQ-GEN-011', 'REQ-CLM-013'],
     example: '洗い出したリスクは全社のリスク一覧に登録し、リスク管理委員会で他のリスクと同じ基準で管理している。',
+    template: '識別したリスク及び機会は【全社のリスク管理の仕組み（例: 全社のリスク一覧）】に登録し、【管理する会議体（例: リスク管理委員会）】で【他のリスクとの扱いの違い（例: 他のリスクと同じ基準で）】管理している。',
   },
   {
     id: 'risk_management.company_supplement',
@@ -576,6 +586,7 @@ export const SSBJ_NARRATIVE_ITEMS: readonly SsbjNarrativeItem[] = [
     label: 'リスク管理の補足（企業固有）',
     requirementIds: [],
     example: '豪雨による操業停止のリスクについては、事業継続計画の見直しを進めている。',
+    template: '【リスク管理について自社固有の補足】',
   },
   {
     id: 'metrics_targets.ghg_measurement_method',
@@ -583,6 +594,7 @@ export const SSBJ_NARRATIVE_ITEMS: readonly SsbjNarrativeItem[] = [
     label: '温室効果ガス排出の測定方法',
     requirementIds: ['REQ-CLM-016'],
     example: 'スコープ 1・2 は温対法の算定・報告・公表制度（SHK 制度）の方法で測定している。親会社の指定に従い、この方法を選択した。',
+    template: '温室効果ガス排出は【測定方法（例: GHG プロトコル、または温対法の SHK 制度の方法）】で測定している。この方法を選んだ理由は【理由（例: 親会社の指定）】である。',
   },
   {
     id: 'metrics_targets.ghg_consolidation_split',
@@ -590,6 +602,7 @@ export const SSBJ_NARRATIVE_ITEMS: readonly SsbjNarrativeItem[] = [
     label: '連結会計グループとその他の投資先への分解',
     requirementIds: ['REQ-CLM-017'],
     example: '当社は親会社の連結子会社であり、当社のスコープ 1・2 の排出はすべて連結会計グループに含まれる。',
+    template: '当社は【親会社との関係（例: 連結子会社）】であり、当社のスコープ 1・2 の排出は【連結会計グループに含まれる、またはその他の投資先に含まれる】。',
   },
   {
     id: 'metrics_targets.ghg_measurement_inputs',
@@ -597,6 +610,7 @@ export const SSBJ_NARRATIVE_ITEMS: readonly SsbjNarrativeItem[] = [
     label: '測定に使った活動量・排出係数と仮定',
     requirementIds: ['REQ-CLM-022'],
     example: '電力・燃料の使用量は請求書の値を用い、排出係数は国が公表する係数を用いた。一部の拠点の 3 月分は前年同月の値で推計した。',
+    template: '活動量は【データの出所（例: 電力・燃料の請求書）】の値を用い、排出係数は【係数の出所（例: 国が公表する係数）】を用いた。【置いた仮定・推計（例: 一部拠点の欠けている月は前年同月の値で推計した）】。前期から測定方法を【変更していない、または変更した点と理由】。',
   },
   {
     id: 'metrics_targets.value_chain_period',
@@ -604,6 +618,7 @@ export const SSBJ_NARRATIVE_ITEMS: readonly SsbjNarrativeItem[] = [
     label: '算定期間が異なるバリュー・チェーンの情報',
     requirementIds: ['REQ-CLM-023'],
     example: '主要な仕入先 2 社から受け取った排出量は暦年（1〜12 月）の値であり、当社の報告期間との差の間に重大な変化は生じていない。',
+    template: '【バリュー・チェーン上の企業（例: 主要な仕入先 2 社）】の排出量は【その企業の算定期間】の値を用いており、当社の報告期間との差の間に【重大な変化は生じていない、または生じた変化と影響】。',
   },
   {
     id: 'metrics_targets.scope3_data',
@@ -611,6 +626,7 @@ export const SSBJ_NARRATIVE_ITEMS: readonly SsbjNarrativeItem[] = [
     label: 'スコープ 3 のデータの選び方',
     requirementIds: ['REQ-CLM-025'],
     example: 'カテゴリ 1 は購入金額に排出原単位を乗じた 2 次データを用い、主要な仕入先 2 社分は仕入先から受け取った 1 次データを用いた。第三者が検証したデータは用いていない。',
+    template: '【カテゴリ】は【データの選び方（例: 購入金額に排出原単位を乗じた 2 次データ）】を用いた。1 次データ・第三者が検証したデータを使った範囲は【範囲】である。',
   },
   {
     id: 'metrics_targets.internal_carbon_price',
@@ -618,6 +634,7 @@ export const SSBJ_NARRATIVE_ITEMS: readonly SsbjNarrativeItem[] = [
     label: '内部炭素価格',
     requirementIds: ['REQ-CLM-026'],
     example: '当社は内部炭素価格を用いていない。',
+    template: '当社は内部炭素価格を【用いていない、または用いている場合はその使い方と価格（円/t-CO2e）】。',
   },
   {
     id: 'metrics_targets.remuneration',
@@ -625,6 +642,7 @@ export const SSBJ_NARRATIVE_ITEMS: readonly SsbjNarrativeItem[] = [
     label: '役員報酬との関係',
     requirementIds: ['REQ-CLM-027'],
     example: '当社は役員報酬に気候関連の評価項目を組み込んでいない。',
+    template: '当社は役員報酬に気候関連の評価項目を【組み込んでいない、または組み込んでいる場合はその内容と報酬に占める割合】。',
   },
   {
     id: 'metrics_targets.other_metrics',
@@ -632,6 +650,7 @@ export const SSBJ_NARRATIVE_ITEMS: readonly SsbjNarrativeItem[] = [
     label: 'その他の指標',
     requirementIds: ['REQ-GEN-012', 'REQ-CLM-028'],
     example: '売上高あたりの電力使用量（kWh/百万円）を自社で定義し、毎月集計している。第三者の認証は受けていない。',
+    template: '【指標の名称（例: 売上高あたりの電力使用量）】を【定義と算定方法】で算定し、【頻度】で確認している。第三者の認証は【受けていない、または受けている場合はその認証】。',
   },
   {
     id: 'metrics_targets.targets',
@@ -639,6 +658,7 @@ export const SSBJ_NARRATIVE_ITEMS: readonly SsbjNarrativeItem[] = [
     label: '目標',
     requirementIds: ['REQ-GEN-013', 'REQ-CLM-029'],
     example: '2030年度までにスコープ 1・2 の排出量を 2022年度比で 30% 削減する目標を、会社全体を対象に設定している。当期は 2022年度比 8% の削減だった。',
+    template: '【目標の対象（例: スコープ 1・2 の排出量）】を【目標年度】までに【基準年度】比で【目標の数値（例: 30% 削減）】とする目標を、【対象範囲（例: 会社全体）】に設定している。当期の実績は【当期の実績と推移】である。',
   },
   {
     id: 'metrics_targets.ghg_targets',
@@ -646,6 +666,7 @@ export const SSBJ_NARRATIVE_ITEMS: readonly SsbjNarrativeItem[] = [
     label: '温室効果ガス排出目標の詳細',
     requirementIds: ['REQ-CLM-030'],
     example: '上記の目標は CO2 のみを対象とした総量（グロス）目標であり、カーボン・クレジットの使用は計画していない。',
+    template: '上記の目標は【対象のガス（例: CO2 のみ）】を対象とした【総量（グロス）または純量（ネット）】の目標であり、カーボン・クレジットは【使用を計画していない、または使用の計画】。',
   },
   {
     id: 'metrics_targets.comparative_information',
@@ -653,6 +674,7 @@ export const SSBJ_NARRATIVE_ITEMS: readonly SsbjNarrativeItem[] = [
     label: '比較情報',
     requirementIds: ['REQ-APP-002'],
     example: '当期が初めての開示であるため、比較情報は示していない。',
+    template: '【比較情報の示し方（例: 当期が初めての開示であるため、比較情報は示していない）】。',
   },
   {
     id: 'metrics_targets.measurement_uncertainty',
@@ -660,6 +682,7 @@ export const SSBJ_NARRATIVE_ITEMS: readonly SsbjNarrativeItem[] = [
     label: '測定の不確実性',
     requirementIds: ['REQ-APP-004'],
     example: 'スコープ 3 のカテゴリ 1 は購入金額に基づく推計であり、実際の排出量と差がありうる。',
+    template: '【不確実性の高い数値（例: スコープ 3 のカテゴリ 1）】は【不確実性の源泉（例: 購入金額に基づく推計）】であり、【置いた仮定と、実際との差の見込み】。',
   },
   {
     id: 'metrics_targets.company_supplement',
@@ -667,6 +690,7 @@ export const SSBJ_NARRATIVE_ITEMS: readonly SsbjNarrativeItem[] = [
     label: '指標及び目標の補足（企業固有）',
     requirementIds: [],
     example: '2026年度から主要拠点で再生可能エネルギー由来の電力の購入を始める予定である。',
+    template: '【指標及び目標について自社固有の補足】',
   },
 ];
 

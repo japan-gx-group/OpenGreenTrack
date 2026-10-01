@@ -2,7 +2,7 @@
 import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { click, render, setInputValue, type RenderResult } from '@/lib/testing/render';
-import { fictionalEvidence, fictionalReportBasicInfo } from '../../__fixtures__/fictionalReport';
+import { FICTIONAL_DRAFT_REVIEW, fictionalEvidence, fictionalReportBasicInfo } from '../../__fixtures__/fictionalReport';
 
 vi.mock('../../services/reportService', async importOriginal => ({
   ...(await importOriginal<typeof import('../../services/reportService')>()),
@@ -25,6 +25,7 @@ const report = {
   periodStart: '2024-04-01',
   periodEnd: '2025-03-31',
   draftRevision: 1,
+  review: FICTIONAL_DRAFT_REVIEW,
 };
 
 let mounted: RenderResult | null = null;
@@ -108,5 +109,17 @@ describe('SsbjEvidencePage', () => {
     await flush();
     expect(deleteSsbjEvidence).toHaveBeenCalledWith(edited.id);
     expect(document.body.textContent).not.toContain('改訂版議事録');
+  });
+});
+
+describe('SsbjEvidencePage（承認ロック）', () => {
+  it('承認済みのレポートでは追加・編集・削除を出さず、ロックの案内を出す', async () => {
+    vi.mocked(getSsbjReport).mockResolvedValue({ ...report, review: { status: 'approved' as const, approverUserId: 'u', approvedAt: '2025-06-05T00:00:00.000Z', approvedByUserId: 'u',
+      approvedVersionId: null, statusChangedAt: null } });
+    await open();
+    const labels = Array.from(document.querySelectorAll('button')).map(element => element.textContent?.trim());
+    expect(labels.some(label => label?.includes('根拠文書を追加'))).toBe(false);
+    expect(labels.some(label => label?.endsWith('編集') || label?.endsWith('削除'))).toBe(false);
+    expect(document.querySelector('[data-testid="ssbj-locked-notice"]')).not.toBeNull();
   });
 });

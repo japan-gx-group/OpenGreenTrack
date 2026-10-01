@@ -2,7 +2,7 @@
 import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { click, render, type RenderResult } from '@/lib/testing/render';
-import { fictionalReportBasicInfo, fictionalSnapshot, fictionalVersion } from '../../__fixtures__/fictionalReport';
+import { FICTIONAL_DRAFT_REVIEW, fictionalReportBasicInfo, fictionalSnapshot, fictionalVersion } from '../../__fixtures__/fictionalReport';
 
 vi.mock('../../services/reportService', async importOriginal => ({
   ...(await importOriginal<typeof import('../../services/reportService')>()), getSsbjReport: vi.fn(),
@@ -19,7 +19,7 @@ import { listSsbjVersions } from '../../services/versionExportService';
 import { SsbjPreview } from '../SsbjPreview.client';
 
 const report = { ...fictionalReportBasicInfo, fiscalYearLabel: '2024年度',
-  periodStart: '2024-04-01', periodEnd: '2025-03-31', draftRevision: 7 };
+  periodStart: '2024-04-01', periodEnd: '2025-03-31', draftRevision: 7, review: FICTIONAL_DRAFT_REVIEW };
 let rendered: RenderResult | null = null;
 const flush = async () => { await act(async () => { await Promise.resolve(); }); };
 const settle = async () => { for (let i = 0; i < 4; i += 1) await flush(); };

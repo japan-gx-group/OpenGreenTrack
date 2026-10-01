@@ -19,6 +19,8 @@ type DemoUser = { email: string; password: string };
 
 /** デモシード（supabase/seeds/demo/demo.sql）の組織 A（架空精密工業）の管理者。 */
 export const ORG_A_USER: DemoUser = { email: 'org-a@example.com', password: 'password123' };
+/** 組織 A の入力担当者（OGT の role = logger）。承認者に指定されていなければ承認・差戻しができないことの確認に使う。 */
+export const ORG_A_LOGGER: DemoUser = { email: 'member-a@example.com', password: 'password123' };
 /** 別組織（架空ロジスティクス）の管理者。組織分離の確認に使う。 */
 export const ORG_B_USER: DemoUser = { email: 'org-b@example.com', password: 'password123' };
 

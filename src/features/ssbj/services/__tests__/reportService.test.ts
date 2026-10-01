@@ -35,6 +35,12 @@ const row = (fiscalYears: SsbjReportRow['fiscal_years']): SsbjReportRow => ({
   createdAt: fictionalReportBasicInfo.createdAt,
   updatedAt: fictionalReportBasicInfo.updatedAt,
   draftRevision: 3,
+  status: 'approved',
+  approverUserId: 'user-approver',
+  approvedAt: '2025-06-05T00:00:00.000Z',
+  approvedByUserId: 'user-approver',
+  approvedVersionId: 'version-1',
+  statusChangedAt: '2025-06-05T00:00:00.000Z',
   fiscal_years: fiscalYears,
 });
 
@@ -67,16 +73,25 @@ describe('toSsbjReportRecord', () => {
     expect(() => toSsbjReportRecord(row(null))).toThrow('算定年度を取得できませんでした');
   });
 
-  it('draftRevision を含めない（保存版の report と同じ形を保つ）', () => {
+  it('draftRevision・状態を含めない（保存版の report と同じ形を保つ）', () => {
     expect(toSsbjReportRecord(row(EMBED))).not.toHaveProperty('draftRevision');
+    expect(toSsbjReportRecord(row(EMBED))).not.toHaveProperty('review');
   });
 });
 
 describe('toSsbjReportWorkingRecord', () => {
-  it('SsbjReportRecord に draftRevision を添える', () => {
+  it('SsbjReportRecord に draftRevision と状態・承認の記録を添える', () => {
     expect(toSsbjReportWorkingRecord(row(EMBED))).toEqual({
       ...toSsbjReportRecord(row(EMBED)),
       draftRevision: 3,
+      review: {
+        status: 'approved',
+        approverUserId: 'user-approver',
+        approvedAt: '2025-06-05T00:00:00.000Z',
+        approvedByUserId: 'user-approver',
+        approvedVersionId: 'version-1',
+        statusChangedAt: '2025-06-05T00:00:00.000Z',
+      },
     });
   });
 });

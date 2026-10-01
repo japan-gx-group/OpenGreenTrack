@@ -3,6 +3,7 @@ import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { click, render, type RenderResult } from '@/lib/testing/render';
 import {
+  FICTIONAL_DRAFT_REVIEW,
   fictionalGhgAdoption,
   fictionalOgtCandidates,
   fictionalReportBasicInfo,
@@ -28,7 +29,7 @@ import { ogtCandidateFingerprint } from '../../utils/ogtAdoption';
 import { SsbjOgtCandidates } from '../SsbjOgtCandidates.client';
 
 const report = { ...fictionalReportBasicInfo, fiscalYearLabel: '2024年度',
-  periodStart: '2024-04-01', periodEnd: '2025-03-31', draftRevision: 1 };
+  periodStart: '2024-04-01', periodEnd: '2025-03-31', draftRevision: 1, review: FICTIONAL_DRAFT_REVIEW };
 let rendered: RenderResult | null = null;
 const flush = async () => { await act(async () => { await Promise.resolve(); }); };
 const settle = async () => { for (let i = 0; i < 4; i += 1) await flush(); };
@@ -138,5 +139,17 @@ describe('SsbjOgtCandidates（採用）', () => {
     await settle();
     expect(clearOgtAdoption).toHaveBeenCalledWith(report.id);
     expect(rendered.container.textContent).toContain('まだ採用していません');
+  });
+});
+
+describe('SsbjOgtCandidates（承認ロック）', () => {
+  it('承認済みのレポートでは採用・取り消しを出さず、ロックの案内を出す', async () => {
+    vi.mocked(getSsbjReport).mockResolvedValue({ ...report, review: { status: 'approved' as const, approverUserId: 'u', approvedAt: '2025-06-05T00:00:00.000Z', approvedByUserId: 'u',
+      approvedVersionId: null, statusChangedAt: null } });
+    rendered = render(<SsbjOgtCandidates reportId={report.id} />);
+    await settle();
+    expect(rendered.container.textContent).toContain('Scope別の候補値');
+    expect(rendered.container.textContent).not.toContain('表示中の候補値を採用する');
+    expect(rendered.container.querySelector('[data-testid="ssbj-locked-notice"]')).not.toBeNull();
   });
 });

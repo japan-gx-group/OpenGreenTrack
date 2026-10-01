@@ -25,6 +25,8 @@ export interface SsbjOgtAdoptionCardProps {
   changedLabels: string[];
   /** 算定済みの候補値が 1 つも無いときは false（採用しても未算定しか残らないため）。 */
   canAdopt: boolean;
+  /** 承認済みなど、採用・取り消しをさせないとき true。 */
+  locked?: boolean;
   isSubmitting: boolean;
   errorMessage: string;
   onAdopt: () => Promise<boolean>;
@@ -35,6 +37,7 @@ export const SsbjOgtAdoptionCard = ({
   adoption,
   changedLabels,
   canAdopt,
+  locked = false,
   isSubmitting,
   errorMessage,
   onAdopt,
@@ -82,7 +85,7 @@ export const SsbjOgtAdoptionCard = ({
             <p role="alert" className="m-0 mt-2 text-sm text-danger">{errorMessage}</p>
           )}
         </div>
-        <div className="flex flex-wrap gap-2">
+        {!locked && <div className="flex flex-wrap gap-2">
           {adoption && (
             <Button type="button" variant="outline" disabled={isSubmitting} onClick={() => setConfirming('clear')}>
               <RotateCcw size={14} /> 採用を取り消す
@@ -91,7 +94,7 @@ export const SsbjOgtAdoptionCard = ({
           <Button type="button" disabled={!canAdopt || isSubmitting} onClick={() => setConfirming('adopt')}>
             <CheckCircle2 size={14} /> {adoption ? '表示中の候補値で採用し直す' : '表示中の候補値を採用する'}
           </Button>
-        </div>
+        </div>}
       </div>
 
       <Dialog open={confirming !== null} onOpenChange={next => { if (!next && !isSubmitting) setConfirming(null); }}>

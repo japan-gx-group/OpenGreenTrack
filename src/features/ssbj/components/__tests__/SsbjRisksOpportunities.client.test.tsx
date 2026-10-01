@@ -3,6 +3,7 @@ import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { click, render, setInputValue, type RenderResult } from '@/lib/testing/render';
 import {
+  FICTIONAL_DRAFT_REVIEW,
   fictionalReportBasicInfo,
   fictionalRisksOpportunities,
   fictionalTimeHorizonDefinitions,
@@ -46,6 +47,7 @@ const REPORT: SsbjReportWorkingRecord = {
   periodStart: '2024-04-01',
   periodEnd: '2025-03-31',
   draftRevision: 1,
+  review: FICTIONAL_DRAFT_REVIEW,
 };
 
 const flushPromises = async (): Promise<void> => {
@@ -283,5 +285,19 @@ describe('SsbjRisksOpportunities', () => {
     expect(document.querySelector('[data-testid="ssbj-time-horizon-definitions"]')?.textContent).toContain(
       '短期は中期経営計画の期間と一致させている。',
     );
+  });
+});
+
+describe('SsbjRisksOpportunities（承認ロック）', () => {
+  it('承認済みのレポートでは追加・編集・削除・定義の編集を出さず、ロックの案内を出す', async () => {
+    vi.mocked(getSsbjReport).mockResolvedValue({ ...REPORT, review: { status: 'approved' as const, approverUserId: 'u', approvedAt: '2025-06-05T00:00:00.000Z', approvedByUserId: 'u',
+      approvedVersionId: null, statusChangedAt: null } });
+    const { container } = await renderScreen();
+    const labels = Array.from(container.querySelectorAll('button')).map(element => element.textContent?.trim());
+    expect(labels).not.toContain('リスク・機会を追加');
+    expect(labels).not.toContain('編集');
+    expect(labels).not.toContain('削除');
+    expect(labels).not.toContain('定義を編集');
+    expect(container.querySelector('[data-testid="ssbj-locked-notice"]')).not.toBeNull();
   });
 });

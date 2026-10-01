@@ -11,6 +11,7 @@ import {
   type SsbjRequirementId,
 } from '../types';
 import { fromFieldValue, toFieldValue } from '../utils/fieldValue';
+import { ssbjWriteErrorMessage } from '../utils/writeError';
 
 type SsbjJudgementRow = {
   requirementId: string;
@@ -83,7 +84,7 @@ export const saveSsbjJudgement = async (
     .eq('reportId', report.id)
     .eq('requirementId', judgement.requirementId)
     .select(SELECT_COLUMNS);
-  if (updated.error) throw new Error('該当性・重要性の判断の保存に失敗しました');
+  if (updated.error) throw new Error(ssbjWriteErrorMessage(updated.error, '該当性・重要性の判断の保存に失敗しました'));
   const updatedRows = (updated.data ?? []) as SsbjJudgementRow[];
   if (updatedRows.length > 0) return toSsbjJudgement(updatedRows[0]);
 
@@ -102,7 +103,7 @@ export const saveSsbjJudgement = async (
     if (inserted.error?.code === '23505') {
       throw new Error('他の画面で先に保存されました。画面を開き直してから保存し直してください');
     }
-    throw new Error('該当性・重要性の判断の保存に失敗しました');
+    throw new Error(ssbjWriteErrorMessage(inserted.error, '該当性・重要性の判断の保存に失敗しました'));
   }
   return toSsbjJudgement(inserted.data as SsbjJudgementRow);
 };

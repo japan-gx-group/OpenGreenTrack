@@ -35,6 +35,16 @@ const SSBJ_REPORT_CONTENTS: { path: string; label: string; description: string }
     label: 'プレビュー',
     description: '作業中の内容または保存版を、レポートの形で確認し、印刷・PDFとして保存します。',
   },
+  {
+    path: 'versions',
+    label: '保存履歴と出力',
+    description: '保存版の内容の確認、過去の版への復元、CSV・Excel の出力を行います。',
+  },
+  {
+    path: 'history',
+    label: '操作履歴',
+    description: '誰がいつ何をしたか（作成・更新・承認・出力など）を確認し、CSV・Excel で出力します。',
+  },
 ];
 
 export const SsbjReportContentsNav = ({ reportId }: { reportId: string }) => (

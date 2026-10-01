@@ -21,9 +21,9 @@ import { formatPreviewSelection, parsePreviewSelection, type SsbjPreviewSelectio
 import { SsbjPreviewDocument } from './SsbjPreviewDocument';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
 
-export const SsbjPreview = ({ reportId }: { reportId: string }) => {
+export const SsbjPreview = ({ reportId, initialSource = null }: { reportId: string; initialSource?: string | null }) => {
   const { report, isLoading: reportLoading, errorMessage: reportError, isNotFound } = useSsbjReport(reportId);
-  const [selection, setSelection] = useState<SsbjPreviewSelection>({ kind: 'working' });
+  const [selection, setSelection] = useState<SsbjPreviewSelection>(() => parsePreviewSelection(initialSource));
   const [showInternalNotes, setShowInternalNotes] = useState(false);
   const versions = useSsbjVersionSummaries(report?.id ?? null);
   const preview = useSsbjPreviewSource(report?.id ?? null, selection);

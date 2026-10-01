@@ -119,6 +119,11 @@ export type SsbjNarrativeItem = {
   requirementIds: SsbjRequirementId[];
   /** 記載例（架空の会社の文例）。 */
   example: string;
+  /**
+   * 穴埋めテンプレート（試行版の初期文例）。【 】の部分を自社の言葉に置き換えて使う。
+   * チームが作った文例で、外部の監修は受けていない（docs/ssbj-r1-scope.md §8）。
+   */
+  template: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -278,6 +283,39 @@ export type SsbjReportRecord = SsbjReportBasicInfo & {
  */
 export type SsbjReportWorkingRecord = SsbjReportRecord & {
   draftRevision: number;
+  review: SsbjReportReview;
+};
+
+// ---------------------------------------------------------------------------
+// 状態管理と承認ロック（docs/ssbj-spec.md §13）
+// ---------------------------------------------------------------------------
+
+/** レポートの状態。承認済みの間は作業中データを変更できない（DB が止める）。 */
+export const SSBJ_REPORT_STATUSES = ['draft', 'in_review', 'approved'] as const;
+
+export type SsbjReportStatus = (typeof SSBJ_REPORT_STATUSES)[number];
+
+export const SSBJ_REPORT_STATUS_LABELS: Record<SsbjReportStatus, string> = {
+  draft: '作成中',
+  in_review: 'レビュー中',
+  approved: '承認済み',
+};
+
+/** 状態を変える操作。submit = レビュー依頼、withdraw = 依頼の取り下げ、approve = 承認、reopen = 差戻し。 */
+export const SSBJ_REPORT_STATUS_ACTIONS = ['submit', 'withdraw', 'approve', 'reopen'] as const;
+
+export type SsbjReportStatusAction = (typeof SSBJ_REPORT_STATUS_ACTIONS)[number];
+
+/** レポートの状態と承認の記録（保存版の report には含めない。作業中のレポートだけが持つ）。 */
+export type SsbjReportReview = {
+  status: SsbjReportStatus;
+  /** レビューを依頼された承認者（profiles.id）。承認と差戻しができる。 */
+  approverUserId: string | null;
+  approvedAt: string | null;
+  approvedByUserId: string | null;
+  /** 承認したときに作った保存版。 */
+  approvedVersionId: SsbjVersionId | null;
+  statusChangedAt: string | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -554,3 +592,32 @@ export type SsbjReportVersion = {
   createdBy: string;
   createdAt: string;
 };
+
+// ---------------------------------------------------------------------------
+// 操作履歴（ssbj_audit_logs。docs/ssbj-spec.md §13）
+// ---------------------------------------------------------------------------
+
+export const SSBJ_AUDIT_ACTIONS = [
+  'create', 'update', 'delete', 'status_change', 'version_create', 'version_restore', 'export',
+] as const;
+
+export type SsbjAuditAction = (typeof SSBJ_AUDIT_ACTIONS)[number];
+
+/** 操作履歴の 1 件（誰が・いつ・何をしたか）。DB のトリガーと RPC が書き、書き換えない。 */
+export type SsbjAuditLog = {
+  id: number;
+  reportId: SsbjReportId;
+  actorUserId: string | null;
+  action: SsbjAuditAction;
+  /** report / narrative / judgement / risk_opportunity / time_horizons / evidence / ogt_adoption / version */
+  targetType: string;
+  targetId: string | null;
+  changedColumns: string[] | null;
+  details: Record<string, unknown>;
+  createdAt: string;
+};
+
+/** ファイルの出力形式（操作履歴・出力履歴に残す）。 */
+export const SSBJ_EXPORT_FORMATS = ['csv', 'xlsx', 'audit_csv', 'audit_xlsx'] as const;
+
+export type SsbjExportFormat = (typeof SSBJ_EXPORT_FORMATS)[number];
