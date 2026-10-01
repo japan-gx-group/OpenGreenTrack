@@ -15,6 +15,7 @@ import type {
   SsbjEvidence,
   SsbjGhgAdoption,
   SsbjItemId,
+  SsbjJudgement,
   SsbjNarrative,
   SsbjReportBasicInfo,
   SsbjReportSnapshotV1,
@@ -106,6 +107,51 @@ export const fictionalNarratives: SsbjNarrative[] = [
   {
     itemId: 'strategy.business_model_impact',
     text: { disclosure: { state: 'unconfirmed' }, internalNote: '影響の集中する工場を確認中（架空）。' },
+  },
+];
+
+/**
+ * 要求ごとの該当性・重要性・記載しない理由（T09。要求 ID の順）。経過措置で記載しない旨を説明した例、
+ * 経過措置なのに説明が未確認の例、非該当（重要性は判断不要）の例、重要性がないとした例、判断だけ記録した例を含む。
+ */
+export const fictionalJudgements: SsbjJudgement[] = [
+  {
+    requirementId: 'REQ-APP-002',
+    applicability: 'applicable',
+    materiality: 'material',
+    omissionReason: 'transition_relief',
+    explanation: { disclosure: { state: 'unconfirmed' }, internalNote: '初年度のため比較情報は出さない方針（架空）。' },
+  },
+  {
+    requirementId: 'REQ-CLM-020',
+    applicability: 'applicable',
+    materiality: 'material',
+    omissionReason: 'transition_relief',
+    explanation: {
+      disclosure: { state: 'answered', value: '適用初年度の経過措置により、スコープ 3 のカテゴリー別の内訳を開示していない。' },
+      internalNote: 'Scope 3 の算定体制を整備中（架空）。',
+    },
+  },
+  {
+    requirementId: 'REQ-CLM-023',
+    applicability: 'not_applicable',
+    materiality: 'unconfirmed',
+    omissionReason: 'none',
+    explanation: { disclosure: { state: 'unanswered' }, internalNote: '算定期間の異なるバリュー・チェーン上の企業の情報は使っていない（架空）。' },
+  },
+  {
+    requirementId: 'REQ-CLM-027',
+    applicability: 'applicable',
+    materiality: 'not_material',
+    omissionReason: 'not_material',
+    explanation: { disclosure: { state: 'unanswered' }, internalNote: '役員報酬の構成を人事部に確認し、重要性がないと判断した（架空）。' },
+  },
+  {
+    requirementId: 'REQ-GEN-001',
+    applicability: 'applicable',
+    materiality: 'material',
+    omissionReason: 'none',
+    explanation: { disclosure: { state: 'unanswered' }, internalNote: null },
   },
 ];
 
@@ -334,6 +380,7 @@ export const fictionalSnapshot: SsbjReportSnapshotV1 = {
     evidence: fictionalEvidence,
     ghg: fictionalGhgAdoption,
     narratives: fictionalNarratives,
+    judgements: fictionalJudgements,
   },
 };
 

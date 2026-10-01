@@ -13,10 +13,11 @@ import {
 } from '../types';
 import { formatFieldValue } from '../utils/fieldValue';
 import { ghgAdoptionCsvRows } from './versionCsvGhg';
+import { judgementCsvRows } from './versionCsvJudgements';
 import { narrativeCsvRows } from './versionCsvNarratives';
 
 // CSV に出せる保存版セクション。ここに無いセクションがあれば、出力漏れにせずエラーにする。
-const CSV_SECTIONS = new Set(['risks_opportunities', 'time_horizons', 'evidence', 'ghg', 'narratives']);
+const CSV_SECTIONS = new Set(['risks_opportunities', 'time_horizons', 'evidence', 'ghg', 'narratives', 'judgements']);
 
 export type SsbjCsvVersion = Pick<SsbjReportVersion, 'id' | 'reportId' | 'versionNumber' | 'snapshot'>;
 
@@ -162,6 +163,8 @@ export const ssbjVersionToCsvRows = (version: SsbjCsvVersion, generatedAt: strin
   if (ghg !== undefined) rows.push(...ghgAdoptionCsvRows(report.id, ghg));
   const narratives = snapshot.sections.narratives;
   if (narratives !== undefined) rows.push(...narrativeCsvRows(narratives));
+  const judgements = snapshot.sections.judgements;
+  if (judgements !== undefined) rows.push(...judgementCsvRows(judgements));
   return rows;
 };
 

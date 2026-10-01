@@ -16,6 +16,11 @@ const SSBJ_REPORT_CONTENTS: { path: string; label: string; description: string }
     description: 'リスク・機会（種類・説明・時間軸・関連する章や項目）と、時間軸の定義を記録します。',
   },
   {
+    path: 'judgements',
+    label: '該当性・重要性の判断',
+    description: '要求ごとに、該当するか・重要性があるか・記載しない場合の理由（経過措置など）を記録します。',
+  },
+  {
     path: 'ghg',
     label: 'GHG排出量の候補値',
     description: 'OGTのScope別・カテゴリ別の値と算定条件を確認し、レポートに採用します。',
