@@ -27,8 +27,8 @@ describe('unsupportedPreviewSections', () => {
   it('描けないセクション（後から加わった機能など）の名前を返す', () => {
     const snapshot = {
       ...fictionalSnapshot,
-      sections: { ...fictionalSnapshot.sections, narratives: [], judgements: [] },
+      sections: { ...fictionalSnapshot.sections, future_b: [], future_a: [] },
     } as unknown as SsbjReportSnapshotV1;
-    expect(unsupportedPreviewSections(snapshot)).toEqual(['judgements', 'narratives']);
+    expect(unsupportedPreviewSections(snapshot)).toEqual(['future_a', 'future_b']);
   });
 });

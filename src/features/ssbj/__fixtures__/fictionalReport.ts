@@ -15,6 +15,7 @@ import type {
   SsbjEvidence,
   SsbjGhgAdoption,
   SsbjItemId,
+  SsbjNarrative,
   SsbjReportBasicInfo,
   SsbjReportSnapshotV1,
   SsbjReportVersion,
@@ -81,6 +82,32 @@ export const fictionalDisclosableTexts: Record<SsbjItemId, SsbjDisclosableText> 
     internalNote: null,
   },
 };
+
+/**
+ * 四本柱・補足の文章（T05）。項目 ID は要求項目マスター（utils/requirementMaster.ts）の項目。
+ * 入力済み（内部メモあり）/ 未確認 / 非該当 / 「していない」の回答（入力済み）を含め、残りの項目は行が無い（未入力）。
+ */
+export const fictionalNarratives: SsbjNarrative[] = [
+  {
+    itemId: 'governance.oversight_body',
+    text: {
+      disclosure: { state: 'answered', value: '当社では、取締役会が気候関連のリスク及び機会を監督している。' },
+      internalNote: '親会社のサステナビリティ委員会との関係は確認中（架空）。',
+    },
+  },
+  {
+    itemId: 'metrics_targets.internal_carbon_price',
+    text: { disclosure: { state: 'answered', value: '当社は内部炭素価格を用いていない。' }, internalNote: null },
+  },
+  {
+    itemId: 'strategy.company_supplement',
+    text: { disclosure: { state: 'not_applicable' }, internalNote: '戦略について企業固有の補足は無い（架空）。' },
+  },
+  {
+    itemId: 'strategy.business_model_impact',
+    text: { disclosure: { state: 'unconfirmed' }, internalNote: '影響の集中する工場を確認中（架空）。' },
+  },
+];
 
 /** 文章と要求項目の対応（1 つの文章が複数の要求を説明できる）。要求 ID は架空。 */
 export const fictionalRequirementLinks: { itemId: SsbjItemId; requirementIds: SsbjRequirementId[] }[] = [
@@ -306,6 +333,7 @@ export const fictionalSnapshot: SsbjReportSnapshotV1 = {
     time_horizons: fictionalTimeHorizonDefinitions,
     evidence: fictionalEvidence,
     ghg: fictionalGhgAdoption,
+    narratives: fictionalNarratives,
   },
 };
 

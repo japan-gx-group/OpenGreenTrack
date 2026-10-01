@@ -46,6 +46,7 @@ erDiagram
     ssbj_reports ||--o| ssbj_report_time_horizons : "時間軸の定義"
     ssbj_reports ||--o{ ssbj_evidence : "根拠文書"
     ssbj_reports ||--o| ssbj_ogt_adoptions : "OGT採用値"
+    ssbj_reports ||--o{ ssbj_narratives : "四本柱の文章"
 ```
 
 ---
@@ -389,6 +390,23 @@ RLSは自組織に限定し、レポートの組織帰属も検証する。変�
   書き込みは RPC `adopt_ssbj_ogt_values`（EXECUTE は service_role 限定）だけで、Route Handler がサーバ側で OGT から
   候補値を取り直してから呼ぶ。クライアントが送った数値を OGT 由来として保存する経路を作らないため。
 - `adopt_ssbj_ogt_values` は組織の一致（P2041）と、候補値・参考値の年度がレポートの年度と一致すること（P2042）を検証する。
+
+### 3.17 SSBJ 四本柱の文章 (`ssbj_narratives`) — 要求項目マスターの項目ごとの文章（`supabase/migrations/20261001003809_ssbj_narratives.sql`）
+レポートと項目 ID の組ごとに 1 行の作業中データ。変更のたびに `ssbj_reports.draftRevision` を進め、
+保存版には `ssbj_snapshot_section__narratives` で取り込む（行の無い項目は含めず、表示側で未入力とする）。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | ID | UUID | Primary Key | |
+| `organizationId` | 組織ID | UUID | Foreign Key | 削除時: CASCADE |
+| `reportId` | レポートID | UUID | Foreign Key, UNIQUE(`reportId`, `itemId`) | 削除時: CASCADE。作成後は変更不可 |
+| `itemId` | 項目ID | VARCHAR(100) | NOT NULL, CHECK(項目 ID の形式) | 要求項目マスター（`src/features/ssbj/utils/requirementMaster.ts`）の項目。マスターにあるかはアプリが検証する。作成後は変更不可 |
+| `disclosureState` / `disclosureText` | 開示する文章の状態 / 本文 | `ssbj_field_state` / TEXT | CHECK(`answered` のときだけ本文が非 NULL・空白のみ不可) | |
+| `internalNote` | 内部メモ | TEXT | NULL | 開示しない |
+| `createdByUserId` / `updatedByUserId` | 登録・更新操作者ID | UUID | NULL | `set_row_actor` トリガ |
+| `createdAt` / `updatedAt` | 作成・更新日時 | TIMESTAMPTZ | NOT NULL | `updatedAt` は `set_updated_at` トリガ |
+
+- RLS・GRANT の考え方は 3.13 と同じ（自組織に限定、レポートの組織帰属を `exists` で検証）。update の列 GRANT は文章の列だけで、レポート・組織・項目は作成後に変えない。
 
 ---
 

@@ -8,6 +8,7 @@ import { SSBJ_SECTION_LABELS } from '../types';
 import { unsupportedPreviewSections } from '../utils/preview';
 import { SsbjPreviewEvidence } from './SsbjPreviewEvidence';
 import { SsbjPreviewGhg } from './SsbjPreviewGhg';
+import { SsbjPreviewNarratives } from './SsbjPreviewNarratives';
 import { SsbjPreviewRisks, SsbjPreviewTimeHorizons } from './SsbjPreviewStrategy';
 import { SsbjReportBasicInfo } from './SsbjReportBasicInfo';
 
@@ -60,10 +61,11 @@ export const SsbjPreviewDocument = ({
       </Section>
 
       <Section title={SSBJ_SECTION_LABELS.governance}>
-        <p className="m-0 text-sm text-text-muted">この試行版には、まだガバナンスの文章の入力欄がありません。</p>
+        <SsbjPreviewNarratives sectionId="governance" narratives={sections.narratives} showInternalNotes={showInternalNotes} />
       </Section>
 
       <Section title={SSBJ_SECTION_LABELS.strategy}>
+        <SsbjPreviewNarratives sectionId="strategy" narratives={sections.narratives} showInternalNotes={showInternalNotes} />
         <h3 className="m-0 text-sm font-bold">リスク及び機会</h3>
         <SsbjPreviewRisks items={sections.risks_opportunities} showInternalNotes={showInternalNotes} />
         <h3 className="m-0 mt-2 text-sm font-bold">時間軸の定義</h3>
@@ -71,12 +73,14 @@ export const SsbjPreviewDocument = ({
       </Section>
 
       <Section title={SSBJ_SECTION_LABELS.risk_management}>
-        <p className="m-0 text-sm text-text-muted">この試行版には、まだリスク管理の文章の入力欄がありません。</p>
+        <SsbjPreviewNarratives sectionId="risk_management" narratives={sections.narratives} showInternalNotes={showInternalNotes} />
       </Section>
 
       <Section title={SSBJ_SECTION_LABELS.metrics_targets}>
         <h3 className="m-0 text-sm font-bold">温室効果ガス排出</h3>
         <SsbjPreviewGhg ghg={sections.ghg} />
+        <h3 className="m-0 mt-2 text-sm font-bold">そのほかの指標・目標・測定方法の説明</h3>
+        <SsbjPreviewNarratives sectionId="metrics_targets" narratives={sections.narratives} showInternalNotes={showInternalNotes} />
       </Section>
 
       <Section title="根拠文書">

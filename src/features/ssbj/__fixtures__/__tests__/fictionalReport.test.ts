@@ -12,6 +12,7 @@ import {
   fictionalDisclosableTexts,
   fictionalEvidence,
   fictionalGhgAdoption,
+  fictionalNarratives,
   fictionalOgtAdoptedValues,
   fictionalOgtCandidates,
   fictionalReportBasicInfo,
@@ -22,6 +23,7 @@ import {
   fictionalTimeHorizonDefinitions,
   fictionalVersion,
 } from '../fictionalReport';
+import { findSsbjNarrativeItem } from '../../utils/requirementMaster';
 
 const allFieldValues = (): SsbjFieldValue<string>[] => [
   ...Object.values(fictionalDisclosableTexts).map(text => text.disclosure),
@@ -186,5 +188,14 @@ describe('OGT の採用値一式（T08b）', () => {
     }
     expect(fictionalGhgAdoption.supplierReferences).toEqual(fictionalSupplierReferences);
     expect(fictionalSnapshot.sections.ghg).toEqual(fictionalGhgAdoption);
+  });
+});
+
+describe('四本柱の文章（T05）', () => {
+  it('項目 ID は要求項目マスターの項目で、保存版の例に含まれる', () => {
+    for (const narrative of fictionalNarratives) {
+      expect(findSsbjNarrativeItem(narrative.itemId), narrative.itemId).toBeDefined();
+    }
+    expect(fictionalSnapshot.sections.narratives).toEqual(fictionalNarratives);
   });
 });
