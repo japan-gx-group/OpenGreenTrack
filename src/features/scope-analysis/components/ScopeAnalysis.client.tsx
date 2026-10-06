@@ -9,6 +9,7 @@ import { useFiscalYear } from '@/hooks/useFiscalYear';
 import { useAppRefresh } from '@/hooks/useAppRefresh';
 import { useFiscalYearFromQuery } from '../hooks/useFiscalYearFromQuery';
 import { Scope3CategoryChart } from './Scope3CategoryChart.client';
+import { Scope2BasisCard } from './Scope2BasisCard';
 import { ScopeMixCard } from './ScopeMixCard';
 import { Scope3MethodPanel } from './Scope3MethodPanel.client';
 import { getScopeAnalysisData, type Scope3Method, type ScopeAnalysisData } from '../services/scopeAnalysisService';
@@ -189,6 +190,11 @@ export const ScopeAnalysis = () => {
         {/* ===== Scope 別構成 ===== */}
         {scopeAnalysisData && (
           <ScopeMixCard totals={scopeAnalysisData.scopeTotals} isStale={isLoading} />
+        )}
+
+        {/* ===== Scope 2 算定基準別（ロケーション基準／マーケット基準）===== */}
+        {scopeAnalysisData && (
+          <Scope2BasisCard totals={scopeAnalysisData.scope2BasisTotals} isStale={isLoading} />
         )}
 
         {/* ===== Scope 3 カテゴリ別排出量（ドーナツ＋カテゴリ一覧）===== */}

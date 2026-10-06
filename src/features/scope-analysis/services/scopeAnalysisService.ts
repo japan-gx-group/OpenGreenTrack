@@ -88,10 +88,24 @@ export type ScopeTotals = {
   total: number;
 };
 
+/**
+ * Scope 2 の基準別（GHG プロトコルのロケーション基準／マーケット基準）の年度合計。
+ * null = 未算定（算定の実行前、または期間内の Scope 2 明細に基準別行が揃っていない）。
+ * 単一値 scope2（温対法区分に基づく算定）とは独立の値で、一致するとは限らない。
+ */
+export type Scope2BasisTotals = {
+  locationBased: number | null;
+  marketBased: number | null;
+  /** marketBased のうち契約根拠（明示選択されたメニュー別係数）に基づく部分。marketBased が null なら null */
+  marketContract: number | null;
+};
+
 export type ScopeAnalysisData = {
   categories: Scope3CategoryItem[];
   /** Scope 1・2・3 の年度合計。集計行が無い年度は全て 0 */
   scopeTotals: ScopeTotals;
+  /** Scope 2 の基準別年度合計。集計行が無い年度・未算定は null */
+  scope2BasisTotals: Scope2BasisTotals;
   suppliers: Scope3SupplierItem[];
   // 方式管理テーブル用のカテゴリ別明細と、書き込み・再集計に使う年度ID。
   methodItems: Scope3MethodCategoryItem[];
@@ -344,18 +358,37 @@ export const buildMethodItems = (input: {
 const getScopeTotals = async (
   supabase: SupabaseClient,
   fiscalYearId: string,
-): Promise<ScopeTotals> => {
+): Promise<{ scopeTotals: ScopeTotals; scope2BasisTotals: Scope2BasisTotals }> => {
   const { data } = await supabase
     .from('dashboard_aggregates')
-    .select('scope1Total, scope2Total, scope3Total')
+    .select(
+      'scope1Total, scope2Total, scope3Total, scope2LocationBasedTotal, scope2MarketBasedTotal, scope2MarketContractTotal',
+    )
     .eq('fiscalYearId', fiscalYearId)
     .maybeSingle();
 
-  const row = data as { scope1Total: number | string; scope2Total: number | string; scope3Total: number | string } | null;
+  const row = data as {
+    scope1Total: number | string;
+    scope2Total: number | string;
+    scope3Total: number | string;
+    scope2LocationBasedTotal: number | string | null;
+    scope2MarketBasedTotal: number | string | null;
+    scope2MarketContractTotal: number | string | null;
+  } | null;
   const scope1 = Number(row?.scope1Total ?? 0) || 0;
   const scope2 = Number(row?.scope2Total ?? 0) || 0;
   const scope3 = Number(row?.scope3Total ?? 0) || 0;
-  return { scope1, scope2, scope3, total: scope1 + scope2 + scope3 };
+  // 基準別は「0」と「未算定」を区別する必要があるため、null を 0 に倒さない。
+  const toNullableTotal = (value: number | string | null | undefined): number | null =>
+    value === null || value === undefined ? null : Number(value) || 0;
+  return {
+    scopeTotals: { scope1, scope2, scope3, total: scope1 + scope2 + scope3 },
+    scope2BasisTotals: {
+      locationBased: toNullableTotal(row?.scope2LocationBasedTotal),
+      marketBased: toNullableTotal(row?.scope2MarketBasedTotal),
+      marketContract: toNullableTotal(row?.scope2MarketContractTotal),
+    },
+  };
 };
 
 export const getScopeAnalysisData = async (
@@ -395,10 +428,11 @@ export const getScopeAnalysisData = async (
     calculatedByCategory: sumCalculatedByCategory(calculatedRows),
   });
 
-  const scopeTotals = await getScopeTotals(supabase, selectedFiscalYear.id);
+  const { scopeTotals, scope2BasisTotals } = await getScopeTotals(supabase, selectedFiscalYear.id);
 
   return {
     scopeTotals,
+    scope2BasisTotals,
     // ドーナツ・レポートのカテゴリ別内訳は「採用値」（方式適用後）で組み立てる。
     // scope3Total（refresh_dashboard_aggregates）と同じ値になり、集計ドリフトしない。
     categories: buildCategories(

@@ -60,7 +60,7 @@ OpenGreenTrackは、機密性の高い企業の活動量データを取り扱う
    - 個人情報やデータの改ざん、あるいは重要な設定変更操作を完全に記録するための `system_audit_logs` (システム操作ログ) テーブルを別途設置。
 
 4. **算定結果の書き込み経路の一本化**
-   - 算定結果テーブル（`emission_results` / `calculation_batches` / `dashboard_aggregates`）は `authenticated` には **SELECT のみ**。INSERT / UPDATE / DELETE の GRANT とポリシーを持たない（`supabase/migrations/20260831000001_rls.sql` §3・§4.2）。
+   - 算定結果テーブル（`emission_results` / `calculation_batches` / `dashboard_aggregates` / `scope2_basis_results`）は `authenticated` には **SELECT のみ**。INSERT / UPDATE / DELETE の GRANT とポリシーを持たない（`supabase/migrations/20260831000001_rls.sql` §3・§4.2、`20261006000000_scope2_dual_basis.sql` §3）。
    - 書き込みは service_role 限定の RPC（`run_calculation_commit` / `create_calculation_batch_with_rate_limit` / `refresh_dashboard_aggregates`）だけを通る。組織スコープの RLS だけでは、PostgREST を直接叩いて算定エンジン・レート制限・監査ログを迂回した報告値の書き換えを防げないため。
    - 活動量・拠点の削除に伴う結果行の後始末は on delete cascade と security definer トリガーが行うため、この権限剥奪の影響を受けない。
 
@@ -258,6 +258,29 @@ Route Handler + service_role 限定）。詳細な確定 DDL は `idea-scope3-sp
 - ダッシュボード集計は独立関数 `refresh_dashboard_aggregates(p_organization_id, p_fiscal_year_id)`
   （EXECUTE は service_role 限定）へ切り出し、`run_calculation_commit` のほか方式切替・direct 値
   upsert（`POST /api/dashboard-aggregates/refresh`）からも実行する（`calculation-logic.md §4`）。
+
+### 3.11 Scope 2 基準別算定結果 (`scope2_basis_results`)（`supabase/migrations/20261006000000_scope2_dual_basis.sql`）
+
+GHG プロトコルのロケーション基準／マーケット基準それぞれの算定明細。1 活動量レコード × 1 基準 = 1 行。
+既存の `emission_results`（温対法区分に基づく単一値の明細）とは独立に保存する（`calculation-logic.md §4`）。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | 結果ID | UUID | Primary Key | |
+| `organizationId` | 組織ID | UUID | Foreign Key | RLS の組織判定用に非正規化（削除時: CASCADE） |
+| `activityRecordId` | 活動量レコードID | UUID | FK → `emission_results("activityRecordId")`, UNIQUE(activityRecordId, basis) | 単一値の明細と同じライフサイクル（編集トリガー・削除の cascade が emission_results 経由で届く） |
+| `basis` | 算定基準 | ENUM | NOT NULL | Scope2Basis ('location_based' / 'market_based') |
+| `evidence` | 根拠種別 | ENUM | NOT NULL, CHECK(基準との整合) | Scope2BasisEvidence ('grid_average' / 'contract_menu' / 'grid_fallback') |
+| `emissionFactorId` | 適用係数ID | UUID | Foreign Key | 削除時: SetNull |
+| `emissions` | 排出量 | NUMERIC(15,6) | NOT NULL | 1g 粒度（`emission_results.emissions` と同じ） |
+| `appliedFactorValue` 他 | 適用係数スナップショット | NUMERIC / VARCHAR | NULL | `emission_results` の `appliedFactor*` と同じ監査用スナップショット |
+
+- `dashboard_aggregates` に基準別の年度合計列を追加:
+  `scope2LocationBasedTotal` / `scope2MarketBasedTotal` / `scope2MarketContractTotal`（いずれも NUMERIC(15,3)・NULL 可）。
+  **NULL = 未算定**（期間内の全 Scope 2 明細に基準別行が揃ったときだけ `refresh_dashboard_aggregates` が値を入れる。
+  単一値 `scope2Total` の 0 既定とは意味が違う）。
+- 書き込み経路は算定結果テーブルと同じく一本化（`authenticated` は SELECT のみ。
+  書き込みは service_role 限定の `run_calculation_commit` 内の入れ替えだけ。§4 の 4 参照）。
 
 ---
 

@@ -7,6 +7,10 @@ import type {
   ActivityRecordRow,
   CalculationOutcome,
   EmissionFactorRow,
+  Scope2Basis,
+  Scope2BasisEvidence,
+  Scope2BasisResultInsert,
+  Scope2BasisUnresolved,
 } from '../types';
 import {
   deriveApplicableYear,
@@ -39,6 +43,127 @@ const defaultResolveContext = (record: ActivityRecordRow): FactorResolutionConte
 });
 
 /**
+ * Scope 2 の基準別算定（GHG プロトコルのロケーション基準／マーケット基準）。
+ * 単一値（emission_results）とは独立した規則で算定する:
+ *   - ロケーション基準: 公式の標準係数（providerName なし・カスタム係数除外）を優先順位で解決して
+ *     適用する。現状の収録では全国代替値（系統平均の代替）が該当する。
+ *   - マーケット基準: 供給事業者のメニュー別係数（providerName あり = 明示選択でしか適用されない
+ *     契約根拠）が解決されればそれを適用し、無ければ公式の標準係数で補完する
+ *     （evidence='grid_fallback'。日本には残差ミックスの公表が無く、GHG プロトコルの階層の
+ *     最下位＝系統平均へ落とすため）。
+ * 温対法の係数区分（基礎/調整後）から基準を推定することはしない。契約根拠の判定は
+ * 「事業者別係数が解決されたか」だけで行い、組織のカスタム係数も基準の根拠として扱わない
+ * （カスタム係数は事業者・メニュー・区分の情報を持てず、何の値か機械判定できないため）。
+ * 単一値が算定できたレコード（または算定済みのレコード）だけを対象に呼ぶ。
+ */
+export const resolveScope2BasisForRecord = (
+  record: ActivityRecordRow,
+  factors: EmissionFactorRow[],
+  context: FactorResolutionContext,
+): { results: Scope2BasisResultInsert[]; unresolved: Scope2BasisUnresolved[] } => {
+  const results: Scope2BasisResultInsert[] = [];
+  const unresolved: Scope2BasisUnresolved[] = [];
+
+  const pushUnresolved = (basis: Scope2Basis, detail: string) => {
+    unresolved.push({ activityRecordId: record.id, basis, detail });
+  };
+
+  // 単位換算まで通ったときだけ挿入内容を作る（係数はあるが換算できない場合は null）。
+  const toBasisInsert = (
+    basis: Scope2Basis,
+    evidence: Scope2BasisEvidence,
+    factor: EmissionFactorRow,
+  ): Scope2BasisResultInsert | null => {
+    const conversion = resolveUnitConversion(record.unit, factor.unit);
+    if (conversion === null) return null;
+    return {
+      activityRecordId: record.id,
+      basis,
+      evidence,
+      emissionFactorId: factor.id,
+      emissions: roundEmissions(record.amount * conversion * factor.factorValue),
+      // 適用係数のスナップショット（emission_results の appliedFactor* と同じ理由で保持）
+      appliedFactorValue: factor.factorValue,
+      appliedFactorUnit: factor.unit,
+      appliedFactorName: factor.name,
+    };
+  };
+
+  // 公式の標準係数だけで自動解決する（明示指定・カスタム係数・事業者別係数の影響を受けない）。
+  // 暫定適用（未公表年度の過年度流用）や温対法年度の突き合わせは単一値の解決と同じ規則に乗る。
+  const standardFactors = factors.filter(
+    (factor) => !factor.isCustom && factor.organizationId === null && factor.providerName === null,
+  );
+  const standardResolution = resolveEmissionFactorDetailed(
+    { ...record, emissionFactorId: null },
+    standardFactors,
+    context,
+  );
+  const standardFactor =
+    standardResolution.status === 'resolved' && standardResolution.factor.scope === 'scope2'
+      ? standardResolution.factor
+      : null;
+
+  // ロケーション基準: 標準係数（系統平均の代替）そのもの。
+  if (standardFactor) {
+    const insert = toBasisInsert('location_based', 'grid_average', standardFactor);
+    if (insert) {
+      results.push(insert);
+    } else {
+      pushUnresolved(
+        'location_based',
+        `活動量の単位「${record.unit}」を標準係数の単位「${standardFactor.unit}」に換算できません`,
+      );
+    }
+  } else {
+    pushUnresolved(
+      'location_based',
+      `energyType=${record.energyType} に適用できる公式の標準係数（代替値）が見つかりません`,
+    );
+  }
+
+  // マーケット基準: 契約根拠（明示選択された事業者別係数）があればそれを使う。
+  // 明示指定の年度読み替え（explicit_remapped）も同一事業者・同一メニュー・同一区分に限られるため
+  // 契約根拠として扱う。explicit_fallback で標準係数へ落ちた場合は契約根拠にならない。
+  const mainResolution = resolveEmissionFactorDetailed(record, factors, context);
+  const contractFactor =
+    mainResolution.status === 'resolved' &&
+    mainResolution.factor.scope === 'scope2' &&
+    mainResolution.factor.providerName !== null
+      ? mainResolution.factor
+      : null;
+
+  if (contractFactor) {
+    const insert = toBasisInsert('market_based', 'contract_menu', contractFactor);
+    if (insert) {
+      results.push(insert);
+    } else {
+      pushUnresolved(
+        'market_based',
+        `活動量の単位「${record.unit}」を契約メニュー係数の単位「${contractFactor.unit}」に換算できません`,
+      );
+    }
+  } else if (standardFactor) {
+    const insert = toBasisInsert('market_based', 'grid_fallback', standardFactor);
+    if (insert) {
+      results.push(insert);
+    } else {
+      pushUnresolved(
+        'market_based',
+        `活動量の単位「${record.unit}」を標準係数の単位「${standardFactor.unit}」に換算できません`,
+      );
+    }
+  } else {
+    pushUnresolved(
+      'market_based',
+      `契約メニュー係数の明示選択が無く、補完に使う公式の標準係数（代替値）も見つかりません`,
+    );
+  }
+
+  return { results, unresolved };
+};
+
+/**
  * 活動量レコード群に排出係数を適用し、算定結果と未解決レコードを返す。
  * 純粋（副作用なし）なので、同じ入力に対して常に同じ結果を返す。
  */
@@ -48,10 +173,17 @@ export const computeEmissions = (
   options: ComputeEmissionsOptions = {},
 ): CalculationOutcome => {
   const resolveContext = options.resolveContext ?? defaultResolveContext;
-  const outcome: CalculationOutcome = { results: [], unresolved: [], warnings: [] };
+  const outcome: CalculationOutcome = {
+    results: [],
+    unresolved: [],
+    warnings: [],
+    scope2BasisResults: [],
+    scope2BasisUnresolved: [],
+  };
 
   for (const record of records) {
-    const resolution = resolveEmissionFactorDetailed(record, factors, resolveContext(record));
+    const context = resolveContext(record);
+    const resolution = resolveEmissionFactorDetailed(record, factors, context);
 
     if (resolution.status === 'not_found') {
       outcome.unresolved.push({
@@ -159,6 +291,14 @@ export const computeEmissions = (
       appliedFactorUnit: factor.unit,
       appliedFactorName: factor.name,
     });
+
+    // Scope 2 は単一値と独立に基準別（ロケーション／マーケット）も算定する。
+    // 単一値が成立したレコードだけが対象（未算定レコードに基準別だけ付くことはない）。
+    if (factor.scope === 'scope2') {
+      const basisOutcome = resolveScope2BasisForRecord(record, factors, context);
+      outcome.scope2BasisResults.push(...basisOutcome.results);
+      outcome.scope2BasisUnresolved.push(...basisOutcome.unresolved);
+    }
   }
 
   return outcome;
