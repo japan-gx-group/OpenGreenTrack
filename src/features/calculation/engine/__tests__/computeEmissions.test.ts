@@ -434,3 +434,166 @@ describe('isScope3EnergyType', () => {
     expect(isScope3EnergyType('toString')).toBe(false);
   });
 });
+
+describe('computeEmissions Scope 2 基準別算定', () => {
+  // 公式の全国代替値（providerName なし・factorType なし）。基準別算定の標準係数。
+  const substitute = factor({
+    id: 'sub-2024',
+    organizationId: null,
+    name: '電気 代替値（環境省・経済産業省公表）',
+    factorValue: 0.000416,
+    unit: 't-CO2/kWh',
+  });
+  // 明示選択でしか適用されない事業者別のメニュー係数（契約根拠）。
+  const menuFactor = factor({
+    id: 'menu-2024',
+    organizationId: null,
+    name: '電気 日本テクノ(株) メニューA（調整後）',
+    factorValue: 0.0003,
+    providerName: '日本テクノ(株)',
+    providerNumber: 'A0002',
+    menuName: 'メニューA',
+    factorType: 'adjusted',
+  });
+
+  it('ロケーション基準は常に標準係数（代替値）で算定し evidence=grid_average になる', () => {
+    const outcome = computeEmissions([record()], [substitute]);
+    const location = outcome.scope2BasisResults.find(result => result.basis === 'location_based');
+    expect(location).toMatchObject({
+      activityRecordId: 'act-1',
+      evidence: 'grid_average',
+      emissionFactorId: 'sub-2024',
+      emissions: 0.416,
+      appliedFactorValue: 0.000416,
+    });
+  });
+
+  it('契約メニューの明示選択が無ければマーケット基準は代替値で補完し evidence=grid_fallback になる', () => {
+    const outcome = computeEmissions([record()], [substitute]);
+    const market = outcome.scope2BasisResults.find(result => result.basis === 'market_based');
+    expect(market).toMatchObject({
+      evidence: 'grid_fallback',
+      emissionFactorId: 'sub-2024',
+      emissions: 0.416,
+    });
+    expect(outcome.scope2BasisUnresolved).toEqual([]);
+  });
+
+  it('明示選択されたメニュー係数は契約根拠としてマーケット基準に使われ、ロケーション基準には影響しない', () => {
+    const outcome = computeEmissions([record({ emissionFactorId: 'menu-2024' })], [substitute, menuFactor]);
+    const market = outcome.scope2BasisResults.find(result => result.basis === 'market_based');
+    const location = outcome.scope2BasisResults.find(result => result.basis === 'location_based');
+    expect(market).toMatchObject({
+      evidence: 'contract_menu',
+      emissionFactorId: 'menu-2024',
+      emissions: 0.3,
+    });
+    expect(location).toMatchObject({
+      evidence: 'grid_average',
+      emissionFactorId: 'sub-2024',
+      emissions: 0.416,
+    });
+  });
+
+  it('基礎のメニュー係数でも契約根拠になる（基準は契約の有無で決まり、基礎/調整後の区分からは推定しない）', () => {
+    const basicMenu = factor({
+      ...menuFactor,
+      id: 'menu-basic-2024',
+      name: '電気 日本テクノ(株) メニューA（基礎）',
+      factorValue: 0.00045,
+      factorType: 'basic',
+    });
+    const outcome = computeEmissions([record({ emissionFactorId: 'menu-basic-2024' })], [substitute, basicMenu]);
+    const market = outcome.scope2BasisResults.find(result => result.basis === 'market_based');
+    expect(market).toMatchObject({ evidence: 'contract_menu', emissions: 0.45 });
+  });
+
+  it('調整後のカスタム係数で単一値を算定しても契約根拠にはならない（factorType からの推定をしない）', () => {
+    const customAdjusted = factor({
+      id: 'custom-1',
+      name: '自社設定の電気係数',
+      isCustom: true,
+      factorValue: 0.0005,
+      factorType: 'adjusted',
+    });
+    const outcome = computeEmissions([record()], [substitute, customAdjusted]);
+    // 単一値はカスタム係数（優先度3 > 全国標準5）で算定される
+    expect(outcome.results[0].emissionFactorId).toBe('custom-1');
+    // 基準別はカスタム係数に依存しない: ロケーション=代替値 / マーケット=代替値補完
+    const market = outcome.scope2BasisResults.find(result => result.basis === 'market_based');
+    expect(market).toMatchObject({ evidence: 'grid_fallback', emissionFactorId: 'sub-2024', emissions: 0.416 });
+    const location = outcome.scope2BasisResults.find(result => result.basis === 'location_based');
+    expect(location).toMatchObject({ emissionFactorId: 'sub-2024' });
+  });
+
+  it('明示選択が使えず代替値へフォールバックした単一値は契約根拠にならない', () => {
+    // 参照先の係数がアーカイブ等で取得されなかった（factors に無い）ケース
+    const outcome = computeEmissions([record({ emissionFactorId: 'archived-menu' })], [substitute]);
+    expect(outcome.warnings).toHaveLength(1);
+    const market = outcome.scope2BasisResults.find(result => result.basis === 'market_based');
+    expect(market).toMatchObject({ evidence: 'grid_fallback', emissionFactorId: 'sub-2024' });
+  });
+
+  it('メニュー係数の年度読み替え（explicit_remapped）は契約根拠のまま扱う', () => {
+    const menu2026 = factor({
+      ...menuFactor,
+      id: 'menu-2026',
+      applicableYear: 2026,
+      factorValue: 0.00028,
+    });
+    const rec2026 = record({
+      periodStart: '2026-05-01',
+      periodEnd: '2026-05-31',
+      emissionFactorId: 'menu-2024',
+    });
+    const substitute2026 = factor({ ...substitute, id: 'sub-2026', applicableYear: 2026 });
+    const outcome = computeEmissions([rec2026], [substitute2026, menuFactor, menu2026], {
+      resolveContext: () => ({ applicableYear: 2026 }),
+    });
+    const market = outcome.scope2BasisResults.find(result => result.basis === 'market_based');
+    expect(market).toMatchObject({
+      evidence: 'contract_menu',
+      emissionFactorId: 'menu-2026',
+      emissions: 0.28,
+    });
+  });
+
+  it('活動量の単位は基準別でも換算される（MWh → kWh 系数）', () => {
+    const outcome = computeEmissions([record({ amount: 1, unit: 'MWh' })], [substitute]);
+    const location = outcome.scope2BasisResults.find(result => result.basis === 'location_based');
+    expect(location?.emissions).toBe(0.416);
+  });
+
+  it('代替値が無い年度は基準別を算定せず scope2BasisUnresolved に両基準を載せる（単一値は成立する）', () => {
+    const customOnly = factor({ id: 'custom-1', isCustom: true, factorValue: 0.0005 });
+    const outcome = computeEmissions([record()], [customOnly]);
+    expect(outcome.results).toHaveLength(1);
+    expect(outcome.scope2BasisResults).toEqual([]);
+    expect(outcome.scope2BasisUnresolved.map(entry => entry.basis).sort()).toEqual([
+      'location_based',
+      'market_based',
+    ]);
+  });
+
+  it('Scope 1 のレコードには基準別結果を作らない', () => {
+    const gasRecord = record({ id: 'act-gas', energyType: 'city_gas', unit: 'm3' });
+    const gasFactor = factor({
+      id: 'fac-gas',
+      energyType: 'city_gas',
+      scope: 'scope1',
+      unit: 't-CO2/m3',
+      factorValue: 0.00223,
+    });
+    const outcome = computeEmissions([gasRecord], [gasFactor]);
+    expect(outcome.results).toHaveLength(1);
+    expect(outcome.scope2BasisResults).toEqual([]);
+    expect(outcome.scope2BasisUnresolved).toEqual([]);
+  });
+
+  it('1 レコードにつきロケーション・マーケットの 2 行が揃う', () => {
+    const outcome = computeEmissions([record(), record({ id: 'act-2' })], [substitute]);
+    expect(outcome.scope2BasisResults).toHaveLength(4);
+    const byRecord = outcome.scope2BasisResults.filter(result => result.activityRecordId === 'act-2');
+    expect(byRecord.map(result => result.basis).sort()).toEqual(['location_based', 'market_based']);
+  });
+});
