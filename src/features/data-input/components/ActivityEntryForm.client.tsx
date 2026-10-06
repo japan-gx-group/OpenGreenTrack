@@ -12,7 +12,7 @@
 // の normalizeIdeaFactor と同一の scope3InlineCalculation）で行い、保存後の算定と同じ値を表示する。
 // 構造・バリデーション・未来月ガードは両経路で共有する。
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ClipboardList, Trash2, X } from 'lucide-react';
 import { Card } from '@/components/ui/card';
@@ -49,12 +49,14 @@ import {
   factorSourceRowText,
 } from '../services/entryFormat';
 import {
+  AMOUNT_INPUT_REJECTED_MESSAGE,
   DECIMAL_PATTERN,
   NOTE_MAX_LENGTH,
   SAVE_FAILURE_MESSAGES,
   VALIDATION_MESSAGES,
   amountValidationMessage,
   buildActivityEntryInput,
+  normalizeAmountInput,
   validateAmount,
   validateEntry,
 } from '../services/entrySubmission';
@@ -112,6 +114,14 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   const [category, setCategory] = useState<EntryCategory>(initialCategory ?? DEFAULT_ENTRY_CATEGORY);
   const [targetMonth, setTargetMonth] = useState(() => initialValues?.targetMonth ?? getCurrentYearMonth());
   const [amount, setAmount] = useState(initialValues?.amount ?? '');
+  // 入力時フィルタで弾いたことの案内（正規化しても数字にならなかったとき）。無言で無視しない。
+  const [amountRejected, setAmountRejected] = useState(false);
+  // IME 変換中フラグ。変換中の値（全角数字など）を controlled input が巻き戻すと
+  // composition が壊れて「何も入力できない」状態になるため、変換中は見たまま表示し、
+  // 確定（compositionend）のタイミングでまとめて正規化・判定する。
+  const isComposingAmountRef = useRef(false);
+  // 確定入力が数字にならなかったときに戻す先（直前にパターンを通過した値）。
+  const lastValidAmountRef = useRef(initialValues?.amount ?? '');
   const [note, setNote] = useState(initialValues?.note ?? '');
   const [showPreview, setShowPreview] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -277,6 +287,33 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     : period !== null && (!fiscalYearsReady || scope12.isLoadingFactors || scope12.applied.status === 'pending');
   const isPreviewBlocked =
     locations.length === 0 || initialLocationMissing || isSaving || isDeleting || isFactorLoading;
+
+  // 全角数字・カンマ付きは正規化して受け付け、それでも数字にならない入力は直前の値に戻して理由を出す。
+  const commitAmount = (raw: string) => {
+    const normalized = normalizeAmountInput(raw);
+    if (DECIMAL_PATTERN.test(normalized)) {
+      lastValidAmountRef.current = normalized;
+      setAmount(normalized);
+      setAmountRejected(false);
+    } else {
+      setAmount(lastValidAmountRef.current);
+      setAmountRejected(true);
+    }
+  };
+
+  const handleAmountChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (isComposingAmountRef.current) {
+      // 変換中は巻き戻さずそのまま表示する（確定時に commitAmount で正規化する）。
+      setAmount(event.target.value);
+      return;
+    }
+    commitAmount(event.target.value);
+  };
+
+  const handleAmountCompositionEnd = (event: React.CompositionEvent<HTMLInputElement>) => {
+    isComposingAmountRef.current = false;
+    commitAmount(event.currentTarget.value);
+  };
 
   const handleCategoryChange = (value: string) => {
     const next = parseEntryCategoryValue(value);
@@ -568,16 +605,21 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
                     inputMode="decimal"
                     placeholder="0.000"
                     value={amount}
-                    onChange={(event) => {
-                      if (DECIMAL_PATTERN.test(event.target.value)) {
-                        setAmount(event.target.value);
-                      }
+                    onChange={handleAmountChange}
+                    onCompositionStart={() => {
+                      isComposingAmountRef.current = true;
                     }}
+                    onCompositionEnd={handleAmountCompositionEnd}
                     aria-describedby="manual-unit-display"
                     className="gt-field"
                   />
                   <UnitBadge unit={currentUnit} />
                 </div>
+                {amountRejected && (
+                  <p className="mt-1.5 text-sm text-danger" data-testid="manual-amount-rejected">
+                    {AMOUNT_INPUT_REJECTED_MESSAGE}
+                  </p>
+                )}
                 {amountDigitsError && (
                   <p className="mt-1.5 text-sm text-danger" data-testid="manual-amount-error">
                     {amountDigitsError}

@@ -4,6 +4,7 @@ import {
   VALIDATION_MESSAGES,
   amountValidationMessage,
   buildActivityEntryInput,
+  normalizeAmountInput,
   parseValidAmount,
   validateAmount,
   validateEntry,
@@ -45,6 +46,22 @@ describe('parseValidAmount / DECIMAL_PATTERN', () => {
     expect(validateAmount('0000000000001.5')).toEqual({ kind: 'valid', value: 1.5 });
     expect(validateAmount('1.2300')).toEqual({ kind: 'valid', value: 1.23 });
     expect(validateAmount('0.0010')).toEqual({ kind: 'valid', value: 0.001 });
+  });
+
+  // 日本語IME経由の全角数字は DECIMAL_PATTERN に合わず無言で弾かれていた。
+  // 入力欄は正規化してから判定することで、IMEオンのままでも入力できるようにする。
+  it('normalizeAmountInput: 全角数字・全角小数点を半角へ正規化し、桁区切りカンマを除去する', () => {
+    expect(normalizeAmountInput('１２３')).toBe('123');
+    expect(normalizeAmountInput('１２．５')).toBe('12.5');
+    expect(normalizeAmountInput('12,345')).toBe('12345');
+    expect(normalizeAmountInput('１，０００．５')).toBe('1000.5');
+    expect(normalizeAmountInput('12.5')).toBe('12.5');
+  });
+
+  it('normalizeAmountInput: 数字にならない文字はそのまま残す（呼び出し側が理由を表示して弾く）', () => {
+    expect(DECIMAL_PATTERN.test(normalizeAmountInput('とうきょう'))).toBe(false);
+    expect(DECIMAL_PATTERN.test(normalizeAmountInput('12a'))).toBe(false);
+    expect(DECIMAL_PATTERN.test(normalizeAmountInput('１２３'))).toBe(true);
   });
 
   it('検証結果ごとの文言を返す', () => {

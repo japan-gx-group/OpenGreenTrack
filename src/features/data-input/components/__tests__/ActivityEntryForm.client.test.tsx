@@ -244,6 +244,13 @@ const setTextareaValue = (textarea: HTMLTextAreaElement, value: string): void =>
   });
 };
 
+/** IME の composition イベントを発火する（変換の開始・確定を再現する）。 */
+const fireComposition = (input: HTMLInputElement, type: 'compositionstart' | 'compositionend'): void => {
+  act(() => {
+    input.dispatchEvent(new CompositionEvent(type, { bubbles: true }));
+  });
+};
+
 const q = <T extends Element = HTMLElement>(container: HTMLElement, selector: string): T => {
   const element = container.querySelector<T>(selector);
   expect(element, `要素が見つかりません: ${selector}`).not.toBeNull();
@@ -830,6 +837,56 @@ describe('ActivityEntryForm', () => {
     expect(container.querySelector('[data-testid="manual-amount-error"]')).toBeNull();
     expect(resultEmissionsText(container)).toBeDefined();
     expect(onSave).not.toHaveBeenCalled();
+  });
+
+  // 日本語IMEがオンのままだと全角数字が DECIMAL_PATTERN に合わず、controlled input が
+  // 変換中の値を毎回巻き戻して「何も入力できない」状態になっていた。変換中は見たまま表示し、
+  // 確定時に全角→半角へ正規化して受け付けることを固定する。
+  describe('活動量入力の IME 対応と正規化', () => {
+    it('IME 変換中は入力をそのまま表示し、確定時に全角数字を半角へ正規化して受け付ける', async () => {
+      const { container } = renderForm();
+      await flush();
+      const input = amountInput(container);
+
+      fireComposition(input, 'compositionstart');
+      setInputValue(input, '１２３４５');
+      // 変換中に巻き戻すと composition が壊れるため、そのまま表示する。
+      expect(input.value).toBe('１２３４５');
+
+      fireComposition(input, 'compositionend');
+      expect(input.value).toBe('12345');
+      expect(container.querySelector('[data-testid="manual-amount-rejected"]')).toBeNull();
+    });
+
+    it('IME を使わない貼り付けでもカンマ・全角混じりを正規化して受け付ける', async () => {
+      const { container } = renderForm();
+      await flush();
+      setInputValue(amountInput(container), '12,345');
+      expect(amountInput(container).value).toBe('12345');
+      setInputValue(amountInput(container), '１，０００．５');
+      expect(amountInput(container).value).toBe('1000.5');
+    });
+
+    it('正規化しても数字にならない確定入力は直前の値に戻し、理由を表示する', async () => {
+      const { container } = renderForm();
+      await flush();
+      const input = amountInput(container);
+      setInputValue(input, '123');
+
+      fireComposition(input, 'compositionstart');
+      setInputValue(input, '123とうきょう');
+      fireComposition(input, 'compositionend');
+
+      expect(input.value).toBe('123');
+      expect(q(container, '[data-testid="manual-amount-rejected"]').textContent).toBe(
+        '活動量は数字と小数点のみ入力できます。',
+      );
+
+      // 数字を入力し直せば案内は消える。
+      setInputValue(input, '1234');
+      expect(input.value).toBe('1234');
+      expect(container.querySelector('[data-testid="manual-amount-rejected"]')).toBeNull();
+    });
   });
 
   it('保存失敗（Error）: message をフォーム内の alert に表示し、入力は消さない', async () => {
