@@ -53,6 +53,7 @@ import {
   NOTE_MAX_LENGTH,
   SAVE_FAILURE_MESSAGES,
   VALIDATION_MESSAGES,
+  ZERO_AMOUNT_PREVIEW_NOTICE,
   amountValidationMessage,
   buildActivityEntryInput,
   validateAmount,
@@ -405,12 +406,17 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
           estimatedEmissions,
         })
       : null;
-  const previewCaution =
+  const factorFallbackCaution =
     !isIdea && isEdit && !scope12.factorTouched && scope12.applied.status === 'resolved' && scope12.applied.fellBack
       ? scope12.applied.remapped
         ? '保存されていた係数は年度更新で入れ替わったため、同じ供給事業者・メニューの上記の係数で再計算されます。'
         : '保存されていた係数は現在の条件では適用できないため、上記の自動選択された係数で再計算されます。'
       : null;
+  // 活動量 0 は実績ゼロの記録として保存できるが、入力し忘れたまま確定するタイプミスを防ぐため確認表示を挟む。
+  const previewCautions = [
+    ...(validAmount === 0 ? [ZERO_AMOUNT_PREVIEW_NOTICE] : []),
+    ...(factorFallbackCaution ? [factorFallbackCaution] : []),
+  ];
 
   return (
     <>
@@ -684,7 +690,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
         <ActivityEntryPreviewModal
           mode={mode}
           rows={previewRows}
-          caution={previewCaution}
+          cautions={previewCautions}
           isSaving={isSaving}
           onClose={closePreview}
           onSave={handleSave}
