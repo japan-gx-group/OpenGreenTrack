@@ -7,10 +7,11 @@
 // 再取得する（切替直後に scope3Total が更新される。集計は Route Handler 経由の
 // refresh_dashboard_aggregates が担う）。
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Loader2, Pencil } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Modal } from '@/components/ui/Modal.client';
+import { DECIMAL_PATTERN, normalizeAmountInput } from '@/features/data-input/services/entrySubmission';
 import {
   getScope3CategoryDrilldown,
   type Scope3CategoryDrilldown,
@@ -23,7 +24,8 @@ const numberFormatter = new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 
 const formatEmissions = (value: number | null): string =>
   value === null ? '—' : numberFormatter.format(value);
 
-const DECIMAL_PATTERN = /^\d*(?:\.\d*)?$/;
+/** 正規化しても DECIMAL_PATTERN に合わない入力を弾いたときの案内（無言で無視しない）。 */
+const EMISSIONS_INPUT_REJECTED_MESSAGE = '排出量は数字と小数点のみ入力できます。';
 
 interface Scope3MethodPanelProps {
   items: Scope3MethodCategoryItem[];
@@ -51,6 +53,14 @@ export const Scope3MethodPanel: React.FC<Scope3MethodPanelProps> = ({
   // direct 値の編集モーダル。
   const [editingItem, setEditingItem] = useState<Scope3MethodCategoryItem | null>(null);
   const [editValue, setEditValue] = useState('');
+  // 入力時フィルタで弾いたことの案内（正規化しても数字にならなかったとき）。無言で無視しない。
+  const [editValueRejected, setEditValueRejected] = useState(false);
+  // IME 変換中フラグ。変換中の値（全角数字など）を controlled input が巻き戻すと
+  // composition が壊れて「何も入力できない」状態になるため、変換中は見たまま表示し、
+  // 確定（compositionend）のタイミングでまとめて正規化・判定する。
+  const isComposingEditValueRef = useRef(false);
+  // 確定入力が数字にならなかったときに戻す先（直前にパターンを通過した値）。
+  const lastValidEditValueRef = useRef('');
   const [editNote, setEditNote] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
   const [isSavingDirect, setIsSavingDirect] = useState(false);
@@ -73,7 +83,11 @@ export const Scope3MethodPanel: React.FC<Scope3MethodPanelProps> = ({
 
   const openEditModal = (item: Scope3MethodCategoryItem) => {
     setEditingItem(item);
-    setEditValue(item.directEmissions !== null ? String(item.directEmissions) : '');
+    const initialValue = item.directEmissions !== null ? String(item.directEmissions) : '';
+    setEditValue(initialValue);
+    lastValidEditValueRef.current = initialValue;
+    isComposingEditValueRef.current = false;
+    setEditValueRejected(false);
     setEditNote(item.directDataSourceNote ?? '');
     setEditError(null);
   };
@@ -81,6 +95,33 @@ export const Scope3MethodPanel: React.FC<Scope3MethodPanelProps> = ({
   const closeEditModal = () => {
     if (isSavingDirect) return;
     setEditingItem(null);
+  };
+
+  // 全角数字・カンマ付きは正規化して受け付け、それでも数字にならない入力は直前の値に戻して理由を出す。
+  const commitEditValue = (raw: string) => {
+    const normalized = normalizeAmountInput(raw);
+    if (DECIMAL_PATTERN.test(normalized)) {
+      lastValidEditValueRef.current = normalized;
+      setEditValue(normalized);
+      setEditValueRejected(false);
+    } else {
+      setEditValue(lastValidEditValueRef.current);
+      setEditValueRejected(true);
+    }
+  };
+
+  const handleEditValueChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (isComposingEditValueRef.current) {
+      // 変換中は巻き戻さずそのまま表示する（確定時に commitEditValue で正規化する）。
+      setEditValue(event.target.value);
+      return;
+    }
+    commitEditValue(event.target.value);
+  };
+
+  const handleEditValueCompositionEnd = (event: React.CompositionEvent<HTMLInputElement>) => {
+    isComposingEditValueRef.current = false;
+    commitEditValue(event.currentTarget.value);
   };
 
   const handleSaveDirect = async (event: React.FormEvent) => {
@@ -316,15 +357,19 @@ export const Scope3MethodPanel: React.FC<Scope3MethodPanelProps> = ({
               inputMode="decimal"
               className="gt-field"
               value={editValue}
-              onChange={event => {
-                const next = event.target.value;
-                if (next === '' || DECIMAL_PATTERN.test(next)) {
-                  setEditValue(next);
-                }
+              onChange={handleEditValueChange}
+              onCompositionStart={() => {
+                isComposingEditValueRef.current = true;
               }}
+              onCompositionEnd={handleEditValueCompositionEnd}
               placeholder="例: 1250.5"
               autoFocus
             />
+            {editValueRejected && (
+              <p className="text-sm text-danger" data-testid="direct-emissions-rejected">
+                {EMISSIONS_INPUT_REJECTED_MESSAGE}
+              </p>
+            )}
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-text-label">データソースメモ（任意）</span>
