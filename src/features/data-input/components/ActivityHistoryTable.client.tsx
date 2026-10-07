@@ -29,7 +29,7 @@ export const ActivityHistoryTable = ({
   onSelect,
 }: ActivityHistoryTableProps) => (
   <div style={{ overflowX: 'auto' }}>
-    <table className="gt-table" style={{ minWidth: '860px' }}>
+    <table className="gt-table" style={{ minWidth: '1080px' }}>
       <thead>
         <tr>
           <th style={{ width: '150px' }}>拠点名</th>
@@ -39,6 +39,7 @@ export const ActivityHistoryTable = ({
           <th className="gt-num" style={{ width: '130px' }}>使用量</th>
           <th style={{ width: '70px' }}>単位</th>
           <th className="gt-num" style={{ width: '140px' }}>排出量 (t-CO2e)</th>
+          <th style={{ width: '220px' }}>適用係数</th>
           <th style={{ width: '110px' }}>対象期間</th>
           <th style={{ width: '100px' }}>ステータス</th>
           <th style={{ width: '150px' }}>登録日時</th>
@@ -47,14 +48,14 @@ export const ActivityHistoryTable = ({
       <tbody>
         {totalCount === 0 && (
           <tr>
-            <td className="gt-table-empty" colSpan={8}>
+            <td className="gt-table-empty" colSpan={9}>
               入力履歴はまだありません。
             </td>
           </tr>
         )}
         {totalCount > 0 && filteredCount === 0 && (
           <tr>
-            <td colSpan={8} className="py-10">
+            <td colSpan={9} className="py-10">
               <div className="flex flex-col items-center justify-center gap-3 text-center">
                 <Search size={36} aria-hidden="true" className="text-text-muted opacity-50" />
                 <p className="font-semibold text-text-muted">条件に一致する入力履歴が見つかりません</p>
@@ -122,6 +123,21 @@ export const ActivityHistoryTable = ({
             >
               {/* 表示とキーワード検索で値がずれないよう、同じ emissionsText を使う。 */}
               {row.emissionsText}
+            </td>
+            {/* 実際に算定で適用された係数のスナップショット（事業者名・メニュー名を含む）。
+                保存時の指定ではなく算定結果側のため、自動解決・暫定適用・代替値も正しく映る。
+                未算定の行は算定されるまで空にする（emissions 列が「未算定」を示す）。 */}
+            <td style={{ fontSize: '12.5px' }}>
+              {row.appliedFactorName ? (
+                <>
+                  <div style={{ color: 'var(--color-text-body)' }}>{row.appliedFactorName}</div>
+                  {row.appliedFactorValueText && (
+                    <div className="mt-0.5 text-xs text-text-subtle">{row.appliedFactorValueText}</div>
+                  )}
+                </>
+              ) : (
+                <span style={{ color: 'var(--color-text-muted)' }}>—</span>
+              )}
             </td>
             <td style={{ color: 'var(--color-text-muted)' }}>{row.period}</td>
             <td>
