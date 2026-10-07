@@ -11,6 +11,7 @@ import { formatDateTime } from '@/lib/datetime';
 import { SCOPE3_CATEGORY_NAMES } from '@/features/scope-analysis/services/scopeAnalysisService';
 import { getActivityHistoryRecords, getManualEntryLocations } from '../services/activityRecordService';
 import type { HistoryFilterItem } from '../services/activityHistoryFilter';
+import { toMonthlyPeriodLabel } from '../services/manualEntryTargetMonth';
 import {
   MANUAL_ACTIVITY_CATEGORY_MAP,
   type ManualEntryLocationOption,
@@ -31,7 +32,10 @@ export interface HistoryItem extends HistoryFilterItem {
 
 const NEW_ROW_HIGHLIGHT_MS = 2500;
 
+// データは月粒度（対象年月から月初・月末へ展開して保存）なので通常は「2026年3月」表記。
+// 月初〜月末に一致しない期間だけ従来の範囲表記で出す。
 const toHistoryPeriod = (periodStart: string, periodEnd: string) =>
+  toMonthlyPeriodLabel(periodStart, periodEnd) ??
   `${periodStart.replace(/-/g, '/')} - ${periodEnd.replace(/-/g, '/')}`;
 
 // 排出量（t-CO2e）の表示。未算定（null）は「未算定」と示す。
