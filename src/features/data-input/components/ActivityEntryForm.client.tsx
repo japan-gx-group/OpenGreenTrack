@@ -74,6 +74,11 @@ import {
   getCurrentYearMonth,
   validateTargetMonth,
 } from '../services/manualEntryTargetMonth';
+import {
+  OUT_OF_RANGE_YEAR_VALUE,
+  buildTargetMonthDropdown,
+  targetMonthForYearSwitch,
+} from '../services/targetMonthSelection';
 import { computeEstimatedScope3Emissions } from '../services/scope3InlineCalculation';
 import { ActivityEntryFactorSection } from './ActivityEntryFactorSection.client';
 import { ActivityEntryPreviewModal } from './ActivityEntryPreviewModal.client';
@@ -184,6 +189,38 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     initialIdeaFactorId: isEdit && initialValues?.kind === 'scope3' ? initialValues.ideaFactorId : null,
     fiscalYearId: recordFiscalYearId,
   });
+
+  // 対象年月は算定期間（年度）→ 月 の2段プルダウンで選ぶ。係数が収録されていない期間外の
+  // 月を選んで未算定になる事故を防ぐ。年度マスタが空の組織だけ従来のネイティブ月入力へ
+  // フォールバックする（マスタ取得中はプルダウンを無効のまま出し、表示の切替を起こさない）。
+  const targetMonthDropdown = useMemo(
+    () => buildTargetMonthDropdown({ fiscalYears, targetMonth, maxTargetMonth, allowedFutureMonth }),
+    [fiscalYears, targetMonth, maxTargetMonth, allowedFutureMonth],
+  );
+  const useNativeTargetMonthInput = fiscalYearsReady && fiscalYears.length === 0;
+
+  const handleTargetMonthChange = (value: string) => {
+    setTargetMonth(value);
+    // 入力条件が変わったら係数の上書き選択は解除し、自動選択へ戻す。
+    scope12.onConditionChanged('targetMonth');
+  };
+
+  const handleTargetYearChange = (fiscalYearId: string) => {
+    // 合成の「算定期間外」行は現在値の表示専用（選び直しは実在の年度へ）。
+    const fiscalYear = fiscalYears.find((candidate) => candidate.id === fiscalYearId);
+    if (!fiscalYear) {
+      return;
+    }
+    const next = targetMonthForYearSwitch({
+      fiscalYear,
+      currentTargetMonth: targetMonth,
+      maxTargetMonth,
+      allowedFutureMonth,
+    });
+    if (next !== null && next !== targetMonth) {
+      handleTargetMonthChange(next);
+    }
+  };
 
   const appliedFactor = scope12.applied.status === 'resolved' ? scope12.applied.factor : null;
   const unitInfo = resolveEntryUnit({
@@ -513,21 +550,57 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
             </EntryField>
 
             <EntryField htmlFor="manual-target-month" label="対象年月" error={targetMonthError}>
-              <input
-                id="manual-target-month"
-                type="month"
-                value={targetMonth}
-                min={MIN_TARGET_MONTH}
-                max={maxTargetMonth}
-                onChange={(event) => {
-                  setTargetMonth(event.target.value);
-                  scope12.onConditionChanged('targetMonth');
-                }}
-                disabled={isConditionLocked}
-                className="gt-field"
-                aria-invalid={targetMonthError !== null}
-                aria-describedby={targetMonthError ? 'manual-target-month-error' : undefined}
-              />
+              {useNativeTargetMonthInput ? (
+                // 算定期間（年度マスタ）が未登録の組織は選択肢を組み立てられないため、従来の月入力で受ける。
+                <input
+                  id="manual-target-month"
+                  type="month"
+                  value={targetMonth}
+                  min={MIN_TARGET_MONTH}
+                  max={maxTargetMonth}
+                  onChange={(event) => handleTargetMonthChange(event.target.value)}
+                  disabled={isConditionLocked}
+                  className="gt-field"
+                  aria-invalid={targetMonthError !== null}
+                  aria-describedby={targetMonthError ? 'manual-target-month-error' : undefined}
+                />
+              ) : (
+                <div className="flex gap-2">
+                  {/* 見出しの「対象年月」は月セレクトに付くため、年度側には不可視のラベルで名前を与える。 */}
+                  <label htmlFor="manual-target-month-year" className="sr-only">
+                    対象年度
+                  </label>
+                  <select
+                    id="manual-target-month-year"
+                    value={targetMonthDropdown.selectedYearValue}
+                    onChange={(event) => handleTargetYearChange(event.target.value)}
+                    disabled={isConditionLocked || !fiscalYearsReady}
+                    className="gt-field"
+                  >
+                    {targetMonthDropdown.yearOptions.map((option) => (
+                      <option key={option.value} value={option.value} disabled={option.value === OUT_OF_RANGE_YEAR_VALUE}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    id="manual-target-month"
+                    value={targetMonth}
+                    onChange={(event) => handleTargetMonthChange(event.target.value)}
+                    disabled={isConditionLocked || !fiscalYearsReady}
+                    className="gt-field"
+                    aria-invalid={targetMonthError !== null}
+                    aria-describedby={targetMonthError ? 'manual-target-month-error' : undefined}
+                  >
+                    {/* 未来月は disabled で見せる（「当月まで」を選択肢の形で伝える）。 */}
+                    {targetMonthDropdown.monthOptions.map((option) => (
+                      <option key={option.value} value={option.value} disabled={option.disabled}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </EntryField>
           </div>
         </EntrySection>

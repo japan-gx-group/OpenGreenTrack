@@ -74,7 +74,12 @@ export const selectFiscalYear = async (page: Page, label: string): Promise<void>
 export const saveManualActivityRecord = async (page: Page, targetMonth: string): Promise<void> => {
   await page.locator('#manual-location-select').selectOption({ label: TEST_LOCATION_NAME });
   await page.locator('#manual-category-select').selectOption({ label: TEST_CATEGORY_LABEL });
-  await page.locator('#manual-target-month').fill(targetMonth);
+  // 対象年月は 年度 → 月 の2段プルダウン。月の選択肢は選択中の年度のものに限られるため、
+  // 先に対象月が属する年度（テスト組織は4月始まり）へ切替えてから月を選ぶ。
+  const [year, month] = targetMonth.split('-').map(Number);
+  const fiscalYearLabel = `${month >= 4 ? year : year - 1}年度`;
+  await page.locator('#manual-target-month-year').selectOption({ label: fiscalYearLabel });
+  await page.locator('#manual-target-month').selectOption(targetMonth);
   await page.locator('#manual-amount-input').fill(String(TEST_AMOUNT_KWH));
   await page.locator('#manual-note-input').fill(E2E_NOTE_MARKER);
 
