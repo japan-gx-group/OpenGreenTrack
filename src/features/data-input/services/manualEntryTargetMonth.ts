@@ -41,6 +41,27 @@ const lastDayOfMonth = (year: number, month: number): number => {
   return [4, 6, 9, 11].includes(month) ? 30 : 31;
 };
 
+// 翌月（YYYY-MM）を返す。形式が不正、または 9999-12 で桁あふれする場合は null。
+// 保存後に対象年月を自動で翌月へ送り、同一拠点の連続入力を「数量を打って保存」の繰り返しにするために使う。
+export const nextYearMonth = (yearMonth: string): string | null => {
+  if (!isValidYearMonth(yearMonth)) {
+    return null;
+  }
+
+  const [yearText, monthText] = yearMonth.split('-');
+  const month = Number(monthText);
+  if (month < 12) {
+    return `${yearText}-${String(month + 1).padStart(2, '0')}`;
+  }
+
+  const nextYear = Number(yearText) + 1;
+  // 5 桁の年は YYYY-MM の前提（辞書順比較・input[type=month]）が崩れるため送らない。
+  if (nextYear > 9999) {
+    return null;
+  }
+  return `${String(nextYear).padStart(4, '0')}-01`;
+};
+
 // YYYY-MM を月初・月末の日付へ変換する。形式が不正なら null。
 export const toPeriodDates = (yearMonth: string): ManualEntryPeriodDates | null => {
   if (!isValidYearMonth(yearMonth)) {
