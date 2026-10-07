@@ -5,9 +5,11 @@ import {
   DUPLICATE_ACTIVITY_RECORD_MESSAGE,
   buildActivityRecordDuplicateKey,
   buildDuplicateActivityRecordMessage,
+  findDuplicateActivityRecord,
   formatDuplicatePeriodLabel,
   isDuplicateActivityRecordError,
   type ActivityRecordDuplicateKeyFields,
+  type DuplicateWarningRecord,
 } from '../activityRecordDuplicates';
 
 const record = (
@@ -106,5 +108,87 @@ describe('activityRecordDuplicates', () => {
     );
     // DBトリガーのメッセージ・フォールバック判定と共有している語句。
     expect(DUPLICATE_ACTIVITY_RECORD_MESSAGE).toContain('同じ拠点・カテゴリ・対象年月');
+  });
+});
+
+// 事前警告用の履歴照合（findDuplicateActivityRecord）。保存時と同じ重複キーで判定する。
+describe('findDuplicateActivityRecord', () => {
+  const warningRecord = (overrides: Partial<DuplicateWarningRecord> = {}): DuplicateWarningRecord => ({
+    id: 'rec-1',
+    locationId: 'loc-1',
+    energyType: 'electricity',
+    periodStart: '2026-04-01',
+    scope3CategoryId: null,
+    ideaFactorId: null,
+    ...overrides,
+  });
+
+  it('Scope1/2: 拠点×カテゴリ×対象月が一致する既存レコードを返す', () => {
+    const existing = warningRecord();
+    const candidate = {
+      kind: 'scope12',
+      locationId: 'loc-1',
+      energyType: 'electricity',
+      periodStart: '2026-04-01',
+    } as const;
+
+    expect(findDuplicateActivityRecord([existing], candidate)).toBe(existing);
+    expect(
+      findDuplicateActivityRecord([warningRecord({ locationId: 'loc-2' })], candidate),
+    ).toBeNull();
+    expect(
+      findDuplicateActivityRecord([warningRecord({ energyType: 'city_gas' })], candidate),
+    ).toBeNull();
+    expect(
+      findDuplicateActivityRecord([warningRecord({ periodStart: '2026-05-01' })], candidate),
+    ).toBeNull();
+  });
+
+  it('Scope3積上げ: カテゴリ×IDEA製品まで一致したときだけ重複とする', () => {
+    const existing = warningRecord({
+      energyType: 'scope3_activity',
+      scope3CategoryId: 1,
+      ideaFactorId: 'idea-1',
+    });
+    const candidate = {
+      kind: 'scope3',
+      locationId: 'loc-1',
+      periodStart: '2026-04-01',
+      scope3CategoryId: 1,
+      ideaFactorId: 'idea-1',
+    } as const;
+
+    expect(findDuplicateActivityRecord([existing], candidate)).toBe(existing);
+    // 同月・同拠点でも別製品・別カテゴリは推奨粒度（月次×製品）どおり重複にしない。
+    expect(
+      findDuplicateActivityRecord(
+        [warningRecord({ energyType: 'scope3_activity', scope3CategoryId: 1, ideaFactorId: 'idea-2' })],
+        candidate,
+      ),
+    ).toBeNull();
+    expect(
+      findDuplicateActivityRecord(
+        [warningRecord({ energyType: 'scope3_activity', scope3CategoryId: 2, ideaFactorId: 'idea-1' })],
+        candidate,
+      ),
+    ).toBeNull();
+    // Scope1/2 のレコード（energyType が scope3_activity 以外）は Scope3 の重複に数えない。
+    expect(findDuplicateActivityRecord([warningRecord()], candidate)).toBeNull();
+  });
+
+  it('編集中のレコード自身は excludeRecordId で重複に数えない', () => {
+    const self = warningRecord({ id: 'rec-self' });
+    const other = warningRecord({ id: 'rec-other' });
+    const candidate = {
+      kind: 'scope12',
+      locationId: 'loc-1',
+      energyType: 'electricity',
+      periodStart: '2026-04-01',
+    } as const;
+
+    expect(findDuplicateActivityRecord([self], candidate, { excludeRecordId: 'rec-self' })).toBeNull();
+    expect(
+      findDuplicateActivityRecord([self, other], candidate, { excludeRecordId: 'rec-self' }),
+    ).toBe(other);
   });
 });

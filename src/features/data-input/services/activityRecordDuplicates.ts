@@ -67,6 +67,59 @@ export interface ActivityRecordDuplicateKeyFields {
   periodStart: string;
 }
 
+/** 事前警告の照合対象。読み込み済みの入力履歴（SavedManualActivityRecord）をそのまま渡せる最小の構造。 */
+export interface DuplicateWarningRecord {
+  id: string;
+  locationId: string;
+  energyType: EnergyType;
+  periodStart: string;
+  scope3CategoryId: number | null;
+  ideaFactorId: string | null;
+}
+
+/**
+ * 入力フォームの条件から組み立てる事前警告用の重複キー。保存経路ごとに判定キーが違う
+ * （Scope1/2: 拠点×カテゴリ×対象月、Scope3積上げ: 拠点×対象月×カテゴリ×IDEA製品。
+ * activityRecordService の保存前チェック・DBトリガー prevent_duplicate_activity_record と同じ）。
+ */
+export type ActivityEntryDuplicateCandidate =
+  | { kind: 'scope12'; locationId: string; energyType: EnergyType; periodStart: string }
+  | {
+      kind: 'scope3';
+      locationId: string;
+      periodStart: string;
+      scope3CategoryId: number;
+      ideaFactorId: string;
+    };
+
+// 拠点・カテゴリ・対象年月（Scope3積上げはIDEA製品まで）が揃った時点の事前警告用に、
+// 読み込み済みの入力履歴から保存時と同じ重複キーで既存レコードを探す。
+// 画面が全件取得済みの履歴に対する純関数のため、条件が変わるたびの追加クエリは要らず、
+// 保存直後の履歴反映にも即追従する。別タブ・別ユーザーの登録で履歴が古い場合は検知できないが、
+// 保存時チェックとDBトリガーが最終防衛線として残る。
+export const findDuplicateActivityRecord = <T extends DuplicateWarningRecord>(
+  records: readonly T[],
+  candidate: ActivityEntryDuplicateCandidate,
+  options: { excludeRecordId?: string } = {},
+): T | null => {
+  const matches = (record: T): boolean => {
+    if (record.locationId !== candidate.locationId || record.periodStart !== candidate.periodStart) {
+      return false;
+    }
+    if (candidate.kind === 'scope12') {
+      return record.energyType === candidate.energyType;
+    }
+    return (
+      record.energyType === 'scope3_activity' &&
+      record.scope3CategoryId === candidate.scope3CategoryId &&
+      record.ideaFactorId === candidate.ideaFactorId
+    );
+  };
+  return (
+    records.find((record) => record.id !== options.excludeRecordId && matches(record)) ?? null
+  );
+};
+
 interface ActivityRecordDuplicateKeyRow {
   id: string;
   locationId: string;
