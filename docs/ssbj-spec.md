@@ -258,6 +258,8 @@ T04（レポートの作成・識別） ─▶ T06（汎用の保存・版生成
 6. 操作履歴のトリガー `ssbj_audit_row_change('<対象の種類>', '<識別子の列>'[, '<名前の列>'])` を
    AFTER INSERT / UPDATE / DELETE で付ける（§13「承認ロック・操作履歴・版の復元…」）。
 7. 承認ロックのトリガー `reject_ssbj_change_when_approved()` を BEFORE INSERT / UPDATE / DELETE で付ける。
+   作業中データの行を書き換える RPC を足すときは、書き込む前に `lock_ssbj_report_working_rows(p_report_id)` を呼ぶ
+   （§13「決めたこと（状態管理と承認ロック）」のロックを取る順番）。
 8. 保存版から作業中データへ戻す `ssbj_restore_section__<key>(p_report_id uuid, p_organization_id uuid,
    p_actor_user_id uuid, p_section jsonb) returns void` を定義する（版にセクションが無いときは null が渡るので、作業中データを空にする）。
    EXECUTE は `service_role` のみ。
@@ -653,11 +655,11 @@ T14 の確認事項と、確かめている場所:
 
 | 対象 | 内容 |
 |---|---|
-| DB | `20261002090000_ssbj_audit_logs.sql`（`ssbj_audit_logs`・`ssbj_audit_row_change`・`record_ssbj_export`）、`20261002090100_ssbj_report_status.sql`（`ssbj_reports` の状態の列・`reject_ssbj_change_when_approved`・`change_ssbj_report_status`）、`20261002090200_ssbj_restore_version.sql`（`ssbj_restore_section__*`・`restore_ssbj_report_version`） |
+| DB | `20261002090000_ssbj_audit_logs.sql`（`ssbj_audit_logs`・`ssbj_audit_row_change`・`record_ssbj_export`）、`20261002090100_ssbj_report_status.sql`（`ssbj_reports` の状態の列・`reject_ssbj_change_when_approved`・`change_ssbj_report_status`）、`20261002090200_ssbj_restore_version.sql`（`ssbj_restore_section__*`・`restore_ssbj_report_version`）、`20261009090000_ssbj_report_write_lock.sql`（承認と保存の排他。`reject_ssbj_change_when_approved` の定義し直し・`lock_ssbj_report_working_rows`） |
 | API | `POST /api/ssbj/reports/[reportId]/status`、`POST /api/ssbj/reports/[reportId]/versions/[versionId]/restore`（どちらも service_role 限定の RPC を呼ぶ。操作者・組織はセッションから決める） |
 | 画面 | `SsbjReportStatusCard.client.tsx`・`SsbjReportStatusBadge.tsx`・`SsbjLockedNotice.tsx`、`SsbjAuditLogs.client.tsx`、`SsbjVersions.client.tsx`（復元・Excel）・`SsbjVersionActionDialog.client.tsx`、`SsbjEditorLayout.client.tsx`・`SsbjOgtReferencePanel.tsx`・`SsbjOgtChangeBanner.tsx`、`SsbjNarrativeItemCard.client.tsx`（テンプレート） |
 | コード | `utils/reportStatus.ts`・`utils/auditLog.ts`・`utils/writeError.ts`、`services/reportWorkflowServer.ts`・`reportWorkflowClient.ts`・`auditLogService.ts`・`memberService.ts`・`versionXlsx.ts` |
-| テスト | `scripts/db/__tests__/ssbjAuditLogsPolicy.test.ts`・`ssbjReportStatusPolicy.test.ts`（取り付け漏れ・権限・遷移）、API・サービス・画面の単体テスト、全体テスト `e2e/ssbj/r1-requirements.e2e.ts`（9 手順） |
+| テスト | `scripts/db/__tests__/ssbjAuditLogsPolicy.test.ts`・`ssbjReportStatusPolicy.test.ts`（取り付け漏れ・権限・遷移）・`ssbjReportWriteLock.test.ts`（承認と保存の排他・ロックを取る順番）、API・サービス・画面の単体テスト、全体テスト `e2e/ssbj/r1-requirements.e2e.ts`（9 手順） |
 
 決めたこと（状態管理と承認ロック）:
 
@@ -669,6 +671,13 @@ T14 の確認事項と、確かめている場所:
 - **承認するときは、その時点の内容で保存版を作り、承認した版として記録する。** 承認した内容をあとから再現できるように。
   承認は、画面が見ていた `draftRevision` と一致したときだけ通す（見ていない内容を承認させない）。
 - **レビュー中は編集できる。** 承認時の版数の一致で、レビュー後の変更を承認してしまうことを防ぐ。
+- **同じレポートの承認と保存は、DB で 1 つずつ処理する。** 承認の処理中に始まった保存が、承認の確定後に作業中の内容を変えてしまわないように。
+  作業中データへの書き込みは、承認ロックのトリガーでレポートの行をロックしてから状態を読む（承認・差戻し・保存版の作成・復元もレポートの行をロックする）。
+  承認が先に確定したら保存は `P2051` で、保存が先に確定したら古い版数を指定した承認は `P2033`（競合）で止まる。
+- **ロックは「作業中データの行 → レポートの行」の順に取る。** 順番が処理によって違うと、互いのロックを待ってデッドロックになるため。
+  利用者の更新・削除は対象の行を取ってからトリガーでレポートの行を、追加はトリガーでレポートの行を取る。
+  作業中データの行を書き換える RPC（版の復元・OGT の値の採用）は、最初に `lock_ssbj_report_working_rows` で作業中データの行（テーブルは名前順、行は主キー順）とレポートの行をロックする。
+  状態の変更・保存版の作成は、作業中データを読むだけでロックしない。
 - **差戻すと承認の記録（承認日時・承認者・承認した版）は消す。** 承認したこと・差戻したことは、操作履歴と保存版のメモ（「承認時の保存版」）に残る。
 
 決めたこと（操作履歴）:
