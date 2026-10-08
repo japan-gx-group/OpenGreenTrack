@@ -18,6 +18,7 @@ import type {
   SsbjJudgement,
   SsbjNarrative,
   SsbjReportBasicInfo,
+  SsbjReportReview,
   SsbjReportSnapshotV1,
   SsbjReportVersion,
   SsbjRequirementId,
@@ -55,6 +56,16 @@ export const fictionalReportBasicInfo: SsbjReportBasicInfo = {
   industryCode: 'RT-IG',
   createdAt: '2025-06-02T01:00:00.000Z',
   updatedAt: '2025-06-02T01:00:00.000Z',
+};
+
+/** 作成中（レビューを依頼していない）レポートの状態。画面のテストで作業中のレポートを組み立てるときに使う。 */
+export const FICTIONAL_DRAFT_REVIEW: SsbjReportReview = {
+  status: 'draft',
+  approverUserId: null,
+  approvedAt: null,
+  approvedByUserId: null,
+  approvedVersionId: null,
+  statusChangedAt: null,
 };
 
 /** 項目ごとの文章。項目 ID は架空（基準の項番号ではない）。 */

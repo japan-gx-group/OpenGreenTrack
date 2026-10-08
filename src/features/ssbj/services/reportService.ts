@@ -10,9 +10,11 @@ import type {
   SsbjMeasurementApproach,
   SsbjParentRelationship,
   SsbjReportRecord,
+  SsbjReportStatus,
   SsbjReportWorkingRecord,
 } from '../types';
 import type { SsbjReportBasicInfoInput } from '../utils/reportValidation';
+import { ssbjWriteErrorMessage } from '../utils/writeError';
 
 type FiscalYearEmbed = { label: string; startDate: string; endDate: string };
 
@@ -33,6 +35,12 @@ export interface SsbjReportRow {
   createdAt: string;
   updatedAt: string;
   draftRevision: number;
+  status: string;
+  approverUserId: string | null;
+  approvedAt: string | null;
+  approvedByUserId: string | null;
+  approvedVersionId: string | null;
+  statusChangedAt: string | null;
   // 多対一の埋め込みはオブジェクトで返るが、型生成の揺れに備えて配列でも受ける。
   fiscal_years: FiscalYearEmbed | FiscalYearEmbed[] | null;
 }
@@ -44,7 +52,8 @@ export interface SsbjReportRow {
 const SELECT_COLUMNS =
   'id, organizationId, fiscalYearId, title, purpose, reportingScope, standardVersion, ' +
   'parentCompanyName, parentRelationship, ownershipPercentage::text, measurementApproach, industryCode, ' +
-  'createdAt, updatedAt, draftRevision, fiscal_years(label, startDate, endDate)';
+  'createdAt, updatedAt, draftRevision, status, approverUserId, approvedAt, approvedByUserId, approvedVersionId, ' +
+  'statusChangedAt, fiscal_years(label, startDate, endDate)';
 
 /** DB 行 → SsbjReportRecord。年度が見えない行（通常は起こらない）は例外にする。 */
 export const toSsbjReportRecord = (row: SsbjReportRow): SsbjReportRecord => {
@@ -74,10 +83,19 @@ export const toSsbjReportRecord = (row: SsbjReportRow): SsbjReportRecord => {
   };
 };
 
-/** DB 行 → 編集画面用のレコード（保存版作成の競合検知に使う draftRevision を添える）。 */
+/** DB 行 → 編集画面用のレコード（保存版作成の競合検知に使う draftRevision と、状態・承認の記録を添える）。 */
 export const toSsbjReportWorkingRecord = (row: SsbjReportRow): SsbjReportWorkingRecord => ({
   ...toSsbjReportRecord(row),
   draftRevision: row.draftRevision,
+  review: {
+    // 値の形式は DB の check 制約が保証している。
+    status: row.status as SsbjReportStatus,
+    approverUserId: row.approverUserId,
+    approvedAt: row.approvedAt,
+    approvedByUserId: row.approvedByUserId,
+    approvedVersionId: row.approvedVersionId,
+    statusChangedAt: row.statusChangedAt,
+  },
 });
 
 // ログイン中ユーザーの所属組織ID。insert 時に組織を明示する必要がある（RLS の with check と一致させる）。
@@ -102,8 +120,8 @@ const getCurrentOrganizationId = async (supabase: SupabaseClient): Promise<strin
   return data.organizationId as string;
 };
 
-/** 指定年度のレポート一覧（新しい順）。RLS により自組織の行だけが返る。 */
-export const listSsbjReports = async (fiscalYearId: string): Promise<SsbjReportRecord[]> => {
+/** 指定年度のレポート一覧（新しい順。状態を添える）。RLS により自組織の行だけが返る。 */
+export const listSsbjReports = async (fiscalYearId: string): Promise<SsbjReportWorkingRecord[]> => {
   const supabase = createClient();
   const { data, error } = await supabase
     .from('ssbj_reports')
@@ -115,7 +133,7 @@ export const listSsbjReports = async (fiscalYearId: string): Promise<SsbjReportR
   if (error) {
     throw new Error('SSBJレポートの取得に失敗しました');
   }
-  return ((data ?? []) as unknown as SsbjReportRow[]).map(toSsbjReportRecord);
+  return ((data ?? []) as unknown as SsbjReportRow[]).map(toSsbjReportWorkingRecord);
 };
 
 /**
@@ -151,7 +169,7 @@ export const fetchSsbjReport = async (
 export const createSsbjReport = async (
   fiscalYearId: string,
   input: SsbjReportBasicInfoInput,
-): Promise<SsbjReportRecord> => {
+): Promise<SsbjReportWorkingRecord> => {
   const supabase = createClient();
   const organizationId = await getCurrentOrganizationId(supabase);
 
@@ -164,7 +182,7 @@ export const createSsbjReport = async (
   if (error || !data) {
     throw new Error('SSBJレポートの作成に失敗しました');
   }
-  return toSsbjReportRecord(data as unknown as SsbjReportRow);
+  return toSsbjReportWorkingRecord(data as unknown as SsbjReportRow);
 };
 
 /**
@@ -184,7 +202,7 @@ export const updateSsbjReportBasicInfo = async (
     .maybeSingle();
 
   if (error) {
-    throw new Error('SSBJレポートの更新に失敗しました');
+    throw new Error(ssbjWriteErrorMessage(error, 'SSBJレポートの更新に失敗しました'));
   }
   if (!data) {
     // RLS で対象が見えない（削除済み・他組織）場合は 0 件更新になる。

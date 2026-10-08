@@ -28,6 +28,9 @@ import {
   validateSsbjEvidenceInput, type SsbjEvidenceFormValues,
 } from '../utils/evidence';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
+import { isSsbjReportLocked } from '../utils/reportStatus';
+import { SsbjLockedNotice } from './SsbjLockedNotice';
+import { SsbjEditorLayout } from './SsbjEditorLayout.client';
 
 const Detail = ({ label, value }: { label: string; value: string | null }) => (
   <div className="flex flex-col gap-1 sm:flex-row sm:gap-4">
@@ -102,13 +105,16 @@ export const SsbjEvidencePage = ({ reportId }: { reportId: string }) => {
         title="根拠文書・主管部署"
         description={report?.title ?? 'SSBJレポートの根拠情報'}
         showFiscalYear={false}
-        primaryAction={report ? <Button type="button" onClick={() => openForm('new')}><Plus size={16} />根拠文書を追加</Button> : null}
+        primaryAction={report && !isSsbjReportLocked(report.review)
+          ? <Button type="button" onClick={() => openForm('new')}><Plus size={16} />根拠文書を追加</Button>
+          : null}
       />
       <div className="flex flex-col gap-4">
         <Link href={`/ssbj/${encodeURIComponent(reportId)}`} className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline">
           <ArrowLeft size={16} /> レポート詳細へ戻る
         </Link>
         <SsbjTrialNotice />
+        {report && <SsbjLockedNotice report={report} />}
         {(reportError || list.errorMessage) && <p role="alert" className="rounded-md bg-danger-light px-4 py-3 text-sm text-danger">{reportError || list.errorMessage}</p>}
         {isReportLoading || (report && list.isLoading) ? (
           <Card><LoadingIndicator label="根拠文書を読み込んでいます..." /></Card>
@@ -118,31 +124,35 @@ export const SsbjEvidencePage = ({ reportId }: { reportId: string }) => {
             <p className="text-lg font-bold text-text-muted">SSBJレポートが見つかりません</p>
           </Card>
         ) : report && !list.errorMessage ? (
-          <Card>
-            <h2 className="mb-4 text-base font-bold">登録済みの根拠文書（{list.items.length}件）</h2>
-            {list.items.length === 0 ? <p className="text-sm text-text-muted">根拠文書はまだ登録されていません。</p> : (
-              <ul className="flex flex-col gap-3">
-                {list.items.map(item => (
-                  <li key={item.id} className="rounded-lg border border-border p-4">
-                    <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-                      <div><p className="text-xs text-text-muted">{item.itemId} · 資料名（内部記録）</p><h3 className="text-sm font-bold">{item.documentTitle}</h3></div>
-                      <div className="flex gap-2">
-                        <Button type="button" variant="outline" size="sm" onClick={() => openForm(item)}><Pencil size={14} />編集</Button>
-                        <Button type="button" variant="outline" size="sm" onClick={() => { setDeleteError(''); setDeleting(item); }}><Trash2 size={14} />削除</Button>
+          <SsbjEditorLayout report={report} overrides={{ evidence: list.items }}>
+            <Card>
+              <h2 className="mb-4 text-base font-bold">登録済みの根拠文書（{list.items.length}件）</h2>
+              {list.items.length === 0 ? <p className="text-sm text-text-muted">根拠文書はまだ登録されていません。</p> : (
+                <ul className="flex flex-col gap-3">
+                  {list.items.map(item => (
+                    <li key={item.id} className="rounded-lg border border-border p-4">
+                      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+                        <div><p className="text-xs text-text-muted">{item.itemId} · 資料名（内部記録）</p><h3 className="text-sm font-bold">{item.documentTitle}</h3></div>
+                        {!isSsbjReportLocked(report.review) && (
+                          <div className="flex gap-2">
+                            <Button type="button" variant="outline" size="sm" onClick={() => openForm(item)}><Pencil size={14} />編集</Button>
+                            <Button type="button" variant="outline" size="sm" onClick={() => { setDeleteError(''); setDeleting(item); }}><Trash2 size={14} />削除</Button>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                    <dl className="flex flex-col gap-2">
-                      <Detail label="開示用参照文" value={formatFieldValue(item.disclosure)} />
-                      <Detail label="版（内部記録）" value={item.documentVersion} />
-                      <Detail label="保管先（内部記録）" value={item.internalLocation} />
-                      <Detail label="参照位置（内部記録）" value={item.referencePosition} />
-                      <Detail label="主管部署（内部記録）" value={item.ownerDepartment} />
-                    </dl>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
+                      <dl className="flex flex-col gap-2">
+                        <Detail label="開示用参照文" value={formatFieldValue(item.disclosure)} />
+                        <Detail label="版（内部記録）" value={item.documentVersion} />
+                        <Detail label="保管先（内部記録）" value={item.internalLocation} />
+                        <Detail label="参照位置（内部記録）" value={item.referencePosition} />
+                        <Detail label="主管部署（内部記録）" value={item.ownerDepartment} />
+                      </dl>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </SsbjEditorLayout>
         ) : null}
       </div>
 

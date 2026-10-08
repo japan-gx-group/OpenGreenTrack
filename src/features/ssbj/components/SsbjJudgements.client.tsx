@@ -29,16 +29,21 @@ import {
   SSBJ_OMISSION_REASON_REFERENCES,
   isSsbjJudgementPending,
   isSsbjOmissionStatementMissing,
+  normalizeSsbjJudgementInput,
   ssbjJudgementEntries,
   type SsbjJudgementEntry,
 } from '../utils/judgement';
 import { formatParagraphReference } from '../utils/requirementMaster';
+import { isSsbjReportLocked } from '../utils/reportStatus';
+import { SsbjEditorLayout } from './SsbjEditorLayout.client';
 import { SsbjJudgementDialog } from './SsbjJudgementDialog.client';
+import { SsbjLockedNotice } from './SsbjLockedNotice';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
 
 const muted = (isUnconfirmed: boolean) => (isUnconfirmed ? 'text-text-muted' : '');
 
-const JudgementTable = ({ entries, onEdit }: { entries: SsbjJudgementEntry[]; onEdit: (entry: SsbjJudgementEntry) => void }) => (
+// onEdit が無い（承認済みなど）ときは編集の操作を出さない。
+const JudgementTable = ({ entries, onEdit }: { entries: SsbjJudgementEntry[]; onEdit?: (entry: SsbjJudgementEntry) => void }) => (
   <Table>
     <TableHeader>
       <TableRow>
@@ -76,7 +81,7 @@ const JudgementTable = ({ entries, onEdit }: { entries: SsbjJudgementEntry[]; on
             {formatFieldValue(judgement.explanation.disclosure)}
           </TableCell>
           <TableCell>
-            {requirement && (
+            {requirement && onEdit && (
               <Button type="button" variant="outline" size="sm" onClick={() => onEdit({ requirement, judgement })}>
                 <Pencil size={14} />
                 編集
@@ -124,6 +129,12 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
     void form.submit(event).then(saved => { if (saved) setDialogOpen(false); });
   };
 
+  // 編集ダイアログで選んでいる途中の内容（未保存）も、プレビューにだけ反映する。
+  const draftJudgement = dialogOpen && form.requirementId ? normalizeSsbjJudgementInput(form.requirementId, form.values) : null;
+  const previewJudgements = draftJudgement
+    ? [...judgements.filter(judgement => judgement.requirementId !== draftJudgement.requirementId), draftJudgement]
+    : judgements;
+
   return (
     <div className="page-content gt-scroll relative">
       <PageHeading title="該当性・重要性の判断" description={report?.title ?? 'SSBJレポート'} showFiscalYear={false} primaryAction={null} />
@@ -135,6 +146,7 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
           <ArrowLeft size={16} /> レポート詳細へ戻る
         </Link>
         <SsbjTrialNotice />
+        {report && <SsbjLockedNotice report={report} />}
         {(reportError || judgementsError) && (
           <div role="alert" className="rounded-md bg-danger-light px-4 py-3 text-sm text-danger">
             {reportError || judgementsError}
@@ -148,7 +160,12 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
             <p className="text-lg font-bold text-text-muted">SSBJレポートが見つかりません</p>
           </Card>
         ) : report && !judgementsError ? (
-          <>
+          <SsbjEditorLayout
+            report={report}
+            overrides={{ judgements: previewJudgements }}
+            hasUnsavedDrafts={draftJudgement !== null}
+            defaultPanelOpen={false}
+          >
             <Card className="flex flex-col gap-3">
               <p className="m-0 text-sm text-text-muted">
                 要求項目マスター（暫定版）の要求ごとに、自社に該当するか、重要性があるか、記載しない場合はその理由を記録します。
@@ -182,14 +199,14 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
               <Card key={group.key} role="region" aria-label={group.title}>
                 <h2 className="m-0 mb-3 text-base font-bold">{group.title}</h2>
                 {group.entries.length > 0 ? (
-                  <JudgementTable entries={group.entries} onEdit={openEdit} />
+                  <JudgementTable entries={group.entries} onEdit={isSsbjReportLocked(report.review) ? undefined : openEdit} />
                 ) : (
                   <p className="m-0 text-sm text-text-muted">判断が済んでいない要求はありません。</p>
                 )}
               </Card>
             ))}
             <SsbjJudgementDialog open={dialogOpen} onOpenChange={setDialogOpen} form={form} onSubmit={submit} />
-          </>
+          </SsbjEditorLayout>
         ) : null}
       </div>
     </div>

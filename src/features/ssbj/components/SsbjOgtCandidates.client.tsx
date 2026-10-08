@@ -21,6 +21,8 @@ import { changedOgtValueLabels, hasAdoptableOgtValue } from '../utils/ogtAdoptio
 import { OGT_DATA_QUALITY_LABELS, OGT_SOURCE_LABELS, ogtMethodLabel, ogtValueLabel } from '../utils/ogtValue';
 import { SsbjOgtAdoptionCard } from './SsbjOgtAdoptionCard.client';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
+import { isSsbjReportLocked } from '../utils/reportStatus';
+import { SsbjLockedNotice } from './SsbjLockedNotice';
 
 const CandidateRow = ({ candidate }: { candidate: OgtCandidateValue }) => (
   <TableRow>
@@ -62,6 +64,7 @@ export const SsbjOgtCandidates = ({ reportId }: { reportId: string }) => {
           <ArrowLeft size={16} /> レポート詳細へ戻る
         </Link>
         <SsbjTrialNotice />
+        {report && <SsbjLockedNotice report={report} />}
         {(reportError || candidateError || adoptionError) && (
           <div role="alert" className="rounded-md bg-danger-light px-4 py-3 text-sm text-danger">
             {reportError || candidateError || adoptionError}
@@ -93,6 +96,7 @@ export const SsbjOgtCandidates = ({ reportId }: { reportId: string }) => {
               adoption={adoption}
               changedLabels={adoption ? changedOgtValueLabels(adoption, data.candidates, data.suppliers) : []}
               canAdopt={hasAdoptableOgtValue(data.candidates)}
+              locked={isSsbjReportLocked(report.review)}
               isSubmitting={adoptionActions.isSubmitting}
               errorMessage={adoptionActions.errorMessage}
               onAdopt={async () => {

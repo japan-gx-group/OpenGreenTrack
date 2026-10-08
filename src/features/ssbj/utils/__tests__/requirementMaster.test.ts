@@ -89,6 +89,13 @@ describe('文章の項目', () => {
       expect(item.example.trim()).not.toBe('');
     }
   });
+
+  it('穴埋めテンプレートを持ち、自社の言葉で埋める部分（【 】）を含む', () => {
+    for (const item of SSBJ_NARRATIVE_ITEMS) {
+      expect(item.template, item.id).toMatch(/【[^【】]+】/);
+      expect(item.template, item.id).not.toBe(item.example);
+    }
+  });
 });
 
 describe('補助', () => {

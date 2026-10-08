@@ -2,7 +2,7 @@
 import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { click, render, type RenderResult } from '@/lib/testing/render';
-import { fictionalJudgements, fictionalReportBasicInfo } from '../../__fixtures__/fictionalReport';
+import { FICTIONAL_DRAFT_REVIEW, fictionalJudgements, fictionalReportBasicInfo } from '../../__fixtures__/fictionalReport';
 
 // SSBJ 該当性・重要性の判断画面: マスターの全要求の表示（判断の無い要求は未確認）、件数と絞り込み、
 // 編集ダイアログからの保存（検証・一覧への反映）、Not Found を検証する。Supabase を呼ぶ I/O だけをモックする。
@@ -18,7 +18,7 @@ import { SSBJ_REQUIREMENTS } from '../../utils/requirementMaster';
 import { SsbjJudgements } from '../SsbjJudgements.client';
 
 const report = { ...fictionalReportBasicInfo, fiscalYearLabel: '2024年度',
-  periodStart: '2024-04-01', periodEnd: '2025-03-31', draftRevision: 1 };
+  periodStart: '2024-04-01', periodEnd: '2025-03-31', draftRevision: 1, review: FICTIONAL_DRAFT_REVIEW };
 let rendered: RenderResult | null = null;
 const flush = async () => { await act(async () => { await Promise.resolve(); }); };
 const settle = async () => { for (let i = 0; i < 4; i += 1) await flush(); };
@@ -135,5 +135,17 @@ describe('SsbjJudgements', () => {
     await settle();
     expect(rendered.container.textContent).toContain('SSBJレポートが見つかりません');
     expect(listSsbjJudgements).not.toHaveBeenCalled();
+  });
+});
+
+describe('SsbjJudgements（承認ロック）', () => {
+  it('承認済みのレポートでは編集の操作を出さず、ロックの案内を出す', async () => {
+    vi.mocked(getSsbjReport).mockResolvedValue({ ...report, review: { status: 'approved' as const, approverUserId: 'u', approvedAt: '2025-06-05T00:00:00.000Z', approvedByUserId: 'u',
+      approvedVersionId: null, statusChangedAt: null } });
+    rendered = render(<SsbjJudgements reportId={report.id} />);
+    await settle();
+    expect(rows().length).toBeGreaterThan(0);
+    expect(rows().some(row => row.textContent?.includes('編集'))).toBe(false);
+    expect(document.querySelector('[data-testid="ssbj-locked-notice"]')).not.toBeNull();
   });
 });

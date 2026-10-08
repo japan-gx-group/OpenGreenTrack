@@ -255,6 +255,17 @@ T04（レポートの作成・識別） ─▶ T06（汎用の保存・版生成
    EXECUTE は `service_role` のみ（`public` / `anon` / `authenticated` から revoke）。
 4. `types.ts` の `SsbjSnapshotSections` に `<key>` とその型を追記する（`<key>` と関数名の `<key>` を一致させる）。
 5. 値の状態は `ssbj_field_state`（§4）、開示文と内部記録は別の列（§5）で持つ。
+6. 操作履歴のトリガー `ssbj_audit_row_change('<対象の種類>', '<識別子の列>'[, '<名前の列>'])` を
+   AFTER INSERT / UPDATE / DELETE で付ける（§13「承認ロック・操作履歴・版の復元…」）。
+7. 承認ロックのトリガー `reject_ssbj_change_when_approved()` を BEFORE INSERT / UPDATE / DELETE で付ける。
+   作業中データの行を書き換える RPC を足すときは、書き込む前に `lock_ssbj_report_working_rows(p_report_id)` を呼ぶ
+   （§13「決めたこと（状態管理と承認ロック）」のロックを取る順番）。
+8. 保存版から作業中データへ戻す `ssbj_restore_section__<key>(p_report_id uuid, p_organization_id uuid,
+   p_actor_user_id uuid, p_section jsonb) returns void` を定義する（版にセクションが無いときは null が渡るので、作業中データを空にする）。
+   EXECUTE は `service_role` のみ。
+
+6〜8 の付け忘れは `scripts/db/__tests__/ssbjAuditLogsPolicy.test.ts` が検出する
+（作業中データのテーブルすべてに 2 つのトリガーがあり、保存版のセクションすべてに復元の関数があること）。
 
 T06 の版生成関数は、`public` スキーマの `ssbj_snapshot_section__` で始まる関数を名前順に集め、
 結果を `snapshot.sections.<key>` に入れる。
@@ -573,7 +584,7 @@ R1 の初回対象（[`ssbj-r1-scope.md`](ssbj-r1-scope.md) §5.1）に含める
 
 | 対象 | 内容 |
 |---|---|
-| 全体テスト（ローカルのみ） | `e2e/ssbj/r1-acceptance.e2e.ts`（16 手順を順に実行）、`e2e/ssbj/support.ts`・`global-setup.ts`・`global-teardown.ts`。設定は `playwright.ssbj.config.ts` |
+| 全体テスト（ローカルのみ） | `e2e/ssbj/r1-acceptance.e2e.ts`（16 手順を順に実行）、`e2e/ssbj/support.ts`・`global-setup.ts`・`global-teardown.ts`。設定は `playwright.ssbj.config.ts`。承認ロック・操作履歴・復元などは `e2e/ssbj/r1-requirements.e2e.ts`（9 手順。同じ設定で一緒に流れる） |
 | 単体テスト（CI で実行） | `__fixtures__/fictionalReportTexts.ts`（架空の保存版の値を「開示する内容」「内部記録」「GHG の数値」に分けた一覧）を使い、`versionCsv.test.ts`・`SsbjPreviewDocument.test.tsx` で欠落と取り違えを、`ogtCandidateService.test.ts` で二重加算を、`fictionalReport.test.ts` で架空の保存版が全セクションを含むことを確かめる |
 | 修正 | レポートの新規作成ダイアログが、高さ 720px 程度の画面で「作成する」まで届かなかった（ダイアログの中をスクロールできるようにした） |
 
@@ -628,3 +639,72 @@ T14 の確認事項と、確かめている場所:
 - **試行の前に全体テスト（T14）を流し、通らなければ試行しない。**
 - **試行で得たフィードバックなど公開しない情報は、公開リポジトリに置かず、GitHub Project の非公開の項目で扱う。**
 - **切り戻しは、`git revert` の PR と、ローカル DB の作り直しで行う。** マイグレーションを戻すためのマイグレーションは作らない。
+
+### 承認ロック・操作履歴・版の復元・Excel 出力・穴埋めテンプレート・2 画面のエディタ
+
+7 月の要件定義（社内の試作）のうち、R1 に足りなかった機能を加えた。企業規模（大企業 / 中小企業）による画面・出力の出し分けはしない（ユーザー決定）。
+
+| 機能 | 内容 |
+|---|---|
+| 状態管理と承認ロック | 作成中 → レビュー中 → 承認済み。承認済みの間は作業中データを DB が変更させない（`P2051`）。詳細画面の「状態と承認」で操作する |
+| 操作履歴 | 作成・更新・削除・状態の変更・保存版の作成・復元・ファイルの出力を、誰がいつ行ったか自動で記録する。`/ssbj/[reportId]/history` で見て、CSV・Excel で出力する |
+| 版の復元 | 保存履歴の画面の「この版の内容に戻す」。作業中の内容を指定した版の内容に戻す（戻す前の内容は自動で保存版にする） |
+| Excel 出力 | 保存履歴の画面の「Excelを出力」。保存版の CSV と同じ行から作る |
+| 穴埋めテンプレート | 四本柱の文章の 24 項目に初期の文例（`requirementMaster.ts` の `template`）。編集中に「テンプレートを入れる」で本文に入れ、【 】を自社の言葉に置き換える |
+| 2 画面のエディタ | 文章・判断・リスク・機会・根拠文書の画面の右側に「プレビュー」（入力中の内容をその場で反映）と「OGT の値」（参照用）。採用した OGT の値が変わったら、上部の帯で知らせる |
+
+| 対象 | 内容 |
+|---|---|
+| DB | `20261002090000_ssbj_audit_logs.sql`（`ssbj_audit_logs`・`ssbj_audit_row_change`・`record_ssbj_export`）、`20261002090100_ssbj_report_status.sql`（`ssbj_reports` の状態の列・`reject_ssbj_change_when_approved`・`change_ssbj_report_status`）、`20261002090200_ssbj_restore_version.sql`（`ssbj_restore_section__*`・`restore_ssbj_report_version`）、`20261009090000_ssbj_report_write_lock.sql`（承認と保存の排他。`reject_ssbj_change_when_approved` の定義し直し・`lock_ssbj_report_working_rows`） |
+| API | `POST /api/ssbj/reports/[reportId]/status`、`POST /api/ssbj/reports/[reportId]/versions/[versionId]/restore`（どちらも service_role 限定の RPC を呼ぶ。操作者・組織はセッションから決める） |
+| 画面 | `SsbjReportStatusCard.client.tsx`・`SsbjReportStatusBadge.tsx`・`SsbjLockedNotice.tsx`、`SsbjAuditLogs.client.tsx`、`SsbjVersions.client.tsx`（復元・Excel）・`SsbjVersionActionDialog.client.tsx`、`SsbjEditorLayout.client.tsx`・`SsbjOgtReferencePanel.tsx`・`SsbjOgtChangeBanner.tsx`、`SsbjNarrativeItemCard.client.tsx`（テンプレート） |
+| コード | `utils/reportStatus.ts`・`utils/auditLog.ts`・`utils/writeError.ts`、`services/reportWorkflowServer.ts`・`reportWorkflowClient.ts`・`auditLogService.ts`・`memberService.ts`・`versionXlsx.ts` |
+| テスト | `scripts/db/__tests__/ssbjAuditLogsPolicy.test.ts`・`ssbjReportStatusPolicy.test.ts`（取り付け漏れ・権限・遷移）・`ssbjReportWriteLock.test.ts`（承認と保存の排他・ロックを取る順番）、API・サービス・画面の単体テスト、全体テスト `e2e/ssbj/r1-requirements.e2e.ts`（9 手順） |
+
+決めたこと（状態管理と承認ロック）:
+
+- **承認済みの間は、DB が作業中データの変更を止める。** 画面のボタンを隠すだけだと、PostgREST を直接呼べば変えられるため。
+  作業中データの全テーブルに BEFORE トリガー、基本情報は ssbj_reports の BEFORE UPDATE トリガーで止める。保存版の作成・出力は承認済みでもできる（作業中データを変えないため）。
+- **承認者はレポートごとに指定する（レビュー依頼のときに選ぶ）。承認・差戻しは、指定された承認者か OGT の管理者だけ。**
+  OGT 本体は今、ロールで権限を分けていない（`src/types/role.ts`）が、要件の「本体の管理者または承認者に限る」を満たすため、
+  SSBJ の承認・差戻しの判定にだけ、保存されている `profiles.role = 'admin'` を読む。本体の権限の仕組みは変えない。レビュー依頼・取り下げは誰でもできる。
+- **承認するときは、その時点の内容で保存版を作り、承認した版として記録する。** 承認した内容をあとから再現できるように。
+  承認は、画面が見ていた `draftRevision` と一致したときだけ通す（見ていない内容を承認させない）。
+- **レビュー中は編集できる。** 承認時の版数の一致で、レビュー後の変更を承認してしまうことを防ぐ。
+- **同じレポートの承認と保存は、DB で 1 つずつ処理する。** 承認の処理中に始まった保存が、承認の確定後に作業中の内容を変えてしまわないように。
+  作業中データへの書き込みは、承認ロックのトリガーでレポートの行をロックしてから状態を読む（承認・差戻し・保存版の作成・復元もレポートの行をロックする）。
+  承認が先に確定したら保存は `P2051` で、保存が先に確定したら古い版数を指定した承認は `P2033`（競合）で止まる。
+- **ロックは「作業中データの行 → レポートの行」の順に取る。** 順番が処理によって違うと、互いのロックを待ってデッドロックになるため。
+  利用者の更新・削除は対象の行を取ってからトリガーでレポートの行を、追加はトリガーでレポートの行を取る。
+  作業中データの行を書き換える RPC（版の復元・OGT の値の採用）は、最初に `lock_ssbj_report_working_rows` で作業中データの行（テーブルは名前順、行は主キー順）とレポートの行をロックする。
+  状態の変更・保存版の作成は、作業中データを読むだけでロックしない。
+- **差戻すと承認の記録（承認日時・承認者・承認した版）は消す。** 承認したこと・差戻したことは、操作履歴と保存版のメモ（「承認時の保存版」）に残る。
+
+決めたこと（操作履歴）:
+
+- **SSBJ 専用のテーブル（`ssbj_audit_logs`）に、トリガーで記録する。** 画面・API・PostgREST のどこから変えても漏れないように。
+  OGT 本体の `system_audit_logs` に SSBJ の行の変更を自動で書く仕組みは入れない（本体のテーブルに影響させない）。CSV・Excel の出力履歴はこれまでどおり本体の `system_audit_logs` にも書く。
+- **版数・監査列だけの変更は記録しない。** 各機能の変更に伴う `draftRevision` の繰り上げで、同じ操作が二重に見えないように。
+- **状態の変更と復元は RPC が 1 件ずつ記録し、復元中の行ごとの記録は止める**（`ssbj.suppress_audit`）。復元で数十件の削除・作成が並ばないように。
+- **履歴は書き換えない**（update はトリガーで全ロール拒否、delete は権限を与えない）。レポートの削除（デモデータの入れ直し・テストの後片付け）でだけ連鎖削除される。
+- **ファイルの出力は、記録してから行う**（記録できなければ出力しない）。印刷・PDF 保存はブラウザの機能で検知できないため記録しない。
+- 画面は新しい順に 1000 件まで出し、操作の種類で絞り込める。出力は画面に出している範囲。
+
+決めたこと（版の復元）:
+
+- **戻す前の作業中の内容は、必ず保存版として自動で残す。** 復元で失われるものを作らない（戻した後でも、その版に戻せる）。
+- **版にセクションが無い（その機能ができる前の版）ときは、そのセクションの作業中データを空にする。** その版の時点の状態に戻すため。確認のダイアログで伝える。
+- **復元の関数が無いセクションを含む版は、何も変えずに止める**（`P2055`）。黙って一部だけ戻さないため。
+- 基本情報も版の内容に戻す（年度は作成後に変えないため戻さない）。承認済み・競合（`draftRevision` の不一致）のときは拒否する。
+- 過去版から「新しい版を作る」機能（T11。作業中データは変えない）は、そのまま残す。
+
+決めたこと（Excel 出力・穴埋めテンプレート・2 画面のエディタ）:
+
+- **Excel は保存版の CSV と同じ行から作る**（内容を一致させる。全体テストで行ごとに一致を確かめる）。既存の依存 `exceljs` を、出力するときだけ読み込む。
+  見出しの行は太字にして画面を固定し、長い文章の列は折り返す。値は文字列のセルとして書く（数式として評価されない）。
+- **テンプレートはチームが作った試行版の文例**（外部の監修なし。`ssbj-r1-scope.md` §8）。【 】が残ったままでは「入力済み」にできない。本文が空のときだけ入れられる。
+- **入力済み以外の状態で本文を残したまま保存しようとしたら、保存の前に警告する。** 「未確認」などでは本文を保存しない（未確認の下書きは内部メモに書く。§4）ので、
+  黙って本文を消さないように。警告で取り消すと保存せず、入力した文章を残したまま編集に戻る。【 】が残っているときの案内も、「内部メモに移してから「未確認」で保存する」にする。
+- **右側のプレビューは、作業中の内容（サーバで組み立てたもの）を土台に、その画面の最新の入力を重ねて描く。** 保存はしない。未保存の編集を含むときはそう明示する。
+  別の画面で変えた内容は「読み直す」で取り込む。横に広い表の画面（判断）は、右側を最初は閉じておく。
+- **右側の「OGT の値」は参照用のカンペ。** レポートに入るのは GHG の画面で採用した値だけ。生物多様性のスコアは OGT 本体に無いため出さない。

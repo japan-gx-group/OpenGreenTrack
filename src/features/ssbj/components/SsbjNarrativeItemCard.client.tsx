@@ -2,18 +2,27 @@
 
 // 四本柱・補足の文章（T05）の 1 項目のカード。対応する要求と項番号、記載ガイド・記載例、文章の表示と編集を出す。
 // 未入力・未確認・非該当は状態のラベルで出し、空欄や「なし」にしない。内部メモは開示しないことを明示する（docs/ssbj-spec.md §5）。
+// 編集中は、穴埋めテンプレートを入れられ、残っている【 】の数を出す。入力中の内容は onDraftChange で親に渡す
+// （2 画面エディタのプレビューにその場で反映するため。保存はしない）。
+// 入力済み以外の状態では本文を保存しないので、入力した本文が消える保存は、確認のダイアログで止める（取り消せば編集に戻る）。
 
-import { useId, useState } from 'react';
-import { Pencil } from 'lucide-react';
+import { useEffect, useId, useState } from 'react';
+import { FileText, Pencil } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useSsbjNarrativeForm } from '../hooks/useSsbjNarrativeForm';
 import { SSBJ_FIELD_STATES, type SsbjDisclosableText, type SsbjFieldState, type SsbjItemId } from '../types';
 import { SSBJ_FIELD_STATE_LABELS, formatFieldValue, isAnswered } from '../utils/fieldValue';
-import { SSBJ_NARRATIVE_TEXT_MAX_LENGTH, type SsbjNarrativeEntry } from '../utils/narrative';
+import {
+  SSBJ_NARRATIVE_TEXT_MAX_LENGTH,
+  normalizeSsbjNarrativeInput,
+  ssbjTemplatePlaceholders,
+  type SsbjNarrativeEntry,
+} from '../utils/narrative';
 import { formatParagraphReference, ssbjRequirementsOfItem } from '../utils/requirementMaster';
 
 const PRIORITY_LABELS = { core: '◎', basic: '○' } as const;
@@ -21,15 +30,27 @@ const PRIORITY_LABELS = { core: '◎', basic: '○' } as const;
 interface SsbjNarrativeItemCardProps {
   entry: SsbjNarrativeEntry;
   onSave: (itemId: SsbjItemId, text: SsbjDisclosableText) => Promise<void>;
+  /** 承認済みなど、編集させないとき true。 */
+  readOnly?: boolean;
+  /** 編集中の内容（未保存）。編集をやめた・保存したときは null。 */
+  onDraftChange?: (itemId: SsbjItemId, text: SsbjDisclosableText | null) => void;
 }
 
-export const SsbjNarrativeItemCard = ({ entry, onSave }: SsbjNarrativeItemCardProps) => {
+export const SsbjNarrativeItemCard = ({ entry, onSave, readOnly = false, onDraftChange }: SsbjNarrativeItemCardProps) => {
   const id = useId();
   const [isEditing, setIsEditing] = useState(false);
   const form = useSsbjNarrativeForm(entry.itemId, onSave);
   const requirements = ssbjRequirementsOfItem(entry.itemId);
   const { disclosure, internalNote } = entry.text;
   const isTextEnabled = form.values.state === 'answered';
+  const placeholders = isTextEnabled ? ssbjTemplatePlaceholders(form.values.text) : [];
+  const { itemId } = entry;
+  const finishIfSaved = (saved: boolean) => { if (saved) setIsEditing(false); };
+
+  // 編集中の内容を親へ渡す（プレビューにその場で反映する）。編集をやめたら取り消す。
+  useEffect(() => {
+    onDraftChange?.(itemId, isEditing ? normalizeSsbjNarrativeInput(form.values) : null);
+  }, [isEditing, form.values, itemId, onDraftChange]);
 
   const startEdit = () => {
     form.reset(entry.text);
@@ -46,7 +67,7 @@ export const SsbjNarrativeItemCard = ({ entry, onSave }: SsbjNarrativeItemCardPr
         <div className="flex items-center gap-2">
           {entry.item?.kind === 'company_supplement' && <Badge variant="outline">企業固有の補足</Badge>}
           {!entry.item && <Badge variant="warning">要求項目マスターに無い項目</Badge>}
-          {!isEditing && entry.item && (
+          {!isEditing && entry.item && !readOnly && (
             <Button type="button" variant="outline" size="sm" onClick={startEdit}>
               <Pencil size={14} />
               編集
@@ -79,7 +100,7 @@ export const SsbjNarrativeItemCard = ({ entry, onSave }: SsbjNarrativeItemCardPr
       {isEditing ? (
         <form
           className="flex flex-col gap-3"
-          onSubmit={event => void form.submit(event).then(saved => { if (saved) setIsEditing(false); })}
+          onSubmit={event => void form.submit(event).then(finishIfSaved)}
         >
           <div className="flex flex-col gap-1.5">
             <Label htmlFor={`${id}-state`}>開示する文章の状態</Label>
@@ -94,6 +115,25 @@ export const SsbjNarrativeItemCard = ({ entry, onSave }: SsbjNarrativeItemCardPr
                 <option key={state} value={state}>{SSBJ_FIELD_STATE_LABELS[state]}</option>
               ))}
             </select>
+            {entry.item && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={form.isSaving || (isTextEnabled && form.values.text.trim() !== '')}
+                  onClick={() => form.applyTemplate(entry.item!.template)}
+                >
+                  <FileText size={14} />
+                  テンプレートを入れる
+                </Button>
+                <span className="text-xs text-text-muted">
+                  {isTextEnabled && form.values.text.trim() !== ''
+                    ? '本文が空のときに入れられます'
+                    : '【 】の部分を自社の内容に置き換えて使います（試行版の文例です）'}
+                </span>
+              </div>
+            )}
             <Textarea
               aria-label="開示する文章"
               rows={4}
@@ -103,6 +143,11 @@ export const SsbjNarrativeItemCard = ({ entry, onSave }: SsbjNarrativeItemCardPr
               disabled={form.isSaving || !isTextEnabled}
               onChange={event => form.setText(event.target.value)}
             />
+            {placeholders.length > 0 && (
+              <p data-testid="ssbj-template-placeholders" className="m-0 text-xs text-warning">
+                置き換えていない【 】が {placeholders.length} か所あります: {placeholders.join(' ')}
+              </p>
+            )}
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor={`${id}-internal-note`}>内部メモ（開示しない）</Label>
@@ -125,6 +170,30 @@ export const SsbjNarrativeItemCard = ({ entry, onSave }: SsbjNarrativeItemCardPr
             </Button>
             <Button type="submit" disabled={form.isSaving}>{form.isSaving ? '保存中...' : '保存'}</Button>
           </div>
+          <Dialog open={form.isConfirmingDiscard} onOpenChange={open => { if (!open) form.cancelDiscard(); }}>
+            <DialogContent data-testid="ssbj-narrative-discard-dialog">
+              <DialogHeader>
+                <DialogTitle>本文は保存されません</DialogTitle>
+                <DialogDescription asChild>
+                  <div className="flex flex-col gap-2">
+                    <p className="m-0">
+                      「{SSBJ_FIELD_STATE_LABELS[form.values.state]}」で保存すると、本文は保存されず空になります。
+                      書きかけの文章を残す場合は、内部メモに移してから保存してください。
+                    </p>
+                    <p className="m-0">
+                      「編集に戻る」を押すと、保存せずに編集へ戻ります。状態を「{SSBJ_FIELD_STATE_LABELS.answered}」に戻すと、入力した文章が表示されます。
+                    </p>
+                  </div>
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={form.cancelDiscard}>編集に戻る</Button>
+                <Button type="button" variant="destructive" onClick={() => void form.confirmDiscard().then(finishIfSaved)}>
+                  本文を空にして保存
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </form>
       ) : (
         <dl className="m-0 flex flex-col gap-2">

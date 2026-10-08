@@ -48,6 +48,7 @@ erDiagram
     ssbj_reports ||--o| ssbj_ogt_adoptions : "OGT採用値"
     ssbj_reports ||--o{ ssbj_narratives : "四本柱の文章"
     ssbj_reports ||--o{ ssbj_judgements : "該当性・重要性の判断"
+    ssbj_reports ||--o{ ssbj_audit_logs : "操作履歴"
 ```
 
 ---
@@ -291,6 +292,11 @@ SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず
 | `createdByUserId` / `updatedByUserId` | 登録・更新操作者ID | UUID | NULL | `set_row_actor` トリガが auth.uid() で上書き |
 | `createdAt` / `updatedAt` | 作成・更新日時 | TIMESTAMPTZ | NOT NULL | `updatedAt` は `set_updated_at` トリガ |
 | `draftRevision` | 作業中データの版数 | INTEGER | NOT NULL, DEFAULT 1 | 基本情報の変更（`bump_ssbj_reports_draft_revision` トリガ）と各機能テーブルの変更（`bump_ssbj_draft_revision`）で +1。保存版作成時の競合検知に使う（`20260927180425_ssbj_report_versions.sql`） |
+| `status` | 状態 | VARCHAR(20) | NOT NULL, DEFAULT `draft`, CHECK(`draft` / `in_review` / `approved`) | `20261002090100_ssbj_report_status.sql` で追加（以下 6 列も同じ）。`change_ssbj_report_status`（service_role）だけが変える。`approved` の間は作業中データの変更をトリガーが拒否する（レポートの行をロックしてから判定し、承認と保存を 1 つずつ処理する。`20261009090000_ssbj_report_write_lock.sql`） |
+| `approverUserId` | 承認者 | UUID | NULL（レビュー中・承認済みは必須） | レビュー依頼で指定する自組織の利用者 |
+| `approvedAt` / `approvedByUserId` | 承認日時 / 承認した人 | TIMESTAMPTZ / UUID | `approved` のときだけ非 NULL | |
+| `approvedVersionId` | 承認した保存版 | UUID | Foreign Key（`ssbj_report_versions`、削除時 SET NULL） | 承認時に作った保存版 |
+| `statusChangedAt` / `statusChangedByUserId` | 状態の変更日時 / 変更した人 | TIMESTAMPTZ / UUID | NULL | |
 
 - RLS は select / insert / update を自組織に限定し、insert / update の with check で `fiscalYearId` が自組織の年度であることを
   `exists` で検証する（FK は行の存在しか見ないため）。delete のポリシーと GRANT は持たない（R1 では削除を提供しない）。
@@ -429,6 +435,24 @@ RLSは自組織に限定し、レポートの組織帰属も検証する。変�
 
 - RLS・GRANT の考え方は 3.13 と同じ。update の列 GRANT は判断の列だけで、レポート・組織・要求は作成後に変えない。
 - 区分は enum ではなく CHECK 制約にする（区分を見直すとき、enum は値の削除・改名ができないため）。
+
+### 3.19 SSBJ 操作履歴 (`ssbj_audit_logs`) — 誰が・いつ・何をしたか（`supabase/migrations/20261002090000_ssbj_audit_logs.sql`）
+SSBJ の各テーブルのトリガー（`ssbj_audit_row_change`）と、状態の変更・復元の RPC、出力の記録の関数（`record_ssbj_export`）だけが書く。書き換えない。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | ID | BIGINT | Primary Key（identity） | 記録の順 |
+| `organizationId` | 組織ID | UUID | Foreign Key | 削除時: CASCADE |
+| `reportId` | レポートID | UUID | Foreign Key | 削除時: CASCADE（デモデータの入れ直し・テストの後片付け） |
+| `actorUserId` | 操作した人 | UUID | NULL | auth.uid()、service_role の処理は RPC が渡した操作者 |
+| `action` | 操作 | VARCHAR(30) | NOT NULL, CHECK | `create` / `update` / `delete` / `status_change` / `version_create` / `version_restore` / `export` |
+| `targetType` / `targetId` | 対象の種類 / 識別子 | VARCHAR(30) / TEXT | NOT NULL / NULL | 例: `narrative` / 項目 ID |
+| `changedColumns` | 変わった列 | TEXT[] | NULL | update のとき（版数・監査列は含めない） |
+| `details` | 補足 | JSONB | NOT NULL, CHECK(オブジェクト) | 状態の前後・版番号・出力形式・対象の名前など |
+| `createdAt` | 記録日時 | TIMESTAMPTZ | NOT NULL | `clock_timestamp()` |
+
+- RLS は自組織の select だけ。authenticated には select だけを GRANT し、update はトリガーで全ロール拒否する。
+- 版数・監査列だけが変わった更新は記録しない。復元中の行ごとの記録は止め、復元として 1 件記録する。
 
 ---
 

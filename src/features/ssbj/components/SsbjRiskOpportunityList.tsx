@@ -24,9 +24,11 @@ interface SsbjRiskOpportunityListProps {
   items: SsbjRiskOpportunity[];
   onEdit: (item: SsbjRiskOpportunity) => void;
   onDelete: (item: SsbjRiskOpportunity) => void;
+  /** 承認済みなど、編集・削除させないとき true。 */
+  readOnly?: boolean;
 }
 
-export const SsbjRiskOpportunityList = ({ items, onEdit, onDelete }: SsbjRiskOpportunityListProps) => {
+export const SsbjRiskOpportunityList = ({ items, onEdit, onDelete, readOnly = false }: SsbjRiskOpportunityListProps) => {
   if (items.length === 0) {
     return <p className="m-0 py-6 text-center text-sm text-text-muted">リスク・機会はまだ登録されていません。</p>;
   }
@@ -42,7 +44,7 @@ export const SsbjRiskOpportunityList = ({ items, onEdit, onDelete }: SsbjRiskOpp
               </Badge>
               <h3 className="m-0 text-sm font-bold break-words">{item.title}</h3>
             </div>
-            <div className="flex gap-2">
+            {!readOnly && <div className="flex gap-2">
               <Button type="button" variant="outline" size="sm" onClick={() => onEdit(item)}>
                 <Pencil size={14} />
                 編集
@@ -51,7 +53,7 @@ export const SsbjRiskOpportunityList = ({ items, onEdit, onDelete }: SsbjRiskOpp
                 <Trash2 size={14} />
                 削除
               </Button>
-            </div>
+            </div>}
           </div>
           <dl className="m-0 flex flex-col gap-2">
             {item.kind === 'risk' && (

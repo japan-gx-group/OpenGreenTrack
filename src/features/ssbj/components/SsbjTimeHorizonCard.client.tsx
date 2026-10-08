@@ -33,6 +33,8 @@ interface SsbjTimeHorizonCardProps {
   onStartEdit: () => void;
   onCancel: () => void;
   onSubmit: (event: FormEvent) => void;
+  /** 承認済みなど、編集させないとき true。 */
+  readOnly?: boolean;
 }
 
 export const SsbjTimeHorizonCard = ({
@@ -42,6 +44,7 @@ export const SsbjTimeHorizonCard = ({
   onStartEdit,
   onCancel,
   onSubmit,
+  readOnly = false,
 }: SsbjTimeHorizonCardProps) => {
   const id = useId();
 
@@ -49,7 +52,7 @@ export const SsbjTimeHorizonCard = ({
     <Card>
       <div className="mb-2 flex items-center justify-between gap-2">
         <h2 className="m-0 text-base font-bold">時間軸の定義</h2>
-        {!isEditing && (
+        {!isEditing && !readOnly && (
           <Button type="button" variant="outline" size="sm" onClick={onStartEdit}>
             <Pencil size={14} />
             定義を編集

@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import type { SsbjTimeHorizonDefinitions } from '../types';
 import { fromFieldValue, toFieldValue } from '../utils/fieldValue';
 import { EMPTY_SSBJ_TIME_HORIZON_DEFINITIONS } from '../utils/timeHorizons';
+import { ssbjWriteErrorMessage } from '../utils/writeError';
 
 export interface SsbjTimeHorizonRow {
   shortTermState: string;
@@ -86,7 +87,7 @@ export const saveSsbjTimeHorizons = async (
     .eq('reportId', report.id)
     .select(SELECT_COLUMNS);
   if (updated.error) {
-    throw new Error('時間軸の定義の保存に失敗しました');
+    throw new Error(ssbjWriteErrorMessage(updated.error, '時間軸の定義の保存に失敗しました'));
   }
   const updatedRows = (updated.data ?? []) as unknown as SsbjTimeHorizonRow[];
   if (updatedRows.length > 0) {
@@ -103,7 +104,7 @@ export const saveSsbjTimeHorizons = async (
     if (inserted.error?.code === '23505') {
       throw new Error('他の画面で先に保存されました。画面を開き直してから保存し直してください');
     }
-    throw new Error('時間軸の定義の保存に失敗しました');
+    throw new Error(ssbjWriteErrorMessage(inserted.error, '時間軸の定義の保存に失敗しました'));
   }
   return toSsbjTimeHorizonDefinitions(inserted.data as unknown as SsbjTimeHorizonRow);
 };
