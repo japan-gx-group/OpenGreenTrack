@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { click, render, setInputValue, type RenderResult } from '@/lib/testing/render';
 import { FICTIONAL_DRAFT_REVIEW, fictionalReportBasicInfo } from '../../__fixtures__/fictionalReport';
 import type { SsbjReportWorkingRecord } from '../../types';
+import { SSBJ_EDIT_CONFLICT_MESSAGE, SsbjEditConflictError } from '../../utils/writeError';
 
 // SSBJ レポート詳細画面: 基本情報の再表示・未入力の表示・Not Found・編集保存・保存版の作成を検証する。
 
@@ -42,6 +43,7 @@ const REPORT: SsbjReportWorkingRecord = {
   periodStart: '2024-04-01',
   periodEnd: '2025-03-31',
   draftRevision: 3,
+  basicInfoRevision: 5,
   review: FICTIONAL_DRAFT_REVIEW,
 };
 
@@ -119,7 +121,7 @@ describe('SsbjReportDetail', () => {
     click(findButton(container, '変更を保存'));
     await flushPromises();
 
-    expect(updateSsbjReportBasicInfo).toHaveBeenCalledWith(REPORT.id, {
+    expect(updateSsbjReportBasicInfo).toHaveBeenCalledWith(REPORT.id, 5, {
       title: '改訂後のレポート名',
       purpose: REPORT.purpose,
       reportingScope: REPORT.reportingScope,
@@ -173,7 +175,7 @@ describe('SsbjReportDetail', () => {
     setInputValue(ownership, '35');
     click(findButton(container, '変更を保存'));
     await flushPromises();
-    expect(vi.mocked(updateSsbjReportBasicInfo).mock.calls[0][1]).toMatchObject({
+    expect(vi.mocked(updateSsbjReportBasicInfo).mock.calls[0][2]).toMatchObject({
       industryCode: 'TR-RO',
       ownershipPercentage: '35',
     });
@@ -213,6 +215,46 @@ describe('SsbjReportDetail', () => {
     click(findButton(container, '編集'));
 
     expect(findButton(container, '保存版を作成').disabled).toBe(true);
+  });
+
+  it('他の画面で先に基本情報が保存されていたら、競合を知らせて入力を残し、表示用のレポートを読み直す', async () => {
+    // 画面 B が開いた時点のレポート。その後、画面 A が名称を変えて保存した。
+    const savedByOther: SsbjReportWorkingRecord = { ...REPORT, title: '画面Aが保存した名称', basicInfoRevision: 6 };
+    vi.mocked(getSsbjReport).mockResolvedValueOnce(REPORT).mockResolvedValue(savedByOther);
+    vi.mocked(updateSsbjReportBasicInfo).mockRejectedValue(new SsbjEditConflictError());
+    const { container } = await renderScreen();
+
+    click(findButton(container, '編集'));
+    const parentInput = container.querySelector<HTMLInputElement>('input[name="parentCompanyName"]');
+    if (!parentInput) throw new Error('親会社名の入力欄がありません');
+    setInputValue(parentInput, '画面Bで書いた親会社名');
+    click(findButton(container, '変更を保存'));
+    await flushPromises();
+    await flushPromises();
+
+    // 編集を始めた時点の版数で保存しようとし、拒否される。
+    expect(updateSsbjReportBasicInfo).toHaveBeenCalledWith(REPORT.id, 5, expect.objectContaining({
+      title: REPORT.title, parentCompanyName: '画面Bで書いた親会社名',
+    }));
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(SSBJ_EDIT_CONFLICT_MESSAGE);
+    // 入力中の値は消さない。
+    expect(container.querySelector<HTMLInputElement>('input[name="parentCompanyName"]')?.value).toBe('画面Bで書いた親会社名');
+    expect(getSsbjReport).toHaveBeenCalledTimes(2);
+
+    // 読み直しても、フォームは開いたときの版数のまま（古い入力で再送しても上書きしない）。
+    click(findButton(container, '変更を保存'));
+    await flushPromises();
+    expect(vi.mocked(updateSsbjReportBasicInfo).mock.calls[1][1]).toBe(5);
+
+    // キャンセルすると、他の画面が保存した最新の内容が見え、編集し直すと最新の版数で保存する。
+    click(findButton(container, 'キャンセル'));
+    expect(container.querySelector('dl')?.textContent).toContain('画面Aが保存した名称');
+    vi.mocked(updateSsbjReportBasicInfo).mockResolvedValue(savedByOther);
+    click(findButton(container, '編集'));
+    expect(container.querySelector<HTMLInputElement>('input[name="title"]')?.value).toBe('画面Aが保存した名称');
+    click(findButton(container, '変更を保存'));
+    await flushPromises();
+    expect(vi.mocked(updateSsbjReportBasicInfo).mock.calls[2][1]).toBe(6);
   });
 
   it('競合などで保存できなかった理由を表示する', async () => {

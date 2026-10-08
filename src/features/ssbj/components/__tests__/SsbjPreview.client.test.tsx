@@ -19,7 +19,7 @@ import { listSsbjVersions } from '../../services/versionExportService';
 import { SsbjPreview } from '../SsbjPreview.client';
 
 const report = { ...fictionalReportBasicInfo, fiscalYearLabel: '2024年度',
-  periodStart: '2024-04-01', periodEnd: '2025-03-31', draftRevision: 7, review: FICTIONAL_DRAFT_REVIEW };
+  periodStart: '2024-04-01', periodEnd: '2025-03-31', draftRevision: 7, basicInfoRevision: 0, review: FICTIONAL_DRAFT_REVIEW };
 let rendered: RenderResult | null = null;
 const flush = async () => { await act(async () => { await Promise.resolve(); }); };
 const settle = async () => { for (let i = 0; i < 4; i += 1) await flush(); };

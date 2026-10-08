@@ -14,7 +14,7 @@ import type {
   SsbjReportWorkingRecord,
 } from '../types';
 import type { SsbjReportBasicInfoInput } from '../utils/reportValidation';
-import { ssbjWriteErrorMessage } from '../utils/writeError';
+import { SsbjEditConflictError, ssbjWriteErrorMessage } from '../utils/writeError';
 
 type FiscalYearEmbed = { label: string; startDate: string; endDate: string };
 
@@ -35,6 +35,7 @@ export interface SsbjReportRow {
   createdAt: string;
   updatedAt: string;
   draftRevision: number;
+  basicInfoRevision: number;
   status: string;
   approverUserId: string | null;
   approvedAt: string | null;
@@ -48,11 +49,12 @@ export interface SsbjReportRow {
 // 年度のラベルと期間は fiscal_years を埋め込んで同じ往復で取る（一覧の各行に年度名を出すため）。
 // draftRevision も同じ往復で取る。別の問い合わせにすると、表示した内容より新しい版数を保持してしまい、
 // 画面に出ていない変更を含む保存版を競合として検知できなくなる。
+// basicInfoRevision（基本情報の編集競合の検知に使う版数）も、表示した基本情報と同じ往復で取る。
 // 持分比率（numeric）は text に変換して受け取る。number にすると桁の表記が揺れるため（docs/ssbj-spec.md §6）。
 const SELECT_COLUMNS =
   'id, organizationId, fiscalYearId, title, purpose, reportingScope, standardVersion, ' +
   'parentCompanyName, parentRelationship, ownershipPercentage::text, measurementApproach, industryCode, ' +
-  'createdAt, updatedAt, draftRevision, status, approverUserId, approvedAt, approvedByUserId, approvedVersionId, ' +
+  'createdAt, updatedAt, draftRevision, basicInfoRevision, status, approverUserId, approvedAt, approvedByUserId, approvedVersionId, ' +
   'statusChangedAt, fiscal_years(label, startDate, endDate)';
 
 /** DB 行 → SsbjReportRecord。年度が見えない行（通常は起こらない）は例外にする。 */
@@ -83,10 +85,14 @@ export const toSsbjReportRecord = (row: SsbjReportRow): SsbjReportRecord => {
   };
 };
 
-/** DB 行 → 編集画面用のレコード（保存版作成の競合検知に使う draftRevision と、状態・承認の記録を添える）。 */
+/**
+ * DB 行 → 編集画面用のレコード（保存版作成の競合検知に使う draftRevision、基本情報の編集競合の検知に使う
+ * basicInfoRevision と、状態・承認の記録を添える）。
+ */
 export const toSsbjReportWorkingRecord = (row: SsbjReportRow): SsbjReportWorkingRecord => ({
   ...toSsbjReportRecord(row),
   draftRevision: row.draftRevision,
+  basicInfoRevision: row.basicInfoRevision,
   review: {
     // 値の形式は DB の check 制約が保証している。
     status: row.status as SsbjReportStatus,
@@ -188,9 +194,15 @@ export const createSsbjReport = async (
 /**
  * 基本情報の更新。組織・年度は変更できない（列 GRANT で基本情報の列だけを許可している）。
  * 値が変わると DB のトリガーが draftRevision を進めるため、更新後の版数を返して画面の保持値を差し替えさせる。
+ *
+ * expectedBasicInfoRevision は編集を始めた時点の basicInfoRevision。更新の条件に含め、他の画面が先に基本情報を
+ * 保存していれば 0 件更新になるので、SsbjEditConflictError で拒否する（先に保存された変更を古い値で上書きしない）。
+ * 条件と更新は 1 つの UPDATE 文なので、比べた直後に別の保存が入る隙間は無い（docs/ssbj-spec.md §8）。
+ * draftRevision を条件にしないのは、文章・判断など基本情報と関係の無い変更でも進み、無関係な編集まで競合になるため。
  */
 export const updateSsbjReportBasicInfo = async (
   reportId: string,
+  expectedBasicInfoRevision: number,
   input: SsbjReportBasicInfoInput,
 ): Promise<SsbjReportWorkingRecord> => {
   const supabase = createClient();
@@ -198,6 +210,7 @@ export const updateSsbjReportBasicInfo = async (
     .from('ssbj_reports')
     .update(input)
     .eq('id', reportId)
+    .eq('basicInfoRevision', expectedBasicInfoRevision)
     .select(SELECT_COLUMNS)
     .maybeSingle();
 
@@ -205,7 +218,18 @@ export const updateSsbjReportBasicInfo = async (
     throw new Error(ssbjWriteErrorMessage(error, 'SSBJレポートの更新に失敗しました'));
   }
   if (!data) {
-    // RLS で対象が見えない（削除済み・他組織）場合は 0 件更新になる。
+    // 0 件更新: 版数が変わった（競合）か、RLS で対象が見えない（削除済み・他組織）。見えるかどうかで分ける。
+    const { data: current, error: currentError } = await supabase
+      .from('ssbj_reports')
+      .select('id')
+      .eq('id', reportId)
+      .maybeSingle();
+    if (currentError) {
+      throw new Error('SSBJレポートの更新に失敗しました');
+    }
+    if (current) {
+      throw new SsbjEditConflictError();
+    }
     throw new Error('SSBJレポートが見つかりません。一覧から開き直してください');
   }
   return toSsbjReportWorkingRecord(data as unknown as SsbjReportRow);

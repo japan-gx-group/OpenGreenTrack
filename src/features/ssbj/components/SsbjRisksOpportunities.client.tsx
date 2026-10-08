@@ -24,8 +24,9 @@ import { useSsbjTimeHorizonForm } from '../hooks/useSsbjTimeHorizonForm';
 import { useSsbjTimeHorizons } from '../hooks/useSsbjTimeHorizons';
 import { createSsbjRiskOpportunity, updateSsbjRiskOpportunity } from '../services/riskOpportunityService';
 import { saveSsbjTimeHorizons } from '../services/timeHorizonService';
-import type { SsbjRiskOpportunity } from '../types';
+import type { SsbjRiskOpportunityWorkingRecord } from '../types';
 import { toSsbjRiskOpportunityFormValues } from '../utils/riskOpportunity';
+import { SsbjEditConflictError } from '../utils/writeError';
 import { SsbjRiskOpportunityDeleteDialog } from './SsbjRiskOpportunityDeleteDialog.client';
 import { SsbjRiskOpportunityDialog } from './SsbjRiskOpportunityDialog.client';
 import { SsbjRiskOpportunityList } from './SsbjRiskOpportunityList';
@@ -39,8 +40,8 @@ export const SsbjRisksOpportunities = ({ reportId }: { reportId: string }) => {
   const { toast, showToast } = useToast();
   const { report, isLoading: isReportLoading, errorMessage: reportError, isNotFound } = useSsbjReport(reportId);
   const list = useSsbjRisksOpportunities(reportId, report !== null);
-  // null: ダイアログを閉じている / 'new': 登録 / それ以外: 編集中の対象
-  const [editing, setEditing] = useState<SsbjRiskOpportunity | 'new' | null>(null);
+  // null: ダイアログを閉じている / 'new': 登録 / それ以外: 編集中の対象（開いた時点の updatedAt を更新の条件にする）
+  const [editing, setEditing] = useState<SsbjRiskOpportunityWorkingRecord | 'new' | null>(null);
   const deletion = useSsbjRiskOpportunityDelete();
   const horizons = useSsbjTimeHorizons(reportId, report !== null);
   const [isEditingHorizons, setIsEditingHorizons] = useState<boolean>(false);
@@ -64,11 +65,18 @@ export const SsbjRisksOpportunities = ({ reportId }: { reportId: string }) => {
 
   const form = useSsbjRiskOpportunityForm(async input => {
     if (!report) return;
-    const saved =
-      editing && editing !== 'new'
-        ? await updateSsbjRiskOpportunity(editing.id, input)
-        : await createSsbjRiskOpportunity(report, input);
-    list.upsertItem(saved);
+    try {
+      const saved =
+        editing && editing !== 'new'
+          ? await updateSsbjRiskOpportunity(editing, input)
+          : await createSsbjRiskOpportunity(report, input);
+      list.upsertItem(saved);
+    } catch (error) {
+      // 他の画面で先に保存されていた: 入力中の値はダイアログに残し、一覧だけ最新に読み直す
+      // （ダイアログを閉じて開き直すと、最新の内容から編集し直せる）。
+      if (error instanceof SsbjEditConflictError) list.reload();
+      throw error;
+    }
     showToast(editing === 'new' ? 'リスク・機会を登録しました' : 'リスク・機会を保存しました', 'success');
   });
 
@@ -77,7 +85,7 @@ export const SsbjRisksOpportunities = ({ reportId }: { reportId: string }) => {
     setEditing('new');
   };
 
-  const openEdit = (item: SsbjRiskOpportunity) => {
+  const openEdit = (item: SsbjRiskOpportunityWorkingRecord) => {
     form.reset(toSsbjRiskOpportunityFormValues(item));
     setEditing(item);
   };
