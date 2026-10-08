@@ -2,6 +2,8 @@
 
 // SSBJ レポートの簡易プレビュー画面（T12）。作業中の内容と保存版を切り替えて表示し、印刷ビュー（PDF）を開ける。
 // 表示の本体は SsbjPreviewDocument（印刷ビューと共通）。内部メモは既定で隠し、利用者が選んだときだけ出す。
+// 内部メモの表示は画面の中だけの切替で、印刷ビュー（PDF）には渡さない。印刷・PDF は社外に共有されうるため、
+// 「開示しない」内部メモ・内部記録は画面での表示の有無にかかわらず出力しない。
 
 import { useState } from 'react';
 import Link from 'next/link';
@@ -30,7 +32,7 @@ export const SsbjPreview = ({ reportId, initialSource = null }: { reportId: stri
 
   const printHref = `/ssbj/${encodeURIComponent(reportId)}/preview/print?source=${encodeURIComponent(
     formatPreviewSelection(selection),
-  )}&internal=${showInternalNotes ? '1' : '0'}`;
+  )}`;
   const errorMessage = reportError || versions.errorMessage || preview.errorMessage;
 
   return (
