@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fictionalVersion } from '../../__fixtures__/fictionalReport';
+import { fictionalVersion, fictionalVersionBeforeBasicInfoAdditions } from '../../__fixtures__/fictionalReport';
 import { fictionalDisclosedTexts, fictionalGhgValues, fictionalInternalTexts } from '../../__fixtures__/fictionalReportTexts';
 import type { SsbjReportSnapshotV1 } from '../../types';
 import { ssbjVersionToCsvRows } from '../versionCsv';
@@ -204,6 +204,14 @@ describe('ssbjVersionToCsvRows（R1 の全体確認）', () => {
     expect(new Set(adopted.map(row => row[1])).size).toBe(adopted.length);
     expect(references).toHaveLength(ghg.supplierReferences.length);
     expect(references.every(row => row[7].includes('Scope 3 の合計には含めない'))).toBe(true);
+  });
+
+  it('任意項目を追加する前の保存版でも、キーの無い基本情報を「未入力」の行にする（undefined を出さない）', () => {
+    const legacyRows = ssbjVersionToCsvRows(fictionalVersionBeforeBasicInfoAdditions, GENERATED_AT);
+    for (const name of ['親会社名', '親会社との関係', '親会社の持分比率（%）', '測定アプローチ', '業種（SICS）']) {
+      expect(legacyRows.find(row => row[0] === '基本情報' && row[2] === name)?.slice(3, 5)).toEqual(['未入力', '']);
+    }
+    expect(legacyRows.flat().some(cell => cell.includes('undefined'))).toBe(false);
   });
 
   it('文章と判断は、入力の無い項目・要求も「未入力」「未確認」の行として出す（出力から消さない）', () => {

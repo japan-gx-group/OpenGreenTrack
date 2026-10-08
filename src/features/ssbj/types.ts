@@ -573,6 +573,7 @@ export interface SsbjSnapshotSections {
 /** 保存版の中身（ssbj_report_versions.snapshot）。形式を変えるときは schemaVersion を上げる。 */
 export type SsbjReportSnapshotV1 = {
   schemaVersion: 1;
+  /** 任意項目を足す前に保存した版では、その項目のキーが無い。読む側は欠落を null と同じく未入力と扱う。 */
   report: SsbjReportRecord;
   sections: Partial<SsbjSnapshotSections>;
 };
