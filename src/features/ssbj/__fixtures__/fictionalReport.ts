@@ -406,3 +406,25 @@ export const fictionalVersion: SsbjReportVersion = {
   createdBy: FICTIONAL_USER_ID,
   createdAt: '2025-06-03T03:00:00.000Z',
 };
+
+/** 基本情報に後から追加した任意項目（親会社・持分比率・測定アプローチ・業種）。これより前の保存版にはキーが無い。 */
+export const LATER_ADDED_BASIC_INFO_KEYS = [
+  'parentCompanyName',
+  'parentRelationship',
+  'ownershipPercentage',
+  'measurementApproach',
+  'industryCode',
+] as const satisfies readonly (keyof SsbjReportBasicInfo)[];
+
+/**
+ * 任意項目を追加する前の形式で保存された版の例。report から LATER_ADDED_BASIC_INFO_KEYS のキーが欠けている
+ * （値が null なのではなく、キーそのものが無い）。保存版は作成後に書き換えないため、この形のまま読まれる。
+ */
+export const fictionalVersionBeforeBasicInfoAdditions: SsbjReportVersion = (() => {
+  const report: Record<string, unknown> = { ...fictionalSnapshot.report };
+  for (const key of LATER_ADDED_BASIC_INFO_KEYS) delete report[key];
+  return {
+    ...fictionalVersion,
+    snapshot: { ...fictionalSnapshot, report: report as SsbjReportSnapshotV1['report'] },
+  };
+})();

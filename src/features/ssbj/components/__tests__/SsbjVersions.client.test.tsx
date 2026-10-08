@@ -2,7 +2,11 @@
 import React, { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { click, render, type RenderResult } from '@/lib/testing/render';
-import { FICTIONAL_DRAFT_REVIEW, fictionalVersion } from '../../__fixtures__/fictionalReport';
+import {
+  FICTIONAL_DRAFT_REVIEW,
+  fictionalVersion,
+  fictionalVersionBeforeBasicInfoAdditions,
+} from '../../__fixtures__/fictionalReport';
 
 vi.mock('../../hooks/useSsbjReport', () => ({ useSsbjReport: vi.fn() }));
 vi.mock('../../services/versionExportService', () => ({
@@ -180,6 +184,17 @@ describe('SsbjVersions', () => {
     expect(container.textContent).toContain(`版 ${fictionalVersion.versionNumber} の保存内容`);
     expect(container.textContent).toContain('内部メモ（開示しない）');
     expect(container.textContent).toContain('影響額の試算は経営企画部で実施中（架空）。');
+  });
+
+  it('任意項目を追加する前の保存版でも、キーの無い項目を「未入力」と表示する（undefined を出さない）', async () => {
+    const { container } = await renderScreen();
+    vi.mocked(getSsbjCsvVersion).mockResolvedValue(fictionalVersionBeforeBasicInfoAdditions);
+    await act(async () => { click(buttonWith(container, '内容を見る')); await Promise.resolve(); });
+    for (const label of ['親会社名', '親会社との関係', '親会社の持分比率', '測定アプローチ', '業種（SICS）']) {
+      const term = Array.from(container.querySelectorAll('dt')).find(item => item.textContent === label);
+      expect(term?.nextElementSibling?.textContent).toBe('未入力');
+    }
+    expect(container.textContent).not.toContain('undefined');
   });
 
   it('確認後に元版を指定して新版を作り、作業中データを変更しないと表示する', async () => {
