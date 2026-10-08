@@ -32,6 +32,13 @@ export const toSsbjNarrativeFormValues = (text: SsbjDisclosableText): SsbjNarrat
   internalNote: text.internalNote ?? '',
 });
 
+/**
+ * 入力済み以外の状態で保存すると、入力した本文が消えるか（normalizeSsbjNarrativeInput が本文を捨てるため）。
+ * 画面はこのとき保存の前に警告し、利用者が取り消せるようにする（書きかけの文章は内部メモに移せば残る）。
+ */
+export const ssbjNarrativeTextWillBeDiscarded = (values: SsbjNarrativeFormValues): boolean =>
+  values.state !== 'answered' && values.text.trim() !== '';
+
 /** 入力値を保存用に整える。入力済み以外は本文を捨て、空の内部メモは null にする。 */
 export const normalizeSsbjNarrativeInput = (values: SsbjNarrativeFormValues): SsbjDisclosableText => {
   const internalNote = values.internalNote.trim();
@@ -53,12 +60,13 @@ export const validateSsbjNarrativeInput = (itemId: string, input: SsbjDisclosabl
     } else if (input.disclosure.value.length > SSBJ_NARRATIVE_TEXT_MAX_LENGTH) {
       errors.push(`開示する文章は${SSBJ_NARRATIVE_TEXT_MAX_LENGTH}文字以内で入力してください`);
     }
-    // テンプレートの埋める部分が残ったまま「入力済み」にさせない（下書きは状態を「未確認」にすれば保存できる）。
+    // テンプレートの埋める部分が残ったまま「入力済み」にさせない。
+    // 「未確認」では本文を保存しないので、書きかけの文章を残す方法は内部メモに移すことだと案内する。
     const placeholders = ssbjTemplatePlaceholders(input.disclosure.value);
     if (placeholders.length > 0) {
       errors.push(
         `テンプレートの【 】の部分（${placeholders.length} か所）を自社の内容に置き換えてください` +
-        '（書きかけで保存する場合は、状態を「未確認」にしてください）',
+        '（書きかけのまま残す場合は、文章を内部メモに移してから、状態を「未確認」にして保存してください）',
       );
     }
   }
