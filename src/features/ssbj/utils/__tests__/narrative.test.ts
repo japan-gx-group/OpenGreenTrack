@@ -6,6 +6,7 @@ import {
   normalizeSsbjNarrativeInput,
   ssbjNarrativeEntriesOfSection,
   mergeSsbjNarrativeDrafts,
+  ssbjNarrativeTextWillBeDiscarded,
   ssbjTemplatePlaceholders,
   toSsbjNarrativeFormValues,
   validateSsbjNarrativeInput,
@@ -28,13 +29,25 @@ describe('入力の正規化と検証', () => {
     expect(validateSsbjNarrativeInput('governance.unknown_item', ok)).toContain('要求項目マスターに無い項目です');
   });
 
-  it('テンプレートの【 】が残ったまま入力済みにはできない（未確認なら下書きとして保存できる）', () => {
+  it('テンプレートの【 】が残ったまま入力済みにはできず、書きかけは内部メモに移すよう案内する', () => {
     const template = findSsbjNarrativeItem('governance.oversight_body')!.template;
     const answered = normalizeSsbjNarrativeInput({ state: 'answered', text: template, internalNote: '' });
-    expect(validateSsbjNarrativeInput('governance.oversight_body', answered).join()).toContain('【 】の部分（1 か所）');
+    const message = validateSsbjNarrativeInput('governance.oversight_body', answered).join();
+    expect(message).toContain('【 】の部分（1 か所）');
+    // 「未確認」では本文を保存しないので、「未確認にすれば下書きを保存できる」とは案内しない。
+    expect(message).toContain('文章を内部メモに移してから、状態を「未確認」にして保存してください');
     const draft = normalizeSsbjNarrativeInput({ state: 'unconfirmed', text: template, internalNote: '' });
     expect(validateSsbjNarrativeInput('governance.oversight_body', draft)).toEqual([]);
+    expect(draft.disclosure).toEqual({ state: 'unconfirmed' });
     expect(ssbjTemplatePlaceholders('【A】と【B】')).toEqual(['【A】', '【B】']);
+  });
+
+  it('入力済み以外の状態で、入力した本文があるときだけ「本文が消える」とする', () => {
+    expect(ssbjNarrativeTextWillBeDiscarded({ state: 'unconfirmed', text: '書きかけ', internalNote: '' })).toBe(true);
+    expect(ssbjNarrativeTextWillBeDiscarded({ state: 'not_applicable', text: '書きかけ', internalNote: '' })).toBe(true);
+    expect(ssbjNarrativeTextWillBeDiscarded({ state: 'unanswered', text: '書きかけ', internalNote: '' })).toBe(true);
+    expect(ssbjNarrativeTextWillBeDiscarded({ state: 'unconfirmed', text: '  ', internalNote: 'メモ' })).toBe(false);
+    expect(ssbjNarrativeTextWillBeDiscarded({ state: 'answered', text: '本文', internalNote: '' })).toBe(false);
   });
 
   it('保存済みの文章からフォームへ戻せる', () => {
