@@ -292,7 +292,7 @@ SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず
 | `createdByUserId` / `updatedByUserId` | 登録・更新操作者ID | UUID | NULL | `set_row_actor` トリガが auth.uid() で上書き |
 | `createdAt` / `updatedAt` | 作成・更新日時 | TIMESTAMPTZ | NOT NULL | `updatedAt` は `set_updated_at` トリガ |
 | `draftRevision` | 作業中データの版数 | INTEGER | NOT NULL, DEFAULT 1 | 基本情報の変更（`bump_ssbj_reports_draft_revision` トリガ）と各機能テーブルの変更（`bump_ssbj_draft_revision`）で +1。保存版作成時の競合検知に使う（`20260927180425_ssbj_report_versions.sql`） |
-| `status` | 状態 | VARCHAR(20) | NOT NULL, DEFAULT `draft`, CHECK(`draft` / `in_review` / `approved`) | `20261002090100_ssbj_report_status.sql` で追加（以下 6 列も同じ）。`change_ssbj_report_status`（service_role）だけが変える。`approved` の間は作業中データの変更をトリガーが拒否する |
+| `status` | 状態 | VARCHAR(20) | NOT NULL, DEFAULT `draft`, CHECK(`draft` / `in_review` / `approved`) | `20261002090100_ssbj_report_status.sql` で追加（以下 6 列も同じ）。`change_ssbj_report_status`（service_role）だけが変える。`approved` の間は作業中データの変更をトリガーが拒否する（レポートの行をロックしてから判定し、承認と保存を 1 つずつ処理する。`20261009090000_ssbj_report_write_lock.sql`） |
 | `approverUserId` | 承認者 | UUID | NULL（レビュー中・承認済みは必須） | レビュー依頼で指定する自組織の利用者 |
 | `approvedAt` / `approvedByUserId` | 承認日時 / 承認した人 | TIMESTAMPTZ / UUID | `approved` のときだけ非 NULL | |
 | `approvedVersionId` | 承認した保存版 | UUID | Foreign Key（`ssbj_report_versions`、削除時 SET NULL） | 承認時に作った保存版 |
