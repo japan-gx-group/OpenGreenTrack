@@ -3,7 +3,9 @@
 // SSBJ レポートのプレビューの印刷ビュー（T12）。ブラウザの「印刷 → PDFとして保存」で PDF を出力する。
 // 新規 PDF ライブラリを追加しない方針（AGENTS.md 技術スタック）に沿い、既存のレポート印刷ビュー
 // （features/reports/components/ReportPrintView.client.tsx）と同じく window.print() と印刷用クラスを使う。
-// 表示する内容（作業中 / 保存版）と内部メモの表示はクエリ（source / internal）で受け取る。
+// 表示する内容（作業中 / 保存版）はクエリ（source）で受け取る。
+// 印刷・PDF は社外に共有されうるため、内部メモと根拠文書の内部記録（開示しない内容）は常に出さない。
+// クエリに internal=1 などが付いていても読まない（URL を直接開いても内部情報が印刷に混ざらないようにする）。
 
 import { useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
@@ -16,7 +18,6 @@ export const SsbjPreviewPrintView = ({ reportId }: { reportId: string }) => {
   const searchParams = useSearchParams();
   const sourceParam = searchParams.get('source');
   const selection = useMemo(() => parsePreviewSelection(sourceParam), [sourceParam]);
-  const showInternalNotes = searchParams.get('internal') === '1';
   const { source, isLoading, errorMessage } = useSsbjPreviewSource(reportId, selection);
   // 読み込み完了後に一度だけ自動で印刷ダイアログを開くためのガード。
   const hasAutoPrinted = useRef(false);
@@ -61,7 +62,7 @@ export const SsbjPreviewPrintView = ({ reportId }: { reportId: string }) => {
 
       {source && (
         <div className="report-print-page">
-          <SsbjPreviewDocument source={source} showInternalNotes={showInternalNotes} />
+          <SsbjPreviewDocument source={source} showInternalNotes={false} />
         </div>
       )}
     </div>
