@@ -11,3 +11,18 @@ export const SSBJ_LOCKED_MESSAGE =
 /** 書き込みエラーを利用者向けのメッセージにする。承認済みで止められた場合以外は fallback を返す。 */
 export const ssbjWriteErrorMessage = (error: { code?: string } | null | undefined, fallback: string): string =>
   error?.code === SSBJ_LOCKED_SQLSTATE ? SSBJ_LOCKED_MESSAGE : fallback;
+
+/**
+ * 古い画面から保存しようとして、読込後に他の画面で保存された変更を上書きしそうになったときのメッセージ（docs/ssbj-spec.md §8）。
+ * 入力中の値は画面に残し、最新の内容を確かめてから入力し直してもらう（古い値と最新の値を自動で混ぜ合わせない）。
+ */
+export const SSBJ_EDIT_CONFLICT_MESSAGE =
+  '他の画面で更新されました。最新の内容を確認して再編集してください（この画面の変更は保存していません）';
+
+/** 読込時から対象の行が変わっていたため、保存しなかった。画面はこれを見て最新の内容を読み直す。 */
+export class SsbjEditConflictError extends Error {
+  constructor() {
+    super(SSBJ_EDIT_CONFLICT_MESSAGE);
+    this.name = 'SsbjEditConflictError';
+  }
+}

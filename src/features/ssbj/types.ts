@@ -283,6 +283,11 @@ export type SsbjReportRecord = SsbjReportBasicInfo & {
  */
 export type SsbjReportWorkingRecord = SsbjReportRecord & {
   draftRevision: number;
+  /**
+   * 読込時点の基本情報の版数（基本情報の列が変わったときだけ進む）。基本情報を更新するときに渡し、
+   * 他の画面で先に保存された基本情報を古い値で上書きしないようにする（docs/ssbj-spec.md §8）。保存版の report には含めない。
+   */
+  basicInfoRevision: number;
   review: SsbjReportReview;
 };
 
@@ -532,6 +537,14 @@ export type SsbjRiskOpportunity = {
   timeHorizon: SsbjFieldValue<SsbjTimeHorizon>;
   /** 関連する章・項目（章の順、同じ章では章そのものを先に並べる）。 */
   linkTargets: SsbjLinkTarget[];
+};
+
+/**
+ * 画面が編集中に持つリスク・機会 1 件。updatedAt は読込時点の行の更新日時で、更新するときに渡して
+ * 他の画面で先に保存された同じ行の変更を古い値で上書きしないようにする（docs/ssbj-spec.md §8）。保存版には含めない。
+ */
+export type SsbjRiskOpportunityWorkingRecord = SsbjRiskOpportunity & {
+  updatedAt: string;
 };
 
 /**

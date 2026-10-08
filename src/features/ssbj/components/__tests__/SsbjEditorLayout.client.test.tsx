@@ -31,7 +31,7 @@ import { getSsbjWorkingPreview } from '../../services/previewService';
 import { SsbjEditorLayout } from '../SsbjEditorLayout.client';
 
 const report = { ...fictionalReportBasicInfo, title: '画面で直したレポート名', fiscalYearLabel: '2024年度',
-  periodStart: '2024-04-01', periodEnd: '2025-03-31', draftRevision: 5, review: FICTIONAL_DRAFT_REVIEW };
+  periodStart: '2024-04-01', periodEnd: '2025-03-31', draftRevision: 5, basicInfoRevision: 0, review: FICTIONAL_DRAFT_REVIEW };
 const draft: SsbjNarrative = {
   itemId: 'governance.oversight_body',
   text: { disclosure: { state: 'answered', value: '入力中でまだ保存していない文章。' }, internalNote: null },

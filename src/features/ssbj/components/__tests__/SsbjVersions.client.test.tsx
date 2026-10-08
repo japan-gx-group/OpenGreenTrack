@@ -50,7 +50,7 @@ const buttonWith = (root: ParentNode, text: string) => {
 
 const renderScreen = async (review: SsbjReportReview = FICTIONAL_DRAFT_REVIEW) => {
   vi.mocked(useSsbjReport).mockReturnValue({
-    report: { ...fictionalVersion.snapshot.report, draftRevision: 3, review },
+    report: { ...fictionalVersion.snapshot.report, draftRevision: 3, basicInfoRevision: 0, review },
     setReport: vi.fn(),
     reload: reloadReport,
     isLoading: false,

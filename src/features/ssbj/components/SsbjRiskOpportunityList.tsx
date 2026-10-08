@@ -8,7 +8,7 @@ import {
   SSBJ_RISK_OPPORTUNITY_KIND_LABELS,
   SSBJ_RISK_TYPE_LABELS,
   SSBJ_TIME_HORIZON_LABELS,
-  type SsbjRiskOpportunity,
+  type SsbjRiskOpportunityWorkingRecord,
 } from '../types';
 import { formatFieldValue, isAnswered } from '../utils/fieldValue';
 import { formatLinkTarget } from '../utils/riskOpportunity';
@@ -21,9 +21,9 @@ const Row = ({ label, value, muted }: { label: string; value: string; muted: boo
 );
 
 interface SsbjRiskOpportunityListProps {
-  items: SsbjRiskOpportunity[];
-  onEdit: (item: SsbjRiskOpportunity) => void;
-  onDelete: (item: SsbjRiskOpportunity) => void;
+  items: SsbjRiskOpportunityWorkingRecord[];
+  onEdit: (item: SsbjRiskOpportunityWorkingRecord) => void;
+  onDelete: (item: SsbjRiskOpportunityWorkingRecord) => void;
   /** 承認済みなど、編集・削除させないとき true。 */
   readOnly?: boolean;
 }
