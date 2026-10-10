@@ -15,6 +15,7 @@ export interface SsbjReportStatusChange {
 export interface SsbjReportStatusChangeResult {
   status: SsbjReportStatus;
   approverUserId: string | null;
+  reviewRequestedByUserId: string | null;
   approvedVersionId: string | null;
   approvedVersionNumber: number | null;
 }

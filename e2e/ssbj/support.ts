@@ -21,6 +21,8 @@ type DemoUser = { email: string; password: string };
 export const ORG_A_USER: DemoUser = { email: 'org-a@example.com', password: 'password123' };
 /** 組織 A の入力担当者（OGT の role = logger）。承認者に指定されていなければ承認・差戻しができないことの確認に使う。 */
 export const ORG_A_LOGGER: DemoUser = { email: 'member-a@example.com', password: 'password123' };
+/** 組織 A の 3 人目の利用者（報告 次郎。OGT の role = viewer）。承認者でも管理者でもない人の確認に使う。 */
+export const ORG_A_VIEWER: DemoUser = { email: 'member2-a@example.com', password: 'password123' };
 /** 別組織（架空ロジスティクス）の管理者。組織分離の確認に使う。 */
 export const ORG_B_USER: DemoUser = { email: 'org-b@example.com', password: 'password123' };
 

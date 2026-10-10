@@ -316,7 +316,17 @@ export type SsbjReportReview = {
   /** 承認したときに作った保存版。 */
   approvedVersionId: SsbjVersionId | null;
   statusChangedAt: string | null;
+  /** レビューを依頼した利用者（profiles.id）。依頼した本人は承認できない。 */
+  reviewRequestedByUserId: string | null;
 };
+
+/**
+ * 承認できない理由（自己承認の判定。DB の ssbj_approval_blocker と同じ値）。requester = レビューを依頼した本人、
+ * edited_after_request = レビューの依頼の後に作業中の内容を変更した。指定された承認者か管理者かは別に判定する。
+ */
+export const SSBJ_APPROVAL_BLOCKERS = ['requester', 'edited_after_request'] as const;
+
+export type SsbjApprovalBlocker = (typeof SSBJ_APPROVAL_BLOCKERS)[number];
 
 // ---------------------------------------------------------------------------
 // OGT の算定値（T08a が候補値を出し、T08b がレポートへ採用・固定する）
