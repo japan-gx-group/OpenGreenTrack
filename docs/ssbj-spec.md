@@ -10,7 +10,8 @@ SSBJ（サステナビリティ基準委員会）基準に沿った開示レポ�
 
 > 関連: 規約 [`AGENTS.md`](../AGENTS.md) / 画面・URL [`functional-spec.md`](functional-spec.md) /
 > OGT の算定範囲と制約 [`coverage-and-limitations.md`](coverage-and-limitations.md) /
-> R1 の対象範囲（T01 の合意） [`ssbj-r1-scope.md`](ssbj-r1-scope.md)
+> R1 の対象範囲（T01 の合意） [`ssbj-r1-scope.md`](ssbj-r1-scope.md) /
+> 書き込み経路とロール別の権限（R2-09） [`authorization-matrix.md`](authorization-matrix.md)
 
 ---
 
