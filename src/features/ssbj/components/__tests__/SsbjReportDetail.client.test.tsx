@@ -30,6 +30,11 @@ vi.mock('../../services/reportWorkflowClient', () => ({
   changeSsbjReportStatus: vi.fn(),
 }));
 
+vi.mock('../../services/approvalBlockerService', () => ({
+  getMySsbjApprovalBlocker: vi.fn(async () => null),
+}));
+
+import { getMySsbjApprovalBlocker } from '../../services/approvalBlockerService';
 import { changeSsbjReportStatus } from '../../services/reportWorkflowClient';
 import { getSsbjReport, updateSsbjReportBasicInfo } from '../../services/reportService';
 import { saveSsbjReportVersion } from '../../services/versionClient';
@@ -239,11 +244,19 @@ describe('SsbjReportDetail（状態と承認）', () => {
       select.dispatchEvent(new Event('change', { bubbles: true }));
     });
   };
+  const setTextarea = (textarea: HTMLTextAreaElement, value: string) => {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+    act(() => {
+      setter?.call(textarea, value);
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  };
 
   it('作成中は承認者を選んでレビューを依頼する（選ばなければ送らない）。依頼したらレポートを読み直す', async () => {
     vi.mocked(getSsbjReport).mockResolvedValue(REPORT);
     vi.mocked(changeSsbjReportStatus).mockResolvedValue({
-      status: 'in_review', approverUserId: 'user-admin', approvedVersionId: null, approvedVersionNumber: null,
+      status: 'in_review', approverUserId: 'user-admin', reviewRequestedByUserId: 'user-logger', approvedVersionId: null,
+      approvedVersionNumber: null,
     });
     const { container } = await renderScreen();
     await flushPromises();
@@ -284,6 +297,7 @@ describe('SsbjReportDetail（状態と承認）', () => {
       review: {
         status: 'approved', approverUserId: 'user-logger', approvedAt: '2025-06-05T00:00:00.000Z',
         approvedByUserId: 'user-logger', approvedVersionId: '5b1f0000-0000-4000-8000-000000000004', statusChangedAt: null,
+        reviewRequestedByUserId: 'user-admin',
       },
     });
     const { container } = await renderScreen();
@@ -294,5 +308,61 @@ describe('SsbjReportDetail（状態と承認）', () => {
     expect(link?.getAttribute('href')).toBe(`/ssbj/${REPORT.id}/preview?source=5b1f0000-0000-4000-8000-000000000004`);
     // 承認者本人には差戻しを押させる。
     expect(findButton(container.querySelector('[data-testid="ssbj-report-status-card"]')!, '差戻す').disabled).toBe(false);
+  });
+
+  it('自己承認の防止: 承認者の選択肢に自分は出さない', async () => {
+    vi.mocked(getSsbjReport).mockResolvedValue({ ...REPORT, review: { ...REPORT.review, approverUserId: 'user-logger' } });
+    const { container } = await renderScreen();
+    await flushPromises();
+    const select = container.querySelector<HTMLSelectElement>('#ssbj-status-approver')!;
+    expect(Array.from(select.options).map(option => option.value)).toEqual(['', 'user-admin']);
+    // 前回の承認者が自分でも、未選択から始める（自分を送らない）。
+    expect(select.value).toBe('');
+  });
+
+  it('自己承認の防止: 依頼の後に内容を変更した承認者には承認させず、理由を出す（サーバに問い合わせた結果）', async () => {
+    vi.mocked(getSsbjReport).mockResolvedValue({
+      ...REPORT,
+      review: { ...REPORT.review, status: 'in_review', approverUserId: 'user-logger', reviewRequestedByUserId: 'user-admin' },
+    });
+    vi.mocked(getMySsbjApprovalBlocker).mockResolvedValue('edited_after_request');
+    const { container } = await renderScreen();
+    await flushPromises();
+    const card = container.querySelector<HTMLElement>('[data-testid="ssbj-report-status-card"]')!;
+    expect(getMySsbjApprovalBlocker).toHaveBeenCalledWith(REPORT.id);
+    expect(findButton(card, '承認する').disabled).toBe(true);
+    expect(card.textContent).toContain('レビューの依頼の後に内容を変更したため、承認できません');
+    expect(card.textContent).toContain('レビューの依頼');
+    expect(findButton(card, '差戻す').disabled).toBe(false);
+  });
+
+  it('差戻しはダイアログで理由を必須にし、理由をコメントとして送る', async () => {
+    vi.mocked(getSsbjReport).mockResolvedValue({
+      ...REPORT,
+      review: { ...REPORT.review, status: 'in_review', approverUserId: 'user-logger', reviewRequestedByUserId: 'user-admin' },
+    });
+    vi.mocked(changeSsbjReportStatus).mockResolvedValue({
+      status: 'draft', approverUserId: 'user-logger', reviewRequestedByUserId: 'user-admin', approvedVersionId: null,
+      approvedVersionNumber: null,
+    });
+    const { container } = await renderScreen();
+    await flushPromises();
+    const card = container.querySelector<HTMLElement>('[data-testid="ssbj-report-status-card"]')!;
+    await act(async () => { click(findButton(card, '差戻す')); });
+
+    const reason = document.querySelector<HTMLTextAreaElement>('#ssbj-reopen-reason');
+    expect(reason).not.toBeNull();
+    const dialog = reason!.closest<HTMLElement>('[role="dialog"]')!;
+    expect(findButton(dialog, '差戻す').disabled).toBe(true);
+    expect(changeSsbjReportStatus).not.toHaveBeenCalled();
+
+    setTextarea(reason!, '  数値の根拠を確認してください  ');
+    expect(findButton(dialog, '差戻す').disabled).toBe(false);
+    await act(async () => { click(findButton(dialog, '差戻す')); });
+    await flushPromises();
+    expect(changeSsbjReportStatus).toHaveBeenCalledWith(REPORT.id, {
+      action: 'reopen', expectedDraftRevision: 3, approverUserId: null, comment: '数値の根拠を確認してください',
+    });
+    expect(document.querySelector('#ssbj-reopen-reason')).toBeNull();
   });
 });

@@ -145,7 +145,7 @@ describe('SsbjOgtCandidates（採用）', () => {
 describe('SsbjOgtCandidates（承認ロック）', () => {
   it('承認済みのレポートでは採用・取り消しを出さず、ロックの案内を出す', async () => {
     vi.mocked(getSsbjReport).mockResolvedValue({ ...report, review: { status: 'approved' as const, approverUserId: 'u', approvedAt: '2025-06-05T00:00:00.000Z', approvedByUserId: 'u',
-      approvedVersionId: null, statusChangedAt: null } });
+      approvedVersionId: null, statusChangedAt: null, reviewRequestedByUserId: null } });
     rendered = render(<SsbjOgtCandidates reportId={report.id} />);
     await settle();
     expect(rendered.container.textContent).toContain('Scope別の候補値');

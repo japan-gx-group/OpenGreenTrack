@@ -291,7 +291,7 @@ describe('SsbjRisksOpportunities', () => {
 describe('SsbjRisksOpportunities（承認ロック）', () => {
   it('承認済みのレポートでは追加・編集・削除・定義の編集を出さず、ロックの案内を出す', async () => {
     vi.mocked(getSsbjReport).mockResolvedValue({ ...REPORT, review: { status: 'approved' as const, approverUserId: 'u', approvedAt: '2025-06-05T00:00:00.000Z', approvedByUserId: 'u',
-      approvedVersionId: null, statusChangedAt: null } });
+      approvedVersionId: null, statusChangedAt: null, reviewRequestedByUserId: null } });
     const { container } = await renderScreen();
     const labels = Array.from(container.querySelectorAll('button')).map(element => element.textContent?.trim());
     expect(labels).not.toContain('リスク・機会を追加');

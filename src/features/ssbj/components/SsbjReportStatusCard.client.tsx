@@ -3,23 +3,28 @@
 // SSBJ レポートの状態と承認の欄（詳細画面）。状態・承認者・承認の記録を出し、今の状態でできる操作
 // （レビュー依頼・取り下げ・承認・差戻し）を出す。承認すると、その時点の内容で保存版を作り、作業中の内容を編集できなくする。
 // 承認・差戻しは、指定された承認者か管理者だけが押せる（サーバも同じ判定をする）。
+// 書く人と承認する人を分けるため、承認者に自分は選べず、レビューを依頼した本人・依頼の後に内容を変更した人は承認できない。
+// 差戻しはダイアログで理由を必須にする。
 
 import Link from 'next/link';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { formatDateTime } from '@/lib/datetime';
+import { useSsbjApprovalBlocker } from '../hooks/useSsbjApprovalBlocker';
 import { useSsbjMembers } from '../hooks/useSsbjMembers';
 import { useSsbjReportStatus } from '../hooks/useSsbjReportStatus';
 import { memberName } from '../services/memberService';
 import type { SsbjReportStatusChangeResult } from '../services/reportWorkflowClient';
 import type { SsbjReportWorkingRecord } from '../types';
 import { SSBJ_STATUS_ACTION_LABELS, ssbjStatusActions } from '../utils/reportStatus';
+import { SsbjReopenDialog } from './SsbjReopenDialog.client';
 import { SsbjReportStatusBadge } from './SsbjReportStatusBadge';
 
 const DESCRIPTIONS = {
-  draft: '入力が終わったら、承認者を選んでレビューを依頼します。',
+  draft: '入力が終わったら、自分以外の承認者を選んでレビューを依頼します。',
   in_review: '承認者が内容を確認しています。承認すると、その時点の内容で保存版を作り、編集できなくなります。',
   approved: '承認済みのため、作業中の内容を編集できません。変更するには、承認者か管理者が差戻します。',
 } as const;
@@ -35,9 +40,28 @@ interface SsbjReportStatusCardProps {
 export const SsbjReportStatusCard = ({ report, onChanged, disabled }: SsbjReportStatusCardProps) => {
   const { members, currentUserId, currentRole, errorMessage: membersError } = useSsbjMembers();
   const status = useSsbjReportStatus(report, onChanged);
+  const approval = useSsbjApprovalBlocker(report.id, report.review.status, report.draftRevision);
+  const [reopenOpen, setReopenOpen] = useState<boolean>(false);
   const { review } = report;
-  const actions = ssbjStatusActions(review, currentUserId, currentRole);
+  const actions = ssbjStatusActions(review, currentUserId, currentRole, approval.blocker);
   const reasons = [...new Set(actions.flatMap(option => (option.allowed || !option.reason ? [] : [option.reason])))];
+  // 自分は承認者に選べない。前回の承認者が自分だったときは、未選択から始める。
+  const approverOptions = members.filter(member => member.id !== currentUserId);
+  const approverValue = status.approverUserId === currentUserId ? '' : status.approverUserId;
+  const errorMessage = status.errorMessage || membersError || approval.errorMessage;
+
+  const runAction = (action: (typeof actions)[number]['action']) => {
+    if (action === 'reopen') {
+      setReopenOpen(true);
+      return;
+    }
+    void status.run(action, action === 'submit' ? { approverUserId: approverValue } : {});
+  };
+
+  const confirmReopen = async (reason: string) => {
+    const result = await status.run('reopen', { comment: reason });
+    if (result) setReopenOpen(false);
+  };
 
   return (
     <Card data-testid="ssbj-report-status-card">
@@ -50,6 +74,12 @@ export const SsbjReportStatusCard = ({ report, onChanged, disabled }: SsbjReport
       <dl className="m-0 mb-4 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[10rem_1fr]">
         <dt className="text-xs font-semibold text-text-muted">承認者</dt>
         <dd className="m-0">{review.approverUserId ? memberName(members, review.approverUserId) : '未指定'}</dd>
+        {review.status !== 'draft' && review.reviewRequestedByUserId && (
+          <>
+            <dt className="text-xs font-semibold text-text-muted">レビューの依頼</dt>
+            <dd className="m-0">{memberName(members, review.reviewRequestedByUserId)}</dd>
+          </>
+        )}
         {review.status === 'approved' && review.approvedAt && (
           <>
             <dt className="text-xs font-semibold text-text-muted">承認</dt>
@@ -74,16 +104,16 @@ export const SsbjReportStatusCard = ({ report, onChanged, disabled }: SsbjReport
       <div className="flex flex-col gap-3">
         {review.status === 'draft' && (
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="ssbj-status-approver">承認者</Label>
+            <Label htmlFor="ssbj-status-approver">承認者（自分以外）</Label>
             <select
               id="ssbj-status-approver"
               className="gt-field gt-field-select"
-              value={status.approverUserId}
+              value={approverValue}
               disabled={status.isSaving || disabled}
               onChange={event => status.setApproverUserId(event.target.value)}
             >
               <option value="">選んでください</option>
-              {members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}
+              {approverOptions.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}
             </select>
           </div>
         )}
@@ -98,9 +128,7 @@ export const SsbjReportStatusCard = ({ report, onChanged, disabled }: SsbjReport
             onChange={event => status.setComment(event.target.value)}
           />
         </div>
-        {(status.errorMessage || membersError) && (
-          <p role="alert" className="m-0 text-sm text-danger">{status.errorMessage || membersError}</p>
-        )}
+        {errorMessage && !reopenOpen && <p role="alert" className="m-0 text-sm text-danger">{errorMessage}</p>}
         {disabled && (
           <p className="m-0 text-xs text-text-muted">基本情報の編集中は操作できません。先に変更を保存するか、キャンセルしてください。</p>
         )}
@@ -111,7 +139,7 @@ export const SsbjReportStatusCard = ({ report, onChanged, disabled }: SsbjReport
               type="button"
               variant={option.action === 'approve' || option.action === 'submit' ? 'default' : 'outline'}
               disabled={!option.allowed || status.isSaving || disabled}
-              onClick={() => void status.run(option.action)}
+              onClick={() => runAction(option.action)}
             >
               {status.isSaving ? '処理中...' : SSBJ_STATUS_ACTION_LABELS[option.action]}
             </Button>
@@ -119,6 +147,18 @@ export const SsbjReportStatusCard = ({ report, onChanged, disabled }: SsbjReport
         </div>
         {reasons.map(reason => <p key={reason} className="m-0 text-xs text-text-muted">{reason}</p>)}
       </div>
+
+      {/* 開くたびに理由の入力を空から始めるため、開いている間だけ描く。 */}
+      {reopenOpen && (
+        <SsbjReopenDialog
+          open
+          approved={review.status === 'approved'}
+          isBusy={status.isSaving}
+          errorMessage={status.errorMessage}
+          onConfirm={reason => void confirmReopen(reason)}
+          onCancel={() => setReopenOpen(false)}
+        />
+      )}
     </Card>
   );
 };

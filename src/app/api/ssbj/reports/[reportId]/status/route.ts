@@ -1,6 +1,6 @@
 // SSBJ レポートの状態を変える API（レビュー依頼・取り下げ・承認・差戻し。docs/ssbj-spec.md §13）。
-// 権限（承認・差戻しは指定された承認者か管理者だけ）・状態の遷移・競合の検証は、service_role 限定の RPC
-// change_ssbj_report_status（supabase/migrations/20261002090100_ssbj_report_status.sql）が行う。
+// 権限（承認・差戻しは指定された承認者か管理者だけ）・自己承認の拒否・差戻しの理由の必須・状態の遷移・競合の検証は、
+// service_role 限定の RPC change_ssbj_report_status（supabase/migrations/20261010100000_ssbj_self_approval_guard.sql）が行う。
 // 操作者・組織はサーバ側のセッションから決め、クライアントから受け取らない。
 
 import { NextResponse } from 'next/server';
@@ -25,10 +25,12 @@ const ERROR_RESPONSES: Record<string, { status: number; error?: string }> = {
     status: 409,
     error: '他の変更と競合しました。画面を開き直してから、もう一度操作してください',
   },
-  // 次の 3 つは RPC のメッセージ（利用者向けの日本語）をそのまま返す。
+  // 次の 5 つは RPC のメッセージ（利用者向けの日本語）をそのまま返す。
   [SSBJ_WORKFLOW_SQLSTATE.approverInvalid]: { status: 400 },
   [SSBJ_WORKFLOW_SQLSTATE.forbidden]: { status: 403 },
   [SSBJ_WORKFLOW_SQLSTATE.invalidTransition]: { status: 409 },
+  [SSBJ_WORKFLOW_SQLSTATE.selfApproval]: { status: 403 },
+  [SSBJ_WORKFLOW_SQLSTATE.reopenReasonRequired]: { status: 400 },
 };
 
 export const POST = async (

@@ -41,6 +41,7 @@ export interface SsbjReportRow {
   approvedByUserId: string | null;
   approvedVersionId: string | null;
   statusChangedAt: string | null;
+  reviewRequestedByUserId: string | null;
   // 多対一の埋め込みはオブジェクトで返るが、型生成の揺れに備えて配列でも受ける。
   fiscal_years: FiscalYearEmbed | FiscalYearEmbed[] | null;
 }
@@ -53,7 +54,7 @@ const SELECT_COLUMNS =
   'id, organizationId, fiscalYearId, title, purpose, reportingScope, standardVersion, ' +
   'parentCompanyName, parentRelationship, ownershipPercentage::text, measurementApproach, industryCode, ' +
   'createdAt, updatedAt, draftRevision, status, approverUserId, approvedAt, approvedByUserId, approvedVersionId, ' +
-  'statusChangedAt, fiscal_years(label, startDate, endDate)';
+  'statusChangedAt, reviewRequestedByUserId, fiscal_years(label, startDate, endDate)';
 
 /** DB 行 → SsbjReportRecord。年度が見えない行（通常は起こらない）は例外にする。 */
 export const toSsbjReportRecord = (row: SsbjReportRow): SsbjReportRecord => {
@@ -95,6 +96,7 @@ export const toSsbjReportWorkingRecord = (row: SsbjReportRow): SsbjReportWorking
     approvedByUserId: row.approvedByUserId,
     approvedVersionId: row.approvedVersionId,
     statusChangedAt: row.statusChangedAt,
+    reviewRequestedByUserId: row.reviewRequestedByUserId,
   },
 });
 
