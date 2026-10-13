@@ -709,3 +709,22 @@ T14 の確認事項と、確かめている場所:
 - **右側のプレビューは、作業中の内容（サーバで組み立てたもの）を土台に、その画面の最新の入力を重ねて描く。** 保存はしない。未保存の編集を含むときはそう明示する。
   別の画面で変えた内容は「読み直す」で取り込む。横に広い表の画面（判断）は、右側を最初は閉じておく。
 - **右側の「OGT の値」は参照用のカンペ。** レポートに入るのは GHG の画面で採用した値だけ。生物多様性のスコアは OGT 本体に無いため出さない。
+
+### SSBJ のロール（R2-10）
+
+SSBJ の中だけで使うロール（入力担当・承認担当・閲覧者）を DB で持ち、判定できるようにした。ロールで何ができるか・切り替えの方針は
+[`authorization-matrix.md`](authorization-matrix.md) を正とし、ここでは繰り返さない。各テーブル・API への適用は R2-11・R2-12 で行う。
+
+| 対象 | 内容 |
+|---|---|
+| DB | `20261010110000_ssbj_member_roles.sql`（`ssbj_member_roles`、判定の関数 `ssbj_user_role` ほか、ロールの記録のため `ssbj_audit_logs."reportId"` を空にできるようにした） |
+| 画面 | `/ssbj/roles`（`SsbjMemberRoles.client.tsx`）。一覧画面から「SSBJ の権限」で入る |
+| コード | `types.ts` の `SSBJ_MEMBER_ROLES`・`SsbjEffectiveRole`・`SSBJ_ROLE_LABELS`、`utils/memberRole.ts`、`services/memberRoleService.ts`、`hooks/useSsbjMemberRoles.ts`・`useSsbjMyRole.ts` |
+| テスト | `scripts/db/__tests__/ssbjMemberRolesPolicy.test.ts`、純関数・サービス・画面の単体テスト |
+| デモデータ | `supabase/seeds/demo/ssbj_demo.sql` の末尾。組織 A に承認担当（確認 三郎 `member3-a@example.com`。このファイルで追加）と閲覧者（報告 次郎）を割り当てる。算定 花子は割り当て無し（入力担当） |
+
+決めたこと:
+
+- **ロールの記録は操作履歴（`ssbj_audit_logs`）に残し、`reportId` は空にする。** ロールはレポートに属さないため。空にできるのはロールの記録だけ（CHECK 制約）で、レポートの操作履歴の画面には出ない。SSBJ の権限の画面に新しい順に出す。
+- **画面からの割り当ては「更新して、無ければ作る」。** 割り当ての無い利用者を入力担当に戻すときも行を残し（`editor`）、削除はしない（行の有無で既定かどうかを区別して表示する）。
+- **承認担当の利用者はデモ用に 1 人足した。** 組織 A の 3 人だけでは、管理者・入力担当・承認担当・閲覧者をそろえられないため。SSBJ のロールを試すための利用者なので、`demo.sql` ではなく `ssbj_demo.sql` で作る。

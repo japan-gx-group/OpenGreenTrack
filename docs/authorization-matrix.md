@@ -24,7 +24,8 @@ SSBJ 開示レポートで、データを書き換えられる経路をすべて
 
 決めたこと:
 
-- **SSBJ のロールは SSBJ 専用のテーブル（組織×利用者で 1 行）に持つ。** OGT 本体の `profiles.role` のうち、SSBJ が読むのは
+- **SSBJ のロールは SSBJ 専用のテーブル（`ssbj_member_roles`。組織×利用者で 1 行）に持つ。** 判定は DB の関数
+  `ssbj_user_role`（service_role 限定）と `ssbj_current_user_role()` ほか（authenticated）で行う（[`database-design.md`](database-design.md) 3.20）。 OGT 本体の `profiles.role` のうち、SSBJ が読むのは
   `'admin'` だけにする。`logger` / `viewer` は SSBJ のロールに使わない。本体はロールで権限を分けておらず
   （`src/types/role.ts` の「ロール無効化中」）、招待で決まる値をあとから変える画面も無いため、SSBJ の権限の根拠にできない。
 - **ロールを割り当てていない利用者は入力担当として扱う。** 今は同じ組織の利用者なら誰でもすべてを編集できるので、
