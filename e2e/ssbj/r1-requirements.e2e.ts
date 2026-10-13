@@ -1,4 +1,4 @@
-// SSBJ 開示レポート（試行版）の、承認ロック・操作履歴・版の復元・Excel 出力・穴埋めテンプレート・2 画面エディタの全体テスト。
+// SSBJ 開示レポート（試行版）の、承認ロック（自己承認の禁止を含む）・操作履歴・版の復元・Excel 出力・穴埋めテンプレート・2 画面エディタの全体テスト。
 // 実画面と実データ（ローカル Supabase のデモシード）で、1 つのレポートを順に操作して確かめる（手順は順番に実行する）。
 // 前提・実行方法は docs/ssbj-spec.md §13（r1-acceptance.e2e.ts と同じ設定 playwright.ssbj.config.ts で動く）。
 
@@ -10,6 +10,7 @@ import {
   FISCAL_YEAR_LABEL,
   ORG_A_LOGGER,
   ORG_A_USER,
+  ORG_A_VIEWER,
   ORG_B_USER,
   SSBJ_E2E_TITLE_PREFIX,
   addDecimals,
@@ -31,6 +32,9 @@ const OVERSIGHT = '監督する機関・責任者';
 
 let context: BrowserContext;
 let page: Page;
+// 承認者（算定 花子）。書く人（管理者 = page）と承認する人を分けるため、承認は承認者の画面で行う。
+let approverContext: BrowserContext;
+let approverPage: Page;
 let orgA: SupabaseClient;
 let reportId = '';
 let fiscalYearId = '';
@@ -53,16 +57,29 @@ const auditActions = async (): Promise<string[]> => {
   return (data ?? []).map(row => row.action as string);
 };
 
-const statusCard = () => page.getByTestId('ssbj-report-status-card');
+const statusCard = (target: Page = page) => target.getByTestId('ssbj-report-status-card');
+
+const userIdOf = async (client: SupabaseClient): Promise<string> => {
+  const { data, error } = await client.auth.getUser();
+  if (error || !data.user) throw new Error('利用者の ID を取得できませんでした');
+  return data.user.id;
+};
+
+const postStatus = (target: Page, data: Record<string, unknown>) =>
+  target.request.post(`/api/ssbj/reports/${reportId}/status`, { data });
 
 test.beforeAll(async ({ browser }) => {
   context = await browser.newContext();
   page = await context.newPage();
   orgA = await createUserClient(ORG_A_USER);
   await signIn(page, ORG_A_USER);
+  approverContext = await browser.newContext();
+  approverPage = await approverContext.newPage();
+  await signIn(approverPage, ORG_A_LOGGER);
 });
 
 test.afterAll(async () => {
+  await approverContext?.close();
   await context?.close();
 });
 
@@ -123,36 +140,53 @@ test('3. 右側の OGT の値（カンペ）に最新の値が出て、採用後
   }
 });
 
-test('4. 承認者を指定してレビューを依頼する。承認者でも管理者でもない人は承認できない（画面・API とも）', async ({ browser }) => {
+test('4. 自分以外の承認者を指定してレビューを依頼する。依頼した本人・承認者でも管理者でもない人は承認できない（画面・API とも）', async ({ browser }) => {
   await page.goto(reportPath());
-  await page.locator('#ssbj-status-approver').selectOption({ label: '環境 太郎' });
+  const approverSelect = page.locator('#ssbj-status-approver');
+  // 自分（管理者の環境 太郎）は承認者に選べない。API で自分を指定しても拒否される。
+  await expect(approverSelect.locator('option', { hasText: '算定 花子' })).toHaveCount(1);
+  await expect(approverSelect.locator('option', { hasText: '環境 太郎' })).toHaveCount(0);
+  const self = await postStatus(page, {
+    action: 'submit', expectedDraftRevision: (await reportRow()).draftRevision, approverUserId: await userIdOf(orgA),
+  });
+  expect(self.status()).toBe(403);
+  expect((await self.json()).error).toContain('自分を承認者に指定することはできません');
+  expect((await reportRow()).status).toBe('draft');
+
+  await approverSelect.selectOption({ label: '算定 花子' });
   await page.getByLabel('コメント（任意。操作履歴に残ります）').fill('確認をお願いします');
   await page.getByRole('button', { name: 'レビューを依頼する' }).click();
   await expectToast(page, 'レビューを依頼しました');
   await expect(statusCard()).toContainText('レビュー中');
   expect((await reportRow()).status).toBe('in_review');
 
-  const loggerContext = await browser.newContext();
-  const loggerPage = await loggerContext.newPage();
-  await signIn(loggerPage, ORG_A_LOGGER);
-  await loggerPage.goto(reportPath());
-  const card = loggerPage.getByTestId('ssbj-report-status-card');
+  // 依頼した本人は、管理者でも承認できない。
+  await expect(statusCard().getByRole('button', { name: '承認する' })).toBeDisabled();
+  await expect(statusCard()).toContainText('レビューを依頼した本人は承認できません');
+  const own = await postStatus(page, { action: 'approve', expectedDraftRevision: (await reportRow()).draftRevision });
+  expect(own.status()).toBe(403);
+  expect((await own.json()).error).toContain('レビューを依頼した本人は承認できません');
+
+  // 承認者でも管理者でもない人は承認できない。
+  const otherContext = await browser.newContext();
+  const otherPage = await otherContext.newPage();
+  await signIn(otherPage, ORG_A_VIEWER);
+  await otherPage.goto(reportPath());
+  const card = statusCard(otherPage);
   await expect(card.getByRole('button', { name: '承認する' })).toBeDisabled();
   await expect(card).toContainText('指定された承認者か、管理者だけが操作できます');
-  const response = await loggerPage.request.post(`/api/ssbj/reports/${reportId}/status`, {
-    data: { action: 'approve', expectedDraftRevision: (await reportRow()).draftRevision },
-  });
+  const response = await postStatus(otherPage, { action: 'approve', expectedDraftRevision: (await reportRow()).draftRevision });
   expect(response.status()).toBe(403);
-  await loggerContext.close();
+  await otherContext.close();
   expect((await reportRow()).status).toBe('in_review');
 });
 
-test('5. 承認すると、その時点の内容で保存版を作り、作業中の内容を編集できなくする（画面・DB・API のどこからも）', async () => {
-  await page.goto(reportPath());
-  await page.getByRole('button', { name: '承認する' }).click();
-  await expectToast(page, /承認しました（承認した内容を 版 1 として保存しました）/);
-  await expect(page.getByTestId('ssbj-locked-notice')).toBeVisible();
-  await expect(page.getByRole('button', { name: '編集', exact: true })).toHaveCount(0);
+test('5. 指定された承認者が承認すると、その時点の内容で保存版を作り、作業中の内容を編集できなくする（画面・DB・API のどこからも）', async () => {
+  await approverPage.goto(reportPath());
+  await approverPage.getByRole('button', { name: '承認する' }).click();
+  await expectToast(approverPage, /承認しました（承認した内容を 版 1 として保存しました）/);
+  await expect(approverPage.getByTestId('ssbj-locked-notice')).toBeVisible();
+  await expect(approverPage.getByRole('button', { name: '編集', exact: true })).toHaveCount(0);
 
   const row = await reportRow();
   expect(row.status).toBe('approved');
@@ -209,10 +243,18 @@ test('6. 承認済みでも保存版の出力はでき、Excel の中身は CSV 
   await expect(page.getByText(/Excel · 版 1/)).toBeVisible();
 });
 
-test('7. 承認者が差戻すとロックが外れ、書き換えた後で、承認した版の内容に戻せる（戻す前の内容は自動で保存版になる）', async () => {
+test('7. 理由を書かないと差戻せない。管理者が理由を書いて差戻すとロックが外れ、書き換えた後で、承認した版の内容に戻せる（戻す前の内容は自動で保存版になる）', async () => {
+  const noReason = await postStatus(page, { action: 'reopen', expectedDraftRevision: (await reportRow()).draftRevision });
+  expect(noReason.status()).toBe(400);
+  expect((await noReason.json()).error).toContain('差戻しの理由を入力してください');
+  expect((await reportRow()).status).toBe('approved');
+
   await page.goto(reportPath());
-  await page.getByLabel('コメント（任意。操作履歴に残ります）').fill('数値を見直してください');
   await page.getByRole('button', { name: '差戻す' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('button', { name: '差戻す' })).toBeDisabled();
+  await dialog.getByLabel('差戻しの理由（必須）').fill('数値を見直してください');
+  await dialog.getByRole('button', { name: '差戻す' }).click();
   await expectToast(page, '作成中に戻しました');
   expect((await reportRow()).status).toBe('draft');
 
@@ -283,4 +325,26 @@ test('9. 他の組織からは、操作履歴も状態の操作も届かない',
   });
   expect(restore.status()).toBe(404);
   await contextB.close();
+});
+
+test('10. レビューの依頼の後に内容を変更した承認者は承認できない（画面・API とも）', async () => {
+  await page.goto(reportPath());
+  await page.locator('#ssbj-status-approver').selectOption({ label: '算定 花子' });
+  await page.getByRole('button', { name: 'レビューを依頼する' }).click();
+  await expectToast(page, 'レビューを依頼しました');
+
+  // 承認者が、依頼の後に作業中の内容を変える（画面を通さずに書いても、操作履歴で判定される）。
+  const approverClient = await createUserClient(ORG_A_LOGGER);
+  const { error } = await approverClient.from('ssbj_narratives').update({ internalNote: `承認者のメモ（E2E ${RUN}）` })
+    .eq('reportId', reportId).eq('itemId', 'governance.oversight_body').select('itemId');
+  expect(error).toBeNull();
+
+  await approverPage.goto(reportPath());
+  const card = statusCard(approverPage);
+  await expect(card.getByRole('button', { name: '承認する' })).toBeDisabled();
+  await expect(card).toContainText('レビューの依頼の後に内容を変更したため、承認できません');
+  const response = await postStatus(approverPage, { action: 'approve', expectedDraftRevision: (await reportRow()).draftRevision });
+  expect(response.status()).toBe(403);
+  expect((await response.json()).error).toContain('レビューの依頼の後に内容を変更した人は承認できません');
+  expect((await reportRow()).status).toBe('in_review');
 });

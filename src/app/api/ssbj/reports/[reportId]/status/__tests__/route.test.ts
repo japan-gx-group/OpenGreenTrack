@@ -55,7 +55,8 @@ describe('POST /api/ssbj/reports/[reportId]/status', () => {
     }), params());
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
-      status: 'in_review', approverUserId: APPROVER_ID, approvedVersionId: null, approvedVersionNumber: null,
+      status: 'in_review', approverUserId: APPROVER_ID, reviewRequestedByUserId: null, approvedVersionId: null,
+      approvedVersionNumber: null,
     });
     expect(mocks.rpc).toHaveBeenCalledWith('change_ssbj_report_status', {
       p_report_id: REPORT_ID,
@@ -74,6 +75,8 @@ describe('POST /api/ssbj/reports/[reportId]/status', () => {
     ['P2052', 400, '承認者には同じ組織の利用者を指定してください'],
     ['P2053', 403, '承認できるのは、指定された承認者か管理者だけです'],
     ['P2054', 409, 'レビュー中のレポートだけ承認できます'],
+    ['P2056', 403, 'レビューを依頼した本人は承認できません'],
+    ['P2057', 400, '差戻しの理由を入力してください'],
   ])('RPC の %s は %i', async (code, status, message) => {
     mocks.rpc.mockResolvedValue({ data: null, error: { code, message } });
     const response = await POST(request({ action: 'approve', expectedDraftRevision: 1 }), params());
