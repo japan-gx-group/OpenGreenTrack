@@ -234,7 +234,7 @@ test('8. 保存版を作る', async () => {
   expect(versions.map(version => version.versionNumber)).toEqual([1]);
   version1 = versions[0];
   expect(Object.keys(version1.snapshot.sections).sort())
-    .toEqual(['evidence', 'ghg', 'judgements', 'narratives', 'risks_opportunities', 'time_horizons']);
+    .toEqual(['evidence', 'external_emissions', 'ghg', 'judgements', 'narratives', 'risks_opportunities', 'time_horizons']);
 });
 
 test('9. 保存履歴で内容を確かめ、その版の CSV に入力が欠落なく出る', async () => {
