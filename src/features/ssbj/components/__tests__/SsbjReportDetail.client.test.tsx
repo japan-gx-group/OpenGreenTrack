@@ -34,7 +34,15 @@ vi.mock('../../services/approvalBlockerService', () => ({
   getMySsbjApprovalBlocker: vi.fn(async () => null),
 }));
 
+// ログイン中の利用者（算定 花子）の SSBJ のロールは既定で入力担当。承認者として操作するテストでは承認担当にする。
+vi.mock('../../services/memberRoleService', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../services/memberRoleService')>()),
+  getMySsbjRole: vi.fn(async () => 'editor'),
+  listSsbjMemberRoles: vi.fn(async () => new Map()),
+}));
+
 import { getMySsbjApprovalBlocker } from '../../services/approvalBlockerService';
+import { getMySsbjRole } from '../../services/memberRoleService';
 import { changeSsbjReportStatus } from '../../services/reportWorkflowClient';
 import { getSsbjReport, updateSsbjReportBasicInfo } from '../../services/reportService';
 import { saveSsbjReportVersion } from '../../services/versionClient';
@@ -76,6 +84,8 @@ afterEach(() => {
   rendered?.unmount();
   rendered = null;
   vi.clearAllMocks();
+  // テストごとに変えたロールを、既定（入力担当）に戻す。
+  vi.mocked(getMySsbjRole).mockResolvedValue('editor');
 });
 
 describe('SsbjReportDetail', () => {
@@ -236,6 +246,16 @@ describe('SsbjReportDetail', () => {
   });
 });
 
+describe('SsbjReportDetail（SSBJ のロール）', () => {
+  it('入力担当か管理者でなければ、保存版の作成を出さない', async () => {
+    vi.mocked(getMySsbjRole).mockResolvedValue('approver');
+    vi.mocked(getSsbjReport).mockResolvedValue(REPORT);
+    const { container } = await renderScreen();
+    await flushPromises();
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent?.includes('保存版を作成'))).toBe(false);
+  });
+});
+
 describe('SsbjReportDetail（状態と承認）', () => {
   const setSelect = (select: HTMLSelectElement, value: string) => {
     const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set;
@@ -287,11 +307,12 @@ describe('SsbjReportDetail（状態と承認）', () => {
     expect(findButton(card, '承認する').disabled).toBe(true);
     expect(findButton(card, '差戻す').disabled).toBe(true);
     expect(findButton(card, '依頼を取り下げる').disabled).toBe(false);
-    expect(card.textContent).toContain('指定された承認者か、管理者だけが操作できます');
+    expect(card.textContent).toContain('承認・差戻しは、承認担当か管理者だけができます');
     expect(card.textContent).toContain('環境 太郎');
   });
 
   it('承認済みは基本情報を編集させず、ロックの案内と承認した保存版へのリンクを出す', async () => {
+    vi.mocked(getMySsbjRole).mockResolvedValue('approver');
     vi.mocked(getSsbjReport).mockResolvedValue({
       ...REPORT,
       review: {
@@ -321,6 +342,7 @@ describe('SsbjReportDetail（状態と承認）', () => {
   });
 
   it('自己承認の防止: 依頼の後に内容を変更した承認者には承認させず、理由を出す（サーバに問い合わせた結果）', async () => {
+    vi.mocked(getMySsbjRole).mockResolvedValue('approver');
     vi.mocked(getSsbjReport).mockResolvedValue({
       ...REPORT,
       review: { ...REPORT.review, status: 'in_review', approverUserId: 'user-logger', reviewRequestedByUserId: 'user-admin' },
@@ -337,6 +359,7 @@ describe('SsbjReportDetail（状態と承認）', () => {
   });
 
   it('差戻しはダイアログで理由を必須にし、理由をコメントとして送る', async () => {
+    vi.mocked(getMySsbjRole).mockResolvedValue('approver');
     vi.mocked(getSsbjReport).mockResolvedValue({
       ...REPORT,
       review: { ...REPORT.review, status: 'in_review', approverUserId: 'user-logger', reviewRequestedByUserId: 'user-admin' },

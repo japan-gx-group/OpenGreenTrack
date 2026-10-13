@@ -2,12 +2,14 @@
 // 保存はしない。組み立ては service_role 限定の RPC preview_ssbj_report（services/previewServer.ts）。
 //
 // 認証ガード: ログイン済みユーザーの自組織のレポートだけを返す（組織は getCurrentProfile から確定し、
-// RPC 引数 p_organization_id で強制する。他組織・存在しないレポートは区別せず 404）。
+// RPC 引数 p_organization_id で強制する。他組織・存在しないレポートは区別せず 404）。作業中の内容なので、
+// SSBJ のロールが閲覧者なら 403（閲覧者は承認した保存版だけを見る。docs/authorization-matrix.md §2.2）。
 
 import { NextResponse } from 'next/server';
 import { getCurrentProfile } from '@/lib/currentProfile';
 import { getRequestLogger } from '@/lib/logging/requestLogger';
 import { previewSsbjReport } from '@/features/ssbj/services/previewServer';
+import { guardSsbjRole } from '@/features/ssbj/services/roleServer';
 
 // service_role を使うため Node ランタイムで実行する（Edge では実行しない）。
 export const runtime = 'nodejs';
@@ -27,6 +29,12 @@ export const GET = async (
   const { reportId } = await params;
   if (!UUID_PATTERN.test(reportId)) {
     return NextResponse.json({ error: 'SSBJレポートが見つかりません' }, { status: 404 });
+  }
+
+  // SSBJ のロールの確認（docs/authorization-matrix.md §2.2）。service_role の処理は RLS を越えるので、ここで確かめる。
+  const denial = await guardSsbjRole(profile, 'view_working', error => log.error({ error, reportId }, 'SSBJ のロールの確認に失敗しました'));
+  if (denial) {
+    return NextResponse.json({ error: denial.error }, { status: denial.status });
   }
 
   try {

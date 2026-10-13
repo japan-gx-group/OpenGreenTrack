@@ -9,6 +9,7 @@ import {
   type SsbjEffectiveRole,
   type SsbjMemberRole,
   type SsbjMemberRoleLog,
+  type SsbjReportStatusAction,
 } from '../types';
 
 export const isSsbjMemberRole = (value: unknown): value is SsbjMemberRole =>
@@ -33,6 +34,39 @@ export const canViewSsbjWorking = (role: SsbjEffectiveRole | null): boolean =>
 
 /** 承認者に指定でき、承認・差戻しができるロールか（承認担当か管理者）。 */
 export const canApproveSsbj = (role: SsbjEffectiveRole | null): boolean => role === 'admin' || role === 'approver';
+
+/**
+ * 操作に要る権限（docs/authorization-matrix.md §2）。edit = 作業中データを変える（入力担当か管理者）、
+ * view_working = 作業中の内容を見る（閲覧者以外）、approve = 承認・差戻し（承認担当か管理者）。
+ */
+export type SsbjPermission = 'edit' | 'view_working' | 'approve';
+
+export const ssbjRoleAllows = (role: SsbjEffectiveRole | null, permission: SsbjPermission): boolean => {
+  switch (permission) {
+    case 'edit':
+      return canEditSsbj(role);
+    case 'view_working':
+      return canViewSsbjWorking(role);
+    case 'approve':
+      return canApproveSsbj(role);
+  }
+};
+
+/** 状態の操作に要る権限。レビュー依頼・取り下げは書く人の操作、承認・差戻しは承認する人の操作。 */
+export const ssbjStatusActionPermission = (action: SsbjReportStatusAction): SsbjPermission =>
+  action === 'approve' || action === 'reopen' ? 'approve' : 'edit';
+
+const PERMISSION_WHO: Record<SsbjPermission, string> = {
+  edit: 'レポートの内容を変える操作は、入力担当か管理者だけができます',
+  view_working: '作業中の内容は、閲覧者には見えません（承認した保存版だけを見られます）',
+  approve: '承認・差戻しは、承認担当か管理者だけができます',
+};
+
+/** ロールが操作を許さないときの、利用者向けのメッセージ。 */
+export const ssbjForbiddenMessage = (role: SsbjEffectiveRole | null, permission: SsbjPermission): string =>
+  role === null
+    ? 'この操作の権限がありません'
+    : `SSBJ のロールが${SSBJ_ROLE_LABELS[role]}のため、この操作はできません。${PERMISSION_WHO[permission]}`;
 
 /** ロールの変更の記録の内容（画面に出す文）。memberLabel は対象の利用者の表示名。 */
 export const ssbjMemberRoleLogText = (log: SsbjMemberRoleLog, memberLabel: string): string => {

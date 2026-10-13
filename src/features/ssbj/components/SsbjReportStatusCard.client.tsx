@@ -2,7 +2,8 @@
 
 // SSBJ レポートの状態と承認の欄（詳細画面）。状態・承認者・承認の記録を出し、今の状態でできる操作
 // （レビュー依頼・取り下げ・承認・差戻し）を出す。承認すると、その時点の内容で保存版を作り、作業中の内容を編集できなくする。
-// 承認・差戻しは、指定された承認者か管理者だけが押せる（サーバも同じ判定をする）。
+// SSBJ のロールで出し分ける（docs/authorization-matrix.md §2.2。サーバも同じ判定をする）: レビュー依頼・取り下げは
+// 入力担当か管理者、承認・差戻しは管理者か、指定された承認者（承認担当）。承認者に選べるのは承認担当か管理者だけ。
 // 書く人と承認する人を分けるため、承認者に自分は選べず、レビューを依頼した本人・依頼の後に内容を変更した人は承認できない。
 // 差戻しはダイアログで理由を必須にする。
 
@@ -14,17 +15,20 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { formatDateTime } from '@/lib/datetime';
 import { useSsbjApprovalBlocker } from '../hooks/useSsbjApprovalBlocker';
+import { useSsbjMemberRoleMap } from '../hooks/useSsbjMemberRoleMap';
 import { useSsbjMembers } from '../hooks/useSsbjMembers';
+import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
 import { useSsbjReportStatus } from '../hooks/useSsbjReportStatus';
 import { memberName } from '../services/memberService';
 import type { SsbjReportStatusChangeResult } from '../services/reportWorkflowClient';
 import type { SsbjReportWorkingRecord } from '../types';
+import { canApproveSsbj, effectiveSsbjRole } from '../utils/memberRole';
 import { SSBJ_STATUS_ACTION_LABELS, ssbjStatusActions } from '../utils/reportStatus';
 import { SsbjReopenDialog } from './SsbjReopenDialog.client';
 import { SsbjReportStatusBadge } from './SsbjReportStatusBadge';
 
 const DESCRIPTIONS = {
-  draft: '入力が終わったら、自分以外の承認者を選んでレビューを依頼します。',
+  draft: '入力が終わったら、自分以外の承認者（承認担当か管理者）を選んでレビューを依頼します。',
   in_review: '承認者が内容を確認しています。承認すると、その時点の内容で保存版を作り、編集できなくなります。',
   approved: '承認済みのため、作業中の内容を編集できません。変更するには、承認者か管理者が差戻します。',
 } as const;
@@ -38,17 +42,21 @@ interface SsbjReportStatusCardProps {
 }
 
 export const SsbjReportStatusCard = ({ report, onChanged, disabled }: SsbjReportStatusCardProps) => {
-  const { members, currentUserId, currentRole, errorMessage: membersError } = useSsbjMembers();
+  const { members, currentUserId, errorMessage: membersError } = useSsbjMembers();
+  const myRole = useSsbjMyRole();
+  const memberRoles = useSsbjMemberRoleMap();
   const status = useSsbjReportStatus(report, onChanged);
   const approval = useSsbjApprovalBlocker(report.id, report.review.status, report.draftRevision);
   const [reopenOpen, setReopenOpen] = useState<boolean>(false);
   const { review } = report;
-  const actions = ssbjStatusActions(review, currentUserId, currentRole, approval.blocker);
+  const actions = ssbjStatusActions(review, currentUserId, myRole.role, approval.blocker);
   const reasons = [...new Set(actions.flatMap(option => (option.allowed || !option.reason ? [] : [option.reason])))];
-  // 自分は承認者に選べない。前回の承認者が自分だったときは、未選択から始める。
-  const approverOptions = members.filter(member => member.id !== currentUserId);
-  const approverValue = status.approverUserId === currentUserId ? '' : status.approverUserId;
-  const errorMessage = status.errorMessage || membersError || approval.errorMessage;
+  // 承認者に選べるのは、自分以外の承認担当か管理者。前回の承認者が選べない人だったときは、未選択から始める。
+  const approverOptions = members.filter(member => member.id !== currentUserId &&
+    canApproveSsbj(effectiveSsbjRole(member.role, memberRoles.roles.get(member.id) ?? null)));
+  const approverValue = approverOptions.some(member => member.id === status.approverUserId) ? status.approverUserId : '';
+  const errorMessage = status.errorMessage || membersError || myRole.errorMessage || memberRoles.errorMessage ||
+    approval.errorMessage;
 
   const runAction = (action: (typeof actions)[number]['action']) => {
     if (action === 'reopen') {
@@ -115,6 +123,11 @@ export const SsbjReportStatusCard = ({ report, onChanged, disabled }: SsbjReport
               <option value="">選んでください</option>
               {approverOptions.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}
             </select>
+            {!memberRoles.isLoading && approverOptions.length === 0 && (
+              <p className="m-0 text-xs text-text-muted">
+                承認者に選べる人（自分以外の承認担当か管理者）がいません。管理者が「SSBJ の権限」で承認担当を割り当てます。
+              </p>
+            )}
           </div>
         )}
         <div className="flex flex-col gap-1.5">

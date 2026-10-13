@@ -2,6 +2,7 @@
 // 戻す前の内容の保存（自動の保存版）・各機能の作業中データの作り直し・競合と承認済みの検証は、
 // service_role 限定の RPC restore_ssbj_report_version（supabase/migrations/20261002090200_ssbj_restore_version.sql）が
 // 1 トランザクションで行う。操作者・組織はサーバ側のセッションから決める。
+// SSBJ のロールが入力担当か管理者でなければ 403（docs/authorization-matrix.md §2.2）。
 
 import { NextResponse } from 'next/server';
 import { getCurrentProfile } from '@/lib/currentProfile';
@@ -11,6 +12,7 @@ import {
   SsbjWorkflowRpcError,
   restoreSsbjReportVersion,
 } from '@/features/ssbj/services/reportWorkflowServer';
+import { guardSsbjRole } from '@/features/ssbj/services/roleServer';
 import { SSBJ_LOCKED_MESSAGE } from '@/features/ssbj/utils/writeError';
 
 // service_role を使うため Node ランタイムで実行する（Edge では実行しない）。
@@ -44,6 +46,12 @@ export const POST = async (
   const { reportId, versionId } = await params;
   if (!UUID_PATTERN.test(reportId) || !UUID_PATTERN.test(versionId)) {
     return NextResponse.json({ error: 'SSBJレポートまたは保存版が見つかりません' }, { status: 404 });
+  }
+
+  // SSBJ のロールの確認（docs/authorization-matrix.md §2.2）。service_role の処理は RLS を越えるので、ここで確かめる。
+  const denial = await guardSsbjRole(profile, 'edit', error => log.error({ error, reportId }, 'SSBJ のロールの確認に失敗しました'));
+  if (denial) {
+    return NextResponse.json({ error: denial.error }, { status: denial.status });
   }
 
   let body: unknown;

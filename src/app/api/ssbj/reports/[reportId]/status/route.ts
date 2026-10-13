@@ -1,6 +1,8 @@
 // SSBJ レポートの状態を変える API（レビュー依頼・取り下げ・承認・差戻し。docs/ssbj-spec.md §13）。
 // 権限（承認・差戻しは指定された承認者か管理者だけ）・自己承認の拒否・差戻しの理由の必須・状態の遷移・競合の検証は、
 // service_role 限定の RPC change_ssbj_report_status（supabase/migrations/20261010100000_ssbj_self_approval_guard.sql）が行う。
+// その前に SSBJ のロールを確かめる（レビュー依頼・取り下げは入力担当か管理者、承認・差戻しは承認担当か管理者。
+// docs/authorization-matrix.md §2.2）。
 // 操作者・組織はサーバ側のセッションから決め、クライアントから受け取らない。
 
 import { NextResponse } from 'next/server';
@@ -11,7 +13,9 @@ import {
   SsbjWorkflowRpcError,
   changeSsbjReportStatus,
 } from '@/features/ssbj/services/reportWorkflowServer';
+import { guardSsbjRole } from '@/features/ssbj/services/roleServer';
 import { SSBJ_REPORT_STATUS_ACTIONS, type SsbjReportStatusAction } from '@/features/ssbj/types';
+import { ssbjStatusActionPermission } from '@/features/ssbj/utils/memberRole';
 
 // service_role を使うため Node ランタイムで実行する（Edge では実行しない）。
 export const runtime = 'nodejs';
@@ -75,6 +79,12 @@ export const POST = async (
   if (comment !== undefined && comment !== null &&
     (typeof comment !== 'string' || comment.length > COMMENT_MAX_LENGTH)) {
     return NextResponse.json({ error: `コメントは${COMMENT_MAX_LENGTH}文字以内で入力してください` }, { status: 400 });
+  }
+
+  // SSBJ のロールの確認（docs/authorization-matrix.md §2.2）。service_role の処理は RLS を越えるので、ここで確かめる。
+  const denial = await guardSsbjRole(profile, ssbjStatusActionPermission(action as SsbjReportStatusAction), error => log.error({ error, reportId }, 'SSBJ のロールの確認に失敗しました'));
+  if (denial) {
+    return NextResponse.json({ error: denial.error }, { status: denial.status });
   }
 
   try {

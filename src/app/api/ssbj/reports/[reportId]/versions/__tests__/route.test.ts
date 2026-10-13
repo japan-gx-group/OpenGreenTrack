@@ -4,6 +4,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  guardSsbjRole: vi.fn(),
   getCurrentProfile: vi.fn(),
   createAdminClient: vi.fn(),
   log: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), child: vi.fn() },
@@ -22,6 +23,8 @@ vi.mock('@/lib/supabase/admin', () => ({
 }));
 
 import { SSBJ_VERSION_SQLSTATE } from '@/features/ssbj/services/versionServer';
+vi.mock('@/features/ssbj/services/roleServer', () => ({ guardSsbjRole: mocks.guardSsbjRole }));
+
 import { POST } from '../route';
 
 const REPORT_ID = '019890ab-1234-4cde-8f01-23456789abcd';
@@ -42,6 +45,7 @@ describe('POST /api/ssbj/reports/[reportId]/versions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getCurrentProfile.mockResolvedValue({ id: 'user-1', organizationId: 'org-1' });
+    mocks.guardSsbjRole.mockResolvedValue(null);
   });
 
   it('未ログインは401', async () => {
@@ -126,5 +130,19 @@ describe('POST /api/ssbj/reports/[reportId]/versions', () => {
       p_organization_id: 'org-1',
       p_source_version_id: sourceVersionId,
     }));
+  });
+  it('SSBJ のロールが許さなければ 403 で、service_role の処理を呼ばない（docs/authorization-matrix.md §2.2）', async () => {
+    mocks.guardSsbjRole.mockResolvedValue({ status: 403, error: 'SSBJ のロールが閲覧者のため、この操作はできません' });
+    const response = await POST(request({ expectedDraftRevision: 1 }), params());
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toContain('閲覧者のため');
+    expect(mocks.guardSsbjRole).toHaveBeenCalledWith({ id: 'user-1', organizationId: 'org-1' }, 'edit', expect.any(Function));
+    expect(mocks.createAdminClient).not.toHaveBeenCalled();
+  });
+
+  it('SSBJ のロールを確かめられなければ 500（確かめないまま進めない）', async () => {
+    mocks.guardSsbjRole.mockResolvedValue({ status: 500, error: 'サーバー内部エラーが発生しました' });
+    expect((await POST(request({ expectedDraftRevision: 1 }), params())).status).toBe(500);
+    expect(mocks.createAdminClient).not.toHaveBeenCalled();
   });
 });
