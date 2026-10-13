@@ -13,10 +13,17 @@ vi.mock('../../services/previewService', () => ({
 }));
 vi.mock('../../services/versionExportService', () => ({ listSsbjVersions: vi.fn() }));
 
+
+// SSBJ のロールは、既定で入力担当として操作する（編集の操作を出す）。
+vi.mock('../../services/memberRoleService', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../services/memberRoleService')>()),
+  getMySsbjRole: vi.fn(async () => 'editor'),
+}));
 import { getSsbjVersionPreview, getSsbjWorkingPreview } from '../../services/previewService';
 import { getSsbjReport } from '../../services/reportService';
 import { listSsbjVersions } from '../../services/versionExportService';
 import { SsbjPreview } from '../SsbjPreview.client';
+import { getMySsbjRole } from '../../services/memberRoleService';
 
 const report = { ...fictionalReportBasicInfo, fiscalYearLabel: '2024年度',
   periodStart: '2024-04-01', periodEnd: '2025-03-31', draftRevision: 7, review: FICTIONAL_DRAFT_REVIEW };
@@ -70,5 +77,23 @@ describe('SsbjPreview', () => {
     expect(rendered.container.textContent).toContain('SSBJレポートが見つかりません');
     expect(getSsbjWorkingPreview).not.toHaveBeenCalled();
     expect(listSsbjVersions).not.toHaveBeenCalled();
+  });
+});
+
+describe('SsbjPreview（閲覧者）', () => {
+  it('閲覧者には作業中の内容を取得せず、承認した保存版を出す（作業中の内容は選べない）', async () => {
+    vi.mocked(getMySsbjRole).mockResolvedValueOnce('viewer');
+    vi.mocked(getSsbjReport).mockResolvedValue({
+      ...report,
+      review: { ...report.review, status: 'approved', approverUserId: 'u', approvedAt: '2025-06-05T00:00:00.000Z',
+        approvedByUserId: 'u', approvedVersionId: fictionalVersion.id },
+    });
+    rendered = render(<SsbjPreview reportId={report.id} />);
+    await settle();
+    expect(getSsbjWorkingPreview).not.toHaveBeenCalled();
+    expect(getSsbjVersionPreview).toHaveBeenCalled();
+    expect(rendered.container.querySelector('[data-testid="ssbj-preview-source"]')?.textContent).toContain('保存版');
+    const printLink = Array.from(rendered.container.querySelectorAll('a')).find(a => a.textContent?.includes('印刷'));
+    expect(printLink?.getAttribute('href')).toBe(`/ssbj/${report.id}/preview/print?source=${fictionalVersion.id}&internal=0`);
   });
 });

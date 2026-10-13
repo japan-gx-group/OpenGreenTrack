@@ -471,6 +471,9 @@ SSBJ の中だけで使うロールの割り当て。権限の規則の正本は
 - RLS は自組織の select（全員）と、管理者だけの insert / update / delete。割り当てられるのは同じ組織の利用者だけ。authenticated に GRANT する列は insert が `organizationId`・`userId`・`role`、update が `role` だけ。
 - 判定の関数: `ssbj_user_role(利用者, 組織)`・`ssbj_user_can_approve`（service_role 限定）、`ssbj_current_user_role()`・`ssbj_current_user_can_edit()`・`ssbj_current_user_can_view_working()`・`ssbj_current_user_is_admin()`（authenticated。RLS と画面の出し分けに使う）。
 - 割り当て・変更・解除はトリガー（`ssbj_audit_member_role_change`）が `ssbj_audit_logs` に記録する（`reportId` は空）。組織の削除に伴う連鎖削除では記録しない。
+- **SSBJ の各テーブルへの適用**（`20261010120000_ssbj_role_policies.sql`）: 3.11〜3.19 の各テーブルの RLS に、`AS RESTRICTIVE` のポリシーを重ねる。
+  作業中データの書き込み（`ssbj_reports` の作成・更新を含む）は入力担当か管理者だけ。作業中データ・操作履歴の select は閲覧者以外。
+  閲覧者が select できるのは、承認済みの `ssbj_reports` と、その `approvedVersionId` の `ssbj_report_versions` だけ。
 
 ---
 

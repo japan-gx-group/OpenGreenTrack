@@ -34,10 +34,12 @@ import {
   type SsbjJudgementEntry,
 } from '../utils/judgement';
 import { formatParagraphReference } from '../utils/requirementMaster';
-import { isSsbjReportLocked } from '../utils/reportStatus';
+import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
+import { isSsbjReadOnly } from '../utils/reportStatus';
 import { SsbjEditorLayout } from './SsbjEditorLayout.client';
 import { SsbjJudgementDialog } from './SsbjJudgementDialog.client';
 import { SsbjLockedNotice } from './SsbjLockedNotice';
+import { SsbjRoleNotice } from './SsbjRoleNotice';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
 
 const muted = (isUnconfirmed: boolean) => (isUnconfirmed ? 'text-text-muted' : '');
@@ -96,6 +98,8 @@ const JudgementTable = ({ entries, onEdit }: { entries: SsbjJudgementEntry[]; on
 
 export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
   const { report, isLoading: reportLoading, errorMessage: reportError, isNotFound } = useSsbjReport(reportId);
+  // 承認済みか、SSBJ のロールが入力担当でも管理者でもなければ、編集の操作を出さない（DB も止める）。
+  const myRole = useSsbjMyRole();
   const { judgements, isLoading: judgementsLoading, errorMessage: judgementsError, replace } =
     useSsbjJudgements(report?.id ?? null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -147,6 +151,7 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
         </Link>
         <SsbjTrialNotice />
         {report && <SsbjLockedNotice report={report} />}
+        {report && <SsbjRoleNotice role={myRole.role} isLoading={myRole.isLoading} />}
         {(reportError || judgementsError) && (
           <div role="alert" className="rounded-md bg-danger-light px-4 py-3 text-sm text-danger">
             {reportError || judgementsError}
@@ -199,7 +204,7 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
               <Card key={group.key} role="region" aria-label={group.title}>
                 <h2 className="m-0 mb-3 text-base font-bold">{group.title}</h2>
                 {group.entries.length > 0 ? (
-                  <JudgementTable entries={group.entries} onEdit={isSsbjReportLocked(report.review) ? undefined : openEdit} />
+                  <JudgementTable entries={group.entries} onEdit={isSsbjReadOnly(report.review, myRole.role) ? undefined : openEdit} />
                 ) : (
                   <p className="m-0 text-sm text-text-muted">判断が済んでいない要求はありません。</p>
                 )}

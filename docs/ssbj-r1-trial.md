@@ -41,7 +41,8 @@
 | `member3-a@example.com` / `password123` | 架空精密工業株式会社 | 確認 三郎。SSBJ の承認担当（`ssbj_demo.sql` で追加） |
 | `member2-a@example.com` / `password123` | 架空精密工業株式会社 | 報告 次郎。SSBJ の閲覧者 |
 
-SSBJ のロールは「SSBJ の権限」（`/ssbj/roles`）で確かめ、管理者（`org-a@example.com`）が変えられる。ロールで何ができるかは
+SSBJ のロールは「SSBJ の権限」（`/ssbj/roles`）で確かめ、管理者（`org-a@example.com`）が変えられる。
+承認担当は内容を見られるが編集はできず、閲覧者は承認済みのレポートの承認した保存版だけを見られる。ロールで何ができるかは
 [`authorization-matrix.md`](authorization-matrix.md) を正とする。
 
 ## 3. 試行の手順
