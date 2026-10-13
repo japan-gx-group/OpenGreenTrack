@@ -28,6 +28,8 @@ const TARGET_TYPE_LABELS: Record<string, string> = {
   time_horizons: '時間軸の定義',
   evidence: '根拠文書',
   ogt_adoption: 'OGT の採用値',
+  external_emission: '外部算定値',
+  member_role: 'SSBJ のロール',
   version: '保存版',
 };
 
@@ -81,6 +83,7 @@ export const ssbjAuditTargetLabel = (log: SsbjAuditLog): string => {
     }
     case 'evidence':
     case 'risk_opportunity':
+    case 'external_emission':
       return label ? `${kind}: ${label}` : kind;
     case 'version': {
       const versionNumber = num(log.details.versionNumber);

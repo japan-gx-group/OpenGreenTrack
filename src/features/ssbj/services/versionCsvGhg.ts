@@ -20,10 +20,13 @@ const internalRecord = (value: OgtAdoptedValue): string =>
       : null,
   ].filter(part => part !== null).join('／');
 
+// 出典が OGT の算定値であることを必ず書く（外部算定値の行と区別するため）。
+const SOURCE_NOTE = '出典: OGT 算定値';
+
 const note = (value: OgtAdoptedValue): string => {
-  if (value.scope !== 2 || value.method.kind !== 'activity_based' || !('scope2Basis' in value.method)) return '';
+  if (value.scope !== 2 || value.method.kind !== 'activity_based' || !('scope2Basis' in value.method)) return SOURCE_NOTE;
   const breakdown = value.method.factorTypeBreakdown;
-  return 'ロケーション基準・マーケット基準の区別なし（基準不明）' +
+  return `${SOURCE_NOTE}。ロケーション基準・マーケット基準の区別なし（基準不明）` +
     (breakdown
       ? `。係数区分の内訳: 基礎 ${breakdown.basic}／調整後 ${breakdown.adjusted}／区分なし ${breakdown.unclassified}`
       : '');

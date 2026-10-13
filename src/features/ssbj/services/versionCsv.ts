@@ -12,12 +12,15 @@ import {
   type SsbjReportVersion,
 } from '../types';
 import { formatFieldValue } from '../utils/fieldValue';
+import { externalEmissionCsvRows } from './versionCsvExternal';
 import { ghgAdoptionCsvRows } from './versionCsvGhg';
 import { judgementCsvRows } from './versionCsvJudgements';
 import { narrativeCsvRows } from './versionCsvNarratives';
 
 // CSV に出せる保存版セクション。ここに無いセクションがあれば、出力漏れにせずエラーにする。
-const CSV_SECTIONS = new Set(['risks_opportunities', 'time_horizons', 'evidence', 'ghg', 'narratives', 'judgements']);
+const CSV_SECTIONS = new Set([
+  'risks_opportunities', 'time_horizons', 'evidence', 'ghg', 'narratives', 'judgements', 'external_emissions',
+]);
 
 export type SsbjCsvVersion = Pick<SsbjReportVersion, 'id' | 'reportId' | 'versionNumber' | 'snapshot'>;
 
@@ -161,6 +164,8 @@ export const ssbjVersionToCsvRows = (version: SsbjCsvVersion, generatedAt: strin
   }
   const ghg = snapshot.sections.ghg;
   if (ghg !== undefined) rows.push(...ghgAdoptionCsvRows(report.id, ghg));
+  const externalEmissions = snapshot.sections.external_emissions;
+  if (externalEmissions !== undefined) rows.push(...externalEmissionCsvRows(externalEmissions));
   const narratives = snapshot.sections.narratives;
   if (narratives !== undefined) rows.push(...narrativeCsvRows(narratives));
   const judgements = snapshot.sections.judgements;

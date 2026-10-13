@@ -96,6 +96,7 @@ src/app/
 | `/settings/account` | `src/app/(app)/settings/account/page.tsx` | アカウント設定 |
 | `/settings/company` | `src/app/(app)/settings/company/page.tsx` | 企業情報設定 |
 | `/ssbj` | `src/app/(app)/ssbj/page.tsx` | SSBJ レポート一覧（試行版） |
+| `/ssbj/roles` | `src/app/(app)/ssbj/roles/page.tsx` | SSBJ の権限（ロールの割り当て） |
 | `/ssbj/[reportId]` | `src/app/(app)/ssbj/[reportId]/page.tsx` | SSBJ レポート詳細（基本情報・保存版の作成） |
 | `/ssbj/[reportId]/narratives` | `src/app/(app)/ssbj/[reportId]/narratives/page.tsx` | SSBJ 四本柱と企業固有の補足の文章 |
 | `/ssbj/[reportId]/risks` | `src/app/(app)/ssbj/[reportId]/risks/page.tsx` | SSBJ リスク・機会 |
@@ -104,6 +105,7 @@ src/app/
 | `/ssbj/[reportId]/versions` | `src/app/(app)/ssbj/[reportId]/versions/page.tsx` | SSBJ 固定版の選択・復元・社内確認用 CSV / Excel 出力・出力履歴 |
 | `/ssbj/[reportId]/history` | `src/app/(app)/ssbj/[reportId]/history/page.tsx` | SSBJ 操作履歴（誰が・いつ・何をしたか） |
 | `/ssbj/[reportId]/ghg` | `src/app/(app)/ssbj/[reportId]/ghg/page.tsx` | OGT の GHG 候補値・算定条件の参照と、レポートへの採用 |
+| `/ssbj/[reportId]/external` | `src/app/(app)/ssbj/[reportId]/external/page.tsx` | SSBJ 外部で算定した排出量（出典・根拠文書・確認者付き） |
 | `/ssbj/[reportId]/preview` | `src/app/(app)/ssbj/[reportId]/preview/page.tsx` | SSBJ レポートのプレビュー（作業中の内容 / 保存版） |
 | `/ssbj/[reportId]/preview/print` | `src/app/(app)/ssbj/[reportId]/preview/print/page.tsx` | SSBJ レポートのプレビューの印刷ビュー（PDF 保存） |
 
@@ -120,6 +122,8 @@ Route Handler（API）:
 | `/api/ssbj/reports/[reportId]/versions` | `src/app/api/ssbj/reports/[reportId]/versions/route.ts` | SSBJ レポートの保存版（固定スナップショット）の作成 |
 | `/api/ssbj/reports/[reportId]/ogt-adoption` | `src/app/api/ssbj/reports/[reportId]/ogt-adoption/route.ts` | SSBJ レポートへの OGT の候補値の採用 |
 | `/api/ssbj/reports/[reportId]/preview` | `src/app/api/ssbj/reports/[reportId]/preview/route.ts` | SSBJ レポートの作業中の内容を保存版と同じ形で返す（プレビュー用） |
+| `/api/ssbj/reports/[reportId]/status` | `src/app/api/ssbj/reports/[reportId]/status/route.ts` | SSBJ レポートの状態の変更（レビュー依頼・取り下げ・承認・差戻し） |
+| `/api/ssbj/reports/[reportId]/versions/[versionId]/restore` | `src/app/api/ssbj/reports/[reportId]/versions/[versionId]/restore/route.ts` | SSBJ レポートの作業中の内容を保存版の内容に戻す |
 | `/api/account/delete` | `src/app/api/account/delete/route.ts` | アカウント削除 |
 | `/api/health` | `src/app/api/health/route.ts` | ヘルスチェック（DB接続確認・readiness probe） |
 | `/api/csp-report` | `src/app/api/csp-report/route.ts` | CSP違反レポートの受信（本体は `src/lib/security/cspReport.ts`） |

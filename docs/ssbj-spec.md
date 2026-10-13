@@ -37,6 +37,7 @@ SSBJ（サステナビリティ基準委員会）基準に沿った開示レポ�
 | `/ssbj/[reportId]/narratives` | 四本柱・補足文章 | T05 |
 | `/ssbj/[reportId]/risks` | リスク・機会 | T07 |
 | `/ssbj/[reportId]/ghg` | OGT 候補値の表示・採用 | T08a / T08b |
+| `/ssbj/[reportId]/external` | 外部で算定した排出量 | R2-13 |
 | `/ssbj/[reportId]/judgements` | 該当性・重要性・非記載理由 | T09 |
 | `/ssbj/[reportId]/evidence` | 根拠文書・主管部署 | T10 |
 | `/ssbj/[reportId]/versions` | 保存履歴・過去版からの新版作成・CSV 出力 | T11 / T13 |
@@ -156,6 +157,8 @@ T08a が OGT から**候補値**（`OgtCandidateValue`）を取得・表示し�
   （参考値）で持ち、合計に足さない。
 - **対象ガス:** OGT の公式係数は実質 CO2 のみ（CH4 / N2O / フロン類は未対応）。単位を `t-CO2e` と表示しても
   他ガスは含まれない。この制約はプレビュー・CSV の注記にも載せる（T12 / T13）。
+  OGT で算定できないガス・排出源の値は、外部算定値として出典付きで採用する（§13「外部で算定した排出量（R2-13）」。
+  OGT の採用値との重なりの規則もそこに置く）。
 
 ### 7.3 取得元
 
@@ -289,6 +292,7 @@ T06 の版生成関数は、`public` スキーマの `ssbj_snapshot_section__` �
 | `fictionalOgtCandidates` | OGT 候補値（Scope 1 算定済み / Scope 2 基準不明・一部未算定 / Scope 3 直接入力の回答済み 0 / 積上げの未算定 / 積上げの算定済み） |
 | `fictionalOgtAdoptedValues` | Scope 1・2 を採用した採用値 |
 | `fictionalSupplierReferences` | サプライヤー別実排出量（参考値） |
+| `fictionalExternalEmissions` | 外部算定値（Scope 1 の CH4・N2O。出典・根拠文書・確認者・内部メモあり） |
 | `fictionalSnapshot` / `fictionalVersion` | 保存版の例（T03 時点では `sections` は空） |
 
 - 境界ケース（回答済みの 0 / 未入力 / 未確認 / 非該当 / Scope 2 基準不明 / Scope 3 未算定 / 開示文と内部メモの併存）を
@@ -785,3 +789,43 @@ R2-10 の SSBJ のロールを、SSBJ の各テーブル・状態の変更・閲
 - **承認担当は作業中の内容を見られるが、編集はできない。** 直したいときは差戻し、入力担当が直してから依頼し直す。
 - **状態の変更の RPC も SSBJ のロールで判定する**（Route Handler に任せない。RPC は操作者を引数で受け取るため、判定を 1 か所に置く）。
   `profiles.role` を直接読むのはやめ、`ssbj_user_role`（中で `profiles.role = 'admin'` を読む）に置き換えた。
+
+### 外部で算定した排出量（R2-13）
+
+OGT で算定できない排出量（CO2 以外のガス、対応していない排出源、子会社から届いた値など）を、出典（算定した者・算定方法・根拠文書）と
+確認者を付けてレポートに採用する。OGT の採用値（§7）と同じものを、両方から採用しない（二重計上の防止）。
+
+| 対象 | 内容 |
+|---|---|
+| DB | `20261010130000_ssbj_external_emissions.sql`: `ssbj_external_emissions`（§10 の登録規約 1〜8。R2-12 と同じ形の RESTRICTIVE のポリシー）、重なりの判定 `ssbj_external_emission_overlap`、遅延の制約トリガー（外部算定値の書き込みと、OGT の値の採用の両方。P2071 / P2072）、保存版セクション `ssbj_snapshot_section__external_emissions` と復元 `ssbj_restore_section__external_emissions` |
+| 画面 | `/ssbj/[reportId]/external`（`SsbjExternalEmissions.client.tsx`・`SsbjExternalEmissionDialog.client.tsx`）。詳細の「レポートの内容」から入る。プレビューの「指標及び目標」に、OGT の値とは別の表で出す（`SsbjPreviewExternalEmissions.tsx`） |
+| 出力 | CSV・Excel に「GHG排出量（外部算定値）」の行（`services/versionCsvExternal.ts`）。OGT の値の行の注記は「出典: OGT 算定値」から始める |
+| コード | `types.ts` の `SsbjExternalEmission`・`SsbjExternalEmissionSnapshot`・`SSBJ_GHG_GASES`・`SSBJ_SCOPE2_BASES`、`utils/externalEmission.ts`、`services/externalEmissionService.ts`、`hooks/useSsbjExternalEmissions.ts`・`useSsbjExternalEmissionForm.ts`。採用の API は重なりを 409 で返す（`ogtAdoptionServer.ts`） |
+| テスト | `scripts/db/__tests__/ssbjExternalEmissionsPolicy.test.ts`（RLS・ロール・制約・重なり・保存版・復元の取り付け）、純関数・サービス・CSV・画面・採用の API の単体テスト |
+| デモデータ | `ssbj_demo.sql`: 組織 A のレポートに 1 件（Scope 1 の CH4・N2O。CO2 を含まないので、OGT の値を採用しても重ならない） |
+
+決めたこと（重なりの規則）:
+
+- **Scope 1・Scope 3（同じカテゴリ）では、同じ区分の OGT の採用値が算定済み（`answered`）なら、CO2 を含む外部算定値は採用できない**（P2071）。
+  OGT の採用値は実質 CO2 だけ（§7.2）なので、CO2 以外のガスだけの外部算定値は OGT の値を補う値として採用できる。
+  OGT の値が未算定の区分は、外部算定値で CO2 を入れてよい。
+- **Scope 2 は、外部算定値を基準（ロケーション基準・マーケット基準）ごとの値とし、OGT の基準不明の値（§7.2）とは別の値として示す（足し合わせない）。**
+  OGT からは基準別の値が得られないため、ここを止めると基準別の値を入れる手段が無くなる。
+- **外部算定値どうしは、同じ Scope・カテゴリ・基準で対象ガスが重なれば採用できない**（P2072）。
+- **OGT の値を採用（採用し直し）するときも、採用した結果と重なる外部算定値があれば採用しない**（P2071。採用の API は 409）。
+- **検査は採用の RPC ではなく、テーブルの遅延の制約トリガーで行う。** 画面からの直接の書き込み（RLS）・OGT の採用の RPC・版の復元の
+  どれを通っても同じ所で止めるため。トランザクションの最後に確定した内容で調べるので、版の復元がセクションを順に入れ替える途中では止めない。
+- **合計は作らない。** プレビュー・CSV・Excel は OGT の値と外部算定値を別々に示し、Scope ごとに足し合わせない（連結の集計は R2-20）。
+
+決めたこと（項目と出力）:
+
+- **出典（算定した者・算定方法・根拠文書）と確認者・確認日時は必須。** 根拠文書は同じレポートの根拠文書だけを指せる。参照されている根拠文書は
+  削除できない（外部キー。版の復元が根拠文書と外部算定値を入れ替えるため、確かめるのはトランザクションの最後）。確認者は自組織の利用者だけ。
+  確認日時は画面では日付で入れ、日本時間の 0 時として保存する。
+- **期間の既定はレポートの期間。** 子会社から届いた値などで期間が違うときは変えられる（終わりは始まりと同じ日以降）。
+- **保存版には根拠文書の資料名と確認者の名前も残す。** 後で資料名や名前が変わっても、保存版の表示は変わらない（復元では使わない）。
+- **値ごとに出典を示す。** プレビューは OGT の値の表に「出典: OGT 算定値」、外部算定値の表に「出典: 外部算定値」を必ず出す。CSV・Excel は
+  行の注記に同じ文言を書く（外部算定値は ID も）。
+- **出典の詳細（算定した者・算定方法・根拠文書・確認者）は内部記録として扱う**（§5）。プレビューは「内部メモも表示する」のときだけ出し、
+  CSV・Excel は内部記録の列に 1 項目ずつ別の行で出す。開示内容の列には混ぜない。
+- **法人の列は持たない。** 外部算定値はレポートに属するので、レポートが法人ごとになれば（R2-19）外部算定値も法人ごとになる。

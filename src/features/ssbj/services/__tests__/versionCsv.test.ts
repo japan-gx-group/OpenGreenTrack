@@ -100,7 +100,7 @@ describe('ssbjVersionToCsvRows（GHG排出量）', () => {
       sections: { ...fictionalVersion.snapshot.sections, ghg: null },
     };
     const rows = ssbjVersionToCsvRows({ ...fictionalVersion, snapshot }, GENERATED_AT);
-    expect(rows.filter(row => row[0]?.startsWith('GHG排出量'))).toEqual([
+    expect(rows.filter(row => row[0] === 'GHG排出量')).toEqual([
       ['GHG排出量', fictionalVersion.reportId, 'OGT の値', '未採用', '', '', '', 'OGT の候補値をレポートに採用していません'],
     ]);
   });

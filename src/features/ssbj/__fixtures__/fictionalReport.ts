@@ -24,6 +24,7 @@ import type {
   SsbjRequirementId,
   SsbjRiskOpportunity,
   SsbjTimeHorizonDefinitions,
+  SsbjExternalEmissionSnapshot,
 } from '../types';
 
 export const FICTIONAL_ORGANIZATION_ID = '5b1f0000-0000-4000-8000-000000000001';
@@ -378,6 +379,31 @@ export const fictionalGhgAdoption: SsbjGhgAdoption = {
 };
 
 /** 保存版の中身の例。セクションは実装済みの機能の分だけ入る（未実装の機能のキーは無い）。 */
+/**
+ * 外部で算定した排出量（R2-13）。OGT の採用値（Scope 1 の CO2）を補う CH4・N2O（架空のコンサルタントの算定）。
+ * 根拠文書は fictionalEvidence の 1 件目。
+ */
+export const fictionalExternalEmissions: SsbjExternalEmissionSnapshot[] = [
+  {
+    id: '5b1f0000-1111-4000-8000-000000000501',
+    scope: 1,
+    scope3CategoryId: null,
+    scope2Basis: null,
+    gases: ['CH4', 'N2O'],
+    value: '1.250',
+    unit: 't-CO2e',
+    period: { startDate: '2024-04-01', endDate: '2025-03-31' },
+    calculatedBy: '架空環境コンサルティング株式会社',
+    calculationMethod: '燃料の使用量に排出係数と GWP（AR6）を掛けて算定（架空）',
+    evidenceId: '5b1f0000-1111-4000-8000-000000000201',
+    evidenceTitle: '取締役会議事録（架空）',
+    confirmedByUserId: FICTIONAL_USER_ID,
+    confirmedByName: '環境 太郎',
+    confirmedAt: '2025-06-02T00:00:00.000Z',
+    internalNote: '算定書の原本は経営企画部が保管（架空）',
+  },
+];
+
 export const fictionalSnapshot: SsbjReportSnapshotV1 = {
   schemaVersion: 1,
   report: {
@@ -393,6 +419,7 @@ export const fictionalSnapshot: SsbjReportSnapshotV1 = {
     ghg: fictionalGhgAdoption,
     narratives: fictionalNarratives,
     judgements: fictionalJudgements,
+    external_emissions: fictionalExternalEmissions,
   },
 };
 

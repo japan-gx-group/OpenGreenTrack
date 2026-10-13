@@ -55,7 +55,7 @@ export const SsbjPreviewGhg = ({ ghg }: { ghg: SsbjGhgAdoption | null | undefine
   return (
     <div className="flex flex-col gap-4">
       <p className="m-0 text-xs text-text-muted">
-        OGT から採用した値（採用日時 {formatDateTime(ghg.adoptedAt)}）。集計範囲は組織全体、単位は t-CO2e。
+        出典: OGT 算定値。OGT から採用した値（採用日時 {formatDateTime(ghg.adoptedAt)}）。集計範囲は組織全体、単位は t-CO2e。
       </p>
       <ValueTable values={totals} />
       <p className="m-0 text-sm text-text-muted">
