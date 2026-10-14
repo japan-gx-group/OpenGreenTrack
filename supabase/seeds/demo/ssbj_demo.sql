@@ -7,6 +7,8 @@
 -- 内容は src/features/ssbj/__fixtures__/fictionalReport.ts の架空データに対応させている
 -- （画面で見える例とテストの例を揃えるため）。
 --
+-- 末尾で SSBJ のロール（入力担当・承認担当・閲覧者）の利用者もそろえる（確認 三郎 member3-a@example.com を追加する）。
+--
 -- 組織分離（RLS）を画面で確認できるよう、2 つのデモ組織にそれぞれ 1 件ずつ入れる:
 --   架空精密工業株式会社（org-a@example.com）      2024年度に 1 件（リスク・機会 3 件、四本柱の文章 6 件、判断 5 件）
 --   架空ロジスティクス株式会社（org-b@example.com）2025年度に 1 件（リスク・機会 1 件、文章 1 件、判断 1 件）
@@ -356,3 +358,68 @@ values
     'bbbbbbbb-0000-0000-0000-000000000001', 'bbbbbbbb-0000-0000-0000-000000000001',
     '2026-06-01 10:40:00+09', '2026-06-01 10:40:00+09'
   );
+
+-- =====================================================================
+-- SSBJ のロール（docs/authorization-matrix.md §1）
+--
+-- 組織 A に各ロールの利用者をそろえる:
+--   環境 太郎（org-a@example.com）     管理者（OGT の管理者。割り当ての行は持たない）
+--   算定 花子（member-a@example.com）  入力担当（割り当ての行が無い = 入力担当の既定）
+--   確認 三郎（member3-a@example.com） 承認担当（このファイルで追加する利用者）
+--   報告 次郎（member2-a@example.com） 閲覧者（OGT の role は viewer だが、SSBJ のロールは割り当てで決まる）
+--
+-- 確認 三郎は SSBJ の承認担当を試すためだけの利用者なので、demo.sql ではなくここで作る。
+-- auth.users は組織の削除→再投入に巻き込まれない（profiles だけが cascade で消える）ため上書きし、
+-- profiles は組織の再投入の後に入れ直す（どちらも冪等）。
+-- =====================================================================
+
+insert into auth.users (
+  instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+  confirmation_token, recovery_token, email_change_token_new, email_change,
+  email_change_token_current, reauthentication_token,
+  raw_app_meta_data, raw_user_meta_data, is_sso_user, is_anonymous, created_at, updated_at
+)
+values (
+  '00000000-0000-0000-0000-000000000000', 'aaaaaaaa-0000-0000-0000-000000000004',
+  'authenticated', 'authenticated', 'member3-a@example.com',
+  crypt('password123', gen_salt('bf')), now(),
+  '', '', '', '', '', '',
+  '{"provider":"email","providers":["email"]}'::jsonb,
+  '{"full_name":"確認 三郎"}'::jsonb, false, false, now(), now()
+)
+on conflict (id) do update set
+  email = excluded.email,
+  encrypted_password = excluded.encrypted_password,
+  raw_user_meta_data = excluded.raw_user_meta_data,
+  updated_at = now();
+
+insert into auth.identities (
+  provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at
+)
+values (
+  'member3-a@example.com', 'aaaaaaaa-0000-0000-0000-000000000004',
+  jsonb_build_object('sub', 'aaaaaaaa-0000-0000-0000-000000000004', 'email', 'member3-a@example.com', 'email_verified', true),
+  'email', now(), now(), now()
+)
+on conflict (provider_id, provider) do nothing;
+
+insert into profiles (id, "organizationId", email, "fullName", role, phone, "createdAt")
+values (
+  'aaaaaaaa-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111',
+  'member3-a@example.com', '確認 三郎', 'logger', null, '2025-04-01 09:00:00+09'
+)
+on conflict (id) do update set
+  "organizationId" = excluded."organizationId",
+  email = excluded.email,
+  "fullName" = excluded."fullName",
+  role = excluded.role;
+
+delete from ssbj_member_roles
+where "organizationId" in ('11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222');
+
+insert into ssbj_member_roles ("organizationId", "userId", role, "createdByUserId", "updatedByUserId")
+values
+  ('11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000004', 'approver',
+   'aaaaaaaa-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000001'),
+  ('11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000003', 'viewer',
+   'aaaaaaaa-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000001');

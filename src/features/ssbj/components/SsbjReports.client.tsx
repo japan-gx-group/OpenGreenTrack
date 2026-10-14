@@ -5,7 +5,7 @@
 
 import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
-import { FileCheck2, Plus } from 'lucide-react';
+import { FileCheck2, Plus, Users } from 'lucide-react';
 import { PageHeading } from '@/components/layout/PageHeading';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -70,6 +70,12 @@ export const SsbjReports = () => {
 
         <div className="flex flex-col" style={{ gap: '14px' }}>
           <SsbjTrialNotice />
+
+          <div className="flex justify-end">
+            <Link href="/ssbj/roles" className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline">
+              <Users size={14} /> SSBJ の権限（ロールの割り当て）
+            </Link>
+          </div>
 
           {hasNoFiscalYear ? (
             <Card className="text-sm text-text-muted">

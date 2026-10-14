@@ -329,6 +329,47 @@ export const SSBJ_APPROVAL_BLOCKERS = ['requester', 'edited_after_request'] as c
 export type SsbjApprovalBlocker = (typeof SSBJ_APPROVAL_BLOCKERS)[number];
 
 // ---------------------------------------------------------------------------
+// SSBJ のロール（docs/authorization-matrix.md §1）
+// ---------------------------------------------------------------------------
+
+/**
+ * 割り当てられる SSBJ のロール。editor = 入力担当、approver = 承認担当、viewer = 閲覧者。
+ * 割り当てが無い利用者は入力担当として扱う（既存の利用者を締め出さないため）。DB の ssbj_member_roles.role と同じ値。
+ */
+export const SSBJ_MEMBER_ROLES = ['editor', 'approver', 'viewer'] as const;
+
+export type SsbjMemberRole = (typeof SSBJ_MEMBER_ROLES)[number];
+
+/** 判定に使う SSBJ のロール。OGT の管理者（profiles.role = 'admin'）は admin。DB の ssbj_user_role と同じ値。 */
+export type SsbjEffectiveRole = 'admin' | SsbjMemberRole;
+
+export const SSBJ_ROLE_LABELS: Record<SsbjEffectiveRole, string> = {
+  admin: '管理者',
+  editor: '入力担当',
+  approver: '承認担当',
+  viewer: '閲覧者',
+};
+
+export const SSBJ_ROLE_DESCRIPTIONS: Record<SsbjEffectiveRole, string> = {
+  admin: 'OGT の管理者。SSBJ のすべての操作と、ロールの割り当てができる',
+  editor: 'レポートの作成と編集、レビューの依頼、保存版の作成・復元、出力ができる（ロールを割り当てていない人もこの扱い）',
+  approver: '指定されたレポートの承認・差戻しと、閲覧・出力ができる。作業中の内容は編集できない',
+  viewer: '承認済みのレポートの、承認した保存版だけを見て出力できる',
+};
+
+/** ロールの割り当ての変更の記録（操作履歴のうち、レポートに属さないもの）。 */
+export type SsbjMemberRoleLog = {
+  id: number;
+  actorUserId: string | null;
+  action: 'create' | 'update' | 'delete';
+  /** 対象の利用者（profiles.id）。 */
+  userId: string;
+  role: SsbjMemberRole | null;
+  previousRole: SsbjMemberRole | null;
+  createdAt: string;
+};
+
+// ---------------------------------------------------------------------------
 // OGT の算定値（T08a が候補値を出し、T08b がレポートへ採用・固定する）
 // ---------------------------------------------------------------------------
 

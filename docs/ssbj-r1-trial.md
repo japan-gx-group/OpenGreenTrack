@@ -37,6 +37,12 @@
 |---|---|---|
 | `org-a@example.com` / `password123` | 架空精密工業株式会社 | 試行の本体。2024 年度に OGT の算定値・Scope 3 の直接入力・サプライヤー別排出量と、入力例の入った SSBJ レポートがある |
 | `org-b@example.com` / `password123` | 架空ロジスティクス株式会社 | 組織分離の確認（組織 A のレポートが見えないこと） |
+| `member-a@example.com` / `password123` | 架空精密工業株式会社 | 算定 花子。SSBJ のロールは割り当て無し（入力担当） |
+| `member3-a@example.com` / `password123` | 架空精密工業株式会社 | 確認 三郎。SSBJ の承認担当（`ssbj_demo.sql` で追加） |
+| `member2-a@example.com` / `password123` | 架空精密工業株式会社 | 報告 次郎。SSBJ の閲覧者 |
+
+SSBJ のロールは「SSBJ の権限」（`/ssbj/roles`）で確かめ、管理者（`org-a@example.com`）が変えられる。ロールで何ができるかは
+[`authorization-matrix.md`](authorization-matrix.md) を正とする。
 
 ## 3. 試行の手順
 
