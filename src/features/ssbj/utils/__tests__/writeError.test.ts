@@ -12,3 +12,12 @@ describe('ssbjWriteErrorMessage', () => {
     expect(ssbjWriteErrorMessage(null, '保存に失敗しました')).toBe('保存に失敗しました');
   });
 });
+
+describe('ssbjWriteErrorMessage（SSBJ のロール）', () => {
+  it('RLS の拒否（42501）は、入力担当か管理者だけが変えられることを伝える', async () => {
+    const { ssbjWriteErrorMessage } = await import('../writeError');
+    expect(ssbjWriteErrorMessage({ code: '42501' }, '保存に失敗しました'))
+      .toBe('この操作の権限がありません。SSBJ のレポートの内容を変えられるのは、入力担当か管理者だけです');
+    expect(ssbjWriteErrorMessage({ code: 'XX000' }, '保存に失敗しました')).toBe('保存に失敗しました');
+  });
+});

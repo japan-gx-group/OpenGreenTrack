@@ -31,6 +31,12 @@ vi.mock('../../services/timeHorizonService', async importOriginal => ({
   saveSsbjTimeHorizons: vi.fn(),
 }));
 
+
+// SSBJ のロールは、既定で入力担当として操作する（編集の操作を出す）。
+vi.mock('../../services/memberRoleService', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../services/memberRoleService')>()),
+  getMySsbjRole: vi.fn(async () => 'editor'),
+}));
 import { getSsbjReport } from '../../services/reportService';
 import {
   createSsbjRiskOpportunity,

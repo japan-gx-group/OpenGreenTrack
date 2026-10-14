@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 
-const SSBJ_REPORT_CONTENTS: { path: string; label: string; description: string }[] = [
+// viewer = 閲覧者（作業中の内容を見られない）にも出すか。承認した保存版を見る画面だけ。
+const SSBJ_REPORT_CONTENTS: { path: string; label: string; description: string; viewer?: boolean }[] = [
   {
     path: 'narratives',
     label: '四本柱の文章',
@@ -32,11 +33,13 @@ const SSBJ_REPORT_CONTENTS: { path: string; label: string; description: string }
   },
   {
     path: 'preview',
+    viewer: true,
     label: 'プレビュー',
     description: '作業中の内容または保存版を、レポートの形で確認し、印刷・PDFとして保存します。',
   },
   {
     path: 'versions',
+    viewer: true,
     label: '保存履歴と出力',
     description: '保存版の内容の確認、過去の版への復元、CSV・Excel の出力を行います。',
   },
@@ -47,11 +50,12 @@ const SSBJ_REPORT_CONTENTS: { path: string; label: string; description: string }
   },
 ];
 
-export const SsbjReportContentsNav = ({ reportId }: { reportId: string }) => (
+/** workingAccess = false（閲覧者）のときは、承認した保存版を見る画面だけを出す。 */
+export const SsbjReportContentsNav = ({ reportId, workingAccess = true }: { reportId: string; workingAccess?: boolean }) => (
   <Card>
     <h2 className="m-0 mb-3 text-base font-bold">レポートの内容</h2>
     <ul className="m-0 flex list-none flex-col gap-2 p-0">
-      {SSBJ_REPORT_CONTENTS.map(content => (
+      {SSBJ_REPORT_CONTENTS.filter(content => workingAccess || content.viewer).map(content => (
         <li key={content.path}>
           <Link
             href={`/ssbj/${encodeURIComponent(reportId)}/${content.path}`}

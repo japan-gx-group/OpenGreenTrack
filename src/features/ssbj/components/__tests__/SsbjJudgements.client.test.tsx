@@ -12,6 +12,12 @@ vi.mock('../../services/reportService', async importOriginal => ({
 }));
 vi.mock('../../services/judgementService', () => ({ listSsbjJudgements: vi.fn(), saveSsbjJudgement: vi.fn() }));
 
+
+// SSBJ のロールは、既定で入力担当として操作する（編集の操作を出す）。
+vi.mock('../../services/memberRoleService', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../services/memberRoleService')>()),
+  getMySsbjRole: vi.fn(async () => 'editor'),
+}));
 import { listSsbjJudgements, saveSsbjJudgement } from '../../services/judgementService';
 import { getSsbjReport } from '../../services/reportService';
 import { SSBJ_REQUIREMENTS } from '../../utils/requirementMaster';

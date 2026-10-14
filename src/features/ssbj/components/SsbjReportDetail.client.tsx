@@ -21,8 +21,8 @@ import { useSsbjVersionSave } from '../hooks/useSsbjVersionSave';
 import type { SsbjReportStatusChangeResult } from '../services/reportWorkflowClient';
 import { updateSsbjReportBasicInfo } from '../services/reportService';
 import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
-import { canEditSsbj } from '../utils/memberRole';
-import { isSsbjReportLocked } from '../utils/reportStatus';
+import { canEditSsbj, canViewSsbjWorking } from '../utils/memberRole';
+import { isSsbjReadOnly } from '../utils/reportStatus';
 import { toSsbjReportFormValues } from '../utils/reportValidation';
 import { SsbjLockedNotice } from './SsbjLockedNotice';
 import { SsbjReportBasicInfo } from './SsbjReportBasicInfo';
@@ -35,6 +35,9 @@ import { SsbjVersionSaveCard } from './SsbjVersionSaveCard';
 export const SsbjReportDetail = ({ reportId }: { reportId: string }) => {
   const { toast, showToast } = useToast();
   const { report, setReport, reload, isLoading, errorMessage, isNotFound } = useSsbjReport(reportId);
+  // 保存版の作成・基本情報の編集は、SSBJ のロールが入力担当か管理者のときだけ出す（API・DB も同じ判定をする）。
+  // 閲覧者には、作業中の内容の画面への入口を出さない。
+  const myRole = useSsbjMyRole();
   const [isEditing, setIsEditing] = useState<boolean>(false);
 
   const form = useSsbjReportForm(async input => {
@@ -50,8 +53,6 @@ export const SsbjReportDetail = ({ reportId }: { reportId: string }) => {
   };
 
   const versionSave = useSsbjVersionSave(reportId);
-  // 保存版の作成は、SSBJ のロールが入力担当か管理者のときだけ出す（API も同じ判定をする）。
-  const myRole = useSsbjMyRole();
 
   const handleSave = async (event: FormEvent) => {
     if (await form.submit(event)) {
@@ -124,7 +125,7 @@ export const SsbjReportDetail = ({ reportId }: { reportId: string }) => {
             <Card>
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="m-0 text-base font-bold">基本情報</h2>
-                {!isEditing && !isSsbjReportLocked(report.review) && (
+                {!isEditing && !isSsbjReadOnly(report.review, myRole.role) && (
                   <Button type="button" variant="outline" size="sm" onClick={startEdit}>
                     <Pencil size={14} />
                     編集
@@ -157,7 +158,7 @@ export const SsbjReportDetail = ({ reportId }: { reportId: string }) => {
               )}
             </Card>
             <SsbjReportStatusCard report={report} disabled={isEditing} onChanged={handleStatusChanged} />
-            <SsbjReportContentsNav reportId={report.id} />
+            <SsbjReportContentsNav reportId={report.id} workingAccess={myRole.isLoading || canViewSsbjWorking(myRole.role)} />
             {canEditSsbj(myRole.role) && (
               <SsbjVersionSaveCard
                 isSaving={versionSave.isSaving}

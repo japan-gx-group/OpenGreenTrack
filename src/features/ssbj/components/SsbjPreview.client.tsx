@@ -14,9 +14,11 @@ import { Label } from '@/components/ui/label';
 import { LoadingIndicator } from '@/components/ui/PageLoading';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatDateTime } from '@/lib/datetime';
+import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
 import { useSsbjPreviewSource } from '../hooks/useSsbjPreviewSource';
 import { useSsbjReport } from '../hooks/useSsbjReport';
 import { useSsbjVersionSummaries } from '../hooks/useSsbjVersionSummaries';
+import { canViewSsbjWorking } from '../utils/memberRole';
 import { formatPreviewSelection, parsePreviewSelection, type SsbjPreviewSelection } from '../utils/preview';
 import { SsbjPreviewDocument } from './SsbjPreviewDocument';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
@@ -26,10 +28,18 @@ export const SsbjPreview = ({ reportId, initialSource = null }: { reportId: stri
   const [selection, setSelection] = useState<SsbjPreviewSelection>(() => parsePreviewSelection(initialSource));
   const [showInternalNotes, setShowInternalNotes] = useState(false);
   const versions = useSsbjVersionSummaries(report?.id ?? null);
-  const preview = useSsbjPreviewSource(report?.id ?? null, selection);
+  // 閲覧者は作業中の内容を見られない（API も拒否する）。承認した保存版を既定にし、作業中の内容を選ばせない。
+  const myRole = useSsbjMyRole();
+  const viewerOnly = !myRole.isLoading && !canViewSsbjWorking(myRole.role);
+  const approvedVersionId = report?.review.approvedVersionId ?? null;
+  const shown: SsbjPreviewSelection = viewerOnly && selection.kind === 'working' && approvedVersionId
+    ? { kind: 'version', versionId: approvedVersionId }
+    : selection;
+  const canLoad = !myRole.isLoading && !(viewerOnly && shown.kind === 'working');
+  const preview = useSsbjPreviewSource(canLoad ? report?.id ?? null : null, shown);
 
   const printHref = `/ssbj/${encodeURIComponent(reportId)}/preview/print?source=${encodeURIComponent(
-    formatPreviewSelection(selection),
+    formatPreviewSelection(shown),
   )}&internal=${showInternalNotes ? '1' : '0'}`;
   const errorMessage = reportError || versions.errorMessage || preview.errorMessage;
 
@@ -72,13 +82,13 @@ export const SsbjPreview = ({ reportId, initialSource = null }: { reportId: stri
                 <div className="flex min-w-64 flex-col gap-1">
                   <Label htmlFor="ssbj-preview-source">表示する内容</Label>
                   <Select
-                    value={formatPreviewSelection(selection)}
+                    value={formatPreviewSelection(shown)}
                     onValueChange={value => setSelection(parsePreviewSelection(value))}
                     disabled={versions.isLoading}
                   >
                     <SelectTrigger id="ssbj-preview-source" className="w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="working">作業中の内容（未保存の変更を含む）</SelectItem>
+                      {!viewerOnly && <SelectItem value="working">作業中の内容（未保存の変更を含む）</SelectItem>}
                       {versions.versions.map(version => (
                         <SelectItem key={version.id} value={version.id}>
                           保存版 第{version.versionNumber}版（{formatDateTime(version.createdAt)}）
@@ -95,7 +105,7 @@ export const SsbjPreview = ({ reportId, initialSource = null }: { reportId: stri
                   />
                   <Label htmlFor="ssbj-preview-internal">内部メモも表示する（開示しない内容）</Label>
                 </div>
-                {selection.kind === 'working' && (
+                {shown.kind === 'working' && (
                   <Button type="button" variant="outline" size="sm" disabled={preview.isLoading} onClick={preview.reload}>
                     <RefreshCw size={14} /> 作業中の内容を読み直す
                   </Button>

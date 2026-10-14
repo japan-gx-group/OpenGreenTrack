@@ -28,8 +28,10 @@ import {
   validateSsbjEvidenceInput, type SsbjEvidenceFormValues,
 } from '../utils/evidence';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
-import { isSsbjReportLocked } from '../utils/reportStatus';
+import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
+import { isSsbjReadOnly } from '../utils/reportStatus';
 import { SsbjLockedNotice } from './SsbjLockedNotice';
+import { SsbjRoleNotice } from './SsbjRoleNotice';
 import { SsbjEditorLayout } from './SsbjEditorLayout.client';
 
 const Detail = ({ label, value }: { label: string; value: string | null }) => (
@@ -41,6 +43,8 @@ const Detail = ({ label, value }: { label: string; value: string | null }) => (
 
 export const SsbjEvidencePage = ({ reportId }: { reportId: string }) => {
   const { report, isLoading: isReportLoading, errorMessage: reportError, isNotFound } = useSsbjReport(reportId);
+  // 承認済みか、SSBJ のロールが入力担当でも管理者でもなければ、編集の操作を出さない（DB も止める）。
+  const myRole = useSsbjMyRole();
   const list = useSsbjEvidence(reportId, report !== null);
   const [editing, setEditing] = useState<SsbjEvidence | 'new' | null>(null);
   const [deleting, setDeleting] = useState<SsbjEvidence | null>(null);
@@ -105,7 +109,7 @@ export const SsbjEvidencePage = ({ reportId }: { reportId: string }) => {
         title="根拠文書・主管部署"
         description={report?.title ?? 'SSBJレポートの根拠情報'}
         showFiscalYear={false}
-        primaryAction={report && !isSsbjReportLocked(report.review)
+        primaryAction={report && !isSsbjReadOnly(report.review, myRole.role)
           ? <Button type="button" onClick={() => openForm('new')}><Plus size={16} />根拠文書を追加</Button>
           : null}
       />
@@ -115,6 +119,7 @@ export const SsbjEvidencePage = ({ reportId }: { reportId: string }) => {
         </Link>
         <SsbjTrialNotice />
         {report && <SsbjLockedNotice report={report} />}
+        {report && <SsbjRoleNotice role={myRole.role} isLoading={myRole.isLoading} />}
         {(reportError || list.errorMessage) && <p role="alert" className="rounded-md bg-danger-light px-4 py-3 text-sm text-danger">{reportError || list.errorMessage}</p>}
         {isReportLoading || (report && list.isLoading) ? (
           <Card><LoadingIndicator label="根拠文書を読み込んでいます..." /></Card>
@@ -133,7 +138,7 @@ export const SsbjEvidencePage = ({ reportId }: { reportId: string }) => {
                     <li key={item.id} className="rounded-lg border border-border p-4">
                       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
                         <div><p className="text-xs text-text-muted">{item.itemId} · 資料名（内部記録）</p><h3 className="text-sm font-bold">{item.documentTitle}</h3></div>
-                        {!isSsbjReportLocked(report.review) && (
+                        {!isSsbjReadOnly(report.review, myRole.role) && (
                           <div className="flex gap-2">
                             <Button type="button" variant="outline" size="sm" onClick={() => openForm(item)}><Pencil size={14} />編集</Button>
                             <Button type="button" variant="outline" size="sm" onClick={() => { setDeleteError(''); setDeleting(item); }}><Trash2 size={14} />削除</Button>

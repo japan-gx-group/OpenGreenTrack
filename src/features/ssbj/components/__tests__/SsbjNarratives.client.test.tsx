@@ -20,11 +20,18 @@ vi.mock('../../services/ogtAdoptionService', async importOriginal => ({
   ...(await importOriginal<typeof import('../../services/ogtAdoptionService')>()), getOgtAdoption: vi.fn(async () => null),
 }));
 
+
+// SSBJ のロールは、既定で入力担当として操作する（編集の操作を出す）。
+vi.mock('../../services/memberRoleService', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../services/memberRoleService')>()),
+  getMySsbjRole: vi.fn(async () => 'editor'),
+}));
 import { listSsbjNarratives, saveSsbjNarrative } from '../../services/narrativeService';
 import { getSsbjWorkingPreview } from '../../services/previewService';
 import { getSsbjReport } from '../../services/reportService';
 import { SSBJ_NARRATIVE_ITEMS } from '../../utils/requirementMaster';
 import { SsbjNarratives } from '../SsbjNarratives.client';
+import { getMySsbjRole } from '../../services/memberRoleService';
 
 const report = { ...fictionalReportBasicInfo, fiscalYearLabel: '2024年度',
   periodStart: '2024-04-01', periodEnd: '2025-03-31', draftRevision: 1, review: FICTIONAL_DRAFT_REVIEW };
@@ -244,5 +251,18 @@ describe('SsbjNarratives（穴埋めテンプレート・2 画面エディタ・
     expect(cards().length).toBeGreaterThan(0);
     expect(cards().some(card => Array.from(card.querySelectorAll('button')).some(button => button.textContent?.includes('編集')))).toBe(false);
     expect(document.querySelector('[data-testid="ssbj-locked-notice"]')).not.toBeNull();
+  });
+});
+
+describe('SsbjNarratives（SSBJ のロール）', () => {
+  it('承認担当には内容を見せるが、編集の操作を出さず、編集できない理由を出す', async () => {
+    vi.mocked(getMySsbjRole).mockResolvedValueOnce('approver');
+    rendered = render(<SsbjNarratives reportId={report.id} />);
+    await settle();
+    expect(rendered.container.querySelector('[data-testid="ssbj-role-notice"]')?.textContent)
+      .toContain('SSBJ のロールが承認担当のため');
+    expect(Array.from(rendered.container.querySelectorAll('button')).some(button => button.textContent?.trim().endsWith('編集')))
+      .toBe(false);
+    expect(rendered.container.textContent).toContain('取締役会');
   });
 });

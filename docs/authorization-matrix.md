@@ -57,7 +57,10 @@ SSBJ 開示レポートで、データを書き換えられる経路をすべて
 | OGT の値の採用の取り消し | `ssbj_ogt_adoptions` delete | ○ | × | × | ○ | R2-12 |
 
 - 承認済みの間は、どのロールでも作業中データを変えられない（承認ロック。[`ssbj-spec.md`](ssbj-spec.md) §13）。
-- SSBJ のテーブルを足すときは、書き込みのポリシーに SSBJ のロールの判定を使い、この表に行を足す。
+- ロールの条件は、各テーブルの既存のポリシー（自組織であること）に、`AS RESTRICTIVE` のポリシーを重ねて効かせる
+  （`20261010120000_ssbj_role_policies.sql`）。書き込みは `ssbj_current_user_can_edit()`、閲覧は `ssbj_current_user_can_view_working()`。
+- **SSBJ のテーブルを足すときは**、承認ロックのトリガーと一緒に、同じ形の RESTRICTIVE のポリシー（利用者が書ける操作ごとと select）を足し、
+  この表に行を足す。付け忘れは `scripts/db/__tests__/ssbjRolePoliciesPolicy.test.ts` が検出する。
 
 ### 2.2 Route Handler（`service_role` を使う。RLS を越えるので Route Handler でロールを確かめる）
 
@@ -71,7 +74,7 @@ SSBJ 開示レポートで、データを書き換えられる経路をすべて
 | 同 approve（承認） | 同上 | × | ○（指定された承認者のとき） | × | ○ | R2-11・R2-12 |
 | 同 reopen（差戻し） | 同上 | × | ○（指定された承認者のとき） | × | ○ | R2-11・R2-12 |
 
-- 承認・差戻しは、ロールに加えて「指定された承認者か管理者」であることが要る（今と同じ）。承認者に指定できるのは、承認担当か管理者だけにする（R2-12）。
+- 承認・差戻しは、ロールに加えて「指定された承認者か管理者」であることが要る。承認者に指定できるのは、承認担当か管理者だけ（状態の変更の RPC が `P2052` で拒否する）。
 - 状態の変更の RPC は、ロールの確認を Route Handler に任せず、RPC の中でも確かめる（RPC は操作者を引数で受け取るため、同じ判定を 1 か所に置く）。
 - Route Handler は、service_role の RPC を呼ぶ前に `guardSsbjRole`（`src/features/ssbj/services/roleServer.ts`）でロールを確かめる。
   ロールを確かめられないときは 500 にし、確かめないまま進めない。
