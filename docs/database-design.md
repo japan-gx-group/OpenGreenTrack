@@ -297,6 +297,7 @@ SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず
 | `approvedAt` / `approvedByUserId` | 承認日時 / 承認した人 | TIMESTAMPTZ / UUID | `approved` のときだけ非 NULL | |
 | `approvedVersionId` | 承認した保存版 | UUID | Foreign Key（`ssbj_report_versions`、削除時 SET NULL） | 承認時に作った保存版 |
 | `statusChangedAt` / `statusChangedByUserId` | 状態の変更日時 / 変更した人 | TIMESTAMPTZ / UUID | NULL | |
+| `reviewRequestedByUserId` | レビューを依頼した人 | UUID | NULL | `20261010100000_ssbj_self_approval_guard.sql` で追加。`change_ssbj_report_status` の submit だけが書く。依頼した本人は承認できない（自己承認の禁止。docs/ssbj-spec.md §13） |
 
 - RLS は select / insert / update を自組織に限定し、insert / update の with check で `fiscalYearId` が自組織の年度であることを
   `exists` で検証する（FK は行の存在しか見ないため）。delete のポリシーと GRANT は持たない（R1 では削除を提供しない）。
