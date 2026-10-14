@@ -40,6 +40,9 @@ describe('POST /api/ssbj/reports/[reportId]/status', () => {
     [{ action: 'approve', expectedDraftRevision: 'a' }, 'expectedDraftRevision'],
     [{ action: 'submit', expectedDraftRevision: 1, approverUserId: 'not-a-uuid' }, '承認者の指定が不正です'],
     [{ action: 'reopen', expectedDraftRevision: 1, comment: 'あ'.repeat(1001) }, '1000文字以内'],
+    [{ action: 'reopen', expectedDraftRevision: 1 }, '差戻しの理由を入力してください'],
+    [{ action: 'reopen', expectedDraftRevision: 1, comment: '\n\t' }, '差戻しの理由を入力してください'],
+    [{ action: 'reopen', expectedDraftRevision: 1, comment: '\u3000 \r\n' }, '差戻しの理由を入力してください'],
   ])('入力が不正なら400で RPC を呼ばない（%o）', async (body, message) => {
     const response = await POST(request(body), params());
     expect(response.status).toBe(400);
@@ -55,7 +58,8 @@ describe('POST /api/ssbj/reports/[reportId]/status', () => {
     }), params());
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
-      status: 'in_review', approverUserId: APPROVER_ID, approvedVersionId: null, approvedVersionNumber: null,
+      status: 'in_review', approverUserId: APPROVER_ID, reviewRequestedByUserId: null, approvedVersionId: null,
+      approvedVersionNumber: null,
     });
     expect(mocks.rpc).toHaveBeenCalledWith('change_ssbj_report_status', {
       p_report_id: REPORT_ID,
@@ -68,12 +72,26 @@ describe('POST /api/ssbj/reports/[reportId]/status', () => {
     });
   });
 
+  it('コメントは前後の空白を除いて渡し、空白だけなら渡さない', async () => {
+    mocks.rpc.mockResolvedValue({ data: { status: 'draft' }, error: null });
+    await POST(request({ action: 'reopen', expectedDraftRevision: 2, comment: '\u3000数値を見直してください\n' }), params());
+    expect(mocks.rpc).toHaveBeenLastCalledWith('change_ssbj_report_status', expect.objectContaining({
+      p_action: 'reopen', p_comment: '数値を見直してください',
+    }));
+    await POST(request({ action: 'submit', expectedDraftRevision: 2, comment: '\n\t' }), params());
+    expect(mocks.rpc).toHaveBeenLastCalledWith('change_ssbj_report_status', expect.objectContaining({
+      p_action: 'submit', p_comment: null,
+    }));
+  });
+
   it.each([
     ['P2031', 404, 'SSBJレポートが見つかりません'],
     ['P2033', 409, '他の変更と競合しました'],
     ['P2052', 400, '承認者には同じ組織の利用者を指定してください'],
     ['P2053', 403, '承認できるのは、指定された承認者か管理者だけです'],
     ['P2054', 409, 'レビュー中のレポートだけ承認できます'],
+    ['P2056', 403, 'レビューを依頼した本人は承認できません'],
+    ['P2057', 400, '差戻しの理由を入力してください'],
   ])('RPC の %s は %i', async (code, status, message) => {
     mocks.rpc.mockResolvedValue({ data: null, error: { code, message } });
     const response = await POST(request({ action: 'approve', expectedDraftRevision: 1 }), params());
