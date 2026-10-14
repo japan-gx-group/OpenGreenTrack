@@ -55,6 +55,15 @@ const BY_SECTION: { [K in keyof SsbjSnapshotSections]: (section: SsbjSnapshotSec
     disclosed: items.flatMap(judgement => answered(judgement.explanation.disclosure)),
     internal: items.flatMap(judgement => present(judgement.explanation.internalNote)),
   }),
+  // 出典の詳細（算定した者・方法・根拠文書・確認者）と内部メモは内部記録。開示するのは区分・ガス・排出量・期間。
+  external_emissions: items => ({
+    ...none,
+    internal: items.flatMap(item => [
+      item.calculatedBy, item.calculationMethod, ...present(item.evidenceTitle), ...present(item.confirmedByName),
+      ...present(item.internalNote),
+    ]),
+    ghgValues: items.map(item => item.value),
+  }),
 };
 
 /** 保存版のセクションのキー（SsbjSnapshotSections の全キー）。 */

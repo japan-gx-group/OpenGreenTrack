@@ -7,6 +7,7 @@ import type { SsbjPreviewSource } from '../services/previewService';
 import { SSBJ_SECTION_LABELS } from '../types';
 import { unsupportedPreviewSections } from '../utils/preview';
 import { SsbjPreviewEvidence } from './SsbjPreviewEvidence';
+import { SsbjPreviewExternalEmissions } from './SsbjPreviewExternalEmissions';
 import { SsbjPreviewGhg } from './SsbjPreviewGhg';
 import { SsbjPreviewJudgements } from './SsbjPreviewJudgements';
 import { SsbjPreviewNarratives } from './SsbjPreviewNarratives';
@@ -80,6 +81,8 @@ export const SsbjPreviewDocument = ({
       <Section title={SSBJ_SECTION_LABELS.metrics_targets}>
         <h3 className="m-0 text-sm font-bold">温室効果ガス排出</h3>
         <SsbjPreviewGhg ghg={sections.ghg} />
+        <h3 className="m-0 mt-2 text-sm font-bold">外部で算定した排出量</h3>
+        <SsbjPreviewExternalEmissions items={sections.external_emissions} showInternalNotes={showInternalNotes} />
         <h3 className="m-0 mt-2 text-sm font-bold">そのほかの指標・目標・測定方法の説明</h3>
         <SsbjPreviewNarratives sectionId="metrics_targets" narratives={sections.narratives} showInternalNotes={showInternalNotes} />
       </Section>

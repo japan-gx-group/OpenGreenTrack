@@ -27,6 +27,11 @@ const SSBJ_REPORT_CONTENTS: { path: string; label: string; description: string; 
     description: 'OGTのScope別・カテゴリ別の値と算定条件を確認し、レポートに採用します。',
   },
   {
+    path: 'external',
+    label: '外部で算定した排出量',
+    description: 'OGT で算定できない排出量（CO2 以外のガスなど）を、出典・根拠文書・確認者を付けて採用します。',
+  },
+  {
     path: 'evidence',
     label: '根拠文書・主管部署',
     description: '項目ごとの資料名、参照位置、主管部署を記録します。',

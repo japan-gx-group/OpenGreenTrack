@@ -24,9 +24,11 @@ export const SSBJ_OGT_ADOPTION_SQLSTATE = {
   reportInvalid: 'P2041',
   /** 候補値の形式・年度が不正 */
   candidatesInvalid: 'P2042',
+  /** 外部算定値と重なる（同じ Scope・カテゴリの CO2。supabase/migrations/20261010130000_ssbj_external_emissions.sql） */
+  overlapsExternal: 'P2071',
 } as const;
 
-export type SsbjOgtAdoptionFailure = 'report_not_found' | 'candidates_changed' | 'locked';
+export type SsbjOgtAdoptionFailure = 'report_not_found' | 'candidates_changed' | 'locked' | 'overlaps_external';
 
 /** 採用できなかった理由（Route Handler が HTTP ステータスに変換する）。 */
 export class SsbjOgtAdoptionError extends Error {
@@ -81,6 +83,9 @@ export const adoptOgtCandidates = async (params: AdoptOgtCandidatesParams): Prom
     }
     if (error.code === SSBJ_LOCKED_SQLSTATE) {
       throw new SsbjOgtAdoptionError('locked', SSBJ_LOCKED_MESSAGE);
+    }
+    if (error.code === SSBJ_OGT_ADOPTION_SQLSTATE.overlapsExternal) {
+      throw new SsbjOgtAdoptionError('overlaps_external', error.message);
     }
     throw new Error(`OGT の値の採用に失敗しました: ${error.message}`);
   }

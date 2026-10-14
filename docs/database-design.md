@@ -51,6 +51,8 @@ erDiagram
     ssbj_reports ||--o{ ssbj_audit_logs : "操作履歴"
     organizations ||--o{ ssbj_member_roles : "SSBJのロール"
     profiles ||--o| ssbj_member_roles : "割り当て"
+    ssbj_reports ||--o{ ssbj_external_emissions : "外部算定値"
+    ssbj_evidence ||--o{ ssbj_external_emissions : "根拠"
 ```
 
 ---
@@ -474,6 +476,30 @@ SSBJ の中だけで使うロールの割り当て。権限の規則の正本は
 - **SSBJ の各テーブルへの適用**（`20261010120000_ssbj_role_policies.sql`）: 3.11〜3.19 の各テーブルの RLS に、`AS RESTRICTIVE` のポリシーを重ねる。
   作業中データの書き込み（`ssbj_reports` の作成・更新を含む）は入力担当か管理者だけ。作業中データ・操作履歴の select は閲覧者以外。
   閲覧者が select できるのは、承認済みの `ssbj_reports` と、その `approvedVersionId` の `ssbj_report_versions` だけ。
+
+### 3.21 SSBJ 外部算定値 (`ssbj_external_emissions`) — 外部で算定した排出量（`supabase/migrations/20261010130000_ssbj_external_emissions.sql`）
+OGT で算定できない排出量（CO2 以外のガス、対応していない排出源、子会社から届いた値など）を、出典と確認者を付けてレポートに採用する作業中データ。
+変更のたびに `ssbj_reports.draftRevision` を進め、保存版には `ssbj_snapshot_section__external_emissions` で取り込む。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` / `organizationId` / `reportId` | ID・組織・レポート | UUID | NOT NULL、各FK | 削除時: CASCADE |
+| `scope` | Scope | SMALLINT | NOT NULL, CHECK(1〜3) | |
+| `scope3CategoryId` | Scope 3 のカテゴリ | SMALLINT | Scope 3 のときだけ必須（1〜15）、それ以外は NULL | |
+| `scope2Basis` | Scope 2 の基準 | VARCHAR(20) | Scope 2 のときだけ必須（`location` / `market`）、それ以外は NULL | |
+| `gases` | 対象ガス | VARCHAR(10)[] | NOT NULL, CHECK(1 つ以上、`CO2` / `CH4` / `N2O` / `HFCs` / `PFCs` / `SF6` / `NF3`) | |
+| `value` / `unit` | 排出量・単位 | NUMERIC / VARCHAR(20) | NOT NULL, CHECK(0 以上 / `t-CO2e`) | 画面・保存版では十進の文字列 |
+| `periodStart` / `periodEnd` | 期間 | DATE | NOT NULL, CHECK(終わり ≥ 始まり) | |
+| `calculatedBy` / `calculationMethod` | 算定した者・算定方法 | TEXT | NOT NULL、空白のみ不可 | 出典 |
+| `evidenceId` | 根拠文書 | UUID | NOT NULL, Foreign Key（`ssbj_evidence`。遅延） | 同じレポートの根拠文書だけ（RLS）。参照されている根拠文書は削除できない |
+| `confirmedByUserId` / `confirmedAt` | 確認者・確認日時 | UUID / TIMESTAMPTZ | NOT NULL | 確認者は同じ組織の利用者だけ（RLS） |
+| `internalNote` | 内部メモ | TEXT | NULL | 開示しない |
+| `createdByUserId` / `updatedByUserId` / `createdAt` / `updatedAt` | 監査情報 | UUID / TIMESTAMPTZ | | |
+
+- RLS は自組織に限定し、レポート・根拠文書・確認者の帰属を検証する。書き込みは SSBJ の入力担当か管理者、select は閲覧者以外（`AS RESTRICTIVE`）。
+- 二重計上の防止は、遅延の制約トリガー（トランザクションの最後に検査）で行う。OGT の採用値と重なる外部算定値（P2071）、
+  外部算定値どうしの重なり（P2072）を拒否し、`ssbj_ogt_adoptions` の採用でも外部算定値と重なれば P2071 で拒否する。重なりの規則は
+  [`ssbj-spec.md`](ssbj-spec.md) §13「外部で算定した排出量（R2-13）」。
 
 ---
 

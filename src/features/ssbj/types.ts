@@ -329,6 +329,57 @@ export const SSBJ_APPROVAL_BLOCKERS = ['requester', 'edited_after_request'] as c
 export type SsbjApprovalBlocker = (typeof SSBJ_APPROVAL_BLOCKERS)[number];
 
 // ---------------------------------------------------------------------------
+// 外部で算定した排出量（外部算定値。docs/ssbj-spec.md §13）
+// ---------------------------------------------------------------------------
+
+/** 対象ガス（京都議定書の 7 種類）。DB の ssbj_external_emissions.gases と同じ値。 */
+export const SSBJ_GHG_GASES = ['CO2', 'CH4', 'N2O', 'HFCs', 'PFCs', 'SF6', 'NF3'] as const;
+
+export type SsbjGhgGas = (typeof SSBJ_GHG_GASES)[number];
+
+/** Scope 2 の基準。location = ロケーション基準、market = マーケット基準。 */
+export const SSBJ_SCOPE2_BASES = ['location', 'market'] as const;
+
+export type SsbjScope2Basis = (typeof SSBJ_SCOPE2_BASES)[number];
+
+export const SSBJ_SCOPE2_BASIS_LABELS: Record<SsbjScope2Basis, string> = {
+  location: 'ロケーション基準',
+  market: 'マーケット基準',
+};
+
+/**
+ * 外部で算定した排出量（ssbj_external_emissions の 1 行）。出典（算定した者・方法・根拠文書）と確認者を必ず持つ。
+ * Scope 1・Scope 3 で OGT の採用値（実質 CO2 のみ）と同じ区分の CO2 は採用できない（DB が拒否する）。
+ * Scope 2 は基準ごとの値で、OGT の採用値（基準不明）とは別の値として扱う。
+ */
+export type SsbjExternalEmission = {
+  id: string;
+  scope: 1 | 2 | 3;
+  /** Scope 3 のときだけ（1〜15）。 */
+  scope3CategoryId: number | null;
+  /** Scope 2 のときだけ。 */
+  scope2Basis: SsbjScope2Basis | null;
+  gases: SsbjGhgGas[];
+  value: SsbjDecimalString;
+  unit: typeof OGT_EMISSION_UNIT;
+  period: { startDate: string; endDate: string };
+  calculatedBy: string;
+  calculationMethod: string;
+  /** 根拠文書（同じレポートの ssbj_evidence.id）。 */
+  evidenceId: string;
+  confirmedByUserId: string;
+  confirmedAt: string;
+  /** 内部メモ（開示しない。§5）。 */
+  internalNote: string | null;
+};
+
+/** 保存版の外部算定値。保存した時点の根拠文書の資料名と確認者の名前も残す（表示用。復元では使わない）。 */
+export type SsbjExternalEmissionSnapshot = SsbjExternalEmission & {
+  evidenceTitle: string | null;
+  confirmedByName: string | null;
+};
+
+// ---------------------------------------------------------------------------
 // SSBJ のロール（docs/authorization-matrix.md §1）
 // ---------------------------------------------------------------------------
 
@@ -619,6 +670,8 @@ export interface SsbjSnapshotSections {
   narratives: SsbjNarrative[];
   /** T09。ssbj_snapshot_section__judgements。要求 ID の順。行の無い要求は含まない（表示側で未確認とする）。 */
   judgements: SsbjJudgement[];
+  /** R2-13。ssbj_snapshot_section__external_emissions。Scope・カテゴリ・基準・作成順。 */
+  external_emissions: SsbjExternalEmissionSnapshot[];
 }
 
 /** 保存版の中身（ssbj_report_versions.snapshot）。形式を変えるときは schemaVersion を上げる。 */
