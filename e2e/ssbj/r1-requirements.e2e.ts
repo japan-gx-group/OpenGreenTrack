@@ -326,8 +326,9 @@ test('9. 他の組織からは、操作履歴も状態の操作も届かない',
     await pageB.goto(reportPath(path));
     await expect(pageB.getByText('SSBJレポートが見つかりません').first()).toBeVisible();
   }
+  // 理由を付けて入力の検証を通し、組織の確認で止まること（404）を確かめる。
   const status = await pageB.request.post(`/api/ssbj/reports/${reportId}/status`, {
-    data: { action: 'reopen', expectedDraftRevision: (await reportRow()).draftRevision },
+    data: { action: 'reopen', expectedDraftRevision: (await reportRow()).draftRevision, comment: '他の組織からの差戻し（E2E）' },
   });
   expect(status.status()).toBe(404);
   const restore = await pageB.request.post(`/api/ssbj/reports/${reportId}/versions/${approvedVersionId}/restore`, {
