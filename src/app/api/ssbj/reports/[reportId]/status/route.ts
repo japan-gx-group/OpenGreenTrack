@@ -76,6 +76,12 @@ export const POST = async (
     (typeof comment !== 'string' || comment.length > COMMENT_MAX_LENGTH)) {
     return NextResponse.json({ error: `コメントは${COMMENT_MAX_LENGTH}文字以内で入力してください` }, { status: 400 });
   }
+  // 前後の空白（改行・タブ・全角スペースを含む）は除き、空白だけなら書いていないものとする（画面と同じ判定）。
+  // 差戻しの理由が無ければ RPC を呼ばずに断る（DB も P2057 で拒否する）。
+  const trimmedComment = typeof comment === 'string' && comment.trim() !== '' ? comment.trim() : null;
+  if (action === 'reopen' && trimmedComment === null) {
+    return NextResponse.json({ error: '差戻しの理由を入力してください' }, { status: 400 });
+  }
 
   try {
     const result = await changeSsbjReportStatus({
@@ -85,7 +91,7 @@ export const POST = async (
       action: action as SsbjReportStatusAction,
       expectedDraftRevision,
       approverUserId: (approverUserId as string | null | undefined) ?? null,
-      comment: (comment as string | null | undefined) ?? null,
+      comment: trimmedComment,
     });
     return NextResponse.json(result, { status: 200 });
   } catch (error) {
