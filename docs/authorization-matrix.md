@@ -119,7 +119,7 @@ SSBJ 開示レポートで、データを書き換えられる経路をすべて
 
 ## 4. OGT 本体の経路（R2 では変えない）
 
-今はどれも「ログイン済みで自組織なら可」（`current_user_can_edit()` / `current_user_is_admin()` はログイン済みかだけを返す）。
+今はどれもロールで絞っていない（`current_user_can_edit()` / `current_user_is_admin()` はログイン済みかだけを返し、Server Action も `profiles.role` を見ない）。
 SSBJ のロールは、これらには効かない。
 
 | 種類 | 経路 |
@@ -129,16 +129,39 @@ SSBJ のロールは、これらには効かない。
 | Storage | 取込ファイルの置き場（`storage.objects` の delete。書き込みは署名付き URL 経由） |
 | 利用者が呼ぶ関数 | ダッシュボード・レポートの集計（読むだけ） |
 | ファイル出力 | GHG 排出量レポートの CSV・印刷（`system_audit_logs` に記録） |
+| Server Action | 画面から呼ぶサーバの関数。下の表（§4.1） |
 
-本体のロール別の権限を入れるときは、この表を土台に、§1 と同じ形でロールごとの可否を決める。
+### 4.1 Server Action
+
+画面から呼ぶサーバの関数（`'use server'`）のうち、データを書き込むもの。`service_role` を使うものは RLS を越えるので、
+許可条件は関数の中の確認だけで決まる。
+
+| Server Action（ファイル） | 対象データと操作 | 使うクライアント | 今の許可条件 |
+|---|---|---|---|
+| `addFiscalYear`・`deleteFiscalYear`（`src/features/settings/services/fiscalYears.ts`） | `fiscal_years` の insert / delete（参照するデータがある年度は削除しない） | `service_role` | ログイン済み。自組織の年度だけ |
+| `saveMemberChanges`（`src/features/settings/services/members.ts`） | ほかのメンバーの削除（auth のユーザーを消し、`profiles` は連鎖削除） | `service_role` | ログイン済み。自組織のメンバーだけ。自分は消せない |
+| `createInvite`・`revokeInvite`（`src/features/settings/services/invites.ts`） | `invites` の insert / delete（発行では、同じメール宛ての未受諾の招待を消してから作る） | 利用者（RLS。上の表の `invites`） | ログイン済み。自組織の招待だけ（RLS） |
+| `changePassword`（`src/features/settings/services/password.ts`） | 自分のパスワード（auth のユーザー） | `service_role` | ログイン済み。今のパスワードが正しい |
+| `completePasswordRecovery`（`src/features/auth/services/passwordRecovery.ts`） | 自分のパスワード（auth のユーザー） | `service_role` | パスワードの再設定のメールから来たセッション（再設定の目印の Cookie がある） |
+| `setupOrganization`（`src/features/auth/services/setup.ts`） | auth のユーザー・`organizations`・`profiles`（`role = 'admin'`）・`locations`・`fiscal_years` の insert（初回登録） | `service_role` | ログイン不要。組織が 1 つも無い環境だけ |
+| `acceptInvite`（`src/features/auth/services/invites.ts`） | `invites` の update（受諾日時）、auth のユーザー・`profiles` の insert | `service_role` | ログイン不要。期限内で未受諾の招待のトークン |
+
+- **メンバーの削除は、同じ組織のログイン済みの利用者なら誰でもできる**（ロールを見ない。`members.ts` のコメントのとおり、今の OGT 本体の設計）。
+  本体のロール別の権限を入れるときに、最初に扱う経路の 1 つになる。
+- SSBJ には Server Action が無い（`service_role` を使う SSBJ の処理は、すべて §2.2 の Route Handler から呼ぶ）。
+
+本体のロール別の権限を入れるときは、この表（§4・§4.1）を土台に、§1 と同じ形でロールごとの可否を決める。
 
 ## 5. 既存の利用者の切り替え
 
-- **ロールを割り当てていない利用者は入力担当になる**ので、SSBJ のロールを有効にしても、今の利用者ができることは変わらない
-  （管理者は今までどおりすべてできる）。権限を絞りたい組織だけ、管理者が承認担当・閲覧者を割り当てる。
-- **管理者が 1 人もいない組織**（`profiles.role` の既定値は `logger`）では、SSBJ のロールを割り当てられない。全員が入力担当のまま
-  なので、今の動きと変わらない。初回登録者は管理者として作られる（`src/features/auth/services/setup.ts`）ので、通常は起きない。
-  起きたときは OGT 本体の運用（DB の管理者が `profiles.role` を設定する）に従う。
+- **ロールを割り当てていない利用者は入力担当になる。** 編集（レポートの作成・入力・レビューの依頼と取り下げ）は今までどおりできる。
+  管理者は今までどおりすべてできる。
+- **承認・差戻しは変わる。** 今は承認者に指定されれば誰でも承認・差戻しができるが、SSBJ のロールを有効にした後は、
+  管理者か承認担当だけになる（§2.2・§3）。承認担当を割り当てるまでは、承認者に指定でき、承認・差戻しができるのは管理者だけ。
+  権限を絞りたい組織、管理者以外にも承認させたい組織は、管理者が承認担当・閲覧者を割り当てる。
+- **管理者が 1 人もいない組織**（`profiles.role` の既定値は `logger`）では、SSBJ のロールを割り当てられない。全員が入力担当のままで、
+  編集は今までどおりできるが、承認・差戻しのできる人がいなくなる。初回登録者は管理者として作られる（`src/features/auth/services/setup.ts`）ので、
+  通常は起きない。起きたときは OGT 本体の運用（DB の管理者が `profiles.role` を設定する）に従う。
 - **切り替えはマイグレーションで行い、データは入れない**（AGENTS.md R12）。テーブルと判定の関数を足すだけで、割り当ては
   管理者が画面で行う。デモデータでは seed で各ロールの利用者を用意する。
 - **承認担当を入れた時点でレビュー中のレポート**の承認者が承認担当でも管理者でもないときは、その承認者は承認できなくなる。

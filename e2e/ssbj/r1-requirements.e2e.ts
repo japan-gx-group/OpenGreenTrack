@@ -14,6 +14,7 @@ import {
   ORG_B_USER,
   SSBJ_E2E_TITLE_PREFIX,
   addDecimals,
+  createServiceRoleClient,
   createUserClient,
   expectToast,
   parseSsbjCsv,
@@ -246,10 +247,19 @@ test('6. 承認済みでも保存版の出力はでき、Excel の中身は CSV 
   await expect(page.getByText(/Excel · 版 1/)).toBeVisible();
 });
 
-test('7. 理由を書かないと差戻せない。管理者が理由を書いて差戻すとロックが外れ、書き換えた後で、承認した版の内容に戻せる（戻す前の内容は自動で保存版になる）', async () => {
-  const noReason = await postStatus(page, { action: 'reopen', expectedDraftRevision: (await reportRow()).draftRevision });
-  expect(noReason.status()).toBe(400);
-  expect((await noReason.json()).error).toContain('差戻しの理由を入力してください');
+test('7. 理由を書かない（空白だけも含む）と差戻せない。管理者が理由を書いて差戻すとロックが外れ、書き換えた後で、承認した版の内容に戻せる（戻す前の内容は自動で保存版になる）', async () => {
+  // 理由が無い・空白（改行・タブ・全角スペース）だけなら、API でも DB の関数を直接呼んでも差戻せない。
+  for (const comment of [undefined, '\n\t', '\u3000 \r\n']) {
+    const noReason = await postStatus(page, { action: 'reopen', expectedDraftRevision: (await reportRow()).draftRevision, comment });
+    expect(noReason.status(), JSON.stringify(comment)).toBe(400);
+    expect((await noReason.json()).error).toContain('差戻しの理由を入力してください');
+  }
+  const { data: me } = await orgA.from('profiles').select('id, organizationId').eq('id', await userIdOf(orgA)).single();
+  const direct = await createServiceRoleClient().rpc('change_ssbj_report_status', {
+    p_report_id: reportId, p_organization_id: me!.organizationId, p_actor_user_id: me!.id, p_action: 'reopen',
+    p_expected_draft_revision: (await reportRow()).draftRevision, p_comment: '\n\t\u3000',
+  });
+  expect(direct.error?.code).toBe('P2057');
   expect((await reportRow()).status).toBe('approved');
 
   await page.goto(reportPath());
