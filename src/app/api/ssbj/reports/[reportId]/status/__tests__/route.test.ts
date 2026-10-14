@@ -44,6 +44,9 @@ describe('POST /api/ssbj/reports/[reportId]/status', () => {
     [{ action: 'approve', expectedDraftRevision: 'a' }, 'expectedDraftRevision'],
     [{ action: 'submit', expectedDraftRevision: 1, approverUserId: 'not-a-uuid' }, '承認者の指定が不正です'],
     [{ action: 'reopen', expectedDraftRevision: 1, comment: 'あ'.repeat(1001) }, '1000文字以内'],
+    [{ action: 'reopen', expectedDraftRevision: 1 }, '差戻しの理由を入力してください'],
+    [{ action: 'reopen', expectedDraftRevision: 1, comment: '\n\t' }, '差戻しの理由を入力してください'],
+    [{ action: 'reopen', expectedDraftRevision: 1, comment: '\u3000 \r\n' }, '差戻しの理由を入力してください'],
   ])('入力が不正なら400で RPC を呼ばない（%o）', async (body, message) => {
     const response = await POST(request(body), params());
     expect(response.status).toBe(400);
@@ -71,6 +74,18 @@ describe('POST /api/ssbj/reports/[reportId]/status', () => {
       p_approver_user_id: APPROVER_ID,
       p_comment: 'お願いします',
     });
+  });
+
+  it('コメントは前後の空白を除いて渡し、空白だけなら渡さない', async () => {
+    mocks.rpc.mockResolvedValue({ data: { status: 'draft' }, error: null });
+    await POST(request({ action: 'reopen', expectedDraftRevision: 2, comment: '\u3000数値を見直してください\n' }), params());
+    expect(mocks.rpc).toHaveBeenLastCalledWith('change_ssbj_report_status', expect.objectContaining({
+      p_action: 'reopen', p_comment: '数値を見直してください',
+    }));
+    await POST(request({ action: 'submit', expectedDraftRevision: 2, comment: '\n\t' }), params());
+    expect(mocks.rpc).toHaveBeenLastCalledWith('change_ssbj_report_status', expect.objectContaining({
+      p_action: 'submit', p_comment: null,
+    }));
   });
 
   it.each([
@@ -114,7 +129,8 @@ describe('POST /api/ssbj/reports/[reportId]/status', () => {
     ['submit', 'edit'], ['withdraw', 'edit'], ['approve', 'approve'], ['reopen', 'approve'],
   ])('操作 %s には %s の権限を求める（依頼・取り下げは入力担当か管理者、承認・差戻しは承認担当か管理者）', async (action, permission) => {
     mocks.guardSsbjRole.mockResolvedValue({ status: 403, error: 'denied' });
-    await POST(request({ action, expectedDraftRevision: 1 }), params());
+    // 差戻しは理由が無いとロールの確認の前に 400 になるので、理由を付ける。
+    await POST(request({ action, expectedDraftRevision: 1, comment: '理由' }), params());
     expect(mocks.guardSsbjRole).toHaveBeenCalledWith({ id: 'user-1', organizationId: 'org-1' }, permission, expect.any(Function));
   });
 });
