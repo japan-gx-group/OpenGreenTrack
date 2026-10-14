@@ -27,6 +27,8 @@ import { downloadSsbjVersionCsv, ssbjVersionToCsvRows } from '../services/versio
 import type { SsbjCsvVersion } from '../services/versionCsv';
 import { saveSsbjReportVersion } from '../services/versionClient';
 import { buildSsbjWorkbook, downloadSsbjWorkbook, ssbjVersionSheet, ssbjVersionXlsxFileName } from '../services/versionXlsx';
+import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
+import { canEditSsbj } from '../utils/memberRole';
 import { isSsbjReportLocked } from '../utils/reportStatus';
 import { SsbjLockedNotice } from './SsbjLockedNotice';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
@@ -40,6 +42,7 @@ type PendingAction = { kind: 'copy' | 'restore'; versionId: string };
 export const SsbjVersions = ({ reportId }: { reportId: string }) => {
   const { report, reload: reloadReport, isLoading: isReportLoading, errorMessage: reportError, isNotFound } =
     useSsbjReport(reportId);
+  const myRole = useSsbjMyRole();
   const [versions, setVersions] = useState<SsbjVersionSummary[]>([]);
   const [history, setHistory] = useState<SsbjCsvHistory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -148,6 +151,8 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
 
   const pendingVersion = versions.find(version => version.id === pending?.versionId);
   const locked = report ? isSsbjReportLocked(report.review) : false;
+  // 過去版からの新版作成と復元は、SSBJ のロールが入力担当か管理者のときだけ出す（API も同じ判定をする）。
+  const canEdit = canEditSsbj(myRole.role);
 
   return (
     <div className="page-content gt-scroll relative">
@@ -192,10 +197,12 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
                         <Button type="button" size="sm" variant="outline" disabled={busyVersionId !== null} onClick={() => void handleInspect(version.id)}>
                           内容を見る
                         </Button>
-                        <Button type="button" size="sm" variant="outline" disabled={busyVersionId !== null} onClick={() => setPending({ kind: 'copy', versionId: version.id })}>
-                          <Copy size={14} /> この版から新版を作成
-                        </Button>
-                        {!locked && (
+                        {canEdit && (
+                          <Button type="button" size="sm" variant="outline" disabled={busyVersionId !== null} onClick={() => setPending({ kind: 'copy', versionId: version.id })}>
+                            <Copy size={14} /> この版から新版を作成
+                          </Button>
+                        )}
+                        {canEdit && !locked && (
                           <Button type="button" size="sm" variant="outline" disabled={busyVersionId !== null} onClick={() => setPending({ kind: 'restore', versionId: version.id })}>
                             <RotateCcw size={14} /> この版の内容に戻す
                           </Button>

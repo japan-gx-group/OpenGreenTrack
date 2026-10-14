@@ -400,7 +400,7 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 | リスク・機会（`/ssbj/[reportId]/risks`） | 詳細画面の「レポートの内容」から入る。リスク・機会を複数登録・編集・削除する。項目は区分（リスク / 機会・必須）・名称（必須）・リスクの種類（区分がリスクのときだけ。物理的リスク / 移行リスク、または未入力 / 未確認）・時間軸（短期 / 中期 / 長期、または未入力 / 未確認 / 非該当）・説明（開示する文章。状態を「入力済み」にしたときだけ本文を保存）・内部メモ（開示しない）・関連する章・項目（章 ID または項目 ID。複数可）。画面上部の「時間軸の定義」で、レポートとしての「短期」「中期」「長期」の定義と計画期間との関係を編集する（各欄は状態＋開示する文章、ほかに内部メモ）。変更は作業中の内容で、保存版には詳細画面の「保存版を作成」で残す |
 | 該当性・重要性の判断（`/ssbj/[reportId]/judgements`） | 詳細画面の「レポートの内容」から入る。要求項目マスター（暫定版）の全要求を章ごと（と全般）の表で並べ、要求ごとに該当性（未確認 / 該当 / 非該当）・重要性（未確認 / 重要性あり / 重要性なし）・記載しない理由（記載する / 重要性がない / 経過措置を適用 / 機会の情報が商業上の機密 / その他）・開示する説明（状態＋本文）・内部の検討理由（開示しない）を編集する。既定はすべて未確認で、ソフトは判断を自動で決めない。「重要性がない」を理由にするのは重要性を「重要性なし」にしたときだけ。「商業上の機密」「その他」で記載しないときは内部の検討理由が必須。経過措置・商業上の機密で記載しないのに開示する説明が入力済みでなければ「その旨の説明が未入力」と知らせる（保存は止めない）。判断が済んでいない要求（該当性が未確認、または該当なのに重要性が未確認）の件数を出し、それだけに絞り込める。変更は作業中の内容で、保存版には詳細画面の「保存版を作成」で残す |
 | 根拠文書・主管部署（`/ssbj/[reportId]/evidence`） | 項目IDごとに根拠文書を複数登録・編集・削除する。項目IDと資料名は必須。版・内部保管先・参照位置・主管部署は任意。開示用参照文は状態付きの別欄で持ち、保管先などの内部記録を開示内容欄に混ぜない。変更は作業中の内容として保存し、保存版作成時に固定する |
-| 状態と承認（詳細画面） | 承認者（自分以外の自組織の利用者）を選んでレビューを依頼する（作成中 → レビュー中）。承認者か OGT の管理者が承認する（レビュー中 → 承認済み）と、その時点の内容で保存版を作り、作業中の内容（基本情報・各入力画面・OGT の採用）を編集できなくする（DB も変更を止める）。レビューを依頼した本人と、依頼の後に内容を変更した人は、管理者でも承認できない（理由を画面に出す）。承認者か管理者が差戻すと作成中に戻る（差戻しはダイアログで理由が必須）。依頼の取り下げは誰でもできる。操作にはコメントを付けられ、操作履歴に残る |
+| 状態と承認（詳細画面） | 承認者（自分以外の、SSBJ の承認担当か管理者）を選んでレビューを依頼する（作成中 → レビュー中）。レビュー依頼・取り下げは SSBJ の入力担当か管理者、承認・差戻しは管理者か指定された承認者（承認担当）だけができる（[`authorization-matrix.md`](authorization-matrix.md)）。承認者か OGT の管理者が承認する（レビュー中 → 承認済み）と、その時点の内容で保存版を作り、作業中の内容（基本情報・各入力画面・OGT の採用）を編集できなくする（DB も変更を止める）。レビューを依頼した本人と、依頼の後に内容を変更した人は、管理者でも承認できない（理由を画面に出す）。承認者か管理者が差戻すと作成中に戻る（差戻しはダイアログで理由が必須）。依頼の取り下げは誰でもできる。操作にはコメントを付けられ、操作履歴に残る |
 | 2 画面のエディタ（文章・判断・リスク・機会・根拠文書） | 入力画面の右側に「プレビュー」（入力中で未保存の内容も重ねて、レポートの形で表示。保存はしない）と「OGT の値」（OGT の最新の排出量と採用した値。参照用）を出す。採用した OGT の値が採用後に変わっていれば、上部に知らせる。右側は閉じられる |
 | 穴埋めテンプレート（文章） | 編集中、本文が空なら「テンプレートを入れる」で項目ごとの文例を入れる。【 】の部分が残ったままでは「入力済み」で保存できない（書きかけを残すときは、文章を内部メモに移してから「未確認」で保存する）。入力済み以外の状態では本文を保存しないため、本文が入力されたまま入力済み以外で保存しようとすると、保存の前に警告する（取り消すと保存せずに編集へ戻る） |
 | 操作履歴（`/ssbj/[reportId]/history`） | 作成・更新・削除・状態の変更・保存版の作成・復元・ファイルの出力を、誰がいつ行ったか新しい順に表示する（最大 1000 件）。操作の種類で絞り込み、CSV・Excel で出力する（出力も記録してから行う）。記録は書き換えられない |
@@ -523,12 +523,14 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 | POST | `/api/ssbj/reports/[reportId]/versions` | SSBJ レポートの保存版（固定スナップショット）を作成する（`ssbj-spec.md` §8） |
 | POST | `/api/ssbj/reports/[reportId]/ogt-adoption` | SSBJ レポートに OGT の候補値を採用する。受け取るのは画面が表示した候補値の指紋だけで、値はサーバが OGT から取り直す（`ssbj-spec.md` §13） |
 | GET | `/api/ssbj/reports/[reportId]/preview` | SSBJ レポートの作業中の内容を、保存版と同じ形で返す（保存はしない。`ssbj-spec.md` §13） |
+| POST | `/api/ssbj/reports/[reportId]/status` | SSBJ レポートの状態を変える（レビュー依頼・取り下げ・承認・差戻し。`ssbj-spec.md` §13） |
+| POST | `/api/ssbj/reports/[reportId]/versions/[versionId]/restore` | SSBJ レポートの作業中の内容を、指定した保存版の内容に戻す（`ssbj-spec.md` §13） |
 | POST | `/api/account/delete` | アカウント削除 |
 | GET | `/api/health` | ヘルスチェック |
 | POST | `/api/csp-report` | CSP 違反レポートの受信 |
 | GET | `/auth/callback` | Supabase Auth のコールバック |
 
-`/api/calculations`・`/api/calculations/provisional-recalculation`・`/api/dashboard-aggregates/refresh`・`/api/idea-imports/upload-url`・`/api/idea-imports`・`/api/idea-imports/[id]`・`/api/account/delete`・`/api/ssbj/reports/[reportId]/versions`・`/api/ssbj/reports/[reportId]/ogt-adoption`・`/api/ssbj/reports/[reportId]/preview` の 10 本は `service_role` で RLS を越えて読み書きするため、Route Handler 側でログイン済み・自組織であることを検証する。この組織チェックは RLS では効かず、ここでしか担保できない。`/api/idea-imports/upload-url` は自組織フォルダ（`${organizationId}/idea-imports/<uuid>.xlsx`）にだけ署名付き URL を発行し、`/api/idea-imports` は受け取ったパスがその形であることを検証してから Storage に触れる。`/api/health` も `service_role` を使うが `organizations` を 1 行読む疎通確認のみで、組織データは返さない。
+`/api/calculations`・`/api/calculations/provisional-recalculation`・`/api/dashboard-aggregates/refresh`・`/api/idea-imports/upload-url`・`/api/idea-imports`・`/api/idea-imports/[id]`・`/api/account/delete`・`/api/ssbj/reports/[reportId]/versions`・`/api/ssbj/reports/[reportId]/ogt-adoption`・`/api/ssbj/reports/[reportId]/preview`・`/api/ssbj/reports/[reportId]/status`・`/api/ssbj/reports/[reportId]/versions/[versionId]/restore` の 12 本は `service_role` で RLS を越えて読み書きするため、Route Handler 側でログイン済み・自組織であることを検証する。SSBJ の 5 本は、さらに SSBJ のロールを確かめ、許さなければ 403 を返す（どのロールに何を許すかは [`authorization-matrix.md`](authorization-matrix.md) §2.2）。この組織チェックは RLS では効かず、ここでしか担保できない。`/api/idea-imports/upload-url` は自組織フォルダ（`${organizationId}/idea-imports/<uuid>.xlsx`）にだけ署名付き URL を発行し、`/api/idea-imports` は受け取ったパスがその形であることを検証してから Storage に触れる。`/api/health` も `service_role` を使うが `organizations` を 1 行読む疎通確認のみで、組織データは返さない。
 
 ### 6.3 主要な RPC
 

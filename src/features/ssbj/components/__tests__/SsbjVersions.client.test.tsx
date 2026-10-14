@@ -18,6 +18,8 @@ vi.mock('../../services/versionCsv', async importOriginal => ({
 vi.mock('../../services/versionClient', () => ({ saveSsbjReportVersion: vi.fn() }));
 vi.mock('../../services/auditLogService', () => ({ recordSsbjExport: vi.fn() }));
 vi.mock('../../services/reportWorkflowClient', () => ({ restoreSsbjReportVersion: vi.fn() }));
+// 新版の作成と復元は SSBJ のロールが入力担当か管理者のときだけ出す。既定は入力担当として操作する。
+vi.mock('../../services/memberRoleService', () => ({ getMySsbjRole: vi.fn(async () => 'editor') }));
 vi.mock('../../services/versionXlsx', async importOriginal => ({
   ...(await importOriginal<typeof import('../../services/versionXlsx')>()),
   buildSsbjWorkbook: vi.fn(async () => ({})),
@@ -35,6 +37,7 @@ import { downloadSsbjVersionCsv } from '../../services/versionCsv';
 import { saveSsbjReportVersion } from '../../services/versionClient';
 import { recordSsbjExport } from '../../services/auditLogService';
 import { restoreSsbjReportVersion } from '../../services/reportWorkflowClient';
+import { getMySsbjRole } from '../../services/memberRoleService';
 import { buildSsbjWorkbook, downloadSsbjWorkbook } from '../../services/versionXlsx';
 import type { SsbjReportReview } from '../../types';
 import { SsbjVersions } from '../SsbjVersions.client';
@@ -170,6 +173,15 @@ describe('SsbjVersions', () => {
     expect(container.textContent).toContain('この版から新版を作成');
     expect(container.textContent).toContain('承認した版');
     expect(container.querySelector('[data-testid="ssbj-locked-notice"]')).not.toBeNull();
+  });
+
+  it('SSBJ のロールが入力担当か管理者でなければ、新版の作成と復元を出さない（内容の確認と出力はできる）', async () => {
+    vi.mocked(getMySsbjRole).mockResolvedValueOnce('approver');
+    const { container } = await renderScreen();
+    expect(container.textContent).not.toContain('この版から新版を作成');
+    expect(container.textContent).not.toContain('この版の内容に戻す');
+    expect(container.textContent).toContain('内容を見る');
+    expect(container.textContent).toContain('CSVを出力');
   });
 
   it('保存版の内容と内部メモを表示する', async () => {

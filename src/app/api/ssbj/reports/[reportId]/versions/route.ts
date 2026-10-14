@@ -3,7 +3,8 @@
 // （supabase/migrations/20260927180425_ssbj_report_versions.sql）に委ねる。
 //
 // 認証ガード: ログイン済みユーザーの自組織のレポートのみ版を作れる
-// （組織スコープは RPC 引数 p_organization_id で強制。ロール判定はしない）。
+// （組織スコープは RPC 引数 p_organization_id で強制）。SSBJ のロールが入力担当か管理者でなければ 403
+// （docs/authorization-matrix.md §2.2）。
 
 import { NextResponse } from 'next/server';
 import { getCurrentProfile } from '@/lib/currentProfile';
@@ -13,6 +14,7 @@ import {
   SsbjReportVersionRpcError,
   createSsbjReportVersion,
 } from '@/features/ssbj/services/versionServer';
+import { guardSsbjRole } from '@/features/ssbj/services/roleServer';
 
 // service_role を使うため Node ランタイムで実行する（Edge では実行しない）。
 export const runtime = 'nodejs';
@@ -33,6 +35,12 @@ export const POST = async (
   // UUID 以外は RPC まで行かずに 404 相当で返す（DB エラー経由にしない）。
   if (!UUID_PATTERN.test(reportId)) {
     return NextResponse.json({ error: 'SSBJレポートが見つかりません' }, { status: 404 });
+  }
+
+  // SSBJ のロールの確認（docs/authorization-matrix.md §2.2）。service_role の処理は RLS を越えるので、ここで確かめる。
+  const denial = await guardSsbjRole(profile, 'edit', error => log.error({ error, reportId }, 'SSBJ のロールの確認に失敗しました'));
+  if (denial) {
+    return NextResponse.json({ error: denial.error }, { status: denial.status });
   }
 
   let body: unknown;
