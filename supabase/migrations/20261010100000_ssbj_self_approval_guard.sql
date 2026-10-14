@@ -130,7 +130,9 @@ declare
   v_approver uuid;
   v_requester uuid;
   v_blocker text;
-  v_comment text := nullif(btrim(coalesce(p_comment, '')), '');
+  -- コメントは前後の空白（改行・タブ・全角スペース・NBSP・BOM を含む）を除き、空なら無いものとする。
+  -- btrim() は半角スペースしか除かないため使わない（改行・タブだけの差戻しの理由を通してしまう）。
+  v_comment text := nullif(regexp_replace(coalesce(p_comment, ''), '^[\s\u00a0\u3000\ufeff]+|[\s\u00a0\u3000\ufeff]+$', '', 'g'), '');
 begin
   select * into v_report from ssbj_reports where id = p_report_id for update;
   if not found or v_report."organizationId" <> p_organization_id then
