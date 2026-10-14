@@ -80,6 +80,12 @@ export const POST = async (
     (typeof comment !== 'string' || comment.length > COMMENT_MAX_LENGTH)) {
     return NextResponse.json({ error: `コメントは${COMMENT_MAX_LENGTH}文字以内で入力してください` }, { status: 400 });
   }
+  // 前後の空白（改行・タブ・全角スペースを含む）は除き、空白だけなら書いていないものとする（画面と同じ判定）。
+  // 差戻しの理由が無ければ RPC を呼ばずに断る（DB も P2057 で拒否する）。
+  const trimmedComment = typeof comment === 'string' && comment.trim() !== '' ? comment.trim() : null;
+  if (action === 'reopen' && trimmedComment === null) {
+    return NextResponse.json({ error: '差戻しの理由を入力してください' }, { status: 400 });
+  }
 
   // SSBJ のロールの確認（docs/authorization-matrix.md §2.2）。service_role の処理は RLS を越えるので、ここで確かめる。
   const denial = await guardSsbjRole(profile, ssbjStatusActionPermission(action as SsbjReportStatusAction), error => log.error({ error, reportId }, 'SSBJ のロールの確認に失敗しました'));
@@ -95,7 +101,7 @@ export const POST = async (
       action: action as SsbjReportStatusAction,
       expectedDraftRevision,
       approverUserId: (approverUserId as string | null | undefined) ?? null,
-      comment: (comment as string | null | undefined) ?? null,
+      comment: trimmedComment,
     });
     return NextResponse.json(result, { status: 200 });
   } catch (error) {

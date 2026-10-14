@@ -19,6 +19,19 @@ const migration = (suffix: string): string => {
 };
 const guard = migration('_ssbj_self_approval_guard.sql');
 
+// コメントの前後の空白（改行・タブ・全角スペース・NBSP・BOM を含む）を除き、空なら無いものとする式。
+// btrim() は半角スペースしか除かず、改行・タブだけの差戻しの理由を通してしまう（PR #74 のレビュー）。
+const COMMENT_NORMALIZATION = String.raw`v_comment text := nullif(regexp_replace(coalesce(p_comment, ''), '^[\s\u00a0\u3000\ufeff]+|[\s\u00a0\u3000\ufeff]+$', '', 'g'), '');`;
+
+// 状態の変更の関数を最後に定義するマイグレーション（後のマイグレーションが関数を置き換えたら、そちらが効く）。
+const latestStatusFunction = (): { name: string; sql: string } => {
+  const files = readdirSync(migrationsDir).filter(file => file.endsWith('.sql')).sort();
+  const defining = files.filter(file => migration(file).includes('function change_ssbj_report_status('));
+  const name = defining.at(-1);
+  if (!name) throw new Error('change_ssbj_report_status を定義するマイグレーションが見つかりません');
+  return { name, sql: migration(name) };
+};
+
 // 状態の変更の関数のうち、指定した操作の分岐（elsif / else まで）。
 const branch = (action: string): string => {
   const start = guard.indexOf(`p_action = '${action}' then`);
@@ -66,9 +79,16 @@ describe('自己承認の禁止', () => {
     expect(guard).toContain('select coalesce(r."reviewRequestedByUserId", v_submit_actor) into v_requester');
   });
 
-  it('差戻しは理由が必須（空白だけも不可）', () => {
-    expect(guard).toContain("v_comment text := nullif(btrim(coalesce(p_comment, '')), '');");
+  it('差戻しは理由が必須（改行・タブ・全角スペースなど空白だけも不可）', () => {
+    expect(guard).toContain(COMMENT_NORMALIZATION);
+    expect(guard).not.toContain('btrim(coalesce(p_comment');
     expect(branch('reopen')).toContain("if v_comment is null then raise exception '差戻しの理由を入力してください' using errcode = 'P2057';");
+  });
+
+  it('後のマイグレーションが状態の変更の関数を置き換えても、空白だけの理由を空とみなす式を保つ', () => {
+    const { name, sql } = latestStatusFunction();
+    expect(sql, name).toContain(COMMENT_NORMALIZATION);
+    expect(sql, name).not.toContain('btrim(coalesce(p_comment');
   });
 
   it('依頼者の列の更新は行ごとの操作履歴に出さない（依頼のたびに基本情報の更新が並ばない）', () => {
