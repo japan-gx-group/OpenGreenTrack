@@ -1,8 +1,9 @@
 // SSBJ 全体テスト（playwright.ssbj.config.ts）の共通処理: ログイン、Supabase クライアント、CSV の読み取り、後片付け。
 //
 // - 画面の操作と、組織分離の確認に使う Supabase クライアントは anon キー + デモユーザーのログイン（RLS の下）で動かす。
-// - service_role キーは後片付け（テストが作ったレポートの削除）にだけ使う。SSBJ のレポートは利用者が削除できない
-//   作りのため（保存版を消させない）。消すのはテスト用の目印で始まる名前のレポートだけで、保存版などは連鎖削除される。
+// - service_role キーは後片付け（テストが作ったレポートの削除）と、service_role だけが呼べる DB の関数を直接呼んで
+//   拒否されることの確認にだけ使う。SSBJ のレポートは利用者が削除できない作りのため（保存版を消させない）。
+//   消すのはテスト用の目印で始まる名前のレポートだけで、保存版などは連鎖削除される。
 
 import { existsSync } from 'node:fs';
 import { readFile, unlink, writeFile } from 'node:fs/promises';
@@ -21,6 +22,8 @@ type DemoUser = { email: string; password: string };
 export const ORG_A_USER: DemoUser = { email: 'org-a@example.com', password: 'password123' };
 /** 組織 A の入力担当者（OGT の role = logger）。承認者に指定されていなければ承認・差戻しができないことの確認に使う。 */
 export const ORG_A_LOGGER: DemoUser = { email: 'member-a@example.com', password: 'password123' };
+/** 組織 A の 3 人目の利用者（報告 次郎。OGT の role = viewer）。承認者でも管理者でもない人の確認に使う。 */
+export const ORG_A_VIEWER: DemoUser = { email: 'member2-a@example.com', password: 'password123' };
 /** 別組織（架空ロジスティクス）の管理者。組織分離の確認に使う。 */
 export const ORG_B_USER: DemoUser = { email: 'org-b@example.com', password: 'password123' };
 
@@ -49,11 +52,16 @@ export const createUserClient = async (user: DemoUser): Promise<SupabaseClient> 
   return supabase;
 };
 
+/** service_role の Supabase クライアント（RLS を越える。ローカル DB にだけつなぐ）。 */
+export const createServiceRoleClient = (): SupabaseClient => {
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!serviceRoleKey) throw new Error('SUPABASE_SERVICE_ROLE_KEY が必要です（.env.local を確認してください）');
+  return createClient(supabaseUrl(), serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
+};
+
 /** テストが作ったレポートを消す（目印で始まる名前のものだけ）。消した件数を返す。 */
 export const deleteE2eReports = async (): Promise<number> => {
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!serviceRoleKey) throw new Error('後片付けに SUPABASE_SERVICE_ROLE_KEY が必要です（.env.local を確認してください）');
-  const admin = createClient(supabaseUrl(), serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
+  const admin = createServiceRoleClient();
   const { data, error } = await admin
     .from('ssbj_reports')
     .delete()

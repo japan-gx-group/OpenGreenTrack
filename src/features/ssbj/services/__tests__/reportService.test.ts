@@ -41,6 +41,7 @@ const row = (fiscalYears: SsbjReportRow['fiscal_years']): SsbjReportRow => ({
   approvedByUserId: 'user-approver',
   approvedVersionId: 'version-1',
   statusChangedAt: '2025-06-05T00:00:00.000Z',
+  reviewRequestedByUserId: 'user-requester',
   fiscal_years: fiscalYears,
 });
 
@@ -91,6 +92,7 @@ describe('toSsbjReportWorkingRecord', () => {
         approvedByUserId: 'user-approver',
         approvedVersionId: 'version-1',
         statusChangedAt: '2025-06-05T00:00:00.000Z',
+        reviewRequestedByUserId: 'user-requester',
       },
     });
   });

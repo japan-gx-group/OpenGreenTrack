@@ -9,8 +9,8 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import type { SsbjReportStatus, SsbjReportStatusAction } from '../types';
 
 /**
- * RPC が使うカスタム SQLSTATE（正本は supabase/migrations/20261002090100_ssbj_report_status.sql と
- * 20261002090200_ssbj_restore_version.sql — 変更時は両方を揃えること）。
+ * RPC が使うカスタム SQLSTATE（正本は supabase/migrations/20261002090100_ssbj_report_status.sql・
+ * 20261010100000_ssbj_self_approval_guard.sql と 20261002090200_ssbj_restore_version.sql — 変更時は両方を揃えること）。
  */
 export const SSBJ_WORKFLOW_SQLSTATE = {
   /** レポート・版が無い、組織不一致、操作者が組織に属さない */
@@ -27,6 +27,10 @@ export const SSBJ_WORKFLOW_SQLSTATE = {
   invalidTransition: 'P2054',
   /** 版の形式が不正、または復元できない項目を含む */
   versionUnrestorable: 'P2055',
+  /** 自己承認（承認者に自分を指定・レビューを依頼した本人の承認・依頼の後に内容を変更した人の承認） */
+  selfApproval: 'P2056',
+  /** 差戻しの理由が無い */
+  reopenReasonRequired: 'P2057',
 } as const;
 
 /** RPC の DB エラー（SQLSTATE は SSBJ_WORKFLOW_SQLSTATE で判定する）。 */
@@ -53,6 +57,7 @@ export interface ChangeSsbjReportStatusParams {
 export interface ChangeSsbjReportStatusResult {
   status: SsbjReportStatus;
   approverUserId: string | null;
+  reviewRequestedByUserId: string | null;
   approvedVersionId: string | null;
   approvedVersionNumber: number | null;
 }
@@ -78,6 +83,7 @@ export const changeSsbjReportStatus = async (
   return {
     status: result.status,
     approverUserId: result.approverUserId ?? null,
+    reviewRequestedByUserId: result.reviewRequestedByUserId ?? null,
     approvedVersionId: result.approvedVersionId ?? null,
     approvedVersionNumber: result.approvedVersionNumber ?? null,
   };
