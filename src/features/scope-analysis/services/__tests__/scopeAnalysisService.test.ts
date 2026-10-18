@@ -3,6 +3,7 @@ import {
   buildCategories,
   buildDrilldownProducts,
   buildMethodItems,
+  buildScope2BasisCoverage,
   buildSuppliers,
   sumCalculatedByCategory,
 } from '../scopeAnalysisService';
@@ -162,6 +163,29 @@ describe('buildMethodItems', () => {
 
     expect(items[2].directEmissions).toBeNull();
     expect(items[2].adoptedEmissions).toBe(0);
+  });
+});
+
+describe('buildScope2BasisCoverage', () => {
+  it('基準ごとに値があるレコード数を数え、年度の Scope 2 明細に無い行は数えない', () => {
+    const coverage = buildScope2BasisCoverage(
+      ['act-1', 'act-2', 'act-3'],
+      [
+        { activityRecordId: 'act-1', basis: 'location_based' },
+        { activityRecordId: 'act-1', basis: 'market_based' },
+        { activityRecordId: 'act-2', basis: 'location_based' },
+        { activityRecordId: 'act-other', basis: 'market_based' },
+      ],
+    );
+    expect(coverage).toEqual({ scope2RecordCount: 3, locationBasedCount: 2, marketBasedCount: 1 });
+  });
+
+  it('Scope 2 明細が無ければすべて 0', () => {
+    expect(buildScope2BasisCoverage([], [])).toEqual({
+      scope2RecordCount: 0,
+      locationBasedCount: 0,
+      marketBasedCount: 0,
+    });
   });
 });
 

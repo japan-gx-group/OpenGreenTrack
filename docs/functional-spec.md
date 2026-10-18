@@ -34,7 +34,7 @@ OpenGreenTrack は、企業の温室効果ガス（GHG）排出量を算定・�
 | 削減目標 | 基準年度 + 年度ごとの削減率（%）。年間目標は「基準年度の実績 × (1 − 削減率/100)」で導出する |
 | レポート | PDF（印刷ビュー）と CSV。**社内確認・共有を想定した独自様式であり、制度の提出様式ではない** |
 
-**対象ガスは実質的に CO2 のみ**（同梱の公式係数がすべて CO2 対象。CH4 / N2O / フロン類を入力・算定する仕組みは無い）。Scope 2 のマーケット基準／ロケーション基準の区別、証書・クレジットの反映も未実装。
+**対象ガスは実質的に CO2 のみ**（同梱の公式係数がすべて CO2 対象。CH4 / N2O / フロン類を入力・算定する仕組みは無い）。Scope 2 はマーケット基準／ロケーション基準の基準別算定・表示に対応する（Scope 分析画面。`calculation-logic.md` §4）が、証書・クレジットの反映（環境価値の控除）は未実装。
 
 ### 1.2 共通コンテキスト
 
@@ -210,7 +210,7 @@ erDiagram
 |---|---|---|
 | `/dashboard` | ダッシュボード | `dashboard_aggregates`、`reduction_targets` |
 | `/data-input` | データ入力 | `activity_records`、`emission_factors`、`idea_factors` |
-| `/scope-analysis` | Scope 分析 | `scope3_category_methods`、`scope3_category_emissions`、`emission_results`、`supplier_emissions` |
+| `/scope-analysis` | Scope 分析 | `scope3_category_methods`、`scope3_category_emissions`、`emission_results`、`supplier_emissions`、`dashboard_aggregates`（Scope 別構成・Scope 2 基準別） |
 | `/factors` | 排出係数管理 | `emission_factors`、`idea_imports` |
 | `/locations` `/locations/[locationId]` | 拠点管理 | `locations` |
 | `/reports` `/reports/print` | レポート | 集計 RPC、`system_audit_logs`（履歴） |
@@ -269,9 +269,23 @@ KPI カードの前年比ピルと排出量上位拠点テーブルの前年比�
 
 未公表年度の暫定適用（§7.3）で算定したデータは、正式係数が投入されても算定バッチ（未算定レコードのみ処理）では置き換わらない。そのため入力履歴に「正式な排出係数が公表される前に暫定適用で算定したデータ」が残っているときは、対象年度と件数を示すバナーと「正式係数で再算定」ボタンを出す。押すと該当レコードだけを `isCalculated = false` へ戻し（`POST /api/calculations/provisional-recalculation`）、続けて通常の算定を実行する。
 
-算定後はトーストで結果を件数で提示する: 算定した件数と合計排出量、未算定の理由別件数（§5.5）、**明示指定どおりに算定できなかった件数**（読み替え・フォールバック）、算定年度が未登録の件数、失敗、レート制限による持ち越し。読み替え・フォールバックは算定自体が成立して値が出るぶん気づきにくいため、成功時でも件数を知らせ、入力履歴から該当レコードを開いて適用された係数を確認するよう促す（`CalculationOutcome.warnings`。詳細は [`calculation-logic.md`](./calculation-logic.md) の「明示指定」）。
+算定後はトーストで結果を件数で提示する: 算定した件数と合計排出量、未算定の理由別件数（§5.5）、**明示指定どおりに算定できなかった件数**（読み替え・フォールバック）、**Scope 2 の基準別の値を算定できなかった件数**（理由別。§4.3.0）、算定年度が未登録の件数、失敗、レート制限による持ち越し。読み替え・フォールバックは算定自体が成立して値が出るぶん気づきにくいため、成功時でも件数を知らせ、入力履歴から該当レコードを開いて適用された係数を確認するよう促す（`CalculationOutcome.warnings`。詳細は [`calculation-logic.md`](./calculation-logic.md) の「明示指定」）。
 
 ### 4.3 Scope 分析
+
+#### 4.3.0 Scope 2 算定基準別
+
+「Scope 別構成」カードの直下に「Scope 2 算定基準別」カードを置き、GHG プロトコルのロケーション基準／
+マーケット基準の年度合計（`dashboard_aggregates` の基準別列）を表示する。
+
+- マーケット基準には内訳（契約メニュー根拠 / 代替値補完）を添える。
+- **未算定（NULL）は 0 と区別して「—（未算定）」と表示**する（部分合計・根拠不足の値を基準別の値として見せない）。
+  未算定の列には、年度内の Scope 2 算定済みデータの件数と、そのうちその基準の値がある件数を添える。
+- 未算定の原因は 2 通りあるため両方を案内する: (1) 基準別の付与を行う算定がまだ実行されていない
+  （データ入力画面でその年度の活動量を保存すると算定が自動で実行される）、(2) 対象年度に全国の代替値が無い・
+  単位を換算できない等で算定できないデータがある（再計算しても解消しない。件数と理由は算定完了時のトーストに出す）。
+- Scope 別構成カードの Scope 2（温対法の係数区分に基づく単一値）とは算定規則が異なり一致するとは
+  限らないことを注記する。算定規則は `calculation-logic.md` §4「Scope 2 の基準別算定」。
 
 #### 4.3.1 カテゴリ別排出
 

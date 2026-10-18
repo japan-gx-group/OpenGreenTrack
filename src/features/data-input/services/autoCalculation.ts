@@ -7,7 +7,12 @@
 // 自動再試行（calculationScheduler）へ渡す。
 
 import { RATE_LIMIT_RETRY_AFTER_SECONDS } from '@/lib/security/apiRateLimit';
-import { UNRESOLVED_REASON_MESSAGES, type UnresolvedReason } from '@/features/calculation/types';
+import {
+  SCOPE2_BASIS_UNRESOLVED_REASON_MESSAGES,
+  UNRESOLVED_REASON_MESSAGES,
+  type Scope2BasisUnresolvedReason,
+  type UnresolvedReason,
+} from '@/features/calculation/types';
 
 /** Retry-After が読めない・異常なときの再試行秒数の上下限。 */
 const MIN_RETRY_AFTER_SECONDS = 1;
@@ -22,6 +27,8 @@ export type CalculationBatchRequestResult =
       unresolvedReasons: UnresolvedReason[];
       /** 算定はできたが、明示選択した係数どおりには算定できなかった件数（読み替え・フォールバック） */
       factorWarningCount: number;
+      /** Scope 2 の基準別の値が算定できなかった理由（レコード×理由で 1 件） */
+      scope2BasisUnresolvedReasons: Scope2BasisUnresolvedReason[];
     }
   | { kind: 'rateLimited'; message: string; retryAfterSeconds: number }
   | { kind: 'failed'; message: string };
@@ -33,6 +40,8 @@ export interface CalculationRunResult {
   unresolvedCountByReason: Map<UnresolvedReason, number>;
   /** 算定はできたが、明示選択した係数どおりには算定できなかった件数 */
   factorWarningCount: number;
+  /** Scope 2 の基準別の値が算定できなかったレコードの理由別件数 */
+  scope2BasisUnresolvedCountByReason: Map<Scope2BasisUnresolvedReason, number>;
   failures: string[];
   /** レート制限（429）で持ち越し、自動再試行の対象になった年度。 */
   deferredFiscalYearIds: string[];
@@ -45,6 +54,7 @@ export const createEmptyRunResult = (): CalculationRunResult => ({
   totalEmissionsDelta: 0,
   unresolvedCountByReason: new Map(),
   factorWarningCount: 0,
+  scope2BasisUnresolvedCountByReason: new Map(),
   failures: [],
   deferredFiscalYearIds: [],
   retryAfterSeconds: null,
@@ -58,6 +68,29 @@ export const parseRetryAfterSeconds = (header: string | null): number => {
   const parsed = header === null ? Number.NaN : Number(header);
   const seconds = Number.isFinite(parsed) ? Math.ceil(parsed) : RATE_LIMIT_RETRY_AFTER_SECONDS;
   return Math.min(MAX_RETRY_AFTER_SECONDS, Math.max(MIN_RETRY_AFTER_SECONDS, seconds));
+};
+
+/**
+ * 応答の scope2BasisUnresolved（1 レコードにつき基準ごとに載る）を、レコード×理由で 1 件にまとめる。
+ * 件数をレコード単位で伝えるため（同じ理由で両基準が欠けたレコードを 2 件と数えない）。
+ * 理由が読めない（旧 API 応答など）場合は「代替値なし」に寄せる。
+ */
+const toScope2BasisUnresolvedReasons = (
+  items: Array<{ activityRecordId?: string; reason?: string }>,
+): Scope2BasisUnresolvedReason[] => {
+  const seen = new Set<string>();
+  const reasons: Scope2BasisUnresolvedReason[] = [];
+  items.forEach((item, index) => {
+    const reason: Scope2BasisUnresolvedReason =
+      item.reason && item.reason in SCOPE2_BASIS_UNRESOLVED_REASON_MESSAGES
+        ? (item.reason as Scope2BasisUnresolvedReason)
+        : 'STANDARD_FACTOR_NOT_FOUND';
+    const key = `${item.activityRecordId ?? `#${index}`}:${reason}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    reasons.push(reason);
+  });
+  return reasons;
 };
 
 /**
@@ -85,6 +118,7 @@ export const requestCalculationBatch = async (
     totalEmissionsDelta?: number;
     unresolved?: Array<{ reason?: UnresolvedReason }>;
     warnings?: unknown[];
+    scope2BasisUnresolved?: Array<{ activityRecordId?: string; reason?: string }>;
     errorMessage?: string;
     error?: string;
   };
@@ -112,6 +146,9 @@ export const requestCalculationBatch = async (
       item.reason && item.reason in UNRESOLVED_REASON_MESSAGES ? item.reason : 'FACTOR_NOT_FOUND',
     ),
     factorWarningCount: Array.isArray(summary.warnings) ? summary.warnings.length : 0,
+    scope2BasisUnresolvedReasons: toScope2BasisUnresolvedReasons(
+      Array.isArray(summary.scope2BasisUnresolved) ? summary.scope2BasisUnresolved : [],
+    ),
   };
 };
 
@@ -129,6 +166,12 @@ export const accumulateBatchResult = (
         run.unresolvedCountByReason.set(reason, (run.unresolvedCountByReason.get(reason) ?? 0) + 1);
       }
       run.factorWarningCount += result.factorWarningCount;
+      for (const reason of result.scope2BasisUnresolvedReasons) {
+        run.scope2BasisUnresolvedCountByReason.set(
+          reason,
+          (run.scope2BasisUnresolvedCountByReason.get(reason) ?? 0) + 1,
+        );
+      }
       return;
     case 'rateLimited':
       run.deferredFiscalYearIds.push(fiscalYearId);
@@ -180,6 +223,10 @@ export const buildCalculationMessages = (
     // 選択した係数が使えず別の係数で算定した場合、値は出ているぶん気づきにくい。
     // 報告用途では算定根拠の差異を必ず知らせる必要があるため、成功時でも明示する。
     messages.push(FACTOR_WARNING_MESSAGE(result.factorWarningCount));
+  }
+  for (const [reason, count] of result.scope2BasisUnresolvedCountByReason) {
+    // 基準別の欠けは単一値の算定結果には現れず、Scope 分析画面では「未算定」としか出ないため、ここで理由を伝える。
+    messages.push(`${count}件は${SCOPE2_BASIS_UNRESOLVED_REASON_MESSAGES[reason]}`);
   }
   if (uncoveredCount > 0) {
     // 算定年度の登録は全メンバーが行える（ロール判定は無効）。
