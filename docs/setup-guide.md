@@ -816,7 +816,8 @@ OpenGreenTrack のアプリ側では、重い認証済みAPIに DB ベースの�
 - **リクエストボディ制限のあるホスティングでも動きます。** API のリクエストボディは数百バイトの JSON です（Vercel の Serverless Functions のボディ 4.5MB 制限にはかかりません）。リバースプロキシ側にこの API 向けの `client_max_body_size` の緩和は不要です
 - **Supabase Storage が必要です。** `upload-quarantine` バケットは初期マイグレーション（`20260831000003_storage.sql`）で作成されます。ファイルサイズ上限はバケットとアプリの両方で 50MB です。セルフホストの Supabase では Storage サービス（と `[storage] file_size_limit`。`supabase/config.toml` は `50MiB`）が有効であることを確認してください
 - **メモリは数百MBで足ります。** xlsx はストリーミングで読み取り（対象シートの行だけを逐次処理）、ワークブック全体はメモリに展開しません。実ファイル相当（10,300行 × 約300列・17MBのダミーファイル）で **Node のヒープのピーク約 78MB（RSS 約 400MB）** を実測しました（`scripts/measure-idea-import.ts`。旧方式の一括読込は同条件で約 1.3GB）。Node プロセスに 512MB 程度のメモリがあれば十分で、`NODE_OPTIONS=--max-old-space-size` の調整は不要です
-- 取込本体は API の応答後にバックグラウンドで数十秒〜数分実行されます。関数の実行時間に上限があるホスティング（Vercel 等）では、上限が取込時間を下回らないように設定してください（10,300行のダミーファイルの読み取りは約3秒。加えて DB への挿入時間がかかります）
+- 取込本体は API の応答後にバックグラウンドで数十秒〜数分実行されます。関数の実行時間に上限があるホスティング（Vercel 等）では、上限が取込時間を下回らないようにしてください（10,300行のダミーファイルの読み取りは約3秒。加えて DB への挿入時間がかかります）。取込 API（`src/app/api/idea-imports/route.ts`）は `maxDuration = 300`（秒）を指定しています。これは Vercel の Fluid compute で Hobby プランが指定できる上限です。プランの上限がこれより短い場合は値を下げてください。Node のサーバーとして自前で動かす場合は使われません
+- 取込の途中でサーバーが止まった・実行時間の上限で打ち切られた場合、取込記録は「取込中」のまま残ります。10 分以上更新の無い取込は、係数管理画面の IDEA データベースカードを開いている間（または次に取込を始めたとき）に自動で「失敗」に切り替わり、もう一度取り込めるようになります
 
 計測の再現: `node --expose-gc --import ./scripts/register-ts-resolver.ts scripts/measure-idea-import.ts 10300 300 both`
 

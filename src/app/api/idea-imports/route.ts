@@ -42,6 +42,12 @@ import {
 // service_role と exceljs（Node ストリーム前提）を使うため Node ランタイム必須。
 export const runtime = 'nodejs';
 
+// 取込本体は応答後の after() で実行され、関数の実行時間の上限に含まれる（Vercel 等）。上限で打ち切られると
+// 取込記録が processing のまま残る（10 分後に /api/idea-imports/recovery 等で failed に回収される）ため、
+// 取込が終わるだけの長さを指定する。300 秒は Vercel の Fluid compute で Hobby プランが指定できる上限。
+// Node のサーバーとして自前で動かす場合は使われない（docs/setup-guide.md 2-F）。
+export const maxDuration = 300;
+
 /** idea_imports.fileName の列幅（varchar(300)） */
 const FILE_NAME_MAX_LENGTH = 300;
 

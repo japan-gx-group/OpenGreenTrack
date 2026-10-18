@@ -140,6 +140,19 @@ export const startIdeaImport = async (
   return { importId: body.importId };
 };
 
+/**
+ * 取込中のまま止まった取込の回収を依頼する（10 分以上更新の無い processing 行を failed に戻す）。
+ * 取込の裏の処理が中断されると processing のまま残り、画面は取込中の間ほかの取込操作を受け付けないため、
+ * 取込中の表示を出している間に呼ぶ。失敗しても取込状況の表示は続けるため throw しない（次の呼び出しで再試行する）。
+ */
+export const requestStaleIdeaImportRecovery = async (fetchImpl: typeof fetch = fetch): Promise<void> => {
+  try {
+    await fetchImpl('/api/idea-imports/recovery', { method: 'POST' });
+  } catch {
+    // 通信に失敗しても、取込中のポーリングは続き、次の呼び出しで再試行される。
+  }
+};
+
 /** インポートの削除。算定結果から参照されている場合はサーバが 409 で拒否する（§3.6-4）。 */
 export const deleteIdeaImport = async (importId: string): Promise<void> => {
   const response = await fetch(`/api/idea-imports/${encodeURIComponent(importId)}`, {
