@@ -159,7 +159,7 @@ src/
 - ✅ seed は**冪等**に書く（`on conflict … do nothing/update`、または削除→再投入）。production と demo は**互いに依存させない**（どちらか一方だけでも流せること）
 - ✅ 既存データの訂正は **seed を直して再投入**する（seed は冪等 upsert なので再実行で上書きされる）。migration に `update` を書かない
 - 機械チェック: `npm run check:migrations`（CI と lefthook の pre-commit で実行）が `supabase/migrations/` 内の DML を検出して失敗させる。限界: 関数本体（`$$ … $$` 内）の DML はアプリロジックとして検出対象外、`do $$ … $$` ブロック内の DML は検出する。チェックが通っても「データを入れていないか」は PR レビューで確認すること
-- ✅ 良い例: 公式排出係数の出典を訂正する → `scripts/official-factors/data/` を直して `node scripts/official-factors/generate.ts` で seed を再生成し、`npm run db:seed:production` で再投入する
+- ✅ 良い例: 公式排出係数の出典を訂正する → `scripts/official-factors/data/<年度>/` を直して `node scripts/official-factors/generate.ts` で seed を再生成し、`npm run db:seed:production` で再投入する
 - ✅ 良い例: 新しい画面用のデモデータが欲しい → `supabase/seeds/demo/` に冪等な SQL を追加し、`npm run db:seed:demo`（または `npm run db:reset:demo`）で投入する
 - ❌ ダメな例: `supabase/migrations/<timestamp>_fix_factor_source.sql` に `update emission_factors set source = …` を書く
 - ❌ ダメな例: `supabase/migrations/<timestamp>_add_demo_org.sql` に `insert into organizations …` でデモ組織を入れる

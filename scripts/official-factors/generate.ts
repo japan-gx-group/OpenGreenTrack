@@ -10,22 +10,23 @@
 //   クラウド                  : npx supabase db push --include-seed
 //   任意の DB（自前ホストなど）: npm run db:seed:production -- --db-url postgresql://…（ホストの psql を使用）
 //
-// データソース（data/ 配下。取得元は各ファイルのヘッダコメント参照）:
+// データソース（data/<年度>/ 配下。年度ごとにその年度の公表資料を置く。取得元は各ファイルのヘッダコメント参照）:
 //   denki.txt  : 電気事業者別排出係数（pdftotext -layout の生テキストをパース）
 //   gas.tsv    : ガス事業者別排出係数（手書き転記）
 //   heat.tsv   : 熱供給事業者別排出係数（手書き転記）
 //   fuels.tsv  : 燃料の使用に関する排出係数（算定省令別表、手書き転記）
-//   scope3.tsv : Scope3 代表排出原単位（排出原単位DB Ver.3.6 から厳選・手書き転記）
+//   scope3.tsv : Scope3 代表排出原単位（排出原単位DB から厳選・手書き転記）
 //
 // 出力は決定的で、再実行しても同一のSQLになる。ID は行の安定キー（FactorSeedRow.idKey: 事業者別は
 // energyType + 登録番号 + メニュー名 + 係数種別、代替値は energyType、燃料・Scope3 は TSV の key 列）と
 // 年度から導出した md5 ベース UUID で、名称・値・出典を訂正しても同じ ID のまま。
-// 生成SQLは on conflict (id) do update の upsert なので、値・出典・名称の訂正は data/ を直して再生成し、
+// 生成SQLは on conflict (id) do update の upsert なので、値・出典・名称の訂正は data/<年度>/ を直して再生成し、
 // 再投入すれば既存行に反映される（既存行の訂正もこの seed の再投入で行う）。status は上書きせず、
 // 変更のない行は更新しない（where … is distinct from）ので updatedAt が動くのは値が変わった行だけ。
-// 年度更新時は data/ を差し替えて YEARS に新年度を足し、再生成して再投入する。過年度行の archive が
-// 必要な場合も、冪等な文としてこの seed に出力する（手順は README.md）。
-// 未公表年度ぶんの行は作らない（理由は YEARS のコメントを参照）。
+// 年度更新時は data/<新年度>/ に新年度の資料を置き、YEAR_SOURCES に新年度の定義を足して再生成・再投入する。
+// 過年度の data/<年度>/ と定義は変更しない（変更すると、その年度の行が upsert で書き換わる）。
+// 過年度行の archive が必要な場合も、冪等な文としてこの seed に出力する（手順は README.md）。
+// 未公表年度ぶんの行は作らない（理由は YEAR_SOURCES のコメントを参照）。
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -34,7 +35,9 @@ import {
   parseDenki,
   parseProviderTsv,
   parseSimpleTsv,
+  type DenkiParseResult,
   type ProviderFactorRow,
+  type SimpleFactorRow,
 } from './parse.ts';
 
 const DATA_DIR = join(import.meta.dirname, 'data');
@@ -43,19 +46,105 @@ const OUTPUT_PATH = join(
   '../../supabase/seeds/production/official_emission_factors.sql',
 );
 
+const SOURCE_URL_SHK = 'https://policies.env.go.jp/earth/ghg-santeikohyo/calc.html';
+const SOURCE_URL_SCOPE3 =
+  'https://www.env.go.jp/earth/ondanka/supply_chain/gvc/estimate_05.html';
+
+const assert = (condition: boolean, message: string): void => {
+  if (!condition) {
+    throw new Error(`検証エラー: ${message}`);
+  }
+};
+
+/** data/<年度>/ をパースした結果（年度ごとのスポットチェックに渡す） */
+interface ParsedYearData {
+  denki: DenkiParseResult;
+  gasProviders: ProviderFactorRow[];
+  heatProviders: ProviderFactorRow[];
+  fuels: SimpleFactorRow[];
+  scope3: SimpleFactorRow[];
+}
+
+/**
+ * 1 年度分の公表資料の定義。行はこの年度の data/<year>/ と、ここに書いた値だけから作る
+ * （ほかの年度の資料を使い回すと、ID が同じ過年度の行が upsert で別年度の値に書き換わるため）。
+ */
+interface YearSource {
+  /** applicableYear（温対法年度。effectiveFrom = year-04-01 / effectiveTo = (year+1)-03-31） */
+  year: number;
+  /** 出典として各行に保存する公表資料の名称（公表回・実績年度は年度ごとに違う） */
+  documents: { denki: string; gas: string; heat: string; fuels: string; scope3: string };
+  /** 生成 SQL のヘッダ（出典表示）に載せる排出原単位データベースの版 */
+  scope3DatabaseVersion: string;
+  /** 都市ガス・熱の代替値（省令の排出係数。事業者別の公表資料には載らないため年度ごとに書く） */
+  cityGasSubstituteValue: number;
+  heatSubstituteValue: number;
+  /** パース結果の妥当性検証（公表資料と突合したスポットチェック。期待値は年度ごとに違う） */
+  verify: (data: ParsedYearData) => void;
+}
+
 // 収録する適用年度。**公表資料が存在する年度だけ**を入れる。
 // 同じ値を翌年度へコピーしないこと: コピー行は「正式な当該年度係数」と DB 上で見分けが付かず、
 // 公表後に正式値へ差し替えたことを誰も検知できない。
 // 対象年度の係数が無い間は、算定側が直近の過年度（PROVISIONAL_FALLBACK_YEARS = 1 年前まで）の
 // 公式係数を暫定適用し、入力フォームに「暫定適用」と理由を表示する（resolveEmissionFactor の
-// effectiveYearsFor / isProvisionalFactor）。公表され次第 data/ を差し替えてこの配列へ年度を足せば、
-// 暫定適用は自動的に止まる（表示の消し忘れが起きない）。
-// 過年度の行は消さずに残す（過年度の再算定・監査で参照するため）。
-const YEARS = [2025] as const;
+// effectiveYearsFor / isProvisionalFactor）。公表され次第 data/<新年度>/ を置いてこの配列へ年度の定義を
+// 足せば、暫定適用は自動的に止まる（表示の消し忘れが起きない）。
+// 過年度の行は消さずに残す（過年度の再算定・監査で参照するため）。過年度の定義と data/<年度>/ は変更しない。
+const YEAR_SOURCES: readonly YearSource[] = [
+  {
+    year: 2025,
+    documents: {
+      denki:
+        '電気事業者別排出係数（特定排出者の温室効果ガス排出量算定用）－R6年度実績－ R8.1.9 環境省・経済産業省公表（R8.6.4一部更新）',
+      gas: 'ガス事業者別排出係数（特定排出者の温室効果ガス排出量算定用）－R7年度供給実績－ R8.6.30 環境省・経済産業省公表',
+      heat: '熱供給事業者別排出係数（特定排出者の温室効果ガス排出量算定用）－R6年度供給実績－ R8.6.30 環境省・経済産業省公表',
+      fuels:
+        '温対法 算定・報告・公表制度「算定方法・排出係数一覧」（参考1）燃料の使用に関する排出係数（算定省令別表第1×別表2×44/12）',
+      scope3:
+        'サプライチェーンを通じた組織の温室効果ガス排出等の算定のための排出原単位データベース Ver.3.6（2026年4月 環境省公表）',
+    },
+    scope3DatabaseVersion: 'Ver.3.6',
+    cityGasSubstituteValue: 2.05,
+    heatSubstituteValue: 0.0532,
+    verify: ({ denki, gasProviders, heatProviders, fuels }) => {
+      assert(denki.substituteValue === 0.000416, `電気の代替値が想定と異なります: ${denki.substituteValue}`);
+      const spot = (num: string, menu: string | null): ProviderFactorRow | undefined =>
+        denki.retailers.find((r) => r.providerNumber === num && r.menuName === menu);
+      assert(spot('A0002', null)?.basic === 0.000422, 'A0002 イーレックスの基礎係数が一致しません');
+      assert(
+        spot('A0269', 'メニューM(残差)')?.adjusted === 0.000452,
+        'A0269 東京電力EP メニューM(残差) の調整後係数が一致しません',
+      );
+      assert(
+        denki.gridOperators.find((g) => g.providerName.includes('沖縄'))?.basic === 0.000707,
+        '沖縄電力の係数が一致しません',
+      );
+      assert(
+        gasProviders.find((p) => p.providerNumber === 'K0052')?.basic === 2.91,
+        'K0052 第一ガスの係数が一致しません',
+      );
+      assert(
+        heatProviders.find((p) => p.providerNumber === '032')?.basic === 0.0584,
+        '032 ハウステンボス熱供給の係数が一致しません',
+      );
+      assert(fuels.find((f) => f.name === '灯油')?.value === 2.5, '灯油の係数が一致しません');
+    },
+  },
+];
 
-const SOURCE_URL_SHK = 'https://policies.env.go.jp/earth/ghg-santeikohyo/calc.html';
-const SOURCE_URL_SCOPE3 =
-  'https://www.env.go.jp/earth/ondanka/supply_chain/gvc/estimate_05.html';
+const YEARS = YEAR_SOURCES.map((source) => source.year);
+
+assert(new Set(YEARS).size === YEARS.length, `YEAR_SOURCES に同じ年度が複数あります: ${YEARS.join(', ')}`);
+// 電気・ガス・熱は毎年度公表し直される。公表資料名が別年度と同じなら、前年度の定義を写して
+// 新年度の資料に差し替え忘れている（過年度と同じ値を新年度として登録してしまう）。
+for (const key of ['denki', 'gas', 'heat'] as const) {
+  const names = YEAR_SOURCES.map((source) => source.documents[key]);
+  assert(
+    new Set(names).size === names.length,
+    `${key} の公表資料名が複数年度で同じです（新年度の資料に差し替えたか確認してください）`,
+  );
+}
 
 interface FactorSeedRow {
   /**
@@ -79,240 +168,234 @@ interface FactorSeedRow {
   sourceUrl: string;
 }
 
-const assert = (condition: boolean, message: string): void => {
-  if (!condition) {
-    throw new Error(`検証エラー: ${message}`);
-  }
-};
+/** 1 年度分の生成結果（ヘッダ・ログの件数表示にも使う） */
+interface YearRows {
+  source: YearSource;
+  data: ParsedYearData;
+  rows: FactorSeedRow[];
+}
 
-const rows: FactorSeedRow[] = [];
+/** その年度の data/<year>/ と YearSource の定義だけから、その年度の行を作る。 */
+const buildYearRows = (source: YearSource): YearRows => {
+  const dataDir = join(DATA_DIR, String(source.year));
+  const readData = (fileName: string): string => readFileSync(join(dataDir, fileName), 'utf8');
+  const rows: FactorSeedRow[] = [];
 
-// --- 電気（事業者別・一般送配電・代替値） ---------------------------------
+  // --- 電気（事業者別・一般送配電・代替値） ---------------------------------
 
-const denkiDoc =
-  '電気事業者別排出係数（特定排出者の温室効果ガス排出量算定用）－R6年度実績－ R8.1.9 環境省・経済産業省公表（R8.6.4一部更新）';
+  const denkiDoc = source.documents.denki;
 
-const denki = parseDenki(readFileSync(join(DATA_DIR, 'denki.txt'), 'utf8'));
+  const denki = parseDenki(readData('denki.txt'));
 
-const pushProviderRows = (
-  provider: ProviderFactorRow,
-  base: Pick<FactorSeedRow, 'energyType' | 'scope' | 'unit' | 'sourceDocumentName' | 'sourceUrl'> & {
-    labelPrefix: string;
-  },
-): void => {
-  const menuLabel = provider.menuName ? ` ${provider.menuName}` : '';
-  const variants = [
-    { factorType: 'basic' as const, value: provider.basic, label: '基礎' },
-    { factorType: 'adjusted' as const, value: provider.adjusted, label: '調整後' },
-  ];
-  for (const variant of variants) {
-    if (variant.value === null) {
-      continue;
+  const pushProviderRows = (
+    provider: ProviderFactorRow,
+    base: Pick<FactorSeedRow, 'energyType' | 'scope' | 'unit' | 'sourceDocumentName' | 'sourceUrl'> & {
+      labelPrefix: string;
+    },
+  ): void => {
+    const menuLabel = provider.menuName ? ` ${provider.menuName}` : '';
+    const variants = [
+      { factorType: 'basic' as const, value: provider.basic, label: '基礎' },
+      { factorType: 'adjusted' as const, value: provider.adjusted, label: '調整後' },
+    ];
+    for (const variant of variants) {
+      if (variant.value === null) {
+        continue;
+      }
+      rows.push({
+        // 事業者名は社名変更で変わりうるため含めない（登録番号 + メニュー名で事業者・メニューを特定する）
+        idKey: `${base.energyType}:${provider.providerNumber}:${provider.menuName ?? '-'}:${variant.factorType}`,
+        energyType: base.energyType,
+        scope: base.scope,
+        name: `${base.labelPrefix} ${provider.providerName}${menuLabel}（${variant.label}）`,
+        factorValue: variant.value,
+        unit: base.unit,
+        source: 'utility',
+        providerName: provider.providerName,
+        providerNumber: provider.providerNumber,
+        menuName: provider.menuName,
+        factorType: variant.factorType,
+        sourceDocumentName: base.sourceDocumentName,
+        sourceUrl: base.sourceUrl,
+      });
     }
-    rows.push({
-      // 事業者名は社名変更で変わりうるため含めない（登録番号 + メニュー名で事業者・メニューを特定する）
-      idKey: `${base.energyType}:${provider.providerNumber}:${provider.menuName ?? '-'}:${variant.factorType}`,
-      energyType: base.energyType,
-      scope: base.scope,
-      name: `${base.labelPrefix} ${provider.providerName}${menuLabel}（${variant.label}）`,
-      factorValue: variant.value,
-      unit: base.unit,
-      source: 'utility',
-      providerName: provider.providerName,
-      providerNumber: provider.providerNumber,
-      menuName: provider.menuName,
-      factorType: variant.factorType,
-      sourceDocumentName: base.sourceDocumentName,
-      sourceUrl: base.sourceUrl,
+  };
+
+  for (const retailer of denki.retailers) {
+    pushProviderRows(retailer, {
+      energyType: 'electricity',
+      scope: 'scope2',
+      unit: 't-CO2/kWh',
+      sourceDocumentName: denkiDoc,
+      sourceUrl: SOURCE_URL_SHK,
+      labelPrefix: '電気',
     });
   }
-};
-
-for (const retailer of denki.retailers) {
-  pushProviderRows(retailer, {
+  for (const grid of denki.gridOperators) {
+    pushProviderRows(grid, {
+      energyType: 'electricity',
+      scope: 'scope2',
+      unit: 't-CO2/kWh',
+      sourceDocumentName: denkiDoc,
+      sourceUrl: SOURCE_URL_SHK,
+      labelPrefix: '電気（一般送配電）',
+    });
+  }
+  // 代替値は事業者を選ばない場合の自動解決フォールバック（providerName なし＝全国標準 tier5）
+  rows.push({
     energyType: 'electricity',
     scope: 'scope2',
+    idKey: 'electricity:substitute',
+    name: '電気 代替値（環境省・経済産業省公表）',
+    factorValue: denki.substituteValue,
     unit: 't-CO2/kWh',
-    sourceDocumentName: denkiDoc,
-    sourceUrl: SOURCE_URL_SHK,
-    labelPrefix: '電気',
-  });
-}
-for (const grid of denki.gridOperators) {
-  pushProviderRows(grid, {
-    energyType: 'electricity',
-    scope: 'scope2',
-    unit: 't-CO2/kWh',
-    sourceDocumentName: denkiDoc,
-    sourceUrl: SOURCE_URL_SHK,
-    labelPrefix: '電気（一般送配電）',
-  });
-}
-// 代替値は事業者を選ばない場合の自動解決フォールバック（providerName なし＝全国標準 tier5）
-rows.push({
-  energyType: 'electricity',
-  scope: 'scope2',
-  idKey: 'electricity:substitute',
-  name: '電気 代替値（環境省・経済産業省公表）',
-  factorValue: denki.substituteValue,
-  unit: 't-CO2/kWh',
-  source: 'moe',
-  providerName: null,
-  providerNumber: null,
-  menuName: null,
-  factorType: null,
-  sourceDocumentName: denkiDoc,
-  sourceUrl: SOURCE_URL_SHK,
-});
-
-// パース結果の妥当性検証（公表資料と突合したスポットチェック）
-assert(denki.retailerCount >= 400, `小売電気事業者数が少なすぎます: ${denki.retailerCount}`);
-assert(denki.retailers.length >= 1000, `電気の係数行が少なすぎます: ${denki.retailers.length}`);
-assert(denki.gridOperators.length === 10, `一般送配電事業者は10社のはず: ${denki.gridOperators.length}`);
-assert(denki.substituteValue === 0.000416, `電気の代替値が想定と異なります: ${denki.substituteValue}`);
-const spot = (num: string, menu: string | null): ProviderFactorRow | undefined =>
-  denki.retailers.find((r) => r.providerNumber === num && r.menuName === menu);
-assert(spot('A0002', null)?.basic === 0.000422, 'A0002 イーレックスの基礎係数が一致しません');
-assert(
-  spot('A0269', 'メニューM(残差)')?.adjusted === 0.000452,
-  'A0269 東京電力EP メニューM(残差) の調整後係数が一致しません',
-);
-assert(
-  denki.gridOperators.find((g) => g.providerName.includes('沖縄'))?.basic === 0.000707,
-  '沖縄電力の係数が一致しません',
-);
-
-// --- ガス（事業者別・代替値） ---------------------------------------------
-
-const gasDoc =
-  'ガス事業者別排出係数（特定排出者の温室効果ガス排出量算定用）－R7年度供給実績－ R8.6.30 環境省・経済産業省公表';
-const gasProviders = parseProviderTsv(readFileSync(join(DATA_DIR, 'gas.tsv'), 'utf8'));
-assert(new Set(gasProviders.map((p) => p.providerNumber)).size >= 30, 'ガス事業者数が少なすぎます');
-assert(
-  gasProviders.find((p) => p.providerNumber === 'K0052')?.basic === 2.91,
-  'K0052 第一ガスの係数が一致しません',
-);
-for (const provider of gasProviders) {
-  pushProviderRows(provider, {
-    energyType: 'city_gas',
-    scope: 'scope1',
-    unit: 't-CO2/千m3',
-    sourceDocumentName: gasDoc,
-    sourceUrl: SOURCE_URL_SHK,
-    labelPrefix: '都市ガス',
-  });
-}
-rows.push({
-  energyType: 'city_gas',
-  scope: 'scope1',
-  idKey: 'city_gas:substitute',
-  name: '都市ガス 代替値（省令の排出係数）',
-  factorValue: 2.05,
-  unit: 't-CO2/千m3',
-  source: 'moe',
-  providerName: null,
-  providerNumber: null,
-  menuName: null,
-  factorType: null,
-  sourceDocumentName: gasDoc,
-  sourceUrl: SOURCE_URL_SHK,
-});
-
-// --- 熱（事業者別・代替値） -----------------------------------------------
-
-const heatDoc =
-  '熱供給事業者別排出係数（特定排出者の温室効果ガス排出量算定用）－R6年度供給実績－ R8.6.30 環境省・経済産業省公表';
-const heatProviders = parseProviderTsv(readFileSync(join(DATA_DIR, 'heat.tsv'), 'utf8'));
-assert(new Set(heatProviders.map((p) => p.providerNumber)).size >= 15, '熱供給事業者数が少なすぎます');
-assert(
-  heatProviders.find((p) => p.providerNumber === '032')?.basic === 0.0584,
-  '032 ハウステンボス熱供給の係数が一致しません',
-);
-for (const provider of heatProviders) {
-  pushProviderRows(provider, {
-    energyType: 'heat',
-    scope: 'scope2',
-    unit: 't-CO2/GJ',
-    sourceDocumentName: heatDoc,
-    sourceUrl: SOURCE_URL_SHK,
-    labelPrefix: '熱',
-  });
-}
-rows.push({
-  energyType: 'heat',
-  scope: 'scope2',
-  idKey: 'heat:substitute',
-  name: '熱 代替値（省令の排出係数）',
-  factorValue: 0.0532,
-  unit: 't-CO2/GJ',
-  source: 'moe',
-  providerName: null,
-  providerNumber: null,
-  menuName: null,
-  factorType: null,
-  sourceDocumentName: heatDoc,
-  sourceUrl: SOURCE_URL_SHK,
-});
-
-// --- 燃料（算定省令別表） -------------------------------------------------
-
-const fuelsDoc =
-  '温対法 算定・報告・公表制度「算定方法・排出係数一覧」（参考1）燃料の使用に関する排出係数（算定省令別表第1×別表2×44/12）';
-const fuels = parseSimpleTsv(readFileSync(join(DATA_DIR, 'fuels.tsv'), 'utf8'));
-assert(fuels.length === 35, `燃料は35種のはず: ${fuels.length}`);
-assert(fuels.find((f) => f.name === '灯油')?.value === 2.5, '灯油の係数が一致しません');
-for (const fuel of fuels) {
-  rows.push({
-    idKey: `${fuel.energyType}:${fuel.key}`,
-    energyType: fuel.energyType,
-    scope: 'scope1',
-    name: `燃料 ${fuel.name}`,
-    factorValue: fuel.value,
-    unit: fuel.unit,
-    source: 'ketsoho',
-    providerName: null,
-    providerNumber: null,
-    menuName: null,
-    factorType: null,
-    sourceDocumentName: fuelsDoc,
-    sourceUrl: SOURCE_URL_SHK,
-  });
-}
-
-// --- Scope3 代表原単位 -----------------------------------------------------
-
-const scope3Doc =
-  'サプライチェーンを通じた組織の温室効果ガス排出等の算定のための排出原単位データベース Ver.3.6（2026年4月 環境省公表）';
-const scope3 = parseSimpleTsv(readFileSync(join(DATA_DIR, 'scope3.tsv'), 'utf8'));
-assert(scope3.length >= 40, `Scope3原単位が少なすぎます: ${scope3.length}`);
-for (const item of scope3) {
-  rows.push({
-    idKey: `${item.energyType}:${item.key}`,
-    energyType: item.energyType,
-    scope: 'scope3',
-    name: item.name,
-    factorValue: item.value,
-    unit: item.unit,
     source: 'moe',
     providerName: null,
     providerNumber: null,
     menuName: null,
     factorType: null,
-    sourceDocumentName: scope3Doc,
-    sourceUrl: SOURCE_URL_SCOPE3,
+    sourceDocumentName: denkiDoc,
+    sourceUrl: SOURCE_URL_SHK,
   });
-}
+
+  // パース結果の妥当性検証（件数は全年度共通の下限。公表資料と突合したスポットチェックは YearSource.verify）
+  assert(denki.retailerCount >= 400, `小売電気事業者数が少なすぎます: ${denki.retailerCount}`);
+  assert(denki.retailers.length >= 1000, `電気の係数行が少なすぎます: ${denki.retailers.length}`);
+  assert(denki.gridOperators.length === 10, `一般送配電事業者は10社のはず: ${denki.gridOperators.length}`);
+
+  // --- ガス（事業者別・代替値） ---------------------------------------------
+
+  const gasDoc = source.documents.gas;
+  const gasProviders = parseProviderTsv(readData('gas.tsv'));
+  assert(new Set(gasProviders.map((p) => p.providerNumber)).size >= 30, 'ガス事業者数が少なすぎます');
+  for (const provider of gasProviders) {
+    pushProviderRows(provider, {
+      energyType: 'city_gas',
+      scope: 'scope1',
+      unit: 't-CO2/千m3',
+      sourceDocumentName: gasDoc,
+      sourceUrl: SOURCE_URL_SHK,
+      labelPrefix: '都市ガス',
+    });
+  }
+  rows.push({
+    energyType: 'city_gas',
+    scope: 'scope1',
+    idKey: 'city_gas:substitute',
+    name: '都市ガス 代替値（省令の排出係数）',
+    factorValue: source.cityGasSubstituteValue,
+    unit: 't-CO2/千m3',
+    source: 'moe',
+    providerName: null,
+    providerNumber: null,
+    menuName: null,
+    factorType: null,
+    sourceDocumentName: gasDoc,
+    sourceUrl: SOURCE_URL_SHK,
+  });
+
+  // --- 熱（事業者別・代替値） -----------------------------------------------
+
+  const heatDoc = source.documents.heat;
+  const heatProviders = parseProviderTsv(readData('heat.tsv'));
+  assert(new Set(heatProviders.map((p) => p.providerNumber)).size >= 15, '熱供給事業者数が少なすぎます');
+  for (const provider of heatProviders) {
+    pushProviderRows(provider, {
+      energyType: 'heat',
+      scope: 'scope2',
+      unit: 't-CO2/GJ',
+      sourceDocumentName: heatDoc,
+      sourceUrl: SOURCE_URL_SHK,
+      labelPrefix: '熱',
+    });
+  }
+  rows.push({
+    energyType: 'heat',
+    scope: 'scope2',
+    idKey: 'heat:substitute',
+    name: '熱 代替値（省令の排出係数）',
+    factorValue: source.heatSubstituteValue,
+    unit: 't-CO2/GJ',
+    source: 'moe',
+    providerName: null,
+    providerNumber: null,
+    menuName: null,
+    factorType: null,
+    sourceDocumentName: heatDoc,
+    sourceUrl: SOURCE_URL_SHK,
+  });
+
+  // --- 燃料（算定省令別表） -------------------------------------------------
+
+  const fuelsDoc = source.documents.fuels;
+  const fuels = parseSimpleTsv(readData('fuels.tsv'));
+  assert(fuels.length === 35, `燃料は35種のはず: ${fuels.length}`);
+  for (const fuel of fuels) {
+    rows.push({
+      idKey: `${fuel.energyType}:${fuel.key}`,
+      energyType: fuel.energyType,
+      scope: 'scope1',
+      name: `燃料 ${fuel.name}`,
+      factorValue: fuel.value,
+      unit: fuel.unit,
+      source: 'ketsoho',
+      providerName: null,
+      providerNumber: null,
+      menuName: null,
+      factorType: null,
+      sourceDocumentName: fuelsDoc,
+      sourceUrl: SOURCE_URL_SHK,
+    });
+  }
+
+  // --- Scope3 代表原単位 -----------------------------------------------------
+
+  const scope3Doc = source.documents.scope3;
+  const scope3 = parseSimpleTsv(readData('scope3.tsv'));
+  assert(scope3.length >= 40, `Scope3原単位が少なすぎます: ${scope3.length}`);
+  for (const item of scope3) {
+    rows.push({
+      idKey: `${item.energyType}:${item.key}`,
+      energyType: item.energyType,
+      scope: 'scope3',
+      name: item.name,
+      factorValue: item.value,
+      unit: item.unit,
+      source: 'moe',
+      providerName: null,
+      providerNumber: null,
+      menuName: null,
+      factorType: null,
+      sourceDocumentName: scope3Doc,
+      sourceUrl: SOURCE_URL_SCOPE3,
+    });
+  }
+
+  const data: ParsedYearData = { denki, gasProviders, heatProviders, fuels, scope3 };
+  source.verify(data);
+
+  // numeric(12,6) に収まることを確認（小数第7位以下があると黙って丸められるため弾く）
+  for (const row of rows) {
+    assert(
+      Math.round(row.factorValue * 1e6) / 1e6 === row.factorValue,
+      `係数値が小数6桁を超えています: ${source.year}年度 ${row.name} = ${row.factorValue}`,
+    );
+    assert(row.name.length <= 200, `係数名が200文字を超えています: ${row.name}`);
+  }
+
+  // 安定キーが重複していると 2 行が同じ ID になり、upsert で片方が黙って消えるため先に検出する
+  const seenKeys = new Set<string>();
+  for (const row of rows) {
+    assert(!seenKeys.has(row.idKey), `安定キーが重複しています: ${source.year}年度 ${row.idKey}（${row.name}）`);
+    seenKeys.add(row.idKey);
+  }
+
+  return { source, data, rows };
+};
+
+const yearRows = YEAR_SOURCES.map(buildYearRows);
 
 // --- SQL生成 ---------------------------------------------------------------
-
-// numeric(12,6) に収まることを確認（小数第7位以下があると黙って丸められるため弾く）
-for (const row of rows) {
-  assert(
-    Math.round(row.factorValue * 1e6) / 1e6 === row.factorValue,
-    `係数値が小数6桁を超えています: ${row.name} = ${row.factorValue}`,
-  );
-  assert(row.name.length <= 200, `係数名が200文字を超えています: ${row.name}`);
-}
 
 /** 安定キー + 年度から決定的に導出するUUID（md5）。再生成しても同じIDになり、on conflict で冪等になる。 */
 const deterministicUuid = (key: string): string => {
@@ -330,15 +413,9 @@ interface SqlRow extends FactorSeedRow {
   effectiveTo: string;
 }
 
-// 安定キーが重複していると 2 行が同じ ID になり、upsert で片方が黙って消えるため先に検出する
-const seenKeys = new Set<string>();
-for (const row of rows) {
-  assert(!seenKeys.has(row.idKey), `安定キーが重複しています: ${row.idKey}（${row.name}）`);
-  seenKeys.add(row.idKey);
-}
-
 const sqlRows: SqlRow[] = [];
-for (const year of YEARS) {
+for (const { source, rows } of yearRows) {
+  const year = source.year;
   for (const row of rows) {
     sqlRows.push({
       ...row,
@@ -411,14 +488,27 @@ for (let i = 0; i < sqlRows.length; i += CHUNK_SIZE) {
   );
 }
 
+// 収録内容の年度別の内訳（ヘッダ用）。代替値・件数は年度ごとの資料から出す。
+const contentsByYear = yearRows
+  .map(
+    ({ source, data }) => `--   [${source.year} 年度]
+--   電気   : 電気事業者別排出係数 小売${data.denki.retailerCount}事業者（メニュー別・基礎/調整後）+ 一般送配電${data.denki.gridOperators.length}社 + 代替値 ${data.denki.substituteValue} t-CO2/kWh
+--   都市ガス: ガス事業者別排出係数 ${new Set(data.gasProviders.map((p) => p.providerNumber)).size}事業者 + 代替値 ${source.cityGasSubstituteValue} t-CO2/千m3
+--   熱     : 熱供給事業者別排出係数 ${new Set(data.heatProviders.map((p) => p.providerNumber)).size}事業者 + 代替値 ${source.heatSubstituteValue} t-CO2/GJ
+--   燃料   : 算定省令別表の燃料${data.fuels.length}種（scope1）
+--   Scope3 : 排出原単位DB ${source.scope3DatabaseVersion} の代表原単位${data.scope3.length}件`,
+  )
+  .join('\n');
+const scope3DatabaseVersions = [...new Set(YEAR_SOURCES.map((source) => source.scope3DatabaseVersion))].join('・');
+
 const header = `-- 公式排出係数マスタ（OpenGreenTrack の初期データ。本番環境にも投入する共通マスタ）
--- scripts/official-factors/generate.ts による自動生成。手編集しないこと（修正は data/ を直して再生成する）。
+-- scripts/official-factors/generate.ts による自動生成。手編集しないこと（修正は data/<年度>/ を直して再生成する）。
 --
 -- 出典と権利（再配布時もこの表示を保持すること。詳細はリポジトリ直下の NOTICE）:
 --   電気・ガス・熱の事業者別排出係数: 「温室効果ガス排出量 算定・報告・公表制度」
 --     （環境省・経済産業省 ${SOURCE_URL_SHK} ）を加工して作成
 --   Scope3 排出原単位: 「サプライチェーンを通じた組織の温室効果ガス排出等の算定のための
---     排出原単位データベース Ver.3.6」（環境省
+--     排出原単位データベース ${scope3DatabaseVersions}」（環境省
 --     ${SOURCE_URL_SCOPE3} ）を加工して作成
 --   燃料の排出係数: 算定省令別表に基づく（法令。著作権法第13条により権利の目的とならない）
 --   加工（公表 PDF からの抽出・転記・単位換算・DB 形式への再構成）の主体は Japan GX Group であり、
@@ -434,20 +524,16 @@ const header = `-- 公式排出係数マスタ（OpenGreenTrack の初期デー�
 --   任意の DB（自前ホストなど）: npm run db:seed:production -- --db-url postgresql://…（ホストの psql を使用）、
 --                              または Dashboard の SQL Editor でこのファイルを実行する
 --
--- 収録内容（applicableYear ${YEARS.join('・')}。公表資料のある年度のみ）:
---   電気   : 電気事業者別排出係数 小売${denki.retailerCount}事業者（メニュー別・基礎/調整後）+ 一般送配電10社 + 代替値 0.000416 t-CO2/kWh
---   都市ガス: ガス事業者別排出係数 ${new Set(gasProviders.map((p) => p.providerNumber)).size}事業者 + 代替値 2.05 t-CO2/千m3
---   熱     : 熱供給事業者別排出係数 ${new Set(heatProviders.map((p) => p.providerNumber)).size}事業者 + 代替値 0.0532 t-CO2/GJ
---   燃料   : 算定省令別表の燃料${fuels.length}種（scope1）
---   Scope3 : 排出原単位DB Ver.3.6 の代表原単位${scope3.length}件
+-- 収録内容（applicableYear ${YEARS.join('・')}。公表資料のある年度のみ。年度ごとに data/<年度>/ の資料だけから生成）:
+${contentsByYear}
 --
 -- organizationId は null（全組織共通・読み取り専用。emission_factors のテーブル定義は
 -- 20260831000000_schema.sql、全組織から読める RLS ポリシーは 20260831000001_rls.sql を参照）。
 -- 事業者別係数（providerName あり）は自動解決の対象外で、手動入力の明示選択専用。
 -- ID は行の安定キー（事業者別: energyType + 登録番号 + メニュー名 + 係数種別 / 代替値: energyType /
--- 燃料・Scope3: energyType + data/*.tsv の key 列）と年度から決定的に導出した md5 ベース UUID。
+-- 燃料・Scope3: energyType + data/<年度>/*.tsv の key 列）と年度から決定的に導出した md5 ベース UUID。
 -- 再投入は on conflict (id) do update の upsert で冪等で、値・出典・名称・有効期間の訂正は
--- 「data/ を直して再生成 → 再投入」で既存行に反映される（データの訂正はスキーマ定義ファイルに書かず seed で行う: AGENTS.md R12）。
+-- 「data/<年度>/ を直して再生成 → 再投入」で既存行に反映される（データの訂正はスキーマ定義ファイルに書かず seed で行う: AGENTS.md R12）。
 -- 変更のない行は where … is distinct from で更新をスキップするため、再投入で updatedAt が動くのは値が変わった行だけ。
 -- status は上書きしない（運用で archived にした行を再投入で active に戻さないため）。
 -- updatedAt は set_emission_factors_updated_at トリガーが更新する。
@@ -456,7 +542,7 @@ const header = `-- 公式排出係数マスタ（OpenGreenTrack の初期デー�
 -- 理由を表示する。
 -- 末尾の delete は、以前の版が作っていた翌年度コピー行の後始末（収録年度より後の公式係数行のうち、
 -- 算定結果・活動量からの参照が energyType・年度ごとに 1 件も無いものだけを消す。冪等）。
--- 年度更新時は data/ を更新して再生成し、再投入する（手順は scripts/official-factors/README.md）。
+-- 年度更新時は data/<新年度>/ を追加して再生成し、再投入する（過年度の data/<年度>/ は変更しない。手順は scripts/official-factors/README.md）。
 
 `;
 
@@ -468,7 +554,7 @@ const header = `-- 公式排出係数マスタ（OpenGreenTrack の初期デー�
 // archive ではなく delete にする理由: 行 ID は「安定キー + 年度」から決定的に導出するので、将来その年度が
 // 正式公表されたときの行は**同じ ID**になる。archived にすると status は upsert の上書き対象外（運用で
 // archived にした行を戻さないため）なので、正式値を投入しても archived のまま残り不可視になる。
-// 条件を「収録年度の最大値より後」に限ることで、YEARS に新年度を足せばこの文は自動的に何も消さなくなる。
+// 条件を「収録年度の最大値より後」に限ることで、YEAR_SOURCES に新年度を足せばこの文は自動的に何も消さなくなる。
 // 何度流しても同じ結果になる。
 //
 // ただし削除対象は「どこからも参照されていない行」だけに限る。emission_results と activity_records の
@@ -486,7 +572,7 @@ const header = `-- 公式排出係数マスタ（OpenGreenTrack の初期デー�
 //     事業者別係数は自動解決の対象外（tierOf）なので候補が 1 件も無く、全部 not_found に落ちる
 // 公式係数は organizationId is null の全組織共有なので、1 組織の明示指定が全組織の未算定を招く。
 // グループ全残しなら旧 seed 投入直後と同じ状態のまま（コピー行がその年度の係数として解決される）で
-// 動き、その年度が正式公表されて YEARS に足されれば同じ ID の upsert で正式値に上書きされて解消する。
+// 動き、その年度が正式公表されて YEAR_SOURCES に足されれば同じ ID の upsert で正式値に上書きされて解消する。
 // 参照が残っているコピー行は削除されず active のまま残るので、稼働中 DB へ再投入したあとは
 // scripts/official-factors/README.md の手順で残存行を確認し、個別に対処する。
 const MAX_YEAR = Math.max(...YEARS);
@@ -510,6 +596,11 @@ where ef."organizationId" is null
 writeFileSync(OUTPUT_PATH, header + statements.join('\n\n') + '\n\n' + cleanupStatement + '\n');
 
 console.log(`生成完了: ${OUTPUT_PATH}`);
-console.log(`  係数定義: ${rows.length} 件 × ${YEARS.length} 年度 = ${sqlRows.length} 行`);
-console.log(`  電気: 小売${denki.retailerCount}事業者 ${denki.retailers.length}行 / 送配電${denki.gridOperators.length}社`);
-console.log(`  ガス: ${gasProviders.length}行 / 熱: ${heatProviders.length}行 / 燃料: ${fuels.length}行 / Scope3: ${scope3.length}行`);
+console.log(`  ${YEARS.length} 年度 合計 ${sqlRows.length} 行`);
+for (const { source, data, rows } of yearRows) {
+  console.log(`  [${source.year} 年度] 係数定義 ${rows.length} 件`);
+  console.log(`    電気: 小売${data.denki.retailerCount}事業者 ${data.denki.retailers.length}行 / 送配電${data.denki.gridOperators.length}社`);
+  console.log(
+    `    ガス: ${data.gasProviders.length}行 / 熱: ${data.heatProviders.length}行 / 燃料: ${data.fuels.length}行 / Scope3: ${data.scope3.length}行`,
+  );
+}

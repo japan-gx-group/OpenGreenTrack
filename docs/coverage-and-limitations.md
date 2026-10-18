@@ -42,7 +42,7 @@ Scope 3 積上げの詳細は [`idea-scope3-spec.md`](idea-scope3-spec.md) を�
 
 - 同梱の公式係数はすべて **CO2 のみを対象とした係数**（単位表記も `t-CO2/kWh`, `tCO2/t` 等）。
   燃料係数は「算定省令 別表第1 × 別表2 ×（44/12）」＝ 燃料燃焼由来の CO2 である
-  （`scripts/official-factors/data/fuels.tsv` 冒頭）。
+  （`scripts/official-factors/data/2025/fuels.tsv` 冒頭）。
 - 単位換算（`src/features/calculation/engine/units.ts`）は `t-CO2` 系の分子を
   **t-CO2e へ 1:1 で読み替える**。すなわち「CO2 の量を CO2e として計上する」実装であり、
   他ガスの寄与はゼロとして扱われる。

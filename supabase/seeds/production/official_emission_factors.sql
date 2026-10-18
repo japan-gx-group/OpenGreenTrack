@@ -1,5 +1,5 @@
 -- 公式排出係数マスタ（OpenGreenTrack の初期データ。本番環境にも投入する共通マスタ）
--- scripts/official-factors/generate.ts による自動生成。手編集しないこと（修正は data/ を直して再生成する）。
+-- scripts/official-factors/generate.ts による自動生成。手編集しないこと（修正は data/<年度>/ を直して再生成する）。
 --
 -- 出典と権利（再配布時もこの表示を保持すること。詳細はリポジトリ直下の NOTICE）:
 --   電気・ガス・熱の事業者別排出係数: 「温室効果ガス排出量 算定・報告・公表制度」
@@ -21,7 +21,8 @@
 --   任意の DB（自前ホストなど）: npm run db:seed:production -- --db-url postgresql://…（ホストの psql を使用）、
 --                              または Dashboard の SQL Editor でこのファイルを実行する
 --
--- 収録内容（applicableYear 2025。公表資料のある年度のみ）:
+-- 収録内容（applicableYear 2025。公表資料のある年度のみ。年度ごとに data/<年度>/ の資料だけから生成）:
+--   [2025 年度]
 --   電気   : 電気事業者別排出係数 小売511事業者（メニュー別・基礎/調整後）+ 一般送配電10社 + 代替値 0.000416 t-CO2/kWh
 --   都市ガス: ガス事業者別排出係数 37事業者 + 代替値 2.05 t-CO2/千m3
 --   熱     : 熱供給事業者別排出係数 19事業者 + 代替値 0.0532 t-CO2/GJ
@@ -32,9 +33,9 @@
 -- 20260831000000_schema.sql、全組織から読める RLS ポリシーは 20260831000001_rls.sql を参照）。
 -- 事業者別係数（providerName あり）は自動解決の対象外で、手動入力の明示選択専用。
 -- ID は行の安定キー（事業者別: energyType + 登録番号 + メニュー名 + 係数種別 / 代替値: energyType /
--- 燃料・Scope3: energyType + data/*.tsv の key 列）と年度から決定的に導出した md5 ベース UUID。
+-- 燃料・Scope3: energyType + data/<年度>/*.tsv の key 列）と年度から決定的に導出した md5 ベース UUID。
 -- 再投入は on conflict (id) do update の upsert で冪等で、値・出典・名称・有効期間の訂正は
--- 「data/ を直して再生成 → 再投入」で既存行に反映される（データの訂正はスキーマ定義ファイルに書かず seed で行う: AGENTS.md R12）。
+-- 「data/<年度>/ を直して再生成 → 再投入」で既存行に反映される（データの訂正はスキーマ定義ファイルに書かず seed で行う: AGENTS.md R12）。
 -- 変更のない行は where … is distinct from で更新をスキップするため、再投入で updatedAt が動くのは値が変わった行だけ。
 -- status は上書きしない（運用で archived にした行を再投入で active に戻さないため）。
 -- updatedAt は set_emission_factors_updated_at トリガーが更新する。
@@ -43,7 +44,7 @@
 -- 理由を表示する。
 -- 末尾の delete は、以前の版が作っていた翌年度コピー行の後始末（収録年度より後の公式係数行のうち、
 -- 算定結果・活動量からの参照が energyType・年度ごとに 1 件も無いものだけを消す。冪等）。
--- 年度更新時は data/ を更新して再生成し、再投入する（手順は scripts/official-factors/README.md）。
+-- 年度更新時は data/<新年度>/ を追加して再生成し、再投入する（過年度の data/<年度>/ は変更しない。手順は scripts/official-factors/README.md）。
 
 insert into emission_factors as ef
   (id, "organizationId", name, "energyType", scope, "factorValue", unit, "applicableYear", "regionName", source, status, "isCustom", "providerName", "providerNumber", "menuName", "factorType", "effectiveFrom", "effectiveTo", "sourceDocumentName", "sourceUrl")
