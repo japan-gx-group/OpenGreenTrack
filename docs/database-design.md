@@ -282,6 +282,27 @@ GHG プロトコルのロケーション基準／マーケット基準それぞ�
 - 書き込み経路は算定結果テーブルと同じく一本化（`authenticated` は SELECT のみ。
   書き込みは service_role 限定の `run_calculation_commit` 内の入れ替えだけ。§4 の 4 参照）。
 
+### 3.12 排出係数の変更履歴 (`emission_factor_revisions`)（`supabase/migrations/20261019000000_emission_factor_revisions.sql`）
+
+組織の排出係数（カスタム係数）の係数値・単位の変更履歴。`emission_factors` の行は上書き更新のため変更前の値が残らず、
+算定済みの結果の `appliedFactor*` だけでは「いつ・誰が・どの値からどの値に変えたか」を追えないため記録する。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | 履歴ID | UUID | Primary Key | |
+| `organizationId` | 組織ID | UUID | Foreign Key | RLS の組織判定用（削除時: CASCADE） |
+| `emissionFactorId` | 係数ID | UUID | Foreign Key | 削除時: SetNull（係数を削除しても履歴は残す） |
+| `factorName` / `energyType` / `applicableYear` | 係数のスナップショット | VARCHAR / ENUM / INTEGER | NOT NULL | 変更時点の係数名・種別・適用年度 |
+| `previousFactorValue` / `previousUnit` | 変更前の値・単位 | NUMERIC(12,6) / VARCHAR | NOT NULL | |
+| `newFactorValue` / `newUnit` | 変更後の値・単位 | NUMERIC(12,6) / VARCHAR | NOT NULL | |
+| `changedByUserId` | 変更者 | UUID | NULL 可 | `auth.uid()`。service_role など利用者を持たない更新では NULL |
+| `changedAt` | 変更日時 | TIMESTAMPTZ | NOT NULL | |
+
+- 記録はトリガー `record_emission_factor_revision`（security definer）だけが行う。組織の係数（`organizationId` が非 NULL）の
+  `factorValue` / `unit` が実際に変わった更新で発火する（係数管理画面の編集・係数 CSV 取込のどちらでも記録される）。
+  公式係数の改訂は seed の再投入で行い、ここには記録しない。
+- `authenticated` は SELECT のみ（自組織限定）。履歴を利用者が書き換えられないようにする。
+
 ---
 
 ## 4. 計算の整合性・業務ルール

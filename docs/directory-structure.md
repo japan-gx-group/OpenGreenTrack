@@ -102,6 +102,7 @@ Route Handler（API）:
 |---|---|---|
 | `/api/calculations` | `src/app/api/calculations/route.ts` | 排出量の再計算実行 |
 | `/api/calculations/provisional-recalculation` | `src/app/api/calculations/provisional-recalculation/route.ts` | 暫定適用のまま残った算定済みデータの検出（GET）と再算定対象への差し戻し（POST） |
+| `/api/calculations/factor-recalculation` | `src/app/api/calculations/factor-recalculation/route.ts` | カスタム係数の値を変えたあと、その係数で算定済みのデータを再算定対象へ差し戻し |
 | `/api/dashboard-aggregates/refresh` | `src/app/api/dashboard-aggregates/refresh/route.ts` | ダッシュボード集計（dashboard_aggregates）の再計算 |
 | `/api/idea-imports/upload-url` | `src/app/api/idea-imports/upload-url/route.ts` | IDEA データベース（Excel）の署名付きアップロード URL 発行（Supabase Storage へ直接アップロードするため） |
 | `/api/idea-imports` | `src/app/api/idea-imports/route.ts` | IDEA データベース（Excel）の取込開始（Storage 上のパスを受け取る） |

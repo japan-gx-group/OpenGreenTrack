@@ -1,12 +1,48 @@
 import React from 'react';
 import { Database, ExternalLink } from 'lucide-react';
-import type { EmissionFactor } from '../services/factorService';
+import type { EmissionFactor, FactorRevision } from '../services/factorService';
 import { FactorModal } from './FactorModal';
 import { deriveFormula } from '../utils/factorFormat';
+import { formatDate } from '../utils/formatDate';
 
 type FactorDetailModalProps = {
   factor: EmissionFactor;
   onClose: () => void;
+  /** カスタム係数の値・単位の変更履歴（新しい順）。取得中は null */
+  revisions?: FactorRevision[] | null;
+  revisionsLoadFailed?: boolean;
+};
+
+const formatFactorValue = (value: number, unit: string): string => `${value.toFixed(6)} ${unit}`;
+
+// カスタム係数の値・単位の変更履歴。公式係数は組織の履歴を持たないため出さない。
+const RevisionList = ({
+  revisions,
+  loadFailed,
+}: {
+  revisions: FactorRevision[] | null;
+  loadFailed: boolean;
+}) => {
+  if (loadFailed) {
+    return <span className="text-danger">変更履歴の取得に失敗しました</span>;
+  }
+  if (revisions === null) {
+    return <span className="text-text-muted">読み込み中…</span>;
+  }
+  if (revisions.length === 0) {
+    return <span className="text-text-muted">値の変更はありません</span>;
+  }
+  return (
+    <ul className="flex flex-col gap-1">
+      {revisions.map((revision) => (
+        <li key={revision.id}>
+          <span className="text-text-muted">{formatDate(revision.changedAt)}</span>{' '}
+          {formatFactorValue(revision.previousFactorValue, revision.previousUnit)} →{' '}
+          {formatFactorValue(revision.newFactorValue, revision.newUnit)}
+        </li>
+      ))}
+    </ul>
+  );
 };
 
 const Row = ({ label, children }: { label: string; children: React.ReactNode }) => (
@@ -17,7 +53,12 @@ const Row = ({ label, children }: { label: string; children: React.ReactNode }) 
 );
 
 // 係数1件の出典（発行元・年度・資料名・URL）と算定式を確認するモーダル。
-export const FactorDetailModal = ({ factor, onClose }: FactorDetailModalProps) => {
+export const FactorDetailModal = ({
+  factor,
+  onClose,
+  revisions = null,
+  revisionsLoadFailed = false,
+}: FactorDetailModalProps) => {
   return (
     <FactorModal title="係数の出典・算定式" icon={Database} onClose={onClose}>
       <div className="flex flex-col gap-4">
@@ -73,6 +114,12 @@ export const FactorDetailModal = ({ factor, onClose }: FactorDetailModalProps) =
             {deriveFormula(factor)}
           </code>
         </Row>
+
+        {factor.isCustom && (
+          <Row label="値の変更履歴">
+            <RevisionList revisions={revisions} loadFailed={revisionsLoadFailed} />
+          </Row>
+        )}
       </div>
     </FactorModal>
   );

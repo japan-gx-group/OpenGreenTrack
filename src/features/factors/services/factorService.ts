@@ -412,3 +412,43 @@ export const deleteEmissionFactor = async (id: string): Promise<void> => {
     throw new Error('排出係数の削除に失敗しました');
   }
 };
+
+/** カスタム係数の値・単位の変更履歴 1 件（emission_factor_revisions。DB トリガーが更新時に記録する）。 */
+export type FactorRevision = {
+  id: string;
+  previousFactorValue: number;
+  previousUnit: string;
+  newFactorValue: number;
+  newUnit: string;
+  changedAt: string;
+};
+
+type FactorRevisionRow = {
+  id: string;
+  previousFactorValue: number | string;
+  previousUnit: string;
+  newFactorValue: number | string;
+  newUnit: string;
+  changedAt: string;
+};
+
+/** 係数 1 件の値・単位の変更履歴（新しい順）。組織スコープは RLS が担保する。 */
+export const getFactorRevisions = async (factorId: string): Promise<FactorRevision[]> => {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('emission_factor_revisions')
+    .select('id, previousFactorValue, previousUnit, newFactorValue, newUnit, changedAt')
+    .eq('emissionFactorId', factorId)
+    .order('changedAt', { ascending: false });
+
+  if (error) {
+    throw new Error('係数の変更履歴の取得に失敗しました');
+  }
+
+  // numeric 列は supabase-js が文字列で返し得るため number へ正規化する。
+  return ((data ?? []) as FactorRevisionRow[]).map((row) => ({
+    ...row,
+    previousFactorValue: Number(row.previousFactorValue),
+    newFactorValue: Number(row.newFactorValue),
+  }));
+};
