@@ -416,6 +416,7 @@ RLSは自組織に限定し、レポートの組織帰属も検証する。変�
 | `itemId` | 項目ID | VARCHAR(100) | NOT NULL, CHECK(項目 ID の形式) | 要求項目マスター（`src/features/ssbj/utils/requirementMaster.ts`）の項目。マスターにあるかはアプリが検証する。作成後は変更不可 |
 | `disclosureState` / `disclosureText` | 開示する文章の状態 / 本文 | `ssbj_field_state` / TEXT | CHECK(`answered` のときだけ本文が非 NULL・空白のみ不可) | |
 | `internalNote` | 内部メモ | TEXT | NULL | 開示しない |
+| `templateInput` | 選択式テンプレートの選択 | JSONB | NULL, CHECK(object) | `{version, choices, texts}`。本文の代わりにしない作業用の情報で、開示せず保存版にも含めない。形と選択肢 ID はアプリが検証する（`20261018120000_ssbj_narrative_template_input.sql`） |
 | `createdByUserId` / `updatedByUserId` | 登録・更新操作者ID | UUID | NULL | `set_row_actor` トリガ |
 | `createdAt` / `updatedAt` | 作成・更新日時 | TIMESTAMPTZ | NOT NULL | `updatedAt` は `set_updated_at` トリガ |
 

@@ -3,18 +3,20 @@
 // 変更のたびに DB のトリガーが ssbj_reports.draftRevision を進める（docs/ssbj-spec.md §8）。
 
 import { createClient } from '@/lib/supabase/client';
-import type { SsbjDisclosableText, SsbjItemId, SsbjNarrative } from '../types';
+import type { SsbjDisclosableText, SsbjItemId, SsbjNarrative, SsbjNarrativeTemplateInput } from '../types';
 import { ssbjWriteErrorMessage } from '../utils/writeError';
 import { fromFieldValue, toFieldValue } from '../utils/fieldValue';
+import { parseSsbjNarrativeTemplateInput } from '../utils/narrativeTemplateChoice';
 
 type SsbjNarrativeRow = {
   itemId: string;
   disclosureState: string;
   disclosureText: string | null;
   internalNote: string | null;
+  templateInput: unknown;
 };
 
-const SELECT_COLUMNS = 'itemId, disclosureState, disclosureText, internalNote';
+const SELECT_COLUMNS = 'itemId, disclosureState, disclosureText, internalNote, templateInput';
 
 /** DB 行 → 文章。状態と値が食い違う行は toFieldValue が例外にする（黙って補正しない）。 */
 export const toSsbjNarrative = (row: SsbjNarrativeRow): SsbjNarrative => ({
@@ -23,11 +25,17 @@ export const toSsbjNarrative = (row: SsbjNarrativeRow): SsbjNarrative => ({
     disclosure: toFieldValue<string>(row.disclosureState, row.disclosureText),
     internalNote: row.internalNote,
   },
+  templateInput: parseSsbjNarrativeTemplateInput(row.templateInput),
 });
 
-const toColumns = (text: SsbjDisclosableText) => {
+const toColumns = (text: SsbjDisclosableText, templateInput: SsbjNarrativeTemplateInput | null) => {
   const disclosure = fromFieldValue(text.disclosure);
-  return { disclosureState: disclosure.state, disclosureText: disclosure.value, internalNote: text.internalNote };
+  return {
+    disclosureState: disclosure.state,
+    disclosureText: disclosure.value,
+    internalNote: text.internalNote,
+    templateInput,
+  };
 };
 
 /** レポートの文章（項目 ID の順）。行の無い項目は含まない。 */
@@ -43,6 +51,7 @@ export const listSsbjNarratives = async (reportId: string): Promise<SsbjNarrativ
 
 /**
  * 1 項目の文章を保存する。行があれば更新し、無ければ作る。
+ * templateInput は選択式テンプレートで選んだ値（使っていなければ null）。本文と一緒に保存し、本文の代わりにはしない。
  * upsert（insert … on conflict do update）にしないのは、PostgREST が衝突時の更新に reportId / organizationId / itemId も
  * 含めるため。3 列は作成後に変えない前提で update の列 GRANT に入れていない。
  */
@@ -50,9 +59,10 @@ export const saveSsbjNarrative = async (
   report: { id: string; organizationId: string },
   itemId: SsbjItemId,
   text: SsbjDisclosableText,
+  templateInput: SsbjNarrativeTemplateInput | null = null,
 ): Promise<SsbjNarrative> => {
   const supabase = createClient();
-  const columns = toColumns(text);
+  const columns = toColumns(text, templateInput);
 
   const updated = await supabase
     .from('ssbj_narratives')

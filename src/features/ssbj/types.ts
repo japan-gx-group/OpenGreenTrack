@@ -172,6 +172,24 @@ export type SsbjDisclosableText = {
 export type SsbjNarrative = {
   itemId: SsbjItemId;
   text: SsbjDisclosableText;
+  /**
+   * 選択式テンプレートで選んだ値と補足入力（作業中データだけに持つ。保存版には含めない）。
+   * 使っていない項目・保存版から読んだ文章は undefined か null。
+   */
+  templateInput?: SsbjNarrativeTemplateInput | null;
+};
+
+/**
+ * 選択式テンプレート（utils/narrativeTemplateChoice.ts）で利用者が選んだ値と補足入力。
+ * 本文（disclosure）とは別に持ち、本文の代わりにはしない（下書きの元になった選択を後から確かめるため）。
+ * version はテンプレート定義の版。定義が変わった後の古い選択は、画面で選択肢に戻さず「以前の版」と出す。
+ */
+export type SsbjNarrativeTemplateInput = {
+  version: string;
+  /** 選択肢の欄 ID → 選んだ選択肢 ID。 */
+  choices: Record<string, string>;
+  /** 補足入力の欄 ID（「その他」を選んだ選択肢の欄を含む）→ 入力した文字列。 */
+  texts: Record<string, string>;
 };
 
 // ---------------------------------------------------------------------------

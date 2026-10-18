@@ -2,9 +2,10 @@
 
 // 四本柱・補足の文章（T05）の 1 項目の編集フォームの状態・検証・送信。正規化と検証は utils/narrative.ts に一本化している。
 // 入力済み以外の状態では本文を保存しないため、入力した本文が消える保存は、利用者が確認するまで止める。
+// 選択式テンプレートの選択（templateInput）は本文と別に持ち、下書きを本文に入れても本文の代わりにはしない。
 
 import { useState, type FormEvent } from 'react';
-import type { SsbjDisclosableText, SsbjFieldState, SsbjItemId } from '../types';
+import type { SsbjDisclosableText, SsbjFieldState, SsbjItemId, SsbjNarrativeTemplateInput } from '../types';
 import {
   EMPTY_SSBJ_DISCLOSABLE_TEXT,
   normalizeSsbjNarrativeInput,
@@ -13,6 +14,16 @@ import {
   validateSsbjNarrativeInput,
   type SsbjNarrativeFormValues,
 } from '../utils/narrative';
+import {
+  normalizeSsbjNarrativeTemplateInput,
+  validateSsbjNarrativeTemplateInput,
+} from '../utils/narrativeTemplateChoice';
+
+export type SsbjNarrativeSave = (
+  itemId: SsbjItemId,
+  text: SsbjDisclosableText,
+  templateInput: SsbjNarrativeTemplateInput | null,
+) => Promise<void>;
 
 export interface SsbjNarrativeFormController {
   values: SsbjNarrativeFormValues;
@@ -21,11 +32,18 @@ export interface SsbjNarrativeFormController {
   setInternalNote: (internalNote: string) => void;
   /** 穴埋めテンプレートを本文に入れる（状態は「入力済み」にする）。 */
   applyTemplate: (template: string) => void;
+  /** 選択式テンプレートの選択・補足入力を変える（本文は変えない）。 */
+  setTemplateInput: (templateInput: SsbjNarrativeTemplateInput | null) => void;
+  /**
+   * 選択式テンプレートの下書きを本文に入れる（状態は「入力済み」にする）。
+   * 本文が空なら下書きにし、書いてあれば後ろに足す（自由入力の本文を上書きしない）。
+   */
+  insertDraft: (draft: string) => void;
   /** 入力エラー・保存エラー（画面にそのまま並べる）。 */
   errors: string[];
   isSaving: boolean;
-  /** 保存済みの文章から編集を始める（エラーは消す）。 */
-  reset: (text: SsbjDisclosableText) => void;
+  /** 保存済みの文章（と選択式テンプレートの選択）から編集を始める（エラーは消す）。 */
+  reset: (text: SsbjDisclosableText, templateInput?: SsbjNarrativeTemplateInput | null) => void;
   /** 検証して保存する。保存できたら true。入力した本文が消える保存は、確認を待って false を返す。 */
   submit: (event?: FormEvent) => Promise<boolean>;
   /** 入力した本文が消える保存の確認を待っているとき true。 */
@@ -38,15 +56,15 @@ export interface SsbjNarrativeFormController {
 
 export function useSsbjNarrativeForm(
   itemId: SsbjItemId,
-  onSave: (itemId: SsbjItemId, text: SsbjDisclosableText) => Promise<void>,
+  onSave: SsbjNarrativeSave,
 ): SsbjNarrativeFormController {
   const [values, setValues] = useState<SsbjNarrativeFormValues>(toSsbjNarrativeFormValues(EMPTY_SSBJ_DISCLOSABLE_TEXT));
   const [errors, setErrors] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isConfirmingDiscard, setIsConfirmingDiscard] = useState<boolean>(false);
 
-  const reset = (text: SsbjDisclosableText) => {
-    setValues(toSsbjNarrativeFormValues(text));
+  const reset = (text: SsbjDisclosableText, templateInput: SsbjNarrativeTemplateInput | null = null) => {
+    setValues(toSsbjNarrativeFormValues(text, templateInput));
     setErrors([]);
     setIsConfirmingDiscard(false);
   };
@@ -54,7 +72,7 @@ export function useSsbjNarrativeForm(
   const save = async (input: SsbjDisclosableText): Promise<boolean> => {
     setIsSaving(true);
     try {
-      await onSave(itemId, input);
+      await onSave(itemId, input, normalizeSsbjNarrativeTemplateInput(values.templateInput));
       return true;
     } catch (error) {
       setErrors([error instanceof Error ? error.message : '保存に失敗しました']);
@@ -69,7 +87,10 @@ export function useSsbjNarrativeForm(
     if (isSaving) return false;
 
     const input = normalizeSsbjNarrativeInput(values);
-    const validationErrors = validateSsbjNarrativeInput(itemId, input);
+    const validationErrors = [
+      ...validateSsbjNarrativeInput(itemId, input),
+      ...validateSsbjNarrativeTemplateInput(itemId, normalizeSsbjNarrativeTemplateInput(values.templateInput)),
+    ];
     setErrors(validationErrors);
     if (validationErrors.length > 0) return false;
 
@@ -92,6 +113,11 @@ export function useSsbjNarrativeForm(
     setText: text => setValues(prev => ({ ...prev, text })),
     setInternalNote: internalNote => setValues(prev => ({ ...prev, internalNote })),
     applyTemplate: template => setValues(prev => ({ ...prev, state: 'answered', text: template })),
+    setTemplateInput: templateInput => setValues(prev => ({ ...prev, templateInput })),
+    insertDraft: draft => setValues(prev => {
+      const current = prev.state === 'answered' ? prev.text.trimEnd() : '';
+      return { ...prev, state: 'answered', text: current === '' ? draft : `${current}\n\n${draft}` };
+    }),
     errors,
     isSaving,
     reset,

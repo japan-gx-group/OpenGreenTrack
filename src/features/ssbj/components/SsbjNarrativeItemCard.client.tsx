@@ -2,19 +2,20 @@
 
 // 四本柱・補足の文章（T05）の 1 項目のカード。対応する要求と項番号、記載ガイド・記載例、文章の表示と編集を出す。
 // 未入力・未確認・非該当は状態のラベルで出し、空欄や「なし」にしない。内部メモは開示しないことを明示する（docs/ssbj-spec.md §5）。
-// 編集中は、穴埋めテンプレートを入れられ、残っている【 】の数を出す。入力中の内容は onDraftChange で親に渡す
+// 編集中は、穴埋めテンプレートを入れられ、残っている【 】の数を出す。選択式テンプレートがある項目では、
+// 選択肢から下書きを作って本文に入れられる（SsbjNarrativeTemplateChoices）。入力中の内容は onDraftChange で親に渡す
 // （2 画面エディタのプレビューにその場で反映するため。保存はしない）。
 // 入力済み以外の状態では本文を保存しないので、入力した本文が消える保存は、確認のダイアログで止める（取り消せば編集に戻る）。
 
 import { useEffect, useId, useState } from 'react';
-import { FileText, Pencil } from 'lucide-react';
+import { FileText, ListChecks, Pencil } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { useSsbjNarrativeForm } from '../hooks/useSsbjNarrativeForm';
+import { useSsbjNarrativeForm, type SsbjNarrativeSave } from '../hooks/useSsbjNarrativeForm';
 import { SSBJ_FIELD_STATES, type SsbjDisclosableText, type SsbjFieldState, type SsbjItemId } from '../types';
 import { SSBJ_FIELD_STATE_LABELS, formatFieldValue, isAnswered } from '../utils/fieldValue';
 import {
@@ -23,13 +24,19 @@ import {
   ssbjTemplatePlaceholders,
   type SsbjNarrativeEntry,
 } from '../utils/narrative';
+import {
+  describeSsbjNarrativeTemplateInput,
+  findSsbjNarrativeChoiceTemplate,
+  isCurrentSsbjNarrativeTemplateInput,
+} from '../utils/narrativeTemplateChoice';
 import { formatParagraphReference, ssbjRequirementsOfItem } from '../utils/requirementMaster';
+import { SsbjNarrativeTemplateChoices } from './SsbjNarrativeTemplateChoices.client';
 
 const PRIORITY_LABELS = { core: '◎', basic: '○' } as const;
 
 interface SsbjNarrativeItemCardProps {
   entry: SsbjNarrativeEntry;
-  onSave: (itemId: SsbjItemId, text: SsbjDisclosableText) => Promise<void>;
+  onSave: SsbjNarrativeSave;
   /** 承認済みなど、編集させないとき true。 */
   readOnly?: boolean;
   /** 編集中の内容（未保存）。編集をやめた・保存したときは null。 */
@@ -39,12 +46,16 @@ interface SsbjNarrativeItemCardProps {
 export const SsbjNarrativeItemCard = ({ entry, onSave, readOnly = false, onDraftChange }: SsbjNarrativeItemCardProps) => {
   const id = useId();
   const [isEditing, setIsEditing] = useState(false);
+  const [isChoosing, setIsChoosing] = useState(false);
   const form = useSsbjNarrativeForm(entry.itemId, onSave);
   const requirements = ssbjRequirementsOfItem(entry.itemId);
   const { disclosure, internalNote } = entry.text;
   const isTextEnabled = form.values.state === 'answered';
   const placeholders = isTextEnabled ? ssbjTemplatePlaceholders(form.values.text) : [];
   const { itemId } = entry;
+  const choiceTemplate = entry.item ? findSsbjNarrativeChoiceTemplate(itemId) : undefined;
+  const chosen = describeSsbjNarrativeTemplateInput(itemId, entry.templateInput);
+  const hasStaleChoice = entry.templateInput != null && !isCurrentSsbjNarrativeTemplateInput(entry.templateInput);
   const finishIfSaved = (saved: boolean) => { if (saved) setIsEditing(false); };
 
   // 編集中の内容を親へ渡す（プレビューにその場で反映する）。編集をやめたら取り消す。
@@ -53,7 +64,8 @@ export const SsbjNarrativeItemCard = ({ entry, onSave, readOnly = false, onDraft
   }, [isEditing, form.values, itemId, onDraftChange]);
 
   const startEdit = () => {
-    form.reset(entry.text);
+    form.reset(entry.text, entry.templateInput);
+    setIsChoosing(entry.templateInput != null);
     setIsEditing(true);
   };
 
@@ -132,7 +144,30 @@ export const SsbjNarrativeItemCard = ({ entry, onSave, readOnly = false, onDraft
                     ? '本文が空のときに入れられます'
                     : '【 】の部分を自社の内容に置き換えて使います（試行版の文例です）'}
                 </span>
+                {choiceTemplate && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    aria-expanded={isChoosing}
+                    disabled={form.isSaving}
+                    onClick={() => setIsChoosing(open => !open)}
+                  >
+                    <ListChecks size={14} />
+                    {isChoosing ? '選択肢を閉じる' : '選択肢から下書きを作る'}
+                  </Button>
+                )}
               </div>
+            )}
+            {choiceTemplate && isChoosing && (
+              <SsbjNarrativeTemplateChoices
+                template={choiceTemplate}
+                input={form.values.templateInput}
+                onChange={form.setTemplateInput}
+                onInsert={form.insertDraft}
+                hasBody={isTextEnabled && form.values.text.trim() !== ''}
+                disabled={form.isSaving}
+              />
             )}
             <Textarea
               aria-label="開示する文章"
@@ -209,6 +244,20 @@ export const SsbjNarrativeItemCard = ({ entry, onSave, readOnly = false, onDraft
               {internalNote ?? '未入力'}
             </dd>
           </div>
+          {(chosen.length > 0 || hasStaleChoice) && (
+            <div data-testid="ssbj-template-chosen" className="flex flex-col gap-1 sm:flex-row sm:gap-4">
+              <dt className="w-40 shrink-0 text-xs font-semibold text-text-muted">選択式テンプレートで選んだ内容（開示しない）</dt>
+              <dd className="m-0 text-sm">
+                {hasStaleChoice ? (
+                  <span className="text-text-muted">以前の版の選択肢で選んだ内容があります（編集で選び直せます）</span>
+                ) : (
+                  <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
+                    {chosen.map(choice => <li key={choice.label}>{choice.label}: {choice.value}</li>)}
+                  </ul>
+                )}
+              </dd>
+            </div>
+          )}
         </dl>
       )}
     </Card>
