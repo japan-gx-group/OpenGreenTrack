@@ -462,11 +462,25 @@ export type OgtBoundary =
   | { kind: 'location'; locationId: string; locationName: string };
 
 /**
- * Scope 2 の算定基準。OGT はマーケット基準／ロケーション基準の区別を実装していないため、
- * OGT 由来の値は常に `unknown`。location_based / market_based は、利用者が別途確認した場合などに
- * 備えて型にだけ用意しており、OGT の値から自動で設定してはならない。
+ * Scope 2 の値（OgtCandidateValue.value）の算定基準。値は OGT の温対法の係数区分（基礎 / 調整後）による
+ * 単一の合計で、ロケーション基準・マーケット基準のどちらでもないため、OGT 由来の値は常に `unknown`。
+ * 基準別の値は別に basisTotals で持つ。location_based / market_based は型にだけ用意しており、
+ * OGT の値から自動で設定してはならない。
  */
 export type Scope2Basis = 'unknown' | 'location_based' | 'market_based';
+
+/**
+ * Scope 2 の GHG プロトコルの基準別の年度合計（t-CO2e。dashboard_aggregates の基準別の列）。
+ * 基準別の明細が揃っていない年度は unanswered（未算定）にし、部分的な合計や 0 を入れない。
+ */
+export type OgtScope2BasisTotals = {
+  /** ロケーション基準（公式の標準係数。今は全国の代替値）。 */
+  locationBased: SsbjFieldValue<SsbjDecimalString>;
+  /** マーケット基準（選んだ電気事業者のメニュー別の係数。選んでいない分は標準係数で補う）。 */
+  marketBased: SsbjFieldValue<SsbjDecimalString>;
+  /** marketBased のうち、契約したメニューの係数で算定した分（残りは代替値で補った分）。 */
+  marketContract: SsbjFieldValue<SsbjDecimalString>;
+};
 
 /**
  * Scope 2 の排出量を、適用した係数の種別で分けた内訳（t-CO2e）。
@@ -488,11 +502,13 @@ export type OgtFactorTypeBreakdown = {
 /** Scope 1: 活動量 × 係数。 */
 export type OgtScope1Method = { kind: 'activity_based' };
 
-/** Scope 2: 活動量 × 係数。基準は OGT からは分からないため scope2Basis を必ず添える。 */
+/** Scope 2: 活動量 × 係数。値は基準の区別のない合計のため scope2Basis を必ず添える。 */
 export type OgtScope2Method = {
   kind: 'activity_based';
   scope2Basis: Scope2Basis;
   factorTypeBreakdown: OgtFactorTypeBreakdown | null;
+  /** 基準別の合計。基準別の値を取り込む前に採用した値（保存版）には無い。 */
+  basisTotals?: OgtScope2BasisTotals;
 };
 
 /** Scope 3 カテゴリ: scope3_category_methods の direct（直接入力）/ calculated（積上げ）。 */

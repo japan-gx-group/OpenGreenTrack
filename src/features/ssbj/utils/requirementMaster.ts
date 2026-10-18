@@ -21,7 +21,7 @@ import type {
 import { sectionOfItem } from './ids';
 
 /** マスターの版。ID や入力先を変えたら上げる（保存版にどの版のマスターで作ったかを残すため）。 */
-export const SSBJ_REQUIREMENT_MASTER_VERSION = 'r1-provisional-1';
+export const SSBJ_REQUIREMENT_MASTER_VERSION = 'r1-provisional-2';
 
 /** 項番号を確認した基準の版（docs/ssbj-r1-scope.md §4）。 */
 export const SSBJ_REFERENCE_STANDARD_DOCUMENTS: Record<
@@ -329,8 +329,8 @@ export const SSBJ_REQUIREMENTS: readonly SsbjRequirement[] = [
     summary: 'ロケーション基準によるスコープ 2 の排出量',
     references: [{ standard: 'CLM', paragraphs: '53' }],
     priority: 'core',
-    inputTarget: { kind: 'external_emissions' },
-    guide: 'OGT はロケーション基準とマーケット基準を区別していない。ロケーション基準の値は「外部で算定した排出量」に、スコープ 2（ロケーション基準）として登録する。OGT の値の出力には、基準が不明であることと、係数の種類ごとの内訳を注記する。',
+    inputTarget: { kind: 'ghg' },
+    guide: 'OGT のロケーション基準の値（公式の標準係数で算定）を採用する。基準別の明細が揃っていない年度は「未算定」になるので、OGT で排出量を算定し直してから採用し直す。OGT で算定していない分を別の方法で算定した場合は、「外部で算定した排出量」に、スコープ 2（ロケーション基準）として登録する（OGT のロケーション基準の値が算定済みなら、CO2 を含む値は二重計上になるので登録できない）。温対法の係数区分による基準の区別のない値とは別の値として扱う。',
   },
   {
     id: 'REQ-CLM-019',
@@ -338,8 +338,8 @@ export const SSBJ_REQUIREMENTS: readonly SsbjRequirement[] = [
     summary: '契約証書の情報、またはマーケット基準によるスコープ 2 の排出量',
     references: [{ standard: 'CLM', paragraphs: '54' }],
     priority: 'basic',
-    inputTarget: { kind: 'external_emissions' },
-    guide: 'OGT はマーケット基準の値と契約証書の情報を持たない。マーケット基準の値は「外部で算定した排出量」に、スコープ 2（マーケット基準）として登録する。契約証書の情報は扱わない（出力に注記する）。',
+    inputTarget: { kind: 'ghg' },
+    guide: 'OGT のマーケット基準の値を採用する。選んだ電気事業者のメニュー別の係数で算定した分と、選んでいないため標準係数で補った分の内訳が付く。OGT で算定していない分を別の方法で算定した場合は、「外部で算定した排出量」に、スコープ 2（マーケット基準）として登録する（OGT のマーケット基準の値が算定済みなら、CO2 を含む値は二重計上になるので登録できない）。契約証書の情報と、証書・クレジットなどの環境価値の控除は OGT が扱わないため、使っている場合は測定方法の説明に書く。',
   },
   {
     id: 'REQ-CLM-020',

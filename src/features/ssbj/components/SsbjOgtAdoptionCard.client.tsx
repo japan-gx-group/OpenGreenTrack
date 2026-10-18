@@ -104,7 +104,8 @@ export const SsbjOgtAdoptionCard = ({
             <DialogDescription>
               {confirming === 'adopt'
                 ? 'Scope 1・2・3 の合計と Scope 3 の 15 カテゴリをまとめて採用します。採用済みの値があれば置き換えます。' +
-                  'OGT の公式係数は実質 CO2 のみで、Scope 2 のロケーション基準・マーケット基準は区別されていません。'
+                  'Scope 2 は、基準の区別のない値と、ロケーション基準・マーケット基準の値（基準別が未算定なら「未算定」）を一緒に採用します。' +
+                  'OGT の公式係数は実質 CO2 のみです。'
                 : '作業中の採用値を消します。作成済みの保存版は変わりません。'}
             </DialogDescription>
           </DialogHeader>

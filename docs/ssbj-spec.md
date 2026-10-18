@@ -142,16 +142,28 @@ T08a が OGT から**候補値**（`OgtCandidateValue`）を取得・表示し�
 | Scope | `method` | 補足 |
 |---|---|---|
 | 1 | `{ kind: 'activity_based' }` | 活動量 × 係数 |
-| 2 | `{ kind: 'activity_based', scope2Basis, factorTypeBreakdown }` | `scope2Basis` は OGT 由来では常に `unknown`（下記） |
+| 2 | `{ kind: 'activity_based', scope2Basis, factorTypeBreakdown, basisTotals }` | `scope2Basis` は OGT 由来では常に `unknown`。基準別の値は `basisTotals`（下記） |
 | 3 カテゴリ | `{ kind: 'direct' }` / `{ kind: 'calculated' }` | `scope3_category_methods` の方式（行が無いカテゴリは `direct`） |
 | 3 合計 | `{ kind: 'per_category' }` | カテゴリごとに方式が異なるため |
 
-- **Scope 2 の基準:** OGT はマーケット基準／ロケーション基準の区別を実装していない
-  （`coverage-and-limitations.md` §4、`functional-spec.md` §1.1）。OGT にあるのは係数ごとの温対法の区分
-  （`factorType` = `basic` 基礎排出係数 / `adjusted` 調整後排出係数 / `null` 区分なし）で、1 年度の中で混在しうる。
-  そのため OGT 由来の値は `scope2Basis: 'unknown'` とし、**SSBJ が求める基準別の値は OGT からは得られない**ことを画面にも示す。
-  補足として、適用した係数種別ごとの排出量の内訳（`factorTypeBreakdown`: `basic` / `adjusted` / `unclassified`）を添える。
+- **Scope 2 の値（`value`）の基準:** `dashboard_aggregates.scope2Total` は、係数ごとの温対法の区分
+  （`factorType` = `basic` 基礎排出係数 / `adjusted` 調整後排出係数 / `null` 区分なし。1 年度の中で混在しうる）で算定した
+  単一の合計で、ロケーション基準・マーケット基準のどちらでもない。そのため `scope2Basis: 'unknown'` とし、
+  適用した係数種別ごとの排出量の内訳（`factorTypeBreakdown`: `basic` / `adjusted` / `unclassified`）を添える。
   `location_based` / `market_based` は型にだけ用意しており、OGT の値から自動で設定してはならない。
+- **Scope 2 の基準別の値（`basisTotals`）:** OGT が GHG プロトコルの基準別に算定した年度合計
+  （`dashboard_aggregates` の `scope2LocationBasedTotal` / `scope2MarketBasedTotal` / `scope2MarketContractTotal`。
+  算定規則は `calculation-logic.md` §4「Scope 2 の基準別算定」）を、`locationBased` / `marketBased` / `marketContract`
+  （マーケット基準のうち、選んだ電気事業者のメニュー別の係数で算定した分）として持つ。
+  - 値は `SsbjFieldValue` で、`answered`（十進文字列）か `unanswered` のどちらか。列が `null`（期間内の Scope 2 明細に
+    基準別の行が揃っていない）なら `unanswered`（未算定）にし、**部分的な合計や 0 を出さない**。
+    Scope 2 の `dataQuality` が `not_calculated` なら、基準別もすべて `unanswered` にする。
+  - 採用の画面では、Scope 2 の行に出す基準をプルダウン（基準の区別なし / ロケーション基準 / マーケット基準）で切り替える。
+    表示の切り替えだけで、採用は基準の区別のない値と両方の基準の値をまとめて行い、保存版に両方を残す。
+  - プレビュー・CSV・Excel は、基準別の値を別の表・行（`scope2.location_based` / `scope2.market_based`）で出す。
+    未算定は空欄＋「未算定」。マーケット基準の行には、契約に基づく分と、標準係数で補った分がある旨を添える。
+  - 基準別の値を取り込む前に採用した値（保存版）には `basisTotals` が無い。その版は従来どおり「基準の区別なし・
+    ロケーション基準の値を含まない」と注記し、基準別の表・行を出さない。
 - **Scope 3 とサプライヤー値（二重加算の防止）:** Scope 3 の採用値は、カテゴリごとに選ばれた方式
   （直接入力 **または** 積上げ）の値だけを使う。`supplier_emissions`（サプライヤー別実排出量）は OGT でも表示専用で
   `scope3Total` に算入していない（`functional-spec.md` §4.3）ため、採用値とは別の型 `OgtSupplierReference`
@@ -169,6 +181,7 @@ T08a が OGT から**候補値**（`OgtCandidateValue`）を取得・表示し�
 | Scope 3 カテゴリ別（方式適用後の採用値） | RPC `dashboard_scope3_category_emissions(fiscalYearId)`（合計は `scope3Total` と一致） |
 | 直接入力カテゴリの入力有無 | `scope3_category_emissions` の行の有無 |
 | Scope 2 の係数種別の内訳 | `emission_results` → 適用係数の `factorType` で集計（係数が削除され参照が切れた結果は `unclassified` に含める） |
+| Scope 2 の基準別の合計 | `dashboard_aggregates` の `scope2LocationBasedTotal` / `scope2MarketBasedTotal` / `scope2MarketContractTotal`（RPC `ssbj_ogt_numeric_values` が十進文字列で返す。`20261018000000_ssbj_ogt_scope2_basis_totals.sql`） |
 | 算定の充足状況 | RPC `report_activity_calculation_coverage` / `report_scope3_activity_calculation_coverage` |
 | 最新の算定バッチ | RPC `report_latest_calculation_batches` |
 | サプライヤー別実排出量（参考値のみ） | `supplier_emissions` |
@@ -304,7 +317,7 @@ T06 の版生成関数は、`public` スキーマの `ssbj_snapshot_section__` �
 | `fictionalDisclosableTexts` | 四本柱の各章に 1 項目ずつの文章（開示文＋内部メモ / 未確認 / 非該当 / 未入力） |
 | `fictionalRequirementLinks` | 文章と要求項目の対応（1 つの文章が 2 つの要求に対応する例を含む） |
 | `fictionalEvidence` | 同じ項目に複数の根拠文書、主管部署あり / なし、開示用参照文と内部保管先の分離 |
-| `fictionalOgtCandidates` | OGT 候補値（Scope 1 算定済み / Scope 2 基準不明・一部未算定 / Scope 3 直接入力の回答済み 0 / 積上げの未算定 / 積上げの算定済み） |
+| `fictionalOgtCandidates` | OGT 候補値（Scope 1 算定済み / Scope 2 基準の区別なし・一部未算定、基準別はロケーション基準・マーケット基準とも算定済み / Scope 3 直接入力の回答済み 0 / 積上げの未算定 / 積上げの算定済み） |
 | `fictionalOgtAdoptedValues` | Scope 1・2 を採用した採用値 |
 | `fictionalSupplierReferences` | サプライヤー別実排出量（参考値） |
 | `fictionalExternalEmissions` | 外部算定値（Scope 1 の CH4・N2O。出典・根拠文書・確認者・内部メモあり） |
@@ -502,8 +515,11 @@ R1 の初回対象（[`ssbj-r1-scope.md`](ssbj-r1-scope.md) §5.1）に含める
   指標及び目標の章の項目にした。
 - **温室効果ガスの説明（測定方法、活動量・係数と仮定、スコープ 3 のデータの選び方、連結の分解、算定期間の差）は文章の項目にした。**
   数値（T08b）ではなく、利用者が書く文章だから。数値はスコープ 1・2・3 の総量・単位・カテゴリ別の内訳だけを T08b で扱う。
-- **OGT が対応していない要求（ロケーション基準・マーケット基準のスコープ 2、7 種類のガスの集約）と準拠の表明は、入力先を `notice` にした。**
+- **OGT が対応していない要求（7 種類のガスの集約）と準拠の表明は、入力先を `notice` にした。**
   利用者は入力せず、プレビュー・出力の注記で扱う。
+- **ロケーション基準・マーケット基準のスコープ 2（気候基準 第53項・第54項）は、入力先を `ghg` にした（マスターの版 `r1-provisional-2`）。**
+  OGT が基準別に算定するようになったため、注記ではなく採用した値（`basisTotals`）で答える。証書・クレジットなどの
+  環境価値の控除は OGT が扱わないため、使っている場合は測定方法の説明（文章）に書くよう案内する。
 - **「〜していない場合はその旨」を求める要求は、記載ガイドで「していない」と書くよう案内する。** 非該当ではなく回答として扱う（`ssbj-r1-scope.md` §5）。
 
 ### OGT の値の採用（T08b）

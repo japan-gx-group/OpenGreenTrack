@@ -3,13 +3,18 @@
 
 import type { OgtAdoptedValue, SsbjGhgAdoption } from '../types';
 import { isDecimalString } from '../utils/decimal';
-import { OGT_DATA_QUALITY_LABELS, OGT_SOURCE_LABELS, ogtMethodLabel, ogtValueKey, ogtValueLabel } from '../utils/ogtValue';
+import {
+  OGT_DATA_QUALITY_LABELS, OGT_SOURCE_LABELS, ogtMethodLabel, ogtValueKey, ogtValueLabel, SCOPE2_BASIS_VIEW_LABELS,
+} from '../utils/ogtValue';
 
 const GROUP = 'GHG排出量';
 
+const isValidTotal = (total: OgtAdoptedValue['value']): boolean =>
+  !!total && (total.state !== 'answered' || isDecimalString(total.value));
+
 const isValidAdoptedValue = (value: OgtAdoptedValue): boolean =>
-  !!value && [1, 2, 3].includes(value.scope) && !!value.value && !!OGT_DATA_QUALITY_LABELS[value.dataQuality] &&
-  (value.value.state !== 'answered' || isDecimalString(value.value.value));
+  !!value && [1, 2, 3].includes(value.scope) && !!OGT_DATA_QUALITY_LABELS[value.dataQuality] && isValidTotal(value.value) &&
+  (value.scope !== 2 || !value.method.basisTotals || Object.values(value.method.basisTotals).every(isValidTotal));
 
 const internalRecord = (value: OgtAdoptedValue): string =>
   [
@@ -26,10 +31,38 @@ const SOURCE_NOTE = '出典: OGT 算定値';
 const note = (value: OgtAdoptedValue): string => {
   if (value.scope !== 2 || value.method.kind !== 'activity_based' || !('scope2Basis' in value.method)) return SOURCE_NOTE;
   const breakdown = value.method.factorTypeBreakdown;
-  return `${SOURCE_NOTE}。ロケーション基準・マーケット基準の区別なし（基準不明）` +
+  return `${SOURCE_NOTE}。` +
+    (value.method.basisTotals
+      ? '基準の区別のない値（温対法の係数区分による）。基準別の値は別の行'
+      : 'ロケーション基準・マーケット基準の区別なし（基準不明）') +
     (breakdown
       ? `。係数区分の内訳: 基礎 ${breakdown.basic}／調整後 ${breakdown.adjusted}／区分なし ${breakdown.unclassified}`
       : '');
+};
+
+/**
+ * Scope 2 の基準別の行（ロケーション基準・マーケット基準）。基準別の値を取り込む前の保存版には無いので出さない。
+ * 未算定は空欄＋「未算定」にし、0 にしない。
+ */
+const scope2BasisRows = (value: OgtAdoptedValue, internalRecords: boolean): string[][] => {
+  if (value.scope !== 2 || !value.method.basisTotals) return [];
+  const { locationBased, marketBased, marketContract } = value.method.basisTotals;
+  const row = (key: string, label: string, total: typeof locationBased, rowNote: string): string[] => [
+    GROUP,
+    `scope2.${key}`,
+    `Scope 2（${label}）`,
+    total.state === 'answered' ? OGT_DATA_QUALITY_LABELS[value.dataQuality] : '未算定',
+    total.state === 'answered' ? total.value : '',
+    value.unit,
+    internalRecords ? internalRecord(value) : '',
+    `${SOURCE_NOTE}。${rowNote}`,
+  ];
+  return [
+    row('location_based', SCOPE2_BASIS_VIEW_LABELS.locationBased, locationBased, '公式の標準係数（全国の代替値）で算定'),
+    row('market_based', SCOPE2_BASIS_VIEW_LABELS.marketBased, marketBased, marketContract.state === 'answered'
+      ? `うち契約したメニューの係数による分 ${marketContract.value}。残りは代替値で補った分`
+      : '契約したメニューの係数で算定し、契約が分からない分は代替値で補う'),
+  ];
 };
 
 /**
@@ -60,6 +93,7 @@ export const ghgAdoptionCsvRows = (
       internalRecords ? internalRecord(value) : '',
       note(value),
     ]);
+    rows.push(...scope2BasisRows(value, internalRecords));
   }
   for (const supplier of ghg.supplierReferences) {
     rows.push([
