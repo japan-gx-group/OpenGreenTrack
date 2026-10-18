@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fictionalRisksOpportunities } from '../../__fixtures__/fictionalReport';
-import type { SsbjRiskOpportunity } from '../../types';
+import type { SsbjLinkTarget, SsbjRiskOpportunity } from '../../types';
 import {
   EMPTY_SSBJ_RISK_OPPORTUNITY_FORM_VALUES,
   formatLinkTarget,
@@ -96,10 +96,18 @@ describe('validateSsbjRiskOpportunityInput', () => {
     expect(errors).toEqual(['名称は200文字以内で入力してください']);
   });
 
-  it('架空データはすべて検証を通る', () => {
+  it('架空データはすべて検証を通る（マスターに無い以前の関連先は、保存済みとして渡せば残せる）', () => {
     for (const item of fictionalRisksOpportunities) {
-      expect(validateSsbjRiskOpportunityInput(inputOf(item))).toEqual([]);
+      expect(validateSsbjRiskOpportunityInput(inputOf(item), item.linkTargets)).toEqual([]);
     }
+  });
+
+  it('要求項目マスターに無い項目を新しく関連付けることはできない（章とマスターの項目はよい）', () => {
+    const [first] = fictionalRisksOpportunities;
+    const withTargets = (linkTargets: SsbjLinkTarget[]) => ({ ...inputOf(first), linkTargets });
+    expect(validateSsbjRiskOpportunityInput(withTargets(['strategy', 'strategy.business_model_impact']))).toEqual([]);
+    expect(validateSsbjRiskOpportunityInput(withTargets(['strategy.climate_resilience'])).join(''))
+      .toContain('要求項目マスターに無い項目は関連付けられません（strategy.climate_resilience）');
   });
 });
 

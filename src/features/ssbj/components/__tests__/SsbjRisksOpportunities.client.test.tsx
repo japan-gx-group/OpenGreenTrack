@@ -26,6 +26,11 @@ vi.mock('../../services/riskOpportunityService', async importOriginal => ({
   updateSsbjRiskOpportunity: vi.fn(),
   deleteSsbjRiskOpportunity: vi.fn(),
 }));
+vi.mock('../../services/riskCandidateService', () => ({
+  listSsbjRiskCandidateDecisions: vi.fn(),
+  saveSsbjRiskCandidateDecision: vi.fn(),
+  deleteSsbjRiskCandidateDecision: vi.fn(),
+}));
 vi.mock('../../services/timeHorizonService', async importOriginal => ({
   ...(await importOriginal<typeof import('../../services/timeHorizonService')>()),
   getSsbjTimeHorizons: vi.fn(),
@@ -33,6 +38,11 @@ vi.mock('../../services/timeHorizonService', async importOriginal => ({
 }));
 
 import { getSsbjReport } from '../../services/reportService';
+import {
+  deleteSsbjRiskCandidateDecision,
+  listSsbjRiskCandidateDecisions,
+  saveSsbjRiskCandidateDecision,
+} from '../../services/riskCandidateService';
 import {
   createSsbjRiskOpportunity,
   deleteSsbjRiskOpportunity,
@@ -113,6 +123,11 @@ beforeEach(() => {
   vi.mocked(getSsbjReport).mockResolvedValue(REPORT);
   vi.mocked(listSsbjRisksOpportunities).mockResolvedValue(ITEMS);
   vi.mocked(getSsbjTimeHorizons).mockResolvedValue(fictionalTimeHorizonDefinitions);
+  vi.mocked(listSsbjRiskCandidateDecisions).mockResolvedValue([]);
+  vi.mocked(saveSsbjRiskCandidateDecision).mockImplementation(async (_report, input) => ({
+    ...input, updatedAt: '2025-06-01T00:00:00.000Z',
+  }));
+  vi.mocked(deleteSsbjRiskCandidateDecision).mockResolvedValue();
 });
 
 afterEach(() => {
@@ -167,7 +182,7 @@ describe('SsbjRisksOpportunities', () => {
       riskType: { state: 'not_applicable' },
       description: { disclosure: { state: 'answered', value: '調達コストの低減が見込まれる。' }, internalNote: null },
       timeHorizon: { state: 'answered', value: 'long_term' },
-      linkTargets: ['strategy', 'strategy.climate_resilience'],
+      linkTargets: ['strategy', 'strategy.business_model_impact'],
     };
     vi.mocked(createSsbjRiskOpportunity).mockResolvedValue(created);
     await renderScreen();
@@ -180,7 +195,7 @@ describe('SsbjRisksOpportunities', () => {
     setTextareaValue(field('textarea[name="descriptionText"]'), '調達コストの低減が見込まれる。');
     setSelectValue(field('select[name="linkSection"]'), 'strategy');
     click(findButton('関連付けを追加', dialog()));
-    setInputValue(field('input[name="linkItem"]'), 'climate_resilience');
+    setSelectValue(field('select[name="linkItem"]'), 'strategy.business_model_impact');
     click(findButton('関連付けを追加', dialog()));
     click(findButton('登録する', dialog()));
     await flushPromises();
@@ -191,21 +206,36 @@ describe('SsbjRisksOpportunities', () => {
       riskType: { state: 'not_applicable' },
       description: { disclosure: { state: 'answered', value: '調達コストの低減が見込まれる。' }, internalNote: null },
       timeHorizon: { state: 'answered', value: 'long_term' },
-      linkTargets: ['strategy', 'strategy.climate_resilience'],
+      linkTargets: ['strategy', 'strategy.business_model_impact'],
     });
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(itemCards()).toHaveLength(fictionalRisksOpportunities.length + 1);
   });
 
-  it('項目の識別子の形式が違うと関連付けを追加しない', async () => {
+  it('項目は要求項目マスターから選び、任意の識別子は入力できない', async () => {
     await renderScreen();
 
     click(findButton('リスク・機会を追加'));
-    setInputValue(field('input[name="linkItem"]'), 'Climate Resilience');
+    expect(dialog().querySelector('input[name="linkItem"]')).toBeNull();
+    setSelectValue(field('select[name="linkSection"]'), 'governance');
+    const options = Array.from(field<HTMLSelectElement>('select[name="linkItem"]').options).map(option => option.value);
+    expect(options).toEqual(['governance', 'governance.oversight_body', 'governance.oversight_information',
+      'governance.management_role', 'governance.company_supplement']);
+    setSelectValue(field('select[name="linkItem"]'), 'governance.oversight_body');
     click(findButton('関連付けを追加', dialog()));
+    expect(dialog().textContent).toContain('ガバナンス：監督する機関・責任者');
+  });
 
-    expect(dialog().textContent).toContain('項目の識別子は英小文字・数字・アンダースコア');
-    expect(dialog().textContent).toContain('まだ関連付けていません');
+  it('マスターに無い以前の関連先は、マスターに無いと出したうえで、編集しても残せる', async () => {
+    const [first] = fictionalRisksOpportunities;
+    vi.mocked(updateSsbjRiskOpportunity).mockResolvedValue(first);
+    await renderScreen();
+
+    click(findButton('編集', itemCards()[0]));
+    expect(dialog().textContent).toContain('戦略：strategy.climate_resilience（要求項目マスターに無い項目）');
+    click(findButton('変更を保存', dialog()));
+    await flushPromises();
+    expect(vi.mocked(updateSsbjRiskOpportunity).mock.calls[0][1].linkTargets).toEqual(first.linkTargets);
   });
 
   it('編集すると入力済みの内容から始まり、保存した内容で置き換わる', async () => {
@@ -338,5 +368,120 @@ describe('SsbjRisksOpportunities（承認ロック）', () => {
     expect(labels).not.toContain('削除');
     expect(labels).not.toContain('定義を編集');
     expect(container.querySelector('[data-testid="ssbj-locked-notice"]')).not.toBeNull();
+  });
+});
+
+describe('SsbjRisksOpportunities（業種から出した候補）', () => {
+  const candidateRow = (candidateId: string): HTMLElement => {
+    const row = document.querySelector<HTMLElement>(`[data-candidate-id="${candidateId}"]`);
+    if (!row) throw new Error(`候補がありません: ${candidateId}`);
+    return row;
+  };
+
+  it('基本情報の業種（SICS）のセクターの候補と、全業種に共通の候補を出し、自動で確定しないと明示する', async () => {
+    await renderScreen();
+    const panel = document.querySelector<HTMLElement>('[data-testid="ssbj-risk-candidates"]');
+    expect(panel?.textContent).toContain('業種: RT-IG 工業用機械及び製品');
+    expect(panel?.querySelector('[role="note"]')?.textContent).toContain('該当性・重要性は確定しません');
+    expect(candidateRow('rt.energy_intensive_process').textContent).toContain('エネルギーを多く使う製造工程の費用の上昇');
+    expect(candidateRow('common.carbon_pricing')).toBeDefined();
+    expect(document.querySelector('[data-candidate-id="tr.fuel_regulation"]')).toBeNull();
+  });
+
+  it('業種が選ばれていなければ、業種の候補は出さず、基本情報で選ぶよう案内する', async () => {
+    vi.mocked(getSsbjReport).mockResolvedValue({ ...REPORT, industryCode: null });
+    await renderScreen();
+    const panel = document.querySelector<HTMLElement>('[data-testid="ssbj-risk-candidates"]');
+    expect(panel?.textContent).toContain('業種が選ばれていないため');
+    expect(document.querySelector('[data-candidate-id^="rt."]')).toBeNull();
+    expect(candidateRow('common.carbon_pricing')).toBeDefined();
+  });
+
+  it('採用すると候補の内容で登録フォームを開き、説明・時間軸は未入力のまま。登録すると採用を記録する', async () => {
+    vi.mocked(createSsbjRiskOpportunity).mockImplementation(async (_report, input) => ({ ...input, id: 'adopted-risk' }));
+    await renderScreen();
+
+    click(findButton('採用して登録', candidateRow('rt.energy_intensive_process')));
+    expect(dialog().querySelector('[data-testid="ssbj-risk-adopting-candidate"]')).not.toBeNull();
+    expect(field<HTMLInputElement>('input[name="title"]').value).toBe('エネルギーを多く使う製造工程の費用の上昇');
+    expect(field<HTMLSelectElement>('select[name="descriptionState"]').value).toBe('unanswered');
+    expect(field<HTMLSelectElement>('select[name="timeHorizon"]').value).toBe('unanswered');
+    setInputValue(field('input[name="title"]'), '第一工場の電力費用の上昇');
+    click(findButton('登録する', dialog()));
+    await flushPromises();
+    await flushPromises();
+
+    expect(createSsbjRiskOpportunity).toHaveBeenCalledWith(REPORT, {
+      kind: 'risk',
+      title: '第一工場の電力費用の上昇',
+      riskType: { state: 'answered', value: 'transition' },
+      description: { disclosure: { state: 'unanswered' }, internalNote: null },
+      timeHorizon: { state: 'unanswered' },
+      linkTargets: ['strategy.business_model_impact', 'metrics_targets.internal_carbon_price'],
+    });
+    expect(saveSsbjRiskCandidateDecision).toHaveBeenCalledWith(REPORT, {
+      candidateId: 'rt.energy_intensive_process',
+      candidateVersion: 'r2-trial-1',
+      industryCode: 'RT-IG',
+      decision: 'adopted',
+      reason: null,
+      riskOpportunityId: 'adopted-risk',
+    });
+    const row = candidateRow('rt.energy_intensive_process');
+    expect(row.textContent).toContain('採用済み');
+    expect(row.textContent).toContain('登録したリスク・機会: 第一工場の電力費用の上昇');
+  });
+
+  it('採用のフォームを閉じたら、何も登録・記録しない', async () => {
+    await renderScreen();
+    click(findButton('採用して登録', candidateRow('common.energy_price')));
+    click(findButton('キャンセル', dialog()));
+    expect(createSsbjRiskOpportunity).not.toHaveBeenCalled();
+    expect(saveSsbjRiskCandidateDecision).not.toHaveBeenCalled();
+    expect(candidateRow('common.energy_price').textContent).not.toContain('採用済み');
+  });
+
+  it('除外は理由が必須で、保存した理由を出し、未検討に戻せる', async () => {
+    await renderScreen();
+    const row = () => candidateRow('rt.efficient_products');
+
+    click(findButton('除外', row()));
+    await act(async () => { click(findButton('除外を保存', row())); });
+    await flushPromises();
+    expect(row().querySelector('[role="alert"]')?.textContent).toContain('除外する理由を入力してください');
+    expect(saveSsbjRiskCandidateDecision).not.toHaveBeenCalled();
+
+    setInputValue(row().querySelector<HTMLInputElement>('input')!, ' 当社は完成品を作らないため ');
+    await act(async () => { click(findButton('除外を保存', row())); });
+    await flushPromises();
+    expect(saveSsbjRiskCandidateDecision).toHaveBeenCalledWith(REPORT, expect.objectContaining({
+      candidateId: 'rt.efficient_products', decision: 'excluded', reason: '当社は完成品を作らないため', riskOpportunityId: null,
+    }));
+    expect(row().textContent).toContain('除外した理由（開示しない）: 当社は完成品を作らないため');
+
+    await act(async () => { click(findButton('未検討に戻す', row())); });
+    await flushPromises();
+    expect(deleteSsbjRiskCandidateDecision).toHaveBeenCalledWith(REPORT.id, 'rt.efficient_products');
+    expect(row().textContent).not.toContain('除外した理由');
+    expect(findButton('除外', row())).toBeDefined();
+  });
+
+  it('保存済みの判断を再表示し、採用したリスク・機会が削除されていればそうと出す', async () => {
+    vi.mocked(listSsbjRiskCandidateDecisions).mockResolvedValue([
+      { candidateId: 'common.carbon_pricing', candidateVersion: 'r2-trial-1', industryCode: 'RT-IG', decision: 'adopted',
+        reason: null, riskOpportunityId: fictionalRisksOpportunities[0].id, updatedAt: '2025-06-01T00:00:00.000Z' },
+      { candidateId: 'common.energy_price', candidateVersion: 'r2-trial-1', industryCode: 'RT-IG', decision: 'adopted',
+        reason: null, riskOpportunityId: null, updatedAt: '2025-06-01T00:00:00.000Z' },
+    ]);
+    await renderScreen();
+    expect(candidateRow('common.carbon_pricing').textContent).toContain(`登録したリスク・機会: ${fictionalRisksOpportunities[0].title}`);
+    expect(candidateRow('common.energy_price').textContent).toContain('登録したリスク・機会は削除済み');
+  });
+
+  it('承認済みのレポートでは候補を出すが、採用・除外の操作は出さない', async () => {
+    vi.mocked(getSsbjReport).mockResolvedValue({ ...REPORT, review: { status: 'approved' as const, approverUserId: 'u', approvedAt: '2025-06-05T00:00:00.000Z', approvedByUserId: 'u',
+      approvedVersionId: null, statusChangedAt: null, reviewRequestedByUserId: null } });
+    await renderScreen();
+    expect(candidateRow('common.carbon_pricing').querySelector('button')).toBeNull();
   });
 });

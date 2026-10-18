@@ -8,6 +8,7 @@ import {
   type SsbjReportStatus,
 } from '../types';
 import { isSsbjItemId, isSsbjRequirementId } from './ids';
+import { findSsbjIndustryCandidate } from './industryCandidates';
 import { findSsbjNarrativeItem, findSsbjRequirement } from './requirementMaster';
 
 export const SSBJ_AUDIT_ACTION_LABELS: Record<SsbjAuditAction, string> = {
@@ -25,6 +26,7 @@ const TARGET_TYPE_LABELS: Record<string, string> = {
   narrative: '四本柱の文章',
   judgement: '該当性・重要性の判断',
   risk_opportunity: 'リスク・機会',
+  risk_candidate: '業種の候補への判断',
   time_horizons: '時間軸の定義',
   evidence: '根拠文書',
   ogt_adoption: 'OGT の採用値',
@@ -62,6 +64,7 @@ const COLUMN_LABELS: Record<string, string> = {
   referencePosition: '参照位置', ownerDepartment: '主管部署',
   fileName: 'ファイル名', fileSha256: 'SHA-256', fileStorageVersionId: '保管先での版 ID', fileStoredBy: '保存担当',
   fileRecordedAt: 'ファイルの記録日時',
+  decision: '判断', reason: '理由', candidateVersion: '候補の版', riskOpportunityId: '登録したリスク・機会',
   adoptedValues: '採用値', supplierReferences: 'サプライヤー別の参考値', adoptedAt: '採用日時', adoptedByUserId: '採用者',
 };
 
@@ -80,6 +83,10 @@ export const ssbjAuditTargetLabel = (log: SsbjAuditLog): string => {
     case 'judgement': {
       const requirement = isSsbjRequirementId(log.targetId) ? findSsbjRequirement(log.targetId) : undefined;
       return `${kind}: ${log.targetId ?? ''}${requirement ? `（${requirement.summary}）` : ''}`;
+    }
+    case 'risk_candidate': {
+      const candidate = log.targetId ? findSsbjIndustryCandidate(log.targetId) : undefined;
+      return `${kind}: ${candidate?.title ?? log.targetId ?? ''}`;
     }
     case 'evidence':
     case 'risk_opportunity':

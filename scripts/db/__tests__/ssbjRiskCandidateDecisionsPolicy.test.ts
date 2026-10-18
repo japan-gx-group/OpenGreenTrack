@@ -1,0 +1,93 @@
+// 業種から出した候補への判断（ssbj_risk_candidate_decisions）の制約・RLS・権限・承認ロック・操作履歴に対する回帰テスト
+// （実DBを使わない机上検証）。検証対象が supabase/migrations/*.sql そのものなので scripts/db/__tests__/ に置く（AGENTS.md R13）。
+//
+// 固定すること:
+//   - 組織分離と、つなぐリスク・機会が同じレポートのものであること
+//   - 候補 ID の形式は utils/industryCandidates.ts と同じ、レポートと候補の組ごとに 1 行、除外は理由が必須
+//   - 組織・レポート・候補は作成後に変えない（update の列 GRANT に含めない）
+//   - 承認済みの間は変えられず、操作履歴に記録する。保存版には含めない（draftRevision を進めない）
+
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { SSBJ_CANDIDATE_ID_PATTERN } from '@/features/ssbj/utils/industryCandidates';
+
+const migrationsDir = path.join(process.cwd(), 'supabase/migrations');
+const fileName = readdirSync(migrationsDir).find(name => name.endsWith('_ssbj_risk_candidate_decisions.sql'));
+
+const body = (() => {
+  if (!fileName) throw new Error('ssbj_risk_candidate_decisions のマイグレーションが見つかりません');
+  return readFileSync(path.join(migrationsDir, fileName), 'utf8')
+    .split(/\r?\n/)
+    .filter(line => !line.trimStart().startsWith('--'))
+    .join(' ')
+    .replace(/\s+/g, ' ');
+})();
+
+const policies = (body.match(/create policy[^;]*;/g) ?? []).filter(policy => /\bon ssbj_risk_candidate_decisions\b/.test(policy));
+const grants = body.match(/grant [^;]*;/g) ?? [];
+
+const policyFor = (command: string): string => {
+  const policy = policies.find(text => new RegExp(`\\bfor ${command}\\b`).test(text));
+  if (!policy) throw new Error(`${command} のポリシーがありません`);
+  return policy;
+};
+
+describe('ssbj_risk_candidate_decisions の制約', () => {
+  it('候補 ID の形式は utils/industryCandidates.ts と同じ正規表現', () => {
+    const match = body.match(/"candidateId" ~ '([^']+)'/);
+    expect(match?.[1]).toBe(SSBJ_CANDIDATE_ID_PATTERN.source);
+  });
+
+  it('レポートと候補の組ごとに 1 行、判断は採用か除外、除外は理由が必須', () => {
+    expect(body).toContain('unique ("reportId", "candidateId")');
+    expect(body).toContain(`check (decision in ('adopted', 'excluded'))`);
+    expect(body).toContain(`decision <> 'excluded' or (reason is not null and btrim(reason) <> '')`);
+  });
+
+  it('登録したリスク・機会を削除しても、判断の記録は残す', () => {
+    expect(body).toContain('"riskOpportunityId" uuid references ssbj_risks_opportunities(id) on delete set null');
+  });
+});
+
+describe('ssbj_risk_candidate_decisions の RLS と権限', () => {
+  it('RLS を有効化している', () => {
+    expect(body).toContain('alter table ssbj_risk_candidate_decisions enable row level security;');
+  });
+
+  it.each(['select', 'insert', 'update', 'delete'])('%s は authenticated の自組織に限定される', command => {
+    const policy = policyFor(command);
+    expect(policy).toContain('to authenticated');
+    expect(policy).toContain('"organizationId" = (select current_user_organization_id())');
+  });
+
+  it.each(['insert', 'update'])('%s の with check でレポートの組織帰属と、リスク・機会が同じレポートのものかを検証する', command => {
+    const withCheck = policyFor(command).split('with check')[1] ?? '';
+    expect(withCheck).toContain('select 1 from ssbj_reports r where r.id = "reportId"');
+    expect(withCheck).toContain('ro."reportId" = ssbj_risk_candidate_decisions."reportId"');
+  });
+
+  it('update は判断の列だけ（組織・レポート・候補は作成後に変えられない）', () => {
+    const updateGrant = grants.find(grant => grant.startsWith('grant update'));
+    expect(updateGrant).toBeDefined();
+    for (const column of ['"reportId"', '"organizationId"', '"candidateId"']) {
+      expect(updateGrant).not.toContain(column);
+    }
+  });
+
+  it('anon には何も付与しない', () => {
+    expect(grants.some(grant => /\banon\b/.test(grant))).toBe(false);
+  });
+});
+
+describe('承認ロック・操作履歴・保存版', () => {
+  it('承認済みの間は変更を拒否し、操作履歴に記録する', () => {
+    expect(body).toMatch(/before insert or update or delete on ssbj_risk_candidate_decisions for each row execute function reject_ssbj_change_when_approved\(\);/);
+    expect(body).toMatch(/after insert or update or delete on ssbj_risk_candidate_decisions for each row execute function ssbj_audit_row_change\('risk_candidate', 'candidateId'\);/);
+  });
+
+  it('保存版に含めない（draftRevision を進めず、保存版セクションを作らない）', () => {
+    expect(body).not.toContain('bump_ssbj_draft_revision');
+    expect(body).not.toContain('ssbj_snapshot_section__');
+  });
+});
