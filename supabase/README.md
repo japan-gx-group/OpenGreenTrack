@@ -110,7 +110,7 @@ npx supabase migration new add_xxx_column   # migrations/<timestamp>_add_xxx_col
 
 ## 公式排出係数を更新・訂正する
 
-`seeds/production/official_emission_factors.sql` は手で編集しません。`scripts/official-factors/data/` の元データを直し、`generate.ts` で再生成します（データソース・年度更新の手順は [`scripts/official-factors/README.md`](../scripts/official-factors/README.md)）。
+`seeds/production/official_emission_factors.sql` は手で編集しません。`scripts/official-factors/data/<年度>/` の元データを直し、`generate.ts` で再生成します（データソース・年度更新の手順は [`scripts/official-factors/README.md`](../scripts/official-factors/README.md)）。
 
 ```bash
 node scripts/official-factors/generate.ts   # seeds/production/official_emission_factors.sql を上書き生成

@@ -9,7 +9,7 @@ See the LICENSE file for the full license text.
 --------------------------------------------------------------------------------
 
 本製品には、日本国政府が公表した資料を加工して作成した排出係数データが含まれます
-（scripts/official-factors/data/ および、そこから生成される
+（scripts/official-factors/data/<年度>/ および、そこから生成される
 supabase/seeds/production/official_emission_factors.sql）。
 
 - 電気事業者別排出係数・ガス事業者別排出係数・熱供給事業者別排出係数
@@ -57,7 +57,7 @@ IDEA は有償の商用データベースであり、利用者が一般社団法
 取り込み対象データベースを識別するための記述的な使用にとどまり、
 本製品は両機関と提携・後援・承認のいずれの関係にもありません。
 
-ただし、上記の Scope3 排出原単位（scripts/official-factors/data/scope3.tsv）のうち、
+ただし、上記の Scope3 排出原単位（scripts/official-factors/data/<年度>/scope3.tsv）のうち、
 出張の交通費支給額当たり・宿泊数当たり・従業員当たりの原単位と、廃棄物の焼却・埋立に
 係る原単位は、環境省が IDEAv2.3 を参照して作成し「事務局原単位」として公表している
 ものです（排出原単位データベース Ver.3.6 のシート [8][11][13] の記載による）。
