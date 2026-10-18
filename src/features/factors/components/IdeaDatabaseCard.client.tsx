@@ -2,7 +2,7 @@
 
 // 係数管理画面の「IDEAデータベース」カード（docs/idea-scope3-spec.md §5.2）。
 // - 取込済み: バージョン・取込日・製品数・引用表記の表示、版更新（再取込）、削除
-// - 取込中: idea_imports 行のポーリング
+// - 取込中: idea_imports 行のポーリングと、止まった取込の回収依頼（中断された取込を失敗として表示し、再取込できるようにする）
 // - 未取込: SuMPO 契約の案内文とリンクを表示
 // IDEA はライセンスデータのため、係数一覧テーブル・CSVエクスポートには載せない（§0.2）。
 
@@ -27,6 +27,7 @@ import {
 import {
   deleteIdeaImport,
   fetchIdeaImportOverview,
+  requestStaleIdeaImportRecovery,
   startIdeaImport,
   type IdeaImportOverview,
   type IdeaImportStartPhase,
@@ -34,6 +35,9 @@ import {
 
 // 取込中の idea_imports 行のポーリング間隔
 const POLL_INTERVAL_MS = 2500;
+// 取込中に、止まった取込の回収（/api/idea-imports/recovery）を依頼する間隔。回収されるのは 10 分以上更新の無い
+// 取込だけ（IDEA_IMPORT_STALE_MS）なので、毎回のポーリングでは呼ばず、この間隔で依頼する。
+const RECOVERY_INTERVAL_MS = 60 * 1000;
 
 const SUMPO_IDEA_URL = 'https://sumpo.or.jp/consulting/lca/idea/';
 
@@ -108,6 +112,22 @@ export const IdeaDatabaseCard = () => {
     const timer = setInterval(() => {
       void refresh();
     }, POLL_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [isProcessing, refresh]);
+
+  // 取込の裏の処理が中断される（サーバーの再起動・実行時間の上限など）と、取込記録は processing のまま残る。
+  // 回収処理は取込の開始操作の中でも動くが、取込中はその操作を受け付けないため、ここで定期的に回収を依頼する。
+  // 取込中の表示を見つけた時点（再読み込み直後を含む）でまず 1 回依頼し、以後は一定間隔で依頼する。
+  useEffect(() => {
+    if (!isProcessing) return;
+    const recoverAndRefresh = async () => {
+      await requestStaleIdeaImportRecovery();
+      await refresh();
+    };
+    void recoverAndRefresh();
+    const timer = setInterval(() => {
+      void recoverAndRefresh();
+    }, RECOVERY_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [isProcessing, refresh]);
 
@@ -202,6 +222,7 @@ export const IdeaDatabaseCard = () => {
             <div className="font-medium">「{latest.fileName}」を取込中です…</div>
             <div className="text-xs text-text-muted mt-1">
               数十MBのファイルでは数分かかることがあります。取込中も他の画面へ移動できます。
+              10分以上進まない場合は中断されたものとして失敗に切り替わり、もう一度取り込めるようになります。
             </div>
           </div>
         </div>

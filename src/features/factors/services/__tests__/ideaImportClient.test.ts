@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   fetchIdeaImportOverview,
+  requestStaleIdeaImportRecovery,
   startIdeaImport,
   type IdeaImportRecord,
   type IdeaImportStartPhase,
@@ -218,5 +219,23 @@ describe('startIdeaImport', () => {
     await expect(startIdeaImport(file, 'IPCC 2021 GWP 100a without LULUCF', true)).rejects.toThrow(
       'IDEAデータベースの取込が進行中です',
     );
+  });
+});
+
+describe('requestStaleIdeaImportRecovery', () => {
+  it('回収 API を POST で呼ぶ', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+
+    await requestStaleIdeaImportRecovery(fetchMock as unknown as typeof fetch);
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/idea-imports/recovery', { method: 'POST' });
+  });
+
+  it('通信に失敗しても throw しない（取込中のポーリングは続け、次の呼び出しで再試行する）', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+
+    await expect(requestStaleIdeaImportRecovery(fetchMock as unknown as typeof fetch)).resolves.toBeUndefined();
   });
 });
