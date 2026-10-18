@@ -3,9 +3,20 @@
 // 判断は作業用の記録で、保存版には含めない（docs/ssbj-spec.md §13「業種から出す候補」）。
 
 import { createClient } from '@/lib/supabase/client';
-import { SSBJ_RISK_CANDIDATE_DECISIONS, type SsbjRiskCandidateDecision, type SsbjRiskCandidateDecisionKind } from '../types';
+import {
+  SSBJ_RISK_CANDIDATE_DECISIONS,
+  type SsbjRiskCandidateDecision,
+  type SsbjRiskCandidateDecisionKind,
+  type SsbjRiskOpportunity,
+} from '../types';
 import type { SsbjRiskCandidateDecisionInput } from '../utils/industryCandidates';
+import type { SsbjRiskOpportunityInput } from '../utils/riskOpportunity';
 import { ssbjWriteErrorMessage } from '../utils/writeError';
+import {
+  toSsbjRiskOpportunity,
+  toSsbjRiskOpportunityColumns,
+  type SsbjRiskOpportunityRow,
+} from './riskOpportunityService';
 
 type SsbjRiskCandidateDecisionRow = {
   candidateId: string;
@@ -72,6 +83,38 @@ export const saveSsbjRiskCandidateDecision = async (
     throw new Error(ssbjWriteErrorMessage(inserted.error, '候補への判断の保存に失敗しました'));
   }
   return toSsbjRiskCandidateDecision(inserted.data as SsbjRiskCandidateDecisionRow);
+};
+
+/** 同じ候補が既に採用されているときに、adopt_ssbj_risk_candidate が返す SQLSTATE。 */
+export const SSBJ_CANDIDATE_ALREADY_ADOPTED_SQLSTATE = 'P2062';
+
+/**
+ * 候補を採用して、リスク・機会を登録する。登録と採用の記録は RPC の中で 1 つのトランザクションで保存し、
+ * どちらかが失敗すれば両方とも残らない（登録だけ残って、もう一度採用すると重複して登録される経路を作らないため）。
+ * 業種は DB がレポートの基本情報から記録する。
+ */
+export const adoptSsbjRiskCandidate = async (
+  reportId: string,
+  candidate: { candidateId: string; candidateVersion: string },
+  input: SsbjRiskOpportunityInput,
+): Promise<{ riskOpportunity: SsbjRiskOpportunity; decision: SsbjRiskCandidateDecision }> => {
+  const { data, error } = await createClient().rpc('adopt_ssbj_risk_candidate', {
+    p_report_id: reportId,
+    p_candidate_id: candidate.candidateId,
+    p_candidate_version: candidate.candidateVersion,
+    p_risk: toSsbjRiskOpportunityColumns(input),
+  });
+  if (error || !data) {
+    if (error?.code === SSBJ_CANDIDATE_ALREADY_ADOPTED_SQLSTATE) {
+      throw new Error('この候補は他の画面で先に採用されました。画面を開き直してください');
+    }
+    throw new Error(ssbjWriteErrorMessage(error, '候補を採用して登録できませんでした（リスク・機会も登録していません）'));
+  }
+  const result = data as { riskOpportunity: SsbjRiskOpportunityRow; decision: SsbjRiskCandidateDecisionRow };
+  return {
+    riskOpportunity: toSsbjRiskOpportunity(result.riskOpportunity),
+    decision: toSsbjRiskCandidateDecision(result.decision),
+  };
 };
 
 /** 候補への判断を取り消す（未検討に戻す）。登録したリスク・機会は消さない。 */

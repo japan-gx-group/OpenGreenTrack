@@ -105,17 +105,6 @@ export const isKnownLinkTarget = (target: SsbjLinkTarget): boolean =>
   isSsbjSectionId(target) || (isSsbjItemId(target) && findSsbjNarrativeItem(target) !== undefined);
 
 /**
- * 章と項目の識別子（任意）から関連先を作る。識別子が空なら章そのもの。
- * 形式が正しくなければ null（項目 ID は `<章ID>.<英小文字・数字・_>`。docs/ssbj-spec.md §3）。
- */
-export const toLinkTarget = (section: SsbjSectionId, itemSlug: string): SsbjLinkTarget | null => {
-  const slug = itemSlug.trim();
-  if (slug === '') return section;
-  const itemId = `${section}.${slug}`;
-  return isSsbjItemId(itemId) ? itemId : null;
-};
-
-/**
  * 入力値を保存用に整える。説明は「入力済み」のときだけ本文を持ち、それ以外の状態では本文を捨てる
  * （未確認の下書きは内部メモに書く。docs/ssbj-spec.md §4）。未入力の内部メモは null にする。
  * 機会にはリスクの種類が無いため、フォームの選択に関係なく非該当にする。

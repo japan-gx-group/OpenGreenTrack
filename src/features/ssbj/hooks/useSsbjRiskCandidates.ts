@@ -6,16 +6,20 @@
 
 import { useEffect, useState } from 'react';
 import {
+  adoptSsbjRiskCandidate,
   deleteSsbjRiskCandidateDecision,
   listSsbjRiskCandidateDecisions,
   saveSsbjRiskCandidateDecision,
 } from '../services/riskCandidateService';
-import type { SsbjRiskCandidateDecision } from '../types';
+import type { SsbjRiskCandidateDecision, SsbjRiskOpportunity } from '../types';
 import {
+  SSBJ_INDUSTRY_CANDIDATE_VERSION,
   normalizeSsbjRiskCandidateDecision,
   validateSsbjRiskCandidateDecision,
+  type SsbjIndustryCandidate,
   type SsbjRiskCandidateDecisionInput,
 } from '../utils/industryCandidates';
+import type { SsbjRiskOpportunityInput } from '../utils/riskOpportunity';
 
 export interface SsbjRiskCandidatesState {
   decisions: SsbjRiskCandidateDecision[];
@@ -23,6 +27,8 @@ export interface SsbjRiskCandidatesState {
   errorMessage: string;
   /** 判断を検証して保存する。検証・保存のエラーは例外にする（呼び出し側が画面に出す）。 */
   decide: (report: { id: string; organizationId: string }, input: SsbjRiskCandidateDecisionInput) => Promise<void>;
+  /** 候補を採用してリスク・機会を登録する（登録と採用の記録は一緒に保存され、片方だけ残らない）。登録したリスク・機会を返す。 */
+  adopt: (reportId: string, candidate: SsbjIndustryCandidate, input: SsbjRiskOpportunityInput) => Promise<SsbjRiskOpportunity>;
   /** 判断を取り消して未検討に戻す。 */
   undo: (reportId: string, candidateId: string) => Promise<void>;
 }
@@ -61,10 +67,20 @@ export function useSsbjRiskCandidates(reportId: string, enabled: boolean): SsbjR
     setDecisions(prev => [...prev.filter(decision => decision.candidateId !== saved.candidateId), saved]);
   };
 
+  const adopt: SsbjRiskCandidatesState['adopt'] = async (targetReportId, candidate, input) => {
+    const { riskOpportunity, decision: saved } = await adoptSsbjRiskCandidate(
+      targetReportId,
+      { candidateId: candidate.id, candidateVersion: SSBJ_INDUSTRY_CANDIDATE_VERSION },
+      input,
+    );
+    setDecisions(prev => [...prev.filter(decision => decision.candidateId !== saved.candidateId), saved]);
+    return riskOpportunity;
+  };
+
   const undo: SsbjRiskCandidatesState['undo'] = async (targetReportId, candidateId) => {
     await deleteSsbjRiskCandidateDecision(targetReportId, candidateId);
     setDecisions(prev => prev.filter(decision => decision.candidateId !== candidateId));
   };
 
-  return { decisions, isLoading, errorMessage, decide, undo };
+  return { decisions, isLoading, errorMessage, decide, adopt, undo };
 }

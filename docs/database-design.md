@@ -464,6 +464,8 @@ SSBJ の各テーブルのトリガー（`ssbj_audit_row_change`）と、状態�
 ### 3.20 SSBJ 業種の候補への判断 (`ssbj_risk_candidate_decisions`) — 業種から出したリスク・機会の候補の採用・除外（`supabase/migrations/20261018130000_ssbj_risk_candidate_decisions.sql`）
 レポートと候補 ID の組ごとに 1 行の作業用の記録。候補（`src/features/ssbj/utils/industryCandidates.ts`）を検討の出発点にしたかどうかの記録で、該当性・重要性の判断ではない。
 保存版には含めず、`draftRevision` も進めない。承認済みの間は変更を拒否し（`reject_ssbj_change_when_approved`）、操作履歴に記録する（対象の種類 `risk_candidate`）。
+「採用して登録」は `adopt_ssbj_risk_candidate`（security invoker。authenticated）で、リスク・機会の登録と採用の記録を 1 つのトランザクションで保存する。
+既に採用済み（登録したリスク・機会が残っている）候補は上書きせず P2062 にする。業種はレポートの基本情報から記録する。
 
 | 物理名 | 論理名 | 型 | 制約 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -474,7 +476,7 @@ SSBJ の各テーブルのトリガー（`ssbj_audit_row_change`）と、状態�
 | `candidateVersion` | 候補の定義の版 | VARCHAR(30) | NOT NULL | 判断したときの版 |
 | `industryCode` | 業種 | VARCHAR(10) | NULL | 判断したときのレポートの業種（SICS の産業コード） |
 | `decision` | 判断 | VARCHAR(20) | CHECK(`adopted` / `excluded`) | |
-| `reason` | 理由 | TEXT | CHECK(除外では必須・空白のみ不可) | 内部の記録。開示しない |
+| `reason` | 理由 | TEXT | CHECK(除外では必須。改行・タブ・全角スペースなど空白だけも不可) | 内部の記録。開示しない |
 | `riskOpportunityId` | 登録したリスク・機会 | UUID | Foreign Key（同じレポートかは RLS で検証） | 採用したときに登録したもの。削除時: SET NULL（判断の記録は残す） |
 | `createdByUserId` / `updatedByUserId` | 登録・更新操作者ID | UUID | NULL | `set_row_actor` トリガ |
 | `createdAt` / `updatedAt` | 登録・更新日時 | TIMESTAMPTZ | | |

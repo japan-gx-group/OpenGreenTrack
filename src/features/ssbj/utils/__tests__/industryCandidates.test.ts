@@ -94,6 +94,22 @@ describe('判断の正規化と検証', () => {
     expect(normalizeSsbjRiskCandidateDecision(decision({ reason: ' 理由 ' })).reason).toBe('理由');
   });
 
+  it('改行・タブ・全角スペース・NBSP・BOM だけの理由も空とみなし、除外を保存させない（DB の制約・差戻しの理由と同じ判定）', () => {
+    for (const blank of ['\t', '\n\r\n', '\u3000\u3000', '\u00a0', '\ufeff', ' \t\u3000\n ']) {
+      const normalized = normalizeSsbjRiskCandidateDecision(decision({ decision: 'excluded', riskOpportunityId: null, reason: blank }));
+      expect(normalized.reason).toBeNull();
+      expect(validateSsbjRiskCandidateDecision(normalized)).toEqual(['除外する理由を入力してください（後から判断の根拠を確かめるため）']);
+    }
+  });
+
+  it('本文がある理由は、前後の空白だけを落として保存できる（途中の改行・全角スペースは残す）', () => {
+    const normalized = normalizeSsbjRiskCandidateDecision(
+      decision({ decision: 'excluded', riskOpportunityId: null, reason: '\u3000\n当社は\u3000該当設備を持たない\n\t' }),
+    );
+    expect(normalized.reason).toBe('当社は\u3000該当設備を持たない');
+    expect(validateSsbjRiskCandidateDecision(normalized)).toEqual([]);
+  });
+
   it('除外は理由が必須、採用は登録したリスク・機会が必須', () => {
     expect(validateSsbjRiskCandidateDecision(decision())).toEqual([]);
     expect(validateSsbjRiskCandidateDecision(decision({ decision: 'excluded', riskOpportunityId: null, reason: null })))

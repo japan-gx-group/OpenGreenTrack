@@ -5,6 +5,7 @@
 -- 採用した候補は、登録したリスク・機会（ssbj_risks_opportunities）につなぐ。除外は理由を必須にする（後から根拠を確かめるため）。
 -- 作業用の記録で保存版には含めない（保存版セクション・draftRevision の繰り上げは付けない）。
 -- 承認済みの間は変更させず（reject_ssbj_change_when_approved）、操作履歴に記録する（ssbj_audit_row_change）。
+-- 「採用して登録」は adopt_ssbj_risk_candidate（§5）で、リスク・機会の登録と採用の記録を 1 つのトランザクションで保存する。
 
 -- §1 テーブル
 
@@ -29,8 +30,11 @@ create table ssbj_risk_candidate_decisions (
   constraint ssbj_risk_candidate_decisions_report_candidate_key unique ("reportId", "candidateId"),
   constraint ssbj_risk_candidate_decisions_candidate_id_format check ("candidateId" ~ '^(common|[a-z]{2})\.[a-z0-9_]+$'),
   constraint ssbj_risk_candidate_decisions_decision_check check (decision in ('adopted', 'excluded')),
+  -- 理由の前後の空白（改行・タブ・全角スペース・NBSP・BOM を含む）を除いて空なら、理由が無いものとする（差戻しの理由と同じ判定）。
+  -- btrim() は半角スペースしか除かないため使わない（改行・タブだけの理由を通してしまう）。
   constraint ssbj_risk_candidate_decisions_excluded_reason check (
-    decision <> 'excluded' or (reason is not null and btrim(reason) <> '')
+    decision <> 'excluded'
+    or (reason is not null and regexp_replace(reason, '^[\s\u00a0\u3000\ufeff]+|[\s\u00a0\u3000\ufeff]+$', '', 'g') <> '')
   )
 );
 
@@ -143,3 +147,122 @@ grant update (
   "riskOpportunityId"
 ) on ssbj_risk_candidate_decisions to authenticated;
 -- service_role へは 20260831000001_rls.sql §4.4 の default privileges で自動付与される。
+
+-- §5 採用して登録（adopt_ssbj_risk_candidate）
+-- リスク・機会の登録と、候補の採用の記録を 1 つのトランザクションで保存する。どちらかが失敗すれば両方とも残らない
+-- （登録だけ残ると、再読込しても候補が未検討のままで、もう一度採用すると同じリスク・機会が重複して登録されるため）。
+-- security invoker: 呼び出した利用者の RLS・列 GRANT・承認ロック・操作履歴のトリガーを、画面から直接書くときと同じように通す。
+-- ロックの順番は利用者が画面から保存するときと同じ（20261009090000_ssbj_report_write_lock.sql）: 書き換える判断の行を先に for update でロックし、
+-- レポートの行は承認ロックのトリガーに取らせる（lock_ssbj_report_working_rows は service_role 限定のため呼ばない）。
+-- 業種はクライアントから受け取らず、レポートの基本情報の業種を記録する。
+-- 同じ候補が既に採用されていて、登録したリスク・機会が残っていれば、関連付けを上書きせず競合（P2062）にする。
+-- 採用したリスク・機会が削除済み（"riskOpportunityId" が NULL）か、除外していた候補は、採用し直せる。
+
+create function adopt_ssbj_risk_candidate(
+  p_report_id uuid,
+  p_candidate_id varchar,
+  p_candidate_version varchar,
+  p_risk jsonb
+)
+returns jsonb
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_report ssbj_reports%rowtype;
+  v_decision ssbj_risk_candidate_decisions%rowtype;
+  v_has_decision boolean;
+  v_risk ssbj_risks_opportunities%rowtype;
+begin
+  select * into v_report from ssbj_reports where id = p_report_id;
+  if not found then
+    raise exception 'レポートが見つからないか、組織に属していません: %', p_report_id using errcode = 'P2031';
+  end if;
+
+  -- 同じ候補を同時に採用したときに、後の方を待たせて競合にする。
+  select * into v_decision
+  from ssbj_risk_candidate_decisions
+  where "reportId" = p_report_id and "candidateId" = p_candidate_id
+  for update;
+  v_has_decision := found;
+  if v_has_decision and v_decision.decision = 'adopted' and v_decision."riskOpportunityId" is not null then
+    raise exception 'この候補は既に採用されています: %', p_candidate_id using errcode = 'P2062';
+  end if;
+
+  insert into ssbj_risks_opportunities (
+    "organizationId", "reportId", kind, title, "riskTypeState", "riskType",
+    "descriptionState", "descriptionText", "internalNote", "timeHorizonState", "timeHorizon", "linkTargets"
+  )
+  values (
+    v_report."organizationId",
+    p_report_id,
+    p_risk->>'kind',
+    p_risk->>'title',
+    p_risk->>'riskTypeState',
+    p_risk->>'riskType',
+    p_risk->>'descriptionState',
+    p_risk->>'descriptionText',
+    p_risk->>'internalNote',
+    p_risk->>'timeHorizonState',
+    p_risk->>'timeHorizon',
+    coalesce(array(select jsonb_array_elements_text(p_risk->'linkTargets')), '{}')
+  )
+  returning * into v_risk;
+
+  if v_has_decision then
+    update ssbj_risk_candidate_decisions
+    set decision = 'adopted',
+        reason = null,
+        "riskOpportunityId" = v_risk.id,
+        "candidateVersion" = p_candidate_version,
+        "industryCode" = v_report."industryCode"
+    where id = v_decision.id
+    returning * into v_decision;
+  else
+    begin
+      insert into ssbj_risk_candidate_decisions (
+        "organizationId", "reportId", "candidateId", "candidateVersion", "industryCode", decision, reason, "riskOpportunityId"
+      )
+      values (
+        v_report."organizationId", p_report_id, p_candidate_id, p_candidate_version, v_report."industryCode", 'adopted', null, v_risk.id
+      )
+      returning * into v_decision;
+    exception when unique_violation then
+      -- 行ロックを取る前に、別の画面が同じ候補の判断を先に作った。
+      raise exception 'この候補は他の画面で先に判断されました: %', p_candidate_id using errcode = 'P2062';
+    end;
+  end if;
+
+  return jsonb_build_object(
+    'riskOpportunity', jsonb_build_object(
+      'id', v_risk.id,
+      'kind', v_risk.kind,
+      'title', v_risk.title,
+      'riskTypeState', v_risk."riskTypeState",
+      'riskType', v_risk."riskType",
+      'descriptionState', v_risk."descriptionState",
+      'descriptionText', v_risk."descriptionText",
+      'internalNote', v_risk."internalNote",
+      'timeHorizonState', v_risk."timeHorizonState",
+      'timeHorizon', v_risk."timeHorizon",
+      'linkTargets', to_jsonb(v_risk."linkTargets")
+    ),
+    'decision', jsonb_build_object(
+      'candidateId', v_decision."candidateId",
+      'candidateVersion', v_decision."candidateVersion",
+      'industryCode', v_decision."industryCode",
+      'decision', v_decision.decision,
+      'reason', v_decision.reason,
+      'riskOpportunityId', v_decision."riskOpportunityId",
+      'updatedAt', v_decision."updatedAt"
+    )
+  );
+end;
+$$;
+
+comment on function adopt_ssbj_risk_candidate(uuid, varchar, varchar, jsonb) is
+  '業種から出した候補を採用して、リスク・機会を登録する（登録と採用の記録を 1 つのトランザクションで保存）。'
+  '呼び出した利用者の権限で動く（security invoker）。P2031 = レポートが見えない、P2062 = 同じ候補が既に採用されている、P2051 = 承認済み。';
+
+revoke execute on function adopt_ssbj_risk_candidate(uuid, varchar, varchar, jsonb) from public, anon;
+grant execute on function adopt_ssbj_risk_candidate(uuid, varchar, varchar, jsonb) to authenticated;

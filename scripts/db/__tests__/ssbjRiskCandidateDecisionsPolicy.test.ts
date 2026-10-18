@@ -5,6 +5,7 @@
 //   - 組織分離と、つなぐリスク・機会が同じレポートのものであること
 //   - 候補 ID の形式は utils/industryCandidates.ts と同じ、レポートと候補の組ごとに 1 行、除外は理由が必須
 //   - 組織・レポート・候補は作成後に変えない（update の列 GRANT に含めない）
+//   - 「採用して登録」はリスク・機会の登録と採用の記録を 1 つの RPC で保存し、既に採用済みなら上書きせず競合にする
 //   - 承認済みの間は変えられず、操作履歴に記録する。保存版には含めない（draftRevision を進めない）
 
 import { readdirSync, readFileSync } from 'node:fs';
@@ -42,7 +43,14 @@ describe('ssbj_risk_candidate_decisions の制約', () => {
   it('レポートと候補の組ごとに 1 行、判断は採用か除外、除外は理由が必須', () => {
     expect(body).toContain('unique ("reportId", "candidateId")');
     expect(body).toContain(`check (decision in ('adopted', 'excluded'))`);
-    expect(body).toContain(`decision <> 'excluded' or (reason is not null and btrim(reason) <> '')`);
+  });
+
+  it('除外の理由は、前後の空白（改行・タブ・全角スペース・NBSP・BOM を含む）を除いて空なら無いものとする（差戻しの理由と同じ判定）', () => {
+    expect(body).toContain(
+      String.raw`decision <> 'excluded' or (reason is not null and regexp_replace(reason, '^[\s\u00a0\u3000\ufeff]+|[\s\u00a0\u3000\ufeff]+$', '', 'g') <> '')`,
+    );
+    // btrim() は半角スペースしか除かず、改行・タブだけの理由を通してしまう。
+    expect(body).not.toMatch(/btrim\(reason\)/);
   });
 
   it('登録したリスク・機会を削除しても、判断の記録は残す', () => {
@@ -89,5 +97,33 @@ describe('承認ロック・操作履歴・保存版', () => {
   it('保存版に含めない（draftRevision を進めず、保存版セクションを作らない）', () => {
     expect(body).not.toContain('bump_ssbj_draft_revision');
     expect(body).not.toContain('ssbj_snapshot_section__');
+  });
+});
+
+describe('採用して登録（adopt_ssbj_risk_candidate）', () => {
+  const adopt = body.match(/create function adopt_ssbj_risk_candidate\(.*?\$\$.*?\$\$;/)?.[0] ?? '';
+
+  it('リスク・機会の登録と採用の記録を同じ関数（1 つのトランザクション）で書く', () => {
+    expect(adopt).toContain('insert into ssbj_risks_opportunities');
+    expect(adopt).toContain('insert into ssbj_risk_candidate_decisions');
+    expect(adopt.indexOf('insert into ssbj_risks_opportunities')).toBeLessThan(adopt.indexOf('insert into ssbj_risk_candidate_decisions'));
+  });
+
+  it('利用者の権限で動き（RLS・列 GRANT・承認ロックを通す）、authenticated だけが実行できる', () => {
+    expect(adopt).not.toContain('security definer');
+    expect(body).toContain('revoke execute on function adopt_ssbj_risk_candidate(uuid, varchar, varchar, jsonb) from public, anon;');
+    expect(body).toContain('grant execute on function adopt_ssbj_risk_candidate(uuid, varchar, varchar, jsonb) to authenticated;');
+  });
+
+  it('既に採用済み（登録したリスク・機会が残っている）なら、関連付けを上書きせずに競合にする', () => {
+    const conflict = adopt.indexOf(`if v_has_decision and v_decision.decision = 'adopted' and v_decision."riskOpportunityId" is not null then raise exception`);
+    expect(conflict).toBeGreaterThan(0);
+    expect(conflict).toBeLessThan(adopt.indexOf('insert into ssbj_risks_opportunities'));
+    expect(adopt).toMatch(/exception when unique_violation then .*? errcode = 'P2062'/);
+  });
+
+  it('業種はクライアントから受け取らず、レポートの基本情報の業種を記録する', () => {
+    expect(adopt).not.toContain('p_industry_code');
+    expect(adopt).toContain('v_report."industryCode"');
   });
 });

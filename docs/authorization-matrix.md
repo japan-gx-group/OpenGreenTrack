@@ -49,7 +49,7 @@ SSBJ 開示レポートで、データを書き換えられる経路をすべて
 | レポートの作成 | `ssbj_reports` insert | ○ | × | × | ○ | R2-12 |
 | 基本情報の更新 | `ssbj_reports` update（基本情報の列だけ GRANT） | ○ | × | × | ○ | R2-12 |
 | リスク・機会 | `ssbj_risks_opportunities` insert / update / delete | ○ | × | × | ○ | R2-12 |
-| 業種から出した候補への判断 | `ssbj_risk_candidate_decisions` insert / update / delete | ○ | × | × | ○ | R2-12 |
+| 業種から出した候補への判断 | `ssbj_risk_candidate_decisions` insert / update / delete、RPC `adopt_ssbj_risk_candidate`（利用者の権限で、リスク・機会の登録と採用の記録を一緒に保存） | ○ | × | × | ○ | R2-12 |
 | 時間軸の定義 | `ssbj_report_time_horizons` insert / update / delete | ○ | × | × | ○ | R2-12 |
 | 根拠文書 | `ssbj_evidence` insert / update / delete | ○ | × | × | ○ | R2-12 |
 | 四本柱の文章 | `ssbj_narratives` insert / update / delete | ○ | × | × | ○ | R2-12 |

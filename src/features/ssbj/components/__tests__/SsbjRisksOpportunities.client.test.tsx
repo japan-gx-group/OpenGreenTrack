@@ -27,6 +27,7 @@ vi.mock('../../services/riskOpportunityService', async importOriginal => ({
   deleteSsbjRiskOpportunity: vi.fn(),
 }));
 vi.mock('../../services/riskCandidateService', () => ({
+  adoptSsbjRiskCandidate: vi.fn(),
   listSsbjRiskCandidateDecisions: vi.fn(),
   saveSsbjRiskCandidateDecision: vi.fn(),
   deleteSsbjRiskCandidateDecision: vi.fn(),
@@ -39,6 +40,7 @@ vi.mock('../../services/timeHorizonService', async importOriginal => ({
 
 import { getSsbjReport } from '../../services/reportService';
 import {
+  adoptSsbjRiskCandidate,
   deleteSsbjRiskCandidateDecision,
   listSsbjRiskCandidateDecisions,
   saveSsbjRiskCandidateDecision,
@@ -397,8 +399,14 @@ describe('SsbjRisksOpportunities（業種から出した候補）', () => {
     expect(candidateRow('common.carbon_pricing')).toBeDefined();
   });
 
-  it('採用すると候補の内容で登録フォームを開き、説明・時間軸は未入力のまま。登録すると採用を記録する', async () => {
-    vi.mocked(createSsbjRiskOpportunity).mockImplementation(async (_report, input) => ({ ...input, id: 'adopted-risk' }));
+  it('採用すると候補の内容で登録フォームを開き、説明・時間軸は未入力のまま。登録と採用の記録を一緒に保存する', async () => {
+    vi.mocked(adoptSsbjRiskCandidate).mockImplementation(async (_reportId, candidate, input) => ({
+      riskOpportunity: { ...input, id: 'adopted-risk' },
+      decision: {
+        candidateId: candidate.candidateId, candidateVersion: candidate.candidateVersion, industryCode: 'RT-IG', decision: 'adopted',
+        reason: null, riskOpportunityId: 'adopted-risk', updatedAt: '2025-06-01T00:00:00.000Z',
+      },
+    }));
     await renderScreen();
 
     click(findButton('採用して登録', candidateRow('rt.energy_intensive_process')));
@@ -411,31 +419,46 @@ describe('SsbjRisksOpportunities（業種から出した候補）', () => {
     await flushPromises();
     await flushPromises();
 
-    expect(createSsbjRiskOpportunity).toHaveBeenCalledWith(REPORT, {
-      kind: 'risk',
-      title: '第一工場の電力費用の上昇',
-      riskType: { state: 'answered', value: 'transition' },
-      description: { disclosure: { state: 'unanswered' }, internalNote: null },
-      timeHorizon: { state: 'unanswered' },
-      linkTargets: ['strategy.business_model_impact', 'metrics_targets.internal_carbon_price'],
-    });
-    expect(saveSsbjRiskCandidateDecision).toHaveBeenCalledWith(REPORT, {
-      candidateId: 'rt.energy_intensive_process',
-      candidateVersion: 'r2-trial-1',
-      industryCode: 'RT-IG',
-      decision: 'adopted',
-      reason: null,
-      riskOpportunityId: 'adopted-risk',
-    });
+    expect(adoptSsbjRiskCandidate).toHaveBeenCalledWith(
+      REPORT.id,
+      { candidateId: 'rt.energy_intensive_process', candidateVersion: 'r2-trial-1' },
+      {
+        kind: 'risk',
+        title: '第一工場の電力費用の上昇',
+        riskType: { state: 'answered', value: 'transition' },
+        description: { disclosure: { state: 'unanswered' }, internalNote: null },
+        timeHorizon: { state: 'unanswered' },
+        linkTargets: ['strategy.business_model_impact', 'metrics_targets.internal_carbon_price'],
+      },
+    );
+    // 登録と採用の記録を別々に書かない（片方だけ残る経路を作らない）。
+    expect(createSsbjRiskOpportunity).not.toHaveBeenCalled();
+    expect(saveSsbjRiskCandidateDecision).not.toHaveBeenCalled();
     const row = candidateRow('rt.energy_intensive_process');
     expect(row.textContent).toContain('採用済み');
     expect(row.textContent).toContain('登録したリスク・機会: 第一工場の電力費用の上昇');
+  });
+
+  it('採用して登録が失敗したら、フォームを開いたまま理由を出し、リスク・機会も採用も増やさない', async () => {
+    vi.mocked(adoptSsbjRiskCandidate).mockRejectedValue(new Error('この候補は他の画面で先に採用されました。画面を開き直してください'));
+    await renderScreen();
+    const before = document.querySelectorAll('[data-testid="ssbj-risk-opportunity"]').length;
+
+    click(findButton('採用して登録', candidateRow('rt.energy_intensive_process')));
+    click(findButton('登録する', dialog()));
+    await flushPromises();
+    await flushPromises();
+
+    expect(dialog().textContent).toContain('この候補は他の画面で先に採用されました');
+    expect(document.querySelectorAll('[data-testid="ssbj-risk-opportunity"]').length).toBe(before);
+    expect(candidateRow('rt.energy_intensive_process').textContent).not.toContain('採用済み');
   });
 
   it('採用のフォームを閉じたら、何も登録・記録しない', async () => {
     await renderScreen();
     click(findButton('採用して登録', candidateRow('common.energy_price')));
     click(findButton('キャンセル', dialog()));
+    expect(adoptSsbjRiskCandidate).not.toHaveBeenCalled();
     expect(createSsbjRiskOpportunity).not.toHaveBeenCalled();
     expect(saveSsbjRiskCandidateDecision).not.toHaveBeenCalled();
     expect(candidateRow('common.energy_price').textContent).not.toContain('採用済み');
@@ -446,6 +469,13 @@ describe('SsbjRisksOpportunities（業種から出した候補）', () => {
     const row = () => candidateRow('rt.efficient_products');
 
     click(findButton('除外', row()));
+    await act(async () => { click(findButton('除外を保存', row())); });
+    await flushPromises();
+    expect(row().querySelector('[role="alert"]')?.textContent).toContain('除外する理由を入力してください');
+    expect(saveSsbjRiskCandidateDecision).not.toHaveBeenCalled();
+
+    // 改行・タブ・全角スペースだけの理由は、理由が無いものとして保存しない。
+    setInputValue(row().querySelector<HTMLInputElement>('input')!, '\t\u3000\n');
     await act(async () => { click(findButton('除外を保存', row())); });
     await flushPromises();
     expect(row().querySelector('[role="alert"]')?.textContent).toContain('除外する理由を入力してください');

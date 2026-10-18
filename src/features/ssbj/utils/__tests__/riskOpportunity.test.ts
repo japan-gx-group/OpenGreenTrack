@@ -6,7 +6,6 @@ import {
   formatLinkTarget,
   normalizeSsbjRiskOpportunityInput,
   sortLinkTargets,
-  toLinkTarget,
   toSsbjRiskOpportunityFormValues,
   validateSsbjRiskOpportunityInput,
   type SsbjRiskOpportunityFormValues,
@@ -112,13 +111,6 @@ describe('validateSsbjRiskOpportunityInput', () => {
 });
 
 describe('関連先', () => {
-  it('識別子が空なら章、あれば項目 ID、形式違いは null', () => {
-    expect(toLinkTarget('strategy', '')).toBe('strategy');
-    expect(toLinkTarget('strategy', ' climate_resilience ')).toBe('strategy.climate_resilience');
-    expect(toLinkTarget('strategy', 'Climate')).toBeNull();
-    expect(toLinkTarget('strategy', 'a.b')).toBeNull();
-  });
-
   it('章は章名、項目は章名と ID で表示する', () => {
     expect(formatLinkTarget('strategy')).toBe('戦略');
     expect(formatLinkTarget('strategy.climate_resilience')).toBe('戦略：strategy.climate_resilience');
