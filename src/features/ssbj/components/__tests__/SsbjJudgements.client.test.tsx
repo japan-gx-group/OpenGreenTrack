@@ -2,7 +2,12 @@
 import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { click, render, type RenderResult } from '@/lib/testing/render';
-import { FICTIONAL_DRAFT_REVIEW, fictionalJudgements, fictionalReportBasicInfo } from '../../__fixtures__/fictionalReport';
+import {
+  FICTIONAL_DRAFT_REVIEW,
+  fictionalJudgements,
+  fictionalReportBasicInfo,
+  fictionalRisksOpportunities,
+} from '../../__fixtures__/fictionalReport';
 
 // SSBJ 該当性・重要性の判断画面: マスターの全要求の表示（判断の無い要求は未確認）、件数と絞り込み、
 // 編集ダイアログからの保存（検証・一覧への反映）、Not Found を検証する。Supabase を呼ぶ I/O だけをモックする。
@@ -11,9 +16,13 @@ vi.mock('../../services/reportService', async importOriginal => ({
   ...(await importOriginal<typeof import('../../services/reportService')>()), getSsbjReport: vi.fn(),
 }));
 vi.mock('../../services/judgementService', () => ({ listSsbjJudgements: vi.fn(), saveSsbjJudgement: vi.fn() }));
+vi.mock('../../services/riskOpportunityService', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../services/riskOpportunityService')>()), listSsbjRisksOpportunities: vi.fn(),
+}));
 
 import { listSsbjJudgements, saveSsbjJudgement } from '../../services/judgementService';
 import { getSsbjReport } from '../../services/reportService';
+import { listSsbjRisksOpportunities } from '../../services/riskOpportunityService';
 import { SSBJ_REQUIREMENTS } from '../../utils/requirementMaster';
 import { SsbjJudgements } from '../SsbjJudgements.client';
 
@@ -66,6 +75,8 @@ const selectLabeled = (label: string): HTMLSelectElement => {
 beforeEach(() => {
   vi.mocked(getSsbjReport).mockResolvedValue(report);
   vi.mocked(listSsbjJudgements).mockResolvedValue(fictionalJudgements);
+  vi.mocked(listSsbjRisksOpportunities).mockResolvedValue(fictionalRisksOpportunities);
+  vi.mocked(saveSsbjJudgement).mockImplementation(async (_report, judgement) => judgement);
 });
 afterEach(() => { rendered?.unmount(); rendered = null; vi.clearAllMocks(); });
 
@@ -78,25 +89,110 @@ describe('SsbjJudgements', () => {
     expect(rowOf('REQ-CLM-020').textContent).toContain('スコープ 3 のカテゴリー別の内訳を開示していない');
     expect(rowOf('REQ-APP-002').textContent).toContain('その旨の説明が未入力');
     expect(rowOf('REQ-GEN-002').textContent).toContain('未確認');
-    // 判断の済んでいない要求 = マスターの要求から、該当で重要性を判断済みの 4 件と非該当の 1 件を除いたもの。
-    expect(document.querySelector('[data-testid="ssbj-judgement-pending-count"]')?.textContent)
-      .toContain(`${SSBJ_REQUIREMENTS.length - 5} / ${SSBJ_REQUIREMENTS.length} 件`);
+    // 記録のある 5 件のうち、REQ-APP-002（記載しない旨の説明が未入力）と REQ-GEN-001（根拠が未入力）が要確認、残り 3 件が判断済み。
+    expect(document.querySelector('[data-testid="ssbj-judgement-status-count"]')?.textContent)
+      .toContain(`未判断 ${SSBJ_REQUIREMENTS.length - 5} 件 / 要確認 2 件 / 判断済み 3 件`);
+    expect(rowOf('REQ-GEN-001').textContent).toContain('根拠が未入力');
   });
 
-  it('判断が済んでいない要求だけに絞り込める', async () => {
+  it('未判断・要確認・判断済み、リスク・機会に関連する要求で絞り込める', async () => {
     rendered = render(<SsbjJudgements reportId={report.id} />);
     await settle();
-    click(document.getElementById('ssbj-judgements-pending-only')!);
-    await flush();
+    const filter = document.getElementById('ssbj-judgements-filter') as HTMLSelectElement;
+    setSelectValue(filter, 'undecided');
     expect(rows()).toHaveLength(SSBJ_REQUIREMENTS.length - 5);
-    expect(rows().some(row => row.textContent?.includes('REQ-CLM-020'))).toBe(false);
+    setSelectValue(filter, 'needs_review');
+    expect(rows().map(row => row.dataset.requirementId)).toEqual(['REQ-GEN-001', 'REQ-APP-002']);
+    setSelectValue(filter, 'decided');
+    expect(rows().map(row => row.dataset.requirementId).sort()).toEqual(['REQ-CLM-020', 'REQ-CLM-023', 'REQ-CLM-027']);
+    setSelectValue(filter, 'all');
+    expect(rows()).toHaveLength(SSBJ_REQUIREMENTS.length);
+  });
+
+  it('リスク・機会で関連付けたマスターの項目が答える要求に、そのリスク・機会を出す', async () => {
+    vi.mocked(listSsbjRisksOpportunities).mockResolvedValue([
+      { ...fictionalRisksOpportunities[0], linkTargets: ['strategy', 'strategy.business_model_impact'] },
+    ]);
+    rendered = render(<SsbjJudgements reportId={report.id} />);
+    await settle();
+    expect(rowOf('REQ-CLM-009').querySelector('[data-testid="ssbj-judgement-related-risks"]')?.textContent)
+      .toContain(fictionalRisksOpportunities[0].title);
+    setSelectValue(document.getElementById('ssbj-judgements-filter') as HTMLSelectElement, 'with_risks');
+    expect(rows().map(row => row.dataset.requirementId)).toEqual(['REQ-GEN-007', 'REQ-CLM-009']);
+  });
+
+  it('一覧で該当性・重要性を続けて選ぶと、その都度保存し、記載しない理由・説明・根拠は変えない', async () => {
+    rendered = render(<SsbjJudgements reportId={report.id} />);
+    await settle();
+    const applicability = () => rowOf('REQ-GEN-002').querySelector<HTMLSelectElement>('select[aria-label="REQ-GEN-002 の該当性"]')!;
+    const materiality = () => rowOf('REQ-GEN-002').querySelector<HTMLSelectElement>('select[aria-label="REQ-GEN-002 の重要性"]')!;
+    await act(async () => { setSelectValue(applicability(), 'applicable'); });
+    await settle();
+    await act(async () => { setSelectValue(materiality(), 'material'); });
+    await settle();
+    expect(saveSsbjJudgement).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(saveSsbjJudgement).mock.calls[1][1]).toEqual({
+      requirementId: 'REQ-GEN-002', applicability: 'applicable', materiality: 'material', omissionReason: 'none',
+      explanation: { disclosure: { state: 'unanswered' }, internalNote: null },
+    });
+    // 一覧の選択だけでは根拠が無いので、要確認のまま。
+    expect(rowOf('REQ-GEN-002').textContent).toContain('要確認');
+    expect(rowOf('REQ-GEN-002').textContent).toContain('根拠が未入力');
+
+    await act(async () => { setSelectValue(rowOf('REQ-CLM-020').querySelector<HTMLSelectElement>('select[aria-label="REQ-CLM-020 の重要性"]')!, 'unconfirmed'); });
+    await settle();
+    expect(vi.mocked(saveSsbjJudgement).mock.calls[2][1]).toEqual({
+      ...fictionalJudgements.find(judgement => judgement.requirementId === 'REQ-CLM-020')!, materiality: 'unconfirmed',
+    });
+  });
+
+  it('一覧の選択でも詳細と同じ検証を通し、通らなければ保存せずに理由を出す', async () => {
+    rendered = render(<SsbjJudgements reportId={report.id} />);
+    await settle();
+    // REQ-CLM-027 は「重要性がない」を理由にしているので、重要性を「重要性あり」にはできない。
+    await act(async () => { setSelectValue(rowOf('REQ-CLM-027').querySelector<HTMLSelectElement>('select[aria-label="REQ-CLM-027 の重要性"]')!, 'material'); });
+    await settle();
+    expect(saveSsbjJudgement).not.toHaveBeenCalled();
+    expect(rowOf('REQ-CLM-027').querySelector('[role="alert"]')?.textContent).toContain('「詳細」から直してください');
+    expect(rowOf('REQ-CLM-027').querySelector<HTMLSelectElement>('select[aria-label="REQ-CLM-027 の重要性"]')!.value).toBe('not_material');
+  });
+
+  it('一覧で選んだ結果は、詳細を開くとそのまま出て、詳細で保存した結果は一覧に出る（同じ保存結果）', async () => {
+    rendered = render(<SsbjJudgements reportId={report.id} />);
+    await settle();
+    await act(async () => { setSelectValue(rowOf('REQ-GEN-002').querySelector<HTMLSelectElement>('select[aria-label="REQ-GEN-002 の該当性"]')!, 'not_applicable'); });
+    await settle();
+    click(buttonIn(rowOf('REQ-GEN-002'), '詳細'));
+    await flush();
+    expect(selectLabeled('該当性').value).toBe('not_applicable');
+    setTextareaValue(dialog().querySelector<HTMLTextAreaElement>('textarea:not([aria-label])')!, '該当する体制が無い');
+    await act(async () => { click(buttonIn(dialog(), '変更を保存')); });
+    await settle();
+    expect(vi.mocked(saveSsbjJudgement).mock.calls[1][1]).toEqual({
+      requirementId: 'REQ-GEN-002', applicability: 'not_applicable', materiality: 'unconfirmed', omissionReason: 'none',
+      explanation: { disclosure: { state: 'unanswered' }, internalNote: '該当する体制が無い' },
+    });
+    expect(rowOf('REQ-GEN-002').querySelector<HTMLSelectElement>('select[aria-label="REQ-GEN-002 の該当性"]')!.value).toBe('not_applicable');
+    expect(rowOf('REQ-GEN-002').textContent).toContain('判断済み');
+  });
+
+  it('詳細の「保存して次の未判断・要確認へ」で、表示中の次の要求を開く', async () => {
+    rendered = render(<SsbjJudgements reportId={report.id} />);
+    await settle();
+    setSelectValue(document.getElementById('ssbj-judgements-filter') as HTMLSelectElement, 'needs_review');
+    click(buttonIn(rowOf('REQ-GEN-001'), '詳細'));
+    await flush();
+    setTextareaValue(dialog().querySelector<HTMLTextAreaElement>('textarea:not([aria-label])')!, '取締役会規程で確認');
+    await act(async () => { click(buttonIn(dialog(), '保存して次の未判断・要確認へ')); });
+    await settle();
+    expect(vi.mocked(saveSsbjJudgement).mock.calls[0][1].requirementId).toBe('REQ-GEN-001');
+    expect(dialog().textContent).toContain('REQ-APP-002');
   });
 
   it('ダイアログで判断を編集して保存すると、その要求だけを保存して表示を差し替える', async () => {
-    vi.mocked(saveSsbjJudgement).mockImplementation(async (_report, judgement) => judgement);
     rendered = render(<SsbjJudgements reportId={report.id} />);
     await settle();
-    click(buttonIn(rowOf('REQ-CLM-026'), '編集'));
+    click(buttonIn(rowOf('REQ-CLM-026'), '詳細'));
     await flush();
     setSelectValue(selectLabeled('該当性'), 'applicable');
     setSelectValue(selectLabeled('重要性'), 'not_material');
@@ -115,13 +211,14 @@ describe('SsbjJudgements', () => {
       },
     );
     expect(document.querySelector('[role="dialog"]')).toBeNull();
-    expect(rowOf('REQ-CLM-026').textContent).toContain('重要性なし');
+    expect(rowOf('REQ-CLM-026').querySelector<HTMLSelectElement>('select[aria-label="REQ-CLM-026 の重要性"]')!.value)
+      .toBe('not_material');
   });
 
   it('「重要性がない」を理由にしたのに重要性が「重要性なし」でなければ保存しない', async () => {
     rendered = render(<SsbjJudgements reportId={report.id} />);
     await settle();
-    click(buttonIn(rowOf('REQ-CLM-026'), '編集'));
+    click(buttonIn(rowOf('REQ-CLM-026'), '詳細'));
     await flush();
     setSelectValue(selectLabeled('記載しない理由'), 'not_material');
     await act(async () => { click(buttonIn(dialog(), '変更を保存')); });
@@ -145,7 +242,8 @@ describe('SsbjJudgements（承認ロック）', () => {
     rendered = render(<SsbjJudgements reportId={report.id} />);
     await settle();
     expect(rows().length).toBeGreaterThan(0);
-    expect(rows().some(row => row.textContent?.includes('編集'))).toBe(false);
+    expect(rows().some(row => row.textContent?.includes('詳細'))).toBe(false);
+    expect(rows().some(row => row.querySelector('select') !== null)).toBe(false);
     expect(document.querySelector('[data-testid="ssbj-locked-notice"]')).not.toBeNull();
   });
 });
