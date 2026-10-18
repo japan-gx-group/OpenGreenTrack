@@ -11,6 +11,7 @@ import type {
   Scope2BasisEvidence,
   Scope2BasisResultInsert,
   Scope2BasisUnresolved,
+  Scope2BasisUnresolvedReason,
 } from '../types';
 import {
   deriveApplicableYear,
@@ -64,8 +65,8 @@ export const resolveScope2BasisForRecord = (
   const results: Scope2BasisResultInsert[] = [];
   const unresolved: Scope2BasisUnresolved[] = [];
 
-  const pushUnresolved = (basis: Scope2Basis, detail: string) => {
-    unresolved.push({ activityRecordId: record.id, basis, detail });
+  const pushUnresolved = (basis: Scope2Basis, reason: Scope2BasisUnresolvedReason, detail: string) => {
+    unresolved.push({ activityRecordId: record.id, basis, reason, detail });
   };
 
   // 単位換算まで通ったときだけ挿入内容を作る（係数はあるが換算できない場合は null）。
@@ -103,6 +104,18 @@ export const resolveScope2BasisForRecord = (
     standardResolution.status === 'resolved' && standardResolution.factor.scope === 'scope2'
       ? standardResolution.factor
       : null;
+  // 標準係数が使えないときの理由（ロケーション基準と、マーケット基準の補完の両方で使う）。
+  // 自動解決は活動量の単位から換算できる係数だけを採るため、単位が合わなければ unit_mismatch で返る。
+  const standardUnresolved: { reason: Scope2BasisUnresolvedReason; detail: string } =
+    standardResolution.status === 'unit_mismatch'
+      ? {
+          reason: 'UNIT_MISMATCH',
+          detail: `活動量の単位「${record.unit}」を公式の標準係数（代替値）の単位に換算できません`,
+        }
+      : {
+          reason: 'STANDARD_FACTOR_NOT_FOUND',
+          detail: `energyType=${record.energyType} に適用できる公式の標準係数（代替値）が見つかりません`,
+        };
 
   // ロケーション基準: 標準係数（系統平均の代替）そのもの。
   if (standardFactor) {
@@ -112,14 +125,12 @@ export const resolveScope2BasisForRecord = (
     } else {
       pushUnresolved(
         'location_based',
+        'UNIT_MISMATCH',
         `活動量の単位「${record.unit}」を標準係数の単位「${standardFactor.unit}」に換算できません`,
       );
     }
   } else {
-    pushUnresolved(
-      'location_based',
-      `energyType=${record.energyType} に適用できる公式の標準係数（代替値）が見つかりません`,
-    );
+    pushUnresolved('location_based', standardUnresolved.reason, standardUnresolved.detail);
   }
 
   // マーケット基準: 契約根拠（明示選択された事業者別係数）があればそれを使う。
@@ -140,6 +151,7 @@ export const resolveScope2BasisForRecord = (
     } else {
       pushUnresolved(
         'market_based',
+        'UNIT_MISMATCH',
         `活動量の単位「${record.unit}」を契約メニュー係数の単位「${contractFactor.unit}」に換算できません`,
       );
     }
@@ -150,13 +162,15 @@ export const resolveScope2BasisForRecord = (
     } else {
       pushUnresolved(
         'market_based',
+        'UNIT_MISMATCH',
         `活動量の単位「${record.unit}」を標準係数の単位「${standardFactor.unit}」に換算できません`,
       );
     }
   } else {
     pushUnresolved(
       'market_based',
-      `契約メニュー係数の明示選択が無く、補完に使う公式の標準係数（代替値）も見つかりません`,
+      standardUnresolved.reason,
+      `契約メニュー係数の明示選択が無く、補完に使う公式の標準係数（代替値）も使えません: ${standardUnresolved.detail}`,
     );
   }
 

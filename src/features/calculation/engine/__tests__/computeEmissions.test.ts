@@ -573,6 +573,20 @@ describe('computeEmissions Scope 2 基準別算定', () => {
       'location_based',
       'market_based',
     ]);
+    // 利用者へは理由別に件数を出すため、代替値が無いことを理由として持たせる
+    expect(outcome.scope2BasisUnresolved.map(entry => entry.reason)).toEqual([
+      'STANDARD_FACTOR_NOT_FOUND',
+      'STANDARD_FACTOR_NOT_FOUND',
+    ]);
+  });
+
+  it('代替値の単位に換算できないときは「見つからない」ではなく単位換算不可を理由にする', () => {
+    const customOnly = factor({ id: 'custom-1', isCustom: true, factorValue: 0.0005 });
+    const substituteInOtherUnit = factor({ ...substitute, id: 'sub-m3', unit: 't-CO2/m3' });
+    const outcome = computeEmissions([record()], [customOnly, substituteInOtherUnit]);
+    expect(outcome.results).toHaveLength(1);
+    expect(outcome.scope2BasisResults).toEqual([]);
+    expect(outcome.scope2BasisUnresolved.map(entry => entry.reason)).toEqual(['UNIT_MISMATCH', 'UNIT_MISMATCH']);
   });
 
   it('Scope 1 のレコードには基準別結果を作らない', () => {

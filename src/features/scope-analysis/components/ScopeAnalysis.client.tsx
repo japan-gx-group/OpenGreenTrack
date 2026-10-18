@@ -194,7 +194,11 @@ export const ScopeAnalysis = () => {
 
         {/* ===== Scope 2 算定基準別（ロケーション基準／マーケット基準）===== */}
         {scopeAnalysisData && (
-          <Scope2BasisCard totals={scopeAnalysisData.scope2BasisTotals} isStale={isLoading} />
+          <Scope2BasisCard
+            totals={scopeAnalysisData.scope2BasisTotals}
+            coverage={scopeAnalysisData.scope2BasisCoverage}
+            isStale={isLoading}
+          />
         )}
 
         {/* ===== Scope 3 カテゴリ別排出量（ドーナツ＋カテゴリ一覧）===== */}

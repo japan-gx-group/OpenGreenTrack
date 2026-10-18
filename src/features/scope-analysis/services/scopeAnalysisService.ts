@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
 import { resolveFiscalYearCandidates } from '@/lib/fiscal-year/fiscalYearLookup';
+import { IN_CHUNK_SIZE, chunk } from '@/lib/supabaseRows';
 
 type Scope3CategoryEmissionRow = {
   fiscalYearId: string;
@@ -100,12 +101,28 @@ export type Scope2BasisTotals = {
   marketContract: number | null;
 };
 
+/**
+ * Scope 2 の基準別が「未算定」のときの内訳（年度内の Scope 2 明細のうち基準別の値がある件数）。
+ * 基準別合計は全件そろったときだけ出る（refresh_dashboard_aggregates の件数突き合わせ）ため、
+ * 何件中何件そろっているかを示し、算定の実行待ちなのか一部が算定できないのかを見分けられるようにする。
+ */
+export type Scope2BasisCoverage = {
+  /** 年度期間内（periodStart 基準）の Scope 2 算定済み明細（emission_results）の件数 */
+  scope2RecordCount: number;
+  /** そのうちロケーション基準の値があるレコード数 */
+  locationBasedCount: number;
+  /** そのうちマーケット基準の値があるレコード数 */
+  marketBasedCount: number;
+};
+
 export type ScopeAnalysisData = {
   categories: Scope3CategoryItem[];
   /** Scope 1・2・3 の年度合計。集計行が無い年度は全て 0 */
   scopeTotals: ScopeTotals;
   /** Scope 2 の基準別年度合計。集計行が無い年度・未算定は null */
   scope2BasisTotals: Scope2BasisTotals;
+  /** 基準別合計に未算定（null）があるときだけの内訳。両基準とも値がある年度は null（取得しない） */
+  scope2BasisCoverage: Scope2BasisCoverage | null;
   suppliers: Scope3SupplierItem[];
   // 方式管理テーブル用のカテゴリ別明細と、書き込み・再集計に使う年度ID。
   methodItems: Scope3MethodCategoryItem[];
@@ -353,6 +370,61 @@ export const buildMethodItems = (input: {
   });
 };
 
+/** Scope 2 明細のレコードIDと基準別行から、基準ごとに値があるレコード数を数える（明細に無い行は数えない）。 */
+export const buildScope2BasisCoverage = (
+  scope2RecordIds: string[],
+  basisRows: { activityRecordId: string; basis: string }[],
+): Scope2BasisCoverage => {
+  const recordIds = new Set(scope2RecordIds);
+  let locationBasedCount = 0;
+  let marketBasedCount = 0;
+  for (const row of basisRows) {
+    if (!recordIds.has(row.activityRecordId)) continue;
+    if (row.basis === 'location_based') locationBasedCount += 1;
+    if (row.basis === 'market_based') marketBasedCount += 1;
+  }
+  return { scope2RecordCount: recordIds.size, locationBasedCount, marketBasedCount };
+};
+
+// Scope 2 基準別の内訳。年度帰属は refresh_dashboard_aggregates と同じ activity_records.periodStart 基準。
+// scope2_basis_results の FK 先は emission_results のため activity_records を直接埋め込めない。
+// Scope 2 明細のレコードIDを先に取り、基準別行は ID で引く（1 レコード最大 2 行のため 1 チャンクは max_rows に収まる）。
+const getScope2BasisCoverage = async (
+  supabase: SupabaseClient,
+  period: { startDate: string; endDate: string },
+): Promise<Scope2BasisCoverage> => {
+  const scope2Rows = await fetchAllRows<{ activityRecordId: string }>(
+    (from, to) =>
+      supabase
+        .from('emission_results')
+        .select('activityRecordId, activity_records!inner(periodStart)')
+        .eq('scope', 'scope2')
+        .gte('activity_records.periodStart', period.startDate)
+        .lte('activity_records.periodStart', period.endDate)
+        .order('id', { ascending: true })
+        .range(from, to),
+    'Scope 2 算定結果の取得に失敗しました',
+  );
+  const scope2RecordIds = scope2Rows.map(row => row.activityRecordId);
+
+  const basisRows = (
+    await Promise.all(
+      chunk(scope2RecordIds, IN_CHUNK_SIZE).map(async ids => {
+        const { data, error } = await supabase
+          .from('scope2_basis_results')
+          .select('activityRecordId, basis')
+          .in('activityRecordId', ids);
+        if (error) {
+          throw new Error('Scope 2 基準別算定結果の取得に失敗しました');
+        }
+        return (data ?? []) as { activityRecordId: string; basis: string }[];
+      }),
+    )
+  ).flat();
+
+  return buildScope2BasisCoverage(scope2RecordIds, basisRows);
+};
+
 // Scope 別構成カード用の年度合計。ダッシュボードの KPI と同じ dashboard_aggregates を読み、
 // 画面間で Scope 1/2/3 の数字が食い違わないようにする。集計行が無い年度は 0 に倒す。
 const getScopeTotals = async (
@@ -429,10 +501,19 @@ export const getScopeAnalysisData = async (
   });
 
   const { scopeTotals, scope2BasisTotals } = await getScopeTotals(supabase, selectedFiscalYear.id);
+  // 基準別に未算定があるときだけ内訳を取る（両基準そろっている年度では追加の問い合わせをしない）。
+  const scope2BasisCoverage =
+    scope2BasisTotals.locationBased === null || scope2BasisTotals.marketBased === null
+      ? await getScope2BasisCoverage(supabase, {
+          startDate: selectedFiscalYear.startDate,
+          endDate: selectedFiscalYear.endDate,
+        })
+      : null;
 
   return {
     scopeTotals,
     scope2BasisTotals,
+    scope2BasisCoverage,
     // ドーナツ・レポートのカテゴリ別内訳は「採用値」（方式適用後）で組み立てる。
     // scope3Total（refresh_dashboard_aggregates）と同じ値になり、集計ドリフトしない。
     categories: buildCategories(
