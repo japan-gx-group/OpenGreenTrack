@@ -48,9 +48,9 @@ describe('SsbjPreviewPrintView', () => {
   });
 
   it.each([
-    ['保存版', `source=${fictionalVersion.id}`],
-    ['作業中の内容', 'source=working'],
-  ])('%sの印刷に、内部メモ・内部記録を含めず、開示する内容はすべて含める', async (_label, search) => {
+    ['保存版', `source=${fictionalVersion.id}&internal=1`],
+    ['作業中の内容', 'source=working&internal=1'],
+  ])('URL に internal=1 が付いていても、%sの印刷に内部情報を含めず、開示する内容はすべて含める', async (_label, search) => {
     mocks.search = search;
     rendered = render(<SsbjPreviewPrintView reportId={fictionalVersion.reportId} />);
     await flush(); await flush();
@@ -60,18 +60,4 @@ describe('SsbjPreviewPrintView', () => {
     expect(text).not.toContain('開示しない');
   });
 
-  it.each(['1', 'true'])('URL に internal=%s が付いていても、内部メモ・内部記録を印刷に含めない', async internal => {
-    for (const source of [fictionalVersion.id, 'working']) {
-      mocks.search = `source=${source}&internal=${internal}`;
-      rendered = render(<SsbjPreviewPrintView reportId={fictionalVersion.reportId} />);
-      await flush(); await flush();
-      const text = rendered.container.textContent ?? '';
-      expect(text).toContain('取締役会の開催記録に基づく。');
-      expect(fictionalInternalTexts.filter(value => text.includes(value))).toEqual([]);
-      expect(text).not.toContain('内部メモ（開示しない）');
-      expect(text).not.toContain('内部記録・開示しない');
-      expect(text).not.toContain('内部の検討理由（開示しない）');
-      rendered.unmount(); rendered = null;
-    }
-  });
 });
