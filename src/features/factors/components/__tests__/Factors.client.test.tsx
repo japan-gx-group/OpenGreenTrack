@@ -8,6 +8,11 @@ import {
   type EmissionFactor,
 } from '../../services/factorService';
 import { fetchIdeaImportOverview } from '../../services/ideaImportClient';
+import {
+  countCalculatedRecordsForFactor,
+  requestFactorRecalculationReset,
+} from '../../services/factorRecalculation';
+import { requestCalculationBatch } from '@/features/data-input/services/autoCalculation';
 import { Factors } from '../Factors.client';
 
 // 排出係数の編集で出典情報が消える不具合の回帰テスト。
@@ -24,6 +29,23 @@ vi.mock('../../services/factorService', async (importOriginal) => ({
   updateEmissionFactor: vi.fn(),
   addEmissionFactor: vi.fn(),
   deleteEmissionFactor: vi.fn(),
+}));
+
+// 係数値を変えた保存の前の件数確認と、再算定の差し戻し（API）だけをモックする。
+// 確認の要否の判定・文言の組み立ては実物を通す。
+vi.mock('../../services/factorRecalculation', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/factorRecalculation')>()),
+  countCalculatedRecordsForFactor: vi.fn(),
+  requestFactorRecalculationReset: vi.fn(),
+}));
+
+vi.mock('@/features/data-input/services/autoCalculation', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/data-input/services/autoCalculation')>()),
+  requestCalculationBatch: vi.fn(),
+}));
+
+vi.mock('@/hooks/useCurrentUser', () => ({
+  useCurrentUser: () => ({ profile: { organizationId: 'org-1' } }),
 }));
 
 vi.mock('../../services/ideaImportClient', () => ({
@@ -110,6 +132,7 @@ beforeEach(() => {
     ...factor,
     id: factorWithSource.id,
   }));
+  vi.mocked(countCalculatedRecordsForFactor).mockResolvedValue(0);
   vi.mocked(fetchIdeaImportOverview).mockResolvedValue({
     activeImport: null,
     processingImport: null,
@@ -159,6 +182,88 @@ describe('排出係数の編集（出典情報の保持）', () => {
     expect(saved.applicableYear).toBe(factorWithSource.applicableYear);
     expect(saved.status).toBe(factorWithSource.status);
     expect(saved.isCustom).toBe(true);
+  });
+});
+
+// 係数値を変えると算定済みの結果は変更前の値のまま残るため、保存前に件数を示して再算定を選ばせる。
+describe('排出係数の編集（算定済みデータの再算定）', () => {
+  const buttonByText = (text: string): HTMLButtonElement => {
+    const button = Array.from(view.container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (candidate) => candidate.textContent?.includes(text),
+    );
+    if (!button) throw new Error(`ボタン「${text}」が見つかりません`);
+    return button;
+  };
+
+  const changeValueAndSubmit = async (form: HTMLElement, value: string): Promise<void> => {
+    setInputValue(form.querySelector<HTMLInputElement>('input[type="number"]') as HTMLInputElement, value);
+    click(form.querySelector<HTMLButtonElement>('button[type="submit"]') as HTMLButtonElement);
+    await flush();
+  };
+
+  beforeEach(() => {
+    vi.mocked(countCalculatedRecordsForFactor).mockResolvedValue(3);
+    vi.mocked(requestFactorRecalculationReset).mockResolvedValue({
+      kind: 'reset',
+      resetCount: 3,
+      skippedCount: 0,
+      fiscalYearIds: ['fy-2026'],
+    });
+    vi.mocked(requestCalculationBatch).mockResolvedValue({
+      kind: 'completed',
+      processedCount: 3,
+      totalEmissionsDelta: 1.2,
+      unresolvedReasons: [],
+      factorWarningCount: 0,
+      scope2BasisUnresolvedReasons: [],
+    });
+  });
+
+  it('算定済みのデータがあれば、保存する前に件数を示して確認する', async () => {
+    const form = await openEditModal();
+    await changeValueAndSubmit(form, '0.000250');
+
+    expect(countCalculatedRecordsForFactor).toHaveBeenCalledWith(factorWithSource.id);
+    expect(updateEmissionFactor).not.toHaveBeenCalled();
+    expect(view.container.querySelector('[role="alert"]')?.textContent).toContain(
+      'この係数で算定済みのデータが 3 件あります',
+    );
+  });
+
+  it('「保存して再算定する」を選ぶと、保存したあとに差し戻して年度を算定し直す', async () => {
+    const form = await openEditModal();
+    await changeValueAndSubmit(form, '0.000250');
+
+    click(buttonByText('保存して再算定する'));
+    await flush();
+    await flush();
+
+    expect(updateEmissionFactor).toHaveBeenCalledTimes(1);
+    expect(requestFactorRecalculationReset).toHaveBeenCalledWith(factorWithSource.id);
+    expect(requestCalculationBatch).toHaveBeenCalledWith('org-1', 'fy-2026');
+  });
+
+  it('「保存のみ」を選ぶと、保存だけして再算定しない', async () => {
+    const form = await openEditModal();
+    await changeValueAndSubmit(form, '0.000250');
+
+    click(buttonByText('保存のみ'));
+    await flush();
+
+    expect(updateEmissionFactor).toHaveBeenCalledTimes(1);
+    expect(requestFactorRecalculationReset).not.toHaveBeenCalled();
+    expect(requestCalculationBatch).not.toHaveBeenCalled();
+  });
+
+  it('係数値・単位を変えない保存では件数を確認しない（名称だけの変更では算定結果は変わらない）', async () => {
+    const form = await openEditModal();
+    const nameInput = form.querySelector<HTMLInputElement>('input[type="text"]') as HTMLInputElement;
+    setInputValue(nameInput, '電気 再エネメニュー（PPA・改称）');
+    click(form.querySelector<HTMLButtonElement>('button[type="submit"]') as HTMLButtonElement);
+    await flush();
+
+    expect(countCalculatedRecordsForFactor).not.toHaveBeenCalled();
+    expect(updateEmissionFactor).toHaveBeenCalledTimes(1);
   });
 });
 

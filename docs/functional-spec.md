@@ -329,6 +329,8 @@ KPI カードの前年比ピルと排出量上位拠点テーブルの前年比�
 
 `providerName` が非 null の係数（事業者別係数・IDEA 正規化行）は**自動解決の対象外で、明示選択専用**（§7.3）。
 
+カスタム係数の編集で**係数値・単位**を変えて保存するとき、その係数で算定済みのデータがあれば、件数を示して「保存して再算定する」「保存のみ（算定済みの結果は変えない）」「戻る」を選ばせる。算定済みの結果は算定時の値のまま残るため、再算定しないと同じ年度に変更前と変更後の値の結果が混在する。「保存して再算定する」は保存後に該当レコードを再算定対象へ戻し（`POST /api/calculations/factor-recalculation`）、続けて通常の算定を実行する。係数値・単位の変更は変更前後の値と日時が履歴に残り、カスタム係数の詳細モーダルに「値の変更履歴」として表示する（[`calculation-logic.md`](./calculation-logic.md) の「カスタム係数の値を変えたときの再算定と変更履歴」）。
+
 ### 4.5 拠点管理
 
 拠点の登録・編集・削除、CSV の取込・書き出し、地域別分布、拠点種別構成、拠点詳細。
@@ -494,6 +496,7 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 | POST | `/api/calculations` | GHG 算定バッチの実行トリガー |
 | GET | `/api/calculations/provisional-recalculation` | 暫定適用のまま残っている算定済みデータの年度・件数 |
 | POST | `/api/calculations/provisional-recalculation` | 同レコードを再算定対象（`isCalculated = false`）へ差し戻し |
+| POST | `/api/calculations/factor-recalculation` | 指定したカスタム係数で算定済みのレコードを再算定対象へ差し戻し（係数値・単位の変更後） |
 | POST | `/api/idea-imports/upload-url` | IDEA データベース（Excel）の署名付きアップロード URL 発行（ブラウザは Supabase Storage の `upload-quarantine` へ直接アップロードする。組織あたり 10 分に 10 回まで、超過は 429） |
 | POST | `/api/idea-imports` | IDEA データベース（Excel）の取込開始（Storage 上のパスを JSON で受け取る。ファイル本体は送らない） |
 | DELETE | `/api/idea-imports/[id]` | IDEA 取込の削除（取込状態の取得は Supabase クライアントから直接読む） |
@@ -503,7 +506,7 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 | POST | `/api/csp-report` | CSP 違反レポートの受信 |
 | GET | `/auth/callback` | Supabase Auth のコールバック |
 
-`/api/calculations`・`/api/calculations/provisional-recalculation`・`/api/dashboard-aggregates/refresh`・`/api/idea-imports/upload-url`・`/api/idea-imports`・`/api/idea-imports/[id]`・`/api/account/delete` の 7 本は `service_role` で RLS を越えて読み書きするため、Route Handler 側でログイン済み・自組織であることを検証する。この組織チェックは RLS では効かず、ここでしか担保できない。`/api/idea-imports/upload-url` は自組織フォルダ（`${organizationId}/idea-imports/<uuid>.xlsx`）にだけ署名付き URL を発行し、`/api/idea-imports` は受け取ったパスがその形であることを検証してから Storage に触れる。`/api/health` も `service_role` を使うが `organizations` を 1 行読む疎通確認のみで、組織データは返さない。
+`/api/calculations`・`/api/calculations/provisional-recalculation`・`/api/calculations/factor-recalculation`・`/api/dashboard-aggregates/refresh`・`/api/idea-imports/upload-url`・`/api/idea-imports`・`/api/idea-imports/[id]`・`/api/account/delete` の 8 本は `service_role` で RLS を越えて読み書きするため、Route Handler 側でログイン済み・自組織であることを検証する。この組織チェックは RLS では効かず、ここでしか担保できない。`/api/idea-imports/upload-url` は自組織フォルダ（`${organizationId}/idea-imports/<uuid>.xlsx`）にだけ署名付き URL を発行し、`/api/idea-imports` は受け取ったパスがその形であることを検証してから Storage に触れる。`/api/health` も `service_role` を使うが `organizations` を 1 行読む疎通確認のみで、組織データは返さない。
 
 ### 6.3 主要な RPC
 

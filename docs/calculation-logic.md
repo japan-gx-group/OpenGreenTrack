@@ -81,6 +81,15 @@
 - 画面: データ入力画面の入力履歴に対象年度と件数のバナーと「正式係数で再算定」ボタンを出す（機能仕様 §4.2.3）
 - 運用: 係数の年度更新時は seed 再投入後にこの再算定まで行う（[`scripts/official-factors/README.md`](../scripts/official-factors/README.md) の「年度更新の手順」）
 
+##### カスタム係数の値を変えたときの再算定と変更履歴
+
+カスタム係数の編集は `emission_factors` の行を上書きするが、算定済みの結果は算定時の値のまま残る（同じく算定バッチは未算定レコードしか処理しない）。放置すると同じ年度の中に変更前と変更後の値の結果が混在する。
+
+- 確認: 係数管理画面で**係数値・単位**を変えて保存するとき、その係数で算定済みのデータ（`emission_results.emissionFactorId` が一致。明示選択・自動解決の別を問わない）が 1 件以上あれば、件数を示して「保存して再算定する」「保存のみ（算定済みの結果は変えない）」を選ばせる。名称・出典だけの変更では確認しない
+- 差し戻し: 「保存して再算定する」を選ぶと、保存後にその係数で算定済みのレコードを `isCalculated = false` に戻し（`src/features/calculation/services/factorRecalculation.ts`。`POST /api/calculations/factor-recalculation`）、戻したレコードの会計年度を `POST /api/calculations` で算定し直す。どの算定年度にも属さないレコードは、戻すと旧結果だけが消えて算定し直せないため戻さない
+- 変更履歴: 組織の係数の係数値・単位が変わるたびに、変更前後の値・変更者・日時をトリガー `record_emission_factor_revision` が `emission_factor_revisions` に記録する（係数管理画面の編集・係数 CSV 取込のどちらの更新でも記録される）。係数の詳細モーダルに「値の変更履歴」として表示する
+- 係数 CSV 取込による更新では再算定の確認を出さない（履歴だけが残る）
+
 ### 優先順位（DB設計書 §4.1 の5段階を正とする）
 ```
 1. 拠点固有カスタム   (locationId = 対象拠点 かつ isCustom = true)
