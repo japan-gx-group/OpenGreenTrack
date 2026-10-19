@@ -20,6 +20,7 @@ import { useFactorFilters } from '../hooks/useFactorFilters';
 import { useFactorForm } from '../hooks/useFactorForm';
 import { useFactorRecalculation } from '../hooks/useFactorRecalculation';
 import { useFactorRevisions } from '../hooks/useFactorRevisions';
+import { useIdeaVersionHistory } from '../hooks/useIdeaVersionHistory';
 import { FactorCsvImportConfirm } from './FactorCsvImportConfirm.client';
 import { FactorDeleteDialog } from './FactorDeleteDialog.client';
 import { FactorDetailModal } from './FactorDetailModal';
@@ -31,11 +32,12 @@ import { FactorSourcesCard } from './FactorSourcesCard.client';
 import { FactorTable } from './FactorTable.client';
 import { FactorToolbar } from './FactorToolbar.client';
 import { IdeaDatabaseCard } from './IdeaDatabaseCard.client';
+import { IdeaVersionsCard } from './IdeaVersionsCard.client';
 
 const PAGE_SIZE_OPTIONS = [5, 10, 20, 50] as const;
 
 export const Factors = () => {
-  const { fiscalYear } = useFiscalYear();
+  const { fiscalYear, fiscalYears } = useFiscalYear();
   // profile は係数変更後の再算定（/api/calculations）に渡す organizationId の取得に使う。
   const { profile } = useCurrentUser();
   const { toast, showToast } = useToast();
@@ -64,6 +66,7 @@ export const Factors = () => {
     onRecalculationRequested: recalculation.recalculate,
   });
   const factorDelete = useFactorDelete(setDatabase, showToast);
+  const ideaVersions = useIdeaVersionHistory(showToast);
   const csvImport = useFactorCsvImport(database, setDatabase, showToast);
 
   // 一覧の「クエリを実行中...」オーバーレイは、取得中だけでなく保存・CSV取込の書き込み中にも出す。
@@ -169,7 +172,12 @@ export const Factors = () => {
 
         {/* IDEAデータベース（BYOライセンス取込。設計書 §5.2） */}
         <div style={{ marginTop: '14px' }}>
-          <IdeaDatabaseCard />
+          <IdeaDatabaseCard onImportsChanged={() => void ideaVersions.reload()} />
+        </div>
+
+        {/* IDEA の版と算定年度（年度ごとに使う版の割り当てと取込履歴。設計書 §3.6-5） */}
+        <div style={{ marginTop: '14px' }}>
+          <IdeaVersionsCard versions={ideaVersions} fiscalYears={fiscalYears} />
         </div>
 
         {/* Bottom Details (Sources & Logs) */}

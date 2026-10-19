@@ -7,7 +7,7 @@ import {
   updateEmissionFactor,
   type EmissionFactor,
 } from '../../services/factorService';
-import { fetchIdeaImportOverview } from '../../services/ideaImportClient';
+import { fetchIdeaImportHistory, fetchIdeaImportOverview } from '../../services/ideaImportClient';
 import {
   countCalculatedRecordsForFactor,
   requestFactorRecalculationReset,
@@ -50,6 +50,9 @@ vi.mock('@/hooks/useCurrentUser', () => ({
 
 vi.mock('../../services/ideaImportClient', () => ({
   fetchIdeaImportOverview: vi.fn(),
+  fetchIdeaImportHistory: vi.fn(),
+  assignIdeaImportToFiscalYear: vi.fn(),
+  requestStaleIdeaImportRecovery: vi.fn(),
   startIdeaImport: vi.fn(),
   deleteIdeaImport: vi.fn(),
 }));
@@ -133,6 +136,7 @@ beforeEach(() => {
     id: factorWithSource.id,
   }));
   vi.mocked(countCalculatedRecordsForFactor).mockResolvedValue(0);
+  vi.mocked(fetchIdeaImportHistory).mockResolvedValue({ imports: [], assignments: [], referenceCountByImportId: {} });
   vi.mocked(fetchIdeaImportOverview).mockResolvedValue({
     activeImport: null,
     processingImport: null,

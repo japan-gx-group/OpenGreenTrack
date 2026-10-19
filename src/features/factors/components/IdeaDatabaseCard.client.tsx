@@ -50,7 +50,12 @@ const formatDate = (value?: string | null): string => {
   }).format(new Date(value));
 };
 
-export const IdeaDatabaseCard = () => {
+interface IdeaDatabaseCardProps {
+  /** 取込の完了・失敗や有効な版の削除で取込状況が変わったときに呼ぶ（取込履歴を読み直させる） */
+  onImportsChanged?: () => void;
+}
+
+export const IdeaDatabaseCard = ({ onImportsChanged }: IdeaDatabaseCardProps = {}) => {
   const [overview, setOverview] = useState<IdeaImportOverview | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -105,6 +110,20 @@ export const IdeaDatabaseCard = () => {
   }, []);
 
   const isProcessing = overview?.latest?.status === 'processing';
+
+  // 取込状況（有効な版・直近の取込とその状態）が変わったら、取込履歴を表示しているカードに読み直させる。
+  // 初回の読込では呼ばない（取込履歴のカードは自分で読み込む）。
+  const importsSignature = overview
+    ? `${overview.active?.id ?? ''}:${overview.latest?.id ?? ''}:${overview.latest?.status ?? ''}`
+    : null;
+  const lastImportsSignatureRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (importsSignature === null) return;
+    if (lastImportsSignatureRef.current !== null && lastImportsSignatureRef.current !== importsSignature) {
+      onImportsChanged?.();
+    }
+    lastImportsSignatureRef.current = importsSignature;
+  }, [importsSignature, onImportsChanged]);
 
   // 取込中はポーリングで進捗（processing → completed / failed）を追う
   useEffect(() => {
@@ -400,8 +419,8 @@ export const IdeaDatabaseCard = () => {
           当組織は SuMPO と IDEA の使用許諾契約を締結しており、このファイルを自組織のために取り込む権利があることを確認しました
         </label>
         <p className="text-xs text-text-muted">
-          版更新（再取込）では、未算定の明細は同一製品コードで新しい版へ自動で付け替えられます。
-          算定済みの結果は取込時点の係数のまま変わりません。
+          版更新（再取込）では、版を割り当てていない年度の未算定の明細が、同一製品コードで新しい版へ自動で付け替えられます。
+          算定済みの結果は取込時点の係数のまま変わりません。年度ごとに使う版は「IDEAの版と算定年度」で選べます。
         </p>
       </form>
 

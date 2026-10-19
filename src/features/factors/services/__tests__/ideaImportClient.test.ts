@@ -239,3 +239,103 @@ describe('requestStaleIdeaImportRecovery', () => {
     await expect(requestStaleIdeaImportRecovery(fetchMock as unknown as typeof fetch)).resolves.toBeUndefined();
   });
 });
+
+// ---- 年度ごとの版（取込履歴・割り当て）----
+// 上の擬似DB（idea_imports だけを模す）とは別に、テーブルごとの応答を返すクライアントで検証する。
+
+describe('年度ごとの版のクライアントサービス', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.doUnmock('@/lib/supabase/client');
+    vi.resetModules();
+  });
+
+  /** テーブルごとに応答を返し、呼び出し（select の引数・eq）を記録する Supabase クライアントのスタブ */
+  const loadWithClient = async (respond: (table: string, eqs: [string, unknown][]) => unknown) => {
+    const calls: { table: string; select: unknown[]; eqs: [string, unknown][] }[] = [];
+    vi.resetModules();
+    vi.doMock('@/lib/supabase/client', () => ({
+      createClient: () => ({
+        from: (table: string) => {
+          const call = { table, select: [] as unknown[], eqs: [] as [string, unknown][] };
+          calls.push(call);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- PostgREST のチェーンを模したスタブ
+          const builder: any = {
+            select: (...args: unknown[]) => {
+              call.select = args;
+              return builder;
+            },
+            eq: (column: string, value: unknown) => {
+              call.eqs.push([column, value]);
+              return builder;
+            },
+            order: () => builder,
+            maybeSingle: async () => respond(table, call.eqs),
+            then: (resolve: (value: unknown) => unknown) => Promise.resolve(respond(table, call.eqs)).then(resolve),
+          };
+          return builder;
+        },
+      }),
+    }));
+    const clientModule = await import('../ideaImportClient');
+    return { clientModule, calls };
+  };
+
+  it('fetchIdeaImportHistory: 完了した版・年度の割り当て・版ごとの算定結果からの参照件数を返す', async () => {
+    const { clientModule, calls } = await loadWithClient((table, eqs) => {
+      if (table === 'idea_imports') {
+        return { data: [makeRecord({ id: 'imp-2', version: 'V2', isActive: true }), makeRecord({ id: 'imp-1', version: 'V1' })], error: null };
+      }
+      if (table === 'idea_fiscal_year_imports') {
+        return { data: [{ fiscalYearId: 'fy-2024', importId: 'imp-1' }], error: null };
+      }
+      // emission_results: 版ごとの件数（head）
+      const importId = eqs.find(([column]) => column === 'idea_factors.importId')?.[1];
+      return { count: importId === 'imp-1' ? 12 : 0, data: null, error: null };
+    });
+
+    const history = await clientModule.fetchIdeaImportHistory();
+
+    expect(history.imports.map((record) => record.id)).toEqual(['imp-2', 'imp-1']);
+    expect(history.assignments).toEqual([{ fiscalYearId: 'fy-2024', importId: 'imp-1' }]);
+    expect(history.referenceCountByImportId).toEqual({ 'imp-2': 0, 'imp-1': 12 });
+    // 取込履歴は完了した版だけ
+    expect(calls.find((call) => call.table === 'idea_imports')?.eqs).toContainEqual(['status', 'completed']);
+    // 参照件数は件数だけを取る（行は取らない）
+    const countCall = calls.find((call) => call.table === 'emission_results');
+    expect(countCall?.select[1]).toEqual({ count: 'exact', head: true });
+  });
+
+  it('fetchIdeaImportForFiscalYear: 年度に割り当てた版（版の表記つき）を返し、割り当てが無ければ null', async () => {
+    const { clientModule } = await loadWithClient((_table, eqs) =>
+      eqs.some(([, value]) => value === 'fy-2024')
+        ? { data: { importId: 'imp-1', idea_imports: { version: 'V1' } }, error: null }
+        : { data: null, error: null },
+    );
+
+    await expect(clientModule.fetchIdeaImportForFiscalYear('fy-2024')).resolves.toEqual({ importId: 'imp-1', version: 'V1' });
+    await expect(clientModule.fetchIdeaImportForFiscalYear('fy-2025')).resolves.toBeNull();
+  });
+
+  it('assignIdeaImportToFiscalYear: 年度と版を POST し、付け替えの件数を返す。失敗時はサーバーの文言で throw する', async () => {
+    const { clientModule } = await loadWithClient(() => ({ data: null, error: null }));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ importId: 'imp-1', remappedCount: 3, unmappedCount: 1 }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: '会計年度が見つかりません' }), { status: 404 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(clientModule.assignIdeaImportToFiscalYear('fy-2024', 'imp-1')).resolves.toEqual({
+      importId: 'imp-1',
+      remappedCount: 3,
+      unmappedCount: 1,
+    });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/idea-imports/fiscal-year-assignment');
+    expect(JSON.parse(init.body as string)).toEqual({ fiscalYearId: 'fy-2024', importId: 'imp-1' });
+
+    await expect(clientModule.assignIdeaImportToFiscalYear('fy-x', null)).rejects.toThrow('会計年度が見つかりません');
+  });
+});

@@ -171,10 +171,18 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     isEdit,
     initialFactorId: isEdit && initialValues?.kind === 'scope12' ? initialValues.emissionFactorId : null,
   });
+  // 対象年月が属する会計年度（画面上部で選択中の年度ではなく、この記録の帰属先）。
+  // Scope 3 の算定方法の注記と、IDEA 製品を検索する版（その年度に割り当てた版）の決定に使う。
+  const recordFiscalYear = useMemo(
+    () => (period ? findFiscalYearForDate(fiscalYears, period.start) : null),
+    [fiscalYears, period],
+  );
+  const recordFiscalYearId = recordFiscalYear?.id ?? null;
   const idea = useIdeaProductSelection({
     enabled: isIdea,
     isEdit,
     initialIdeaFactorId: isEdit && initialValues?.kind === 'scope3' ? initialValues.ideaFactorId : null,
+    fiscalYearId: recordFiscalYearId,
   });
 
   const appliedFactor = scope12.applied.status === 'resolved' ? scope12.applied.factor : null;
@@ -206,11 +214,6 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     category,
     appliedFactorScope: appliedFactor?.scope ?? null,
   });
-  const recordFiscalYear = useMemo(
-    () => (period ? findFiscalYearForDate(fiscalYears, period.start) : null),
-    [fiscalYears, period],
-  );
-  const recordFiscalYearId = recordFiscalYear?.id ?? null;
   const scope3MethodLoader = useKeyedLoader(
     recordFiscalYearId !== null && scope3CategoryId !== null
       ? scope3MethodKey(recordFiscalYearId, scope3CategoryId)
