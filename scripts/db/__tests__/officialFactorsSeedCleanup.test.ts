@@ -1,4 +1,4 @@
-// 公式係数 seed 末尾の「翌年度コピー行の後始末」delete に対する回帰テスト（実DBを使わない机上検証）。
+// 公式係数 seed の「翌年度コピー行の後始末」delete（official_emission_factors_cleanup.sql）に対する回帰テスト（実DBを使わない机上検証）。
 //
 // 対応する実装ファイルは scripts/official-factors/generate.ts だが、検証対象は生成物の SQL 文面
 // そのものなので、DB スクリプトと同じ scripts/db/__tests__/ に置いている（AGENTS.md R13）。
@@ -17,18 +17,18 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const seedSql = readFileSync(
-  path.join(process.cwd(), 'supabase/seeds/production/official_emission_factors.sql'),
+  path.join(process.cwd(), 'supabase/seeds/production/official_emission_factors_cleanup.sql'),
   'utf8',
 );
 
-/** seed 末尾の delete 文（1 文だけであることも確認する） */
+/** 後始末ファイルの delete 文（1 文だけであることも確認する） */
 const cleanupStatement = (): string => {
   const statements = seedSql.match(/delete from emission_factors[\s\S]*?;/g) ?? [];
   expect(statements).toHaveLength(1);
   const [statement] = statements;
   // 上の toHaveLength(1) で 1 文あることは保証されるが、型の上では undefined が残るため明示的に潰す。
   if (statement === undefined) {
-    throw new Error('seed 末尾の delete 文が見つかりません');
+    throw new Error('後始末ファイルの delete 文が見つかりません');
   }
   return statement;
 };

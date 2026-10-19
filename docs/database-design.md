@@ -135,7 +135,7 @@ OpenGreenTrackは、機密性の高い企業の活動量データを取り扱う
 
 ### 3.4 排出係数マスタ (`emission_factors`)
 GHG排出量の計算に用いる原単位係数。公式係数（`organizationId` が null・`isCustom=false`。全組織共通の読み取り専用）の
-初期データは `supabase/seeds/production/official_emission_factors.sql`（`scripts/official-factors/generate.ts` が生成）で
+初期データは `supabase/seeds/production/official_emission_factors_<年度>.sql`（`scripts/official-factors/generate.ts` が生成）で
 投入する。マイグレーション（`supabase/migrations/`）は DDL 専用でデータを含めない（`AGENTS.md` R12）。
 
 | 物理名 | 論理名 | 型 | 制約 | 説明 |

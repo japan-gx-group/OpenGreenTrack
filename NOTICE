@@ -10,7 +10,7 @@ See the LICENSE file for the full license text.
 
 本製品には、日本国政府が公表した資料を加工して作成した排出係数データが含まれます
 （scripts/official-factors/data/<年度>/ および、そこから生成される
-supabase/seeds/production/official_emission_factors.sql）。
+supabase/seeds/production/official_emission_factors_<年度>.sql）。
 
 - 電気事業者別排出係数・ガス事業者別排出係数・熱供給事業者別排出係数
   「温室効果ガス排出量 算定・報告・公表制度」（環境省・経済産業省）を加工して作成

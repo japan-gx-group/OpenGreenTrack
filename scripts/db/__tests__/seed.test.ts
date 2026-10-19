@@ -195,7 +195,8 @@ describe('resolveSeedFiles', () => {
   it('リポジトリの supabase/seeds/ は production / demo とも 1 件以上ある', () => {
     const production = resolveSeedFiles(DEFAULT_SEEDS_DIR, 'production').map((file) => path.basename(file));
     const demo = resolveSeedFiles(DEFAULT_SEEDS_DIR, 'demo').map((file) => path.basename(file));
-    expect(production).toContain('official_emission_factors.sql');
+    expect(production).toContain('official_emission_factors_2025.sql');
+    expect(production).toContain('official_emission_factors_cleanup.sql');
     expect(demo).toContain('demo.sql');
   });
 });

@@ -634,7 +634,7 @@ supabase db push --include-seed
 - 本番データが入った後にマイグレーションする場合は、事前にバックアップを確認してください。
 - `--include-seed` で流れるのは、`supabase/config.toml` の `[db.seed] sql_paths` に書かれた `seeds/production/*.sql`（公式排出係数マスタ）だけです。デモデータ（`seeds/demo/`）は流れません。
 
-CLI が使えない場合は、Supabase Dashboard の SQL Editor から SQL を実行する方法もあります。その場合は、`supabase/migrations/` の 4 ファイルをタイムスタンプ順（`…_schema.sql` → `…_rls.sql` → `…_rpc.sql` → `…_storage.sql`）に開いて上から順に実行し、続けて `supabase/seeds/production/official_emission_factors.sql` を実行します。抜け漏れや順番間違いを避けるため、基本は CLI の `supabase db push --include-seed` を推奨します。
+CLI が使えない場合は、Supabase Dashboard の SQL Editor から SQL を実行する方法もあります。その場合は、`supabase/migrations/` の 4 ファイルをタイムスタンプ順（`…_schema.sql` → `…_rls.sql` → `…_rpc.sql` → `…_storage.sql`）に開いて上から順に実行し、続けて `supabase/seeds/production/` の `official_emission_factors_*.sql` を実行します。抜け漏れや順番間違いを避けるため、基本は CLI の `supabase db push --include-seed` を推奨します。
 
 ### B-8. 初期データを入れる
 
@@ -642,12 +642,12 @@ CLI が使えない場合は、Supabase Dashboard の SQL Editor から SQL を�
 
 | 種類 | ファイル | 本番プロジェクト | 入れ方 |
 |---|---|---|---|
-| 公式排出係数マスタ | `supabase/seeds/production/official_emission_factors.sql` | **入れる** | B-7 の `supabase db push --include-seed` で自動投入 |
+| 公式排出係数マスタ | `supabase/seeds/production/official_emission_factors_*.sql`（年度ごとのファイルと後始末のファイル） | **入れる** | B-7 の `supabase db push --include-seed` で自動投入。収録していない過年度は導入先が自分で登録する（`scripts/official-factors/README.md`「過年度の公式係数を自分で登録する」） |
 | デモデータ（架空のデモ組織 2 社・デモユーザー・2023〜2026 年度のサンプル活動量） | `supabase/seeds/demo/demo.sql` | **入れない** | 検証用プロジェクトにだけ、下の手順で手動投入 |
 
 #### 公式排出係数マスタ（本番でも投入する）
 
-B-7 を `--include-seed` 付きで実行していれば、すでに入っています。付け忘れた場合は、もう一度 `supabase db push --include-seed` を実行してください（シードは冪等なので、繰り返し実行しても同じ結果になります）。CLI が使えない場合は、Supabase Dashboard の SQL Editor で `supabase/seeds/production/official_emission_factors.sql` の内容を実行します。手元に `psql` がある場合は、Dashboard の **Connect** で確認できる接続文字列を指定して `npm run db:seed:production -- --db-url "<接続文字列>"` でも投入できます。
+B-7 を `--include-seed` 付きで実行していれば、すでに入っています。付け忘れた場合は、もう一度 `supabase db push --include-seed` を実行してください（シードは冪等なので、繰り返し実行しても同じ結果になります）。CLI が使えない場合は、Supabase Dashboard の SQL Editor で `supabase/seeds/production/` の `official_emission_factors_*.sql`（年度ごとのファイルと後始末のファイル）の内容を実行します。手元に `psql` がある場合は、Dashboard の **Connect** で確認できる接続文字列を指定して `npm run db:seed:production -- --db-url "<接続文字列>"` でも投入できます。
 
 ローカル Supabase では `supabase db reset` で自動投入されます。起動中のローカル DB に入れ直す場合は `npm run db:seed:production` を使います。
 

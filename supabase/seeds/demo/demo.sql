@@ -29,7 +29,7 @@
 --
 -- 冪等性: デモ組織 3 社（下記）を先頭で削除してから入れ直す（削除→再投入）。何度流しても同じ状態になり、
 -- デモ組織に手で追加したデータ（E2E が作ったレコードを含む）は再投入で消える。
--- 本番マスタ seed（seeds/production/official_emission_factors.sql）とは互いに依存しない:
+-- 本番マスタ seed（seeds/production/official_emission_factors_*.sql）とは互いに依存しない:
 -- 単独でも、production の前後どちらに流しても動く（2025・2026 年度の算定結果が参照する公式係数 ID は
 -- 「あれば参照し、無ければ null」で埋め、係数の値・単位・名称は appliedFactor* にスナップショットで持つ）。
 --
