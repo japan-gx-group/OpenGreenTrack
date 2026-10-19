@@ -1,6 +1,6 @@
 // 排出係数マスタ（emission_factors）で算定する Scope3 カテゴリの対応表（純関数・副作用なし）。
 //
-// 公式係数 seed（supabase/seeds/production/official_emission_factors.sql）には scope='scope3' の
+// 公式係数 seed（supabase/seeds/production/official_emission_factors_<年度>.sql）には scope='scope3' の
 // 標準係数（廃棄物・輸送トンキロ・出張・通勤）が入っており、データ入力フォームの「標準係数」群からも
 // これらのカテゴリで活動量を登録できる。ところが emission_results に categoryId が無いと
 // refresh_dashboard_aggregates（scope='scope3' かつ categoryId 1〜15 の行だけを積む）が黙って無視し、

@@ -3,15 +3,24 @@
 環境省・経済産業省の公表資料から公式排出係数マスタ（`emission_factors` の
 `organizationId is null` 行）のシード SQL を生成するスクリプト。
 
-生成物 `supabase/seeds/production/official_emission_factors.sql` は、OpenGreenTrack の初期データのうち
+生成物は `supabase/seeds/production/` の次のファイルで、OpenGreenTrack の初期データのうち
 **本番環境にも投入する共通マスタ**（seed）。データはマイグレーション（スキーマ定義）には置かず、
 seed として管理する（`AGENTS.md` R12）。
 テスト/デモ用の `supabase/seeds/demo/demo.sql` とは独立していて、どちらか一方だけでも投入できる。
 
+| ファイル | 内容 |
+|---|---|
+| `official_emission_factors_<年度>.sql` | 年度ごとの公式係数（`data/<年度>/` から生成。年度ごとに独立していて、投入の順番に依存しない） |
+| `official_emission_factors_cleanup.sql` | 以前の版が作っていた翌年度コピー行の後始末（後述） |
+
 ```bash
 node scripts/official-factors/generate.ts
-# => supabase/seeds/production/official_emission_factors.sql を上書き生成
+# => supabase/seeds/production/official_emission_factors_<年度>.sql と official_emission_factors_cleanup.sql を上書き生成
+#    （data/ から消した年度のファイルや、以前の全年度 1 ファイルの official_emission_factors.sql は削除する）
 ```
+
+リポジトリに収録しているのは公表資料のある最近の年度だけ（現在は 2025 年度）。それより前の年度は同梱しないので、
+必要な導入先は「[過年度の公式係数を自分で登録する](#過年度の公式係数を自分で登録する)」の手順で登録する。
 
 ## 投入方法
 
@@ -25,10 +34,11 @@ node scripts/official-factors/generate.ts
 ## データソース（data/<年度>/）
 
 公表資料は**年度別のディレクトリ**（`data/2025/` など。ディレクトリ名は `applicableYear`）に置く。
-`generate.ts` は年度ごとに、その年度のディレクトリの資料と `YEAR_SOURCES` のその年度の定義
-（公表資料の名称・都市ガスと熱の代替値・スポットチェック）**だけ**から行を作る。
+`generate.ts` は `data/` 配下の年度ディレクトリを自動で見つけ、年度ごとに、そのディレクトリの資料と
+年度の定義 `source.json`（公表資料の名称・都市ガスと熱の代替値・スポットチェック）**だけ**から行を作る。
+年度を足すときに `generate.ts` を変更する必要はない。
 ある年度の資料をほかの年度に使い回すと、ID が同じ（「安定キー + 年度」）その年度の行が upsert で
-書き換わるため、過年度のディレクトリと定義は変更しない（訂正を除く）。
+書き換わるため、過年度のディレクトリは変更しない（訂正を除く）。
 
 各年度のディレクトリには次のファイルを置く（2025 年度の内容）。
 
@@ -39,6 +49,7 @@ node scripts/official-factors/generate.ts
 | `heat.tsv` | 熱供給事業者別排出係数（R8.6.30公表） | 同上 |
 | `fuels.tsv` | 燃料の排出係数（算定省令別表） | 「算定方法・排出係数一覧」p.23 から手書き転記。先頭列 `key` は行の安定キー（後述） |
 | `scope3.tsv` | Scope3 代表排出原単位 | 排出原単位データベース Ver.3.6 から厳選・転記。先頭列 `key` は行の安定キー（後述） |
+| `source.json` | 年度の定義 | 下記「source.json の書式」。公表資料から機械的に読み取れない値と、スポットチェックの期待値を書く |
 
 公表元:
 
@@ -46,6 +57,21 @@ node scripts/official-factors/generate.ts
 |---|---|---|
 | 「温室効果ガス排出量 算定・報告・公表制度」（環境省・経済産業省） | https://policies.env.go.jp/earth/ghg-santeikohyo/calc.html | `denki.txt` / `gas.tsv` / `heat.tsv` / `fuels.tsv` |
 | 「排出原単位データベース Ver.3.6」（環境省。2026年4月リリース） | https://www.env.go.jp/earth/ondanka/supply_chain/gvc/estimate_05.html | `scope3.tsv` |
+
+### source.json の書式
+
+`data/2025/source.json` がそのまま雛形になる。読み込みと検証は `yearSource.ts`。書式の誤り（必須項目の欠落・
+数値でない値・JSON の構文誤り）や、スポットチェックの不一致は、どのファイルのどの項目かを示して生成が止まる。
+
+| 項目 | 必須 | 内容 |
+|---|---|---|
+| `documents.denki` / `gas` / `heat` / `fuels` / `scope3` | ○ | 各行の `sourceDocumentName` に保存する公表資料の名称（公表日・実績年度まで書く）。電気・ガス・熱の名称が別年度と同じだと、資料の差し替え忘れとして止まる |
+| `scope3DatabaseVersion` | ○ | 生成 SQL の出典表示に載せる排出原単位データベースの版（例: `Ver.3.6`） |
+| `cityGasSubstituteValue` / `heatSubstituteValue` | ○ | 都市ガス（t-CO2/千m3）・熱（t-CO2/GJ）の代替値（省令の排出係数。事業者別の公表資料に載らないため年度ごとに書く） |
+| `checks` | 任意 | パース結果の妥当性検証。書いた項目だけ検証する。件数の下限（`electricityRetailerCountAtLeast` / `electricityRetailerRowsAtLeast` / `gasProviderCountAtLeast` / `heatProviderCountAtLeast` / `scope3CountAtLeast`）、件数の一致（`gridOperatorCount` / `fuelCount`）、電気の代替値（`electricitySubstituteValue`）、公表資料と突き合わせた値（`electricityRetailers` / `gridOperators` / `gasProviders` / `heatProviders` / `fuels`）。書式は `data/2025/source.json` を参照 |
+
+`checks` は任意だが、公表資料の書式の読み違いで行が欠けたり値がずれたりしたまま生成するのを防ぐため、
+公表資料と突き合わせた値を数件ずつ書くことを勧める。
 
 ### データソースの利用条件（変更時に必ず読むこと）
 
@@ -69,7 +95,7 @@ node scripts/official-factors/generate.ts
 
 ## 値・出典・名称の訂正
 
-該当年度の `data/<年度>/`（公表資料の名称・代替値は `generate.ts` の `YEAR_SOURCES` のその年度の定義）を直して
+該当年度の `data/<年度>/`（公表資料の名称・代替値はその年度の `source.json`）を直して
 再生成し、再投入する。生成 SQL は `on conflict (id) do update` の upsert なので、
 既存行の値・出典・名称・有効期間（`name` / `factorValue` / `unit` / `regionName` / `source` /
 `providerName` / `providerNumber` / `menuName` / `factorType` / `effectiveFrom` / `effectiveTo` /
@@ -111,20 +137,22 @@ ID は「安定キー + 年度」から md5 で決定的に導出する。安定
 - 1 年前より古い係数は使わず未算定にする（根拠として説明できない値で算定しないため）。未算定は
   データ入力画面とレポートの「データ充足状況」に件数として出る
 
-この方式のため、公表され次第 `data/<新年度>/` を置いて `YEAR_SOURCES` に新年度の定義を足し、再生成・再投入すれば
+この方式のため、公表され次第 `data/<新年度>/` に公表資料と `source.json` を置いて再生成・再投入すれば
 **暫定適用は自動的に止まる**（表示の消し忘れが起きない）。
 
 ただし止まるのは**これから算定するレコード**だけで、**暫定適用で算定済みの結果は古い係数のまま残る**
 （算定バッチは未算定レコードしか処理しない）。再投入後は必ず「年度更新の手順」6 の再算定まで行うこと。
 
-### 翌年度コピー行の後始末（生成 SQL 末尾の `delete`）
+### 翌年度コピー行の後始末（`official_emission_factors_cleanup.sql` の `delete`）
 
 以前の版（#283 時点）は「翌年度公表までのつなぎ」として 2025 年度と同じ値を 2026 年度にもコピー登録
 していた。その seed を投入した DB にはコピー行が `active` のまま残り、「2026 年度の正式係数」として
 解決されて暫定適用も「暫定適用」の表示も効かない。
 
-生成 SQL の末尾には、`applicableYear` が収録年度の最大値より後の公式係数行を消す冪等な `delete` が
-出力される。`YEAR_SOURCES` に新年度を足せば、この文は自動的に何も消さなくなる。`archived` にせず `delete`
+`official_emission_factors_cleanup.sql` には、`applicableYear` が収録年度の最大値より後の公式係数行を消す
+冪等な `delete` が出力される。新年度のディレクトリを足せば、この文は自動的に何も消さなくなる。年度ごとの seed が
+入れるのは収録年度の行だけなので、投入の順番には依存しない。過年度（収録年度の最大値より前）を足しても
+このファイルは変わらない。`archived` にせず `delete`
 するのは、行 ID が「安定キー + 年度」から決定的に導出されるため、将来その年度が正式公表されたときの
 行が**同じ ID**になり、`status` は upsert の上書き対象外なので archived のまま不可視になってしまうため。
 
@@ -146,12 +174,12 @@ ID は「安定キー + 年度」から md5 で決定的に導出する。安定
 - 公式係数は `organizationId is null` の全組織共有なので、**1 組織の明示指定が全組織に波及する**
 
 グループ全残しなら旧 seed 投入直後と同じ状態（コピー行がその年度の係数として解決される）のまま動き、
-その年度が正式公表されて `YEAR_SOURCES` に足されれば同じ ID の upsert で正式値に上書きされて解消する。
+その年度が正式公表されてディレクトリが足されれば、同じ ID の upsert で正式値に上書きされて解消する。
 
 > **注意**: 参照が残っているコピー行はこの `delete` では消えず、`active` のまま「その年度の正式係数」
 > として解決され続ける（＝その `energyType`・その年度は暫定適用も「暫定適用」の表示も効かない）。
 > 稼働中 DB へ再投入したあとは次のクエリで残存行を確認し、参照元の活動量・
-> 算定結果を確認したうえで個別に対処すること（該当年度が正式公表されていれば、`YEAR_SOURCES` に足して
+> 算定結果を確認したうえで個別に対処すること（該当年度が正式公表されていれば、その年度のディレクトリを足して
 > 再生成・再投入すれば同じ ID の行が正式値で上書きされ、解消する）。
 >
 > ```sql
@@ -168,16 +196,15 @@ ID は「安定キー + 年度」から md5 で決定的に導出する。安定
    （PDFは `pdftotext -layout 元.pdf data/<新年度>/denki.txt`）。過年度のディレクトリは**変更しない**。
    燃料（算定省令別表）や Scope3 原単位のように前年度から変わらない資料も、新年度の資料で確認したうえで
    新年度のディレクトリに置く（ファイル先頭の出典表示も新年度の資料に合わせる）
-2. `generate.ts` の `YEAR_SOURCES` に新年度の定義を**追加**する（過年度の定義は変更しない。出力ファイル名は
-   固定で変えない）。公表資料の名称（`documents`）・排出原単位 DB の版・都市ガスと熱の代替値・スポットチェック
-   （`verify`）を新年度の資料に合わせて書く。電気・ガス・熱の公表資料名が過年度と同じだと、資料の差し替え忘れ
-   として生成が止まる
+2. 新年度のディレクトリに `source.json` を置く（前年度のものを写して書き換える）。公表資料の名称（`documents`）・
+   排出原単位 DB の版・都市ガスと熱の代替値・スポットチェック（`checks`）を新年度の資料に合わせて書く。
+   電気・ガス・熱の公表資料名が過年度と同じだと、資料の差し替え忘れとして生成が止まる。`generate.ts` は変更しない
 3. `node scripts/official-factors/generate.ts` で生成し、スクリプトの件数 assert・スポットチェックが
    通ることを確認する
 4. `npm run db:reset`（または稼働中 DB へ `npm run db:seed:production`）で再投入して確認する。
    クラウドへは `npx supabase db push --include-seed`
 5. 過年度の行を `status='archived'` にする必要がある場合は、マイグレーションではなく `generate.ts` から
-   冪等な文をこの seed の末尾に出力する（例:
+   冪等な文を seed に出力する（例:
    `update emission_factors set status = 'archived' where "organizationId" is null and "applicableYear" < 2026 and status = 'active';`。
    何度流しても同じ結果になる）
 6. **暫定適用で算定済みのデータを再算定する**（#382）。未公表の間に暫定適用で算定した結果は、正式係数を
@@ -223,3 +250,48 @@ order by 1, 2;
 `update activity_records set "isCalculated" = false where id in (…)` で直接戻すこともできる
 （旧 `emission_results` はトリガーが消す）が、その場合は戻したあとに必ず算定を実行すること。
 実行しないとその分の排出量が未算定のまま残る。
+
+## 過年度の公式係数を自分で登録する
+
+OpenGreenTrack は OSS のため、リポジトリには公表資料のある最近の年度（現在は 2025 年度）の公式係数だけを収録し、
+それより前の年度は同梱しない。基準年度や過年度の活動量を公式係数で算定したい導入先は、公的データから
+公表資料を取得して自分で登録する。暫定適用は 1 年前までしか遡らないため、収録していない年度の活動量は
+登録するまで未算定（データ充足状況に件数が出る）になる。
+
+### 方法 1: シードとして登録する（事業者別係数を含めて公式係数として入る）
+
+導入先のリポジトリ（フォーク）で行う。年度ごとにファイルが分かれているため、追加した年度のディレクトリと
+seed は OSS 側の年度のファイルと衝突しない（OSS 側の更新を取り込んでも、追加した年度はそのまま残る）。
+
+1. 対象年度の公表資料を入手する
+   - 電気・ガス・熱の事業者別排出係数と、燃料の排出係数（「算定方法・排出係数一覧」）:
+     [「温室効果ガス排出量 算定・報告・公表制度」](https://policies.env.go.jp/earth/ghg-santeikohyo/calc.html)
+     の排出係数のページ（過年度の公表資料も同じページから辿れる）
+   - Scope3 代表原単位: [「排出原単位データベース」](https://www.env.go.jp/earth/ondanka/supply_chain/gvc/estimate_05.html)
+     の、その年度に使う版
+   - どの公表回をどの適用年度（温対法年度）に使うかは、算定・報告・公表制度のマニュアルに従って判断する
+     （収録済みの年度の対応は `data/2025/source.json` の `documents` を参照）
+2. `data/<年度>/` を作り、「データソース」の表の 5 ファイルを置く。書式は `data/2025/` の各ファイルと同じ
+   （電気は公表 PDF を `pdftotext -layout` でテキスト化、ガス・熱・燃料・Scope3 は TSV に転記。燃料・Scope3 の
+   `key` 列は行の安定キーなので、2025 年度と同じ係数には同じ `key` を使う）
+3. `data/2025/source.json` を写して `data/<年度>/source.json` を作り、公表資料名・代替値・版・スポットチェックを
+   その年度の資料に合わせて書き換える
+4. `node scripts/official-factors/generate.ts` で生成する。`seeds/production/official_emission_factors_<年度>.sql` が
+   増え、ほかの年度のファイルは変わらない
+5. 「投入方法」のとおり投入する（稼働中の DB へは `npm run db:seed:production`、クラウドへは
+   `npx supabase db push --include-seed`）
+
+注意:
+
+- 電気の公表 PDF の書式が年度によって異なり、`parse.ts` で読めない場合がある。生成が止まったときは `parse.ts` の
+  対応が必要（件数の下限やスポットチェックを `checks` に書いておくと、読み違いに気づける）
+- 追加したファイルにも出典と加工した旨の表示を残す（「データソースの利用条件」）。`data/2025/` の各ファイル先頭の
+  表示をその年度の公表資料に合わせて書く
+
+### 方法 2: アプリの係数 CSV 取込でカスタム係数として登録する
+
+係数管理画面の「CSVインポート」で、その年度の代替値・燃料などの係数を**カスタム係数**として組織ごとに登録できる
+（コードやシードを触らない）。算定には使えるが、次の制約がある。
+
+- 事業者別係数（供給事業者・メニュー・係数種別のある行）は CSV から登録できない
+- 公式係数ではなく組織のカスタム係数として扱われる（一覧の種別が「カスタム」になり、組織ごとに登録が要る）

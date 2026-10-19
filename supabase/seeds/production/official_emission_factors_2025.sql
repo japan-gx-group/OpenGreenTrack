@@ -1,5 +1,5 @@
--- 公式排出係数マスタ（OpenGreenTrack の初期データ。本番環境にも投入する共通マスタ）
--- scripts/official-factors/generate.ts による自動生成。手編集しないこと（修正は data/<年度>/ を直して再生成する）。
+-- 公式排出係数マスタ 2025 年度分（OpenGreenTrack の初期データ。本番環境にも投入する共通マスタ）
+-- scripts/official-factors/generate.ts による自動生成。手編集しないこと（修正は data/2025/ を直して再生成する）。
 --
 -- 出典と権利（再配布時もこの表示を保持すること。詳細はリポジトリ直下の NOTICE）:
 --   電気・ガス・熱の事業者別排出係数: 「温室効果ガス排出量 算定・報告・公表制度」
@@ -14,15 +14,14 @@
 --   このデータは Apache License 2.0 の対象ではない（原典に対する権利は各公表元に帰属する）。ただし上記規約は
 --   CC BY 4.0 と互換で、出典と加工した旨を表示すれば商用利用・改変・再配布ができる。
 --
--- 投入方法:
+-- 投入方法（supabase/seeds/production/ の *.sql をすべて投入する。年度ごとのファイルは互いに独立）:
 --   ローカル DB 作り直し      : npx supabase db reset（config.toml [db.seed].sql_paths で自動投入）
 --   稼働中ローカル DB へ再投入: npm run db:seed:production（= node scripts/db/seed.ts production）
 --   クラウド                  : npx supabase db push --include-seed
 --   任意の DB（自前ホストなど）: npm run db:seed:production -- --db-url postgresql://…（ホストの psql を使用）、
---                              または Dashboard の SQL Editor でこのファイルを実行する
+--                              または Dashboard の SQL Editor で seeds/production/ のファイルを実行する
 --
--- 収録内容（applicableYear 2025。公表資料のある年度のみ。年度ごとに data/<年度>/ の資料だけから生成）:
---   [2025 年度]
+-- 収録内容（applicableYear 2025。data/2025/ の資料と source.json だけから生成）:
 --   電気   : 電気事業者別排出係数 小売511事業者（メニュー別・基礎/調整後）+ 一般送配電10社 + 代替値 0.000416 t-CO2/kWh
 --   都市ガス: ガス事業者別排出係数 37事業者 + 代替値 2.05 t-CO2/千m3
 --   熱     : 熱供給事業者別排出係数 19事業者 + 代替値 0.0532 t-CO2/GJ
@@ -41,10 +40,9 @@
 -- updatedAt は set_emission_factors_updated_at トリガーが更新する。
 -- 公表資料のある年度の行だけを作る（未公表年度の行は作らない）。対象年度の係数が無い間は算定側
 -- （resolveEmissionFactor の effectiveYearsFor）が直近の過年度を暫定適用し、入力フォームに「暫定適用」と
--- 理由を表示する。
--- 末尾の delete は、以前の版が作っていた翌年度コピー行の後始末（収録年度より後の公式係数行のうち、
--- 算定結果・活動量からの参照が energyType・年度ごとに 1 件も無いものだけを消す。冪等）。
--- 年度更新時は data/<新年度>/ を追加して再生成し、再投入する（過年度の data/<年度>/ は変更しない。手順は scripts/official-factors/README.md）。
+-- 理由を表示する。以前の版が作っていた翌年度コピー行の後始末は official_emission_factors_cleanup.sql にある。
+-- 年度の追加は data/<年度>/ に公表資料と source.json を置いて再生成し、再投入する（過年度の data/<年度>/ は
+-- 変更しない。手順は scripts/official-factors/README.md）。
 
 insert into emission_factors as ef
   (id, "organizationId", name, "energyType", scope, "factorValue", unit, "applicableYear", "regionName", source, status, "isCustom", "providerName", "providerNumber", "menuName", "factorType", "effectiveFrom", "effectiveTo", "sourceDocumentName", "sourceUrl")
@@ -3133,20 +3131,3 @@ on conflict (id) do update set
   "sourceUrl" = excluded."sourceUrl"
 where (ef.name, ef."factorValue", ef.unit, ef."regionName", ef.source, ef."providerName", ef."providerNumber", ef."menuName", ef."factorType", ef."effectiveFrom", ef."effectiveTo", ef."sourceDocumentName", ef."sourceUrl")
   is distinct from (excluded.name, excluded."factorValue", excluded.unit, excluded."regionName", excluded.source, excluded."providerName", excluded."providerNumber", excluded."menuName", excluded."factorType", excluded."effectiveFrom", excluded."effectiveTo", excluded."sourceDocumentName", excluded."sourceUrl");
-
--- 収録年度（2025）より後の公式係数行の後始末（以前の版が作っていた翌年度コピー行。冪等）。
--- 参照の有無は energyType + 年度の単位で見る（1 件でも参照が残るグループは全部残す。理由は generate.ts）。
-delete from emission_factors as ef
-where ef."organizationId" is null
-  and ef."applicableYear" > 2025
-  and not exists (
-    select 1
-    from emission_factors ref
-    where ref."organizationId" is null
-      and ref."energyType" = ef."energyType"
-      and ref."applicableYear" = ef."applicableYear"
-      and (
-        exists (select 1 from emission_results er where er."emissionFactorId" = ref.id)
-        or exists (select 1 from activity_records ar where ar."emissionFactorId" = ref.id)
-      )
-  );
