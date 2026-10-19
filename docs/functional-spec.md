@@ -241,7 +241,7 @@ KPI カードの前年比ピルと排出量上位拠点テーブルの前年比�
 |---|---|---|
 | 供給事業者別 | 電気・ガス・熱 | 計算方法（基礎/調整後）→ 供給事業者 → メニュー を選ぶ。未選択なら全国の代替値 |
 | 標準 | 廃棄物・燃料・出張・通勤 | 拠点・対象年月に合う標準係数を優先順位で自動選択。候補から変更も可 |
-| IDEA 原単位 | Scope 3 カテゴリ 1〜15 | 製品をサーバーサイド検索で選ぶ。単位は製品から自動設定（編集不可） |
+| IDEA 原単位 | Scope 3 カテゴリ 1〜15 | 製品をサーバーサイド検索で選ぶ。検索するのは対象年月が属する会計年度に割り当てた IDEA の版（無ければ有効な版）。選択中の製品がその版の製品でなければ選び直しを促す。単位は製品から自動設定（編集不可） |
 
 入力項目は 拠点・カテゴリ・使用量・単位（種別に連動し編集不可）・対象年月・備考。保存前に、**保存後の算定で実際に適用される係数**でインライン概算排出量を表示する（同じ純関数を使うため、プレビューと算定結果はずれない）。
 
@@ -328,6 +328,8 @@ KPI カードの前年比ピルと排出量上位拠点テーブルの前年比�
 係数 CSV の取込は、書き出した CSV をそのまま取り込める（ラウンドトリップ）。標準係数と同じキーで値を変えた行は「カスタム係数として新規追加」し（カスタムは標準より優先されるため上書きとして機能する）、同じキーのカスタム上書きが既にあればそれを更新する。事業者別係数は上書き対象外（1 事業者の係数を直したつもりが組織全体の係数を差し替えてしまうため）。
 
 `providerName` が非 null の係数（事業者別係数・IDEA 正規化行）は**自動解決の対象外で、明示選択専用**（§7.3）。
+
+IDEA データベースは、「IDEAの版と算定年度」カードで**会計年度ごとに使う版**を選べる（1 年度に 1 版。割り当てていない年度は有効な版）。割り当てると、その年度の未算定の Scope 3 積上げ明細が割り当てた版の製品に付け替わる（算定済みの明細は変わらない）。同じカードに取込履歴（版・取込日・割り当て年度・算定での使用件数）を表示し、使われていない版を削除できる（[`idea-scope3-spec.md`](./idea-scope3-spec.md) §3.6-5）。
 
 カスタム係数の編集で**係数値・単位**を変えて保存するとき、その係数で算定済みのデータがあれば、件数を示して「保存して再算定する」「保存のみ（算定済みの結果は変えない）」「戻る」を選ばせる。算定済みの結果は算定時の値のまま残るため、再算定しないと同じ年度に変更前と変更後の値の結果が混在する。「保存して再算定する」は保存後に該当レコードを再算定対象へ戻し（`POST /api/calculations/factor-recalculation`）、続けて通常の算定を実行する。係数値・単位の変更は変更前後の値と日時が履歴に残り、カスタム係数の詳細モーダルに「値の変更履歴」として表示する（[`calculation-logic.md`](./calculation-logic.md) の「カスタム係数の値を変えたときの再算定と変更履歴」）。
 
@@ -500,6 +502,7 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 | POST | `/api/idea-imports/upload-url` | IDEA データベース（Excel）の署名付きアップロード URL 発行（ブラウザは Supabase Storage の `upload-quarantine` へ直接アップロードする。組織あたり 10 分に 10 回まで、超過は 429） |
 | POST | `/api/idea-imports` | IDEA データベース（Excel）の取込開始（Storage 上のパスを JSON で受け取る。ファイル本体は送らない） |
 | DELETE | `/api/idea-imports/[id]` | IDEA 取込の削除（取込状態の取得は Supabase クライアントから直接読む） |
+| POST | `/api/idea-imports/fiscal-year-assignment` | 会計年度への IDEA の版の割り当て・解除（あわせてその年度の未算定の積上げ明細を付け替える） |
 | POST | `/api/idea-imports/recovery` | 取込中のまま止まった IDEA 取込（10 分以上更新の無いもの）を失敗に戻す。係数管理画面が取込中の表示を出している間に呼ぶ |
 | POST | `/api/dashboard-aggregates/refresh` | ダッシュボード集計の再計算 |
 | POST | `/api/account/delete` | アカウント削除 |
@@ -509,7 +512,7 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 
 `/api/calculations`・`/api/calculations/provisional-recalculation`・`/api/calculations/factor-recalculation`・`/api/dashboard-aggregates/refresh`・`/api/idea-imports/upload-url`・`/api/idea-imports`・`/api/idea-imports/[id]`・`/api/account/delete` の 8 本は `service_role` で RLS を越えて読み書きするため、Route Handler 側でログイン済み・自組織であることを検証する。この組織チェックは RLS では効かず、ここでしか担保できない。`/api/idea-imports/upload-url` は自組織フォルダ（`${organizationId}/idea-imports/<uuid>.xlsx`）にだけ署名付き URL を発行し、`/api/idea-imports` は受け取ったパスがその形であることを検証してから Storage に触れる。`/api/health` も `service_role` を使うが `organizations` を 1 行読む疎通確認のみで、組織データは返さない。
 
-`/api/idea-imports/recovery` も `service_role` で書き込むため、上記と同じくログイン中プロフィールの組織であることを Route Handler 側で検証し、その組織の取込だけを回収する。
+`/api/idea-imports/recovery` も `service_role` で書き込むため、上記と同じくログイン中プロフィールの組織であることを Route Handler 側で検証し、その組織の取込だけを回収する。`/api/idea-imports/fiscal-year-assignment` も同じく、ログイン中プロフィールの組織で RPC を呼び、年度・版がその組織のものであることを RPC が突き合わせる。
 
 ### 6.3 主要な RPC
 

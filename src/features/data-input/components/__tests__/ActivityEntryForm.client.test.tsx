@@ -4,6 +4,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { click, focusElement, render, setInputValue, type RenderResult } from '@/lib/testing/render';
 import type { FiscalYearOption } from '@/contexts/fiscalYearContextValue';
 import {
+  fetchIdeaImportForFiscalYear,
   fetchIdeaImportOverview,
   type IdeaImportRecord,
 } from '@/features/factors/services/ideaImportClient';
@@ -43,6 +44,7 @@ vi.mock('@/features/factors/services/ideaProductSearch', async (importOriginal) 
 
 vi.mock('@/features/factors/services/ideaImportClient', () => ({
   fetchIdeaImportOverview: vi.fn(),
+  fetchIdeaImportForFiscalYear: vi.fn(),
 }));
 
 vi.mock('../../services/scope3Adoption', async (importOriginal) => ({
@@ -346,6 +348,8 @@ describe('ActivityEntryForm', () => {
     vi.mocked(fetchIdeaImportOverview)
       .mockReset()
       .mockResolvedValue({ active: activeImport, latest: activeImport });
+    // 既定は年度に版を割り当てていない（有効な版から検索する）
+    vi.mocked(fetchIdeaImportForFiscalYear).mockReset().mockResolvedValue(null);
     vi.mocked(searchIdeaProducts).mockReset().mockResolvedValue([]);
     vi.mocked(getIdeaProductDetail).mockReset().mockResolvedValue(null);
     // 既定は「積上げを採用中」＝注記なし。direct の注記は専用テストで切り替える。
@@ -683,7 +687,9 @@ describe('ActivityEntryForm', () => {
     await act(async () => {
       vi.advanceTimersByTime(300); // 検索の debounce
     });
-    expect(searchIdeaProducts).toHaveBeenCalledWith('');
+    // 年度に版を割り当てていないので、有効な版から検索する（importId = null）
+    expect(searchIdeaProducts).toHaveBeenCalledWith('', { importId: null });
+    expect(container.textContent).toContain('Ver.X 標準版（有効な版）から検索します');
 
     chooseOption(container, 'manual-product-select', 'ダミー製品');
     await flush(); // 製品詳細
@@ -722,6 +728,31 @@ describe('ActivityEntryForm', () => {
     // Scope3 の間は Scope1/2 の係数を取得しない。
     expect(getActiveScope12Factors).toHaveBeenCalledTimes(1);
     expect(getProviderFactors).toHaveBeenCalledTimes(1);
+  });
+
+  it('IDEA（年度に版を割り当て）: 対象年月の年度に割り当てた版から検索し、別の版の製品を選ぶと選び直しを促す', async () => {
+    useSearchTimers();
+    vi.mocked(fetchIdeaImportForFiscalYear).mockResolvedValue({ importId: 'imp-2023', version: 'Ver.3.4' });
+    // 割り当てた版とは別の版（有効な版 imp）の製品を選んだ状態を作る
+    vi.mocked(searchIdeaProducts).mockResolvedValue([dummyProduct]);
+    vi.mocked(getIdeaProductDetail).mockResolvedValue(dummyDetail);
+    const { container } = renderForm();
+
+    setSelectValue(categorySelect(container), 'scope3:1');
+    await flush();
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+    });
+
+    // 対象年月（既定の当月 2025-01）が属する 2024年度に割り当てた版から検索する
+    expect(fetchIdeaImportForFiscalYear).toHaveBeenCalledWith('fy2024');
+    expect(searchIdeaProducts).toHaveBeenCalledWith('', { importId: 'imp-2023' });
+    expect(container.textContent).toContain('Ver.3.4（この年度に割り当てた版）から検索します');
+
+    chooseOption(container, 'manual-product-select', 'ダミー製品');
+    await flush();
+    expect(container.textContent).toContain('選択中の製品は Ver.X 標準版 の係数です');
+    expect(container.textContent).toContain('製品を選び直してください');
   });
 
   it('IDEA 未取込: 案内を出して製品検索を無効化し、検索 API を呼ばない', async () => {

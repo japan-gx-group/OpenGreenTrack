@@ -129,6 +129,17 @@ describe('searchIdeaProducts', () => {
     expect(captured[0].or).toBe('productName.ilike."%鋼%",ideaCode.ilike."%鋼%"');
   });
 
+  it('版を指定したときは、その版（会計年度に割り当てた版）の係数だけを検索する（§3.6-5）', async () => {
+    const { client, captured } = createFakeSearchClient({ jpn: [jpnRow(1)], other: [] });
+
+    await searchIdeaProducts('鋼', { client, importId: 'imp-2023' });
+
+    expect(captured[0].filters).toContainEqual(['importId', 'imp-2023']);
+    // 有効な版での絞り込み（active インポートの結合）は使わない
+    expect(captured[0].select).not.toContain('idea_imports');
+    expect(captured[0].filters).not.toContainEqual(['idea_imports.isActive', true]);
+  });
+
   it('IDEA製品コードでの検索も同じ OR 条件でサーバーへ渡る', async () => {
     const { client, captured } = createFakeSearchClient({ jpn: [jpnRow(1)], other: [] });
 

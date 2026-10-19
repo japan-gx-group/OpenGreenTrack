@@ -303,6 +303,21 @@ GHG プロトコルのロケーション基準／マーケット基準それぞ�
   公式係数の改訂は seed の再投入で行い、ここには記録しない。
 - `authenticated` は SELECT のみ（自組織限定）。履歴を利用者が書き換えられないようにする。
 
+### 3.13 会計年度ごとの IDEA の版 (`idea_fiscal_year_imports`)（`supabase/migrations/20261019120000_idea_fiscal_year_imports.sql`）
+
+会計年度に割り当てた IDEA の版。1 会計年度 = 1 行で、割り当ての無い年度は行を持たない（組織で有効な版 `idea_imports."isActive"` を使う）。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `fiscalYearId` | 会計年度ID | UUID | Primary Key, FK → `fiscal_years` | 削除時: CASCADE |
+| `organizationId` | 組織ID | UUID | Foreign Key | RLS の組織判定用（削除時: CASCADE） |
+| `importId` | 版（取込）ID | UUID | FK → `idea_imports` | 削除時: RESTRICT（割り当て中の版は削除できない） |
+| `assignedByUserId` | 割り当てた利用者 | UUID | NULL 可 | |
+| `assignedAt` | 割り当て日時 | TIMESTAMPTZ | NOT NULL | |
+
+- 書き込みは service_role 限定の RPC `assign_idea_import_to_fiscal_year` だけ（割り当てと同時に、その年度の未算定の積上げ明細を割り当てた版へ付け替えるため）。`authenticated` は SELECT のみ（自組織限定。IDEA のライセンスは法人単位）。
+- 取込完了の `complete_idea_import` は、版を割り当てた年度の明細を新しい版への付け替え・孤児化の対象から除く。`delete_idea_import` は割り当て中の版を P2033 で拒否する。
+
 ---
 
 ## 4. 計算の整合性・業務ルール

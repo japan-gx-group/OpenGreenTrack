@@ -1,5 +1,6 @@
 // IDEA 製品検索（docs/idea-scope3-spec.md §4.2）。
-// active なインポートの係数だけを対象に、サーバーサイド ilike のインクリメンタル検索を行う。
+// 指定した版（会計年度に割り当てた版）、指定が無ければ active なインポートの係数だけを対象に、
+// サーバーサイド ilike のインクリメンタル検索を行う。
 // 約1万行 × 組織のデータを全行クライアントへロードしない（上限50件）。
 // SearchableSelect と組み合わせる想定のサービス関数（データ入力画面で使用）。
 
@@ -121,16 +122,17 @@ export const getIdeaProductDetail = async (
 /**
  * IDEA 製品を検索する。組織スコープは RLS（idea_factors の自組織 SELECT ポリシー）が担保する。
  *
- * §4.2: 検索対象は active インポートのみ。country=JPN を優先表示し、
- * 上限に満たない分を JPN 以外（GLO 等）で補完する。
+ * §4.2: 検索対象は options.importId の版（活動量の期間が属する会計年度に割り当てた版。§3.6-5）、
+ * 指定が無ければ active インポート。country=JPN を優先表示し、上限に満たない分を JPN 以外（GLO 等）で補完する。
  *
  * @param query 検索キーワード（製品名または IDEA 製品コードの部分一致。空文字は先頭からの一覧）
+ * @param options.importId 検索する版（null / 省略は active インポート）
  * @param options.limit 取得上限（既定 50）
  * @param options.client テスト差し替え用の Supabase クライアント
  */
 export const searchIdeaProducts = async (
   query: string,
-  options: { limit?: number; client?: SupabaseClient } = {},
+  options: { importId?: string | null; limit?: number; client?: SupabaseClient } = {},
 ): Promise<IdeaProduct[]> => {
   const limit = options.limit ?? IDEA_PRODUCT_SEARCH_LIMIT;
   const supabase = options.client ?? createClient();
@@ -138,11 +140,17 @@ export const searchIdeaProducts = async (
   const pattern = `%${escapeIlikePattern(trimmed)}%`;
 
   const fetchByCountry = async (countryScope: 'jpn' | 'other', scopeLimit: number) => {
-    let builder = supabase
-      .from('idea_factors')
-      // !inner 結合 + isActive フィルタで「active インポートの係数のみ」に絞る（§4.2）
-      .select('id, ideaCode, productName, country, unit, idea_imports!inner(isActive)')
-      .eq('idea_imports.isActive', true);
+    let builder = options.importId
+      ? // 会計年度に割り当てた版の係数のみ
+        supabase
+          .from('idea_factors')
+          .select('id, ideaCode, productName, country, unit')
+          .eq('importId', options.importId)
+      : // !inner 結合 + isActive フィルタで「active インポートの係数のみ」に絞る（§4.2）
+        supabase
+          .from('idea_factors')
+          .select('id, ideaCode, productName, country, unit, idea_imports!inner(isActive)')
+          .eq('idea_imports.isActive', true);
     builder =
       countryScope === 'jpn' ? builder.eq('country', 'JPN') : builder.neq('country', 'JPN');
     if (trimmed !== '') {

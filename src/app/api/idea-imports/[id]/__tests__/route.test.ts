@@ -76,6 +76,19 @@ describe('DELETE /api/idea-imports/[id]', () => {
     expect(body.error).toContain('算定結果から参照されているため削除できません');
   });
 
+  it('算定年度に割り当て中の版（P2033）は409で拒否し、割り当てを外すよう案内する（§3.6-5）', async () => {
+    const supabase = stubSupabase({
+      data: null,
+      error: { code: IDEA_IMPORT_SQLSTATE.importAssigned },
+    });
+    mocks.createAdminClient.mockReturnValue(supabase);
+
+    const response = await DELETE(request(), params());
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.error).toContain('算定年度に割り当てられているため削除できません');
+  });
+
   it('正常系: 自組織スコープでRPCを呼び 200 を返す', async () => {
     const supabase = stubSupabase({ data: null, error: null });
     mocks.createAdminClient.mockReturnValue(supabase);

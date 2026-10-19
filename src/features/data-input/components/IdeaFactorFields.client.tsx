@@ -51,10 +51,14 @@ export const IdeaFactorFields = ({ idea }: { idea: IdeaProductSelectionView }) =
         disabled={idea.hasActiveImport === false}
       />
       <p id="manual-product-select-help" className="mt-1.5 text-xs text-text-muted">
-        取り込んだ IDEA データベース（active な版）から検索します。国内（JPN）の製品を優先表示し、
-        該当が無い場合はグローバル（GLO 等）を提示します。
+        {idea.searchVersionLabel
+          ? `取り込んだ IDEA データベースの ${idea.searchVersionLabel}から検索します。`
+          : '取り込んだ IDEA データベースから検索します。'}
+        国内（JPN）の製品を優先表示し、該当が無い場合はグローバル（GLO 等）を提示します。
       </p>
+      {idea.fiscalYearImportError && <p className="mt-1.5 text-sm text-warning">{idea.fiscalYearImportError}</p>}
       {idea.isFactorMissing && <p className="mt-1.5 text-sm text-warning">{SCOPE3_FACTOR_MISSING_MESSAGE}</p>}
+      {idea.versionNotice && <p className="mt-1.5 text-sm text-warning">{idea.versionNotice}</p>}
     </div>
 
     {/* 適用する原単位の詳細（製品 / 原単位 / 出典）。参照切れ（詳細が引けない）は孤児と同じ扱いで再選択を促す。 */}
