@@ -94,7 +94,7 @@ export const LocationFilterBar = ({ filters, activeFilters, onChange }: Location
           {filters.searchQuery && (
             <button
               type="button"
-              onClick={() => filters.setSearchQuery('')}
+              onClick={() => { filters.setSearchQuery(''); onChange(); }}
               aria-label="検索キーワードをクリア"
               className="absolute right-3 text-text-subtle hover:text-text-main"
             >
