@@ -3,9 +3,11 @@ import React from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { render, type RenderResult } from '@/lib/testing/render';
 import {
+  fictionalRisksOpportunities,
   fictionalSnapshot,
   fictionalVersion,
   fictionalVersionBeforeBasicInfoAdditions,
+  fictionalVersionBeforeRiskType,
 } from '../../__fixtures__/fictionalReport';
 import { fictionalDisclosedTexts, fictionalGhgValues, fictionalInternalTexts } from '../../__fixtures__/fictionalReportTexts';
 import type { SsbjPreviewSource } from '../../services/previewService';
@@ -95,6 +97,18 @@ describe('SsbjPreviewDocument', () => {
     for (const label of ['親会社名', '親会社との関係', '親会社の持分比率', '測定アプローチ', '業種（SICS）']) {
       expect(valueOf(label)).toBe('未入力');
     }
+    expect(text()).not.toContain('undefined');
+  });
+
+  it('リスクの種類を追加する前の保存版でも、落ちずにリスクの種類を「未入力」と出す（印刷も同じ部品で描く）', () => {
+    const legacy = fictionalVersionBeforeRiskType;
+    rendered = render(<SsbjPreviewDocument source={{ ...saved, snapshot: legacy.snapshot }} showInternalNotes={false} />);
+    const riskTypeValues = Array.from(rendered.container.querySelectorAll('dt'))
+      .filter(item => item.textContent === 'リスクの種類')
+      .map(item => item.nextElementSibling?.textContent);
+    const riskCount = fictionalRisksOpportunities.filter(item => item.kind === 'risk').length;
+    expect(riskCount).toBeGreaterThan(0);
+    expect(riskTypeValues).toEqual(Array(riskCount).fill('未入力'));
     expect(text()).not.toContain('undefined');
   });
 

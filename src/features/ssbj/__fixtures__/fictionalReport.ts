@@ -429,3 +429,22 @@ export const fictionalVersionBeforeBasicInfoAdditions: SsbjReportVersion = (() =
     snapshot: { ...fictionalSnapshot, report: report as SsbjReportSnapshotV1['report'] },
   };
 })();
+
+/**
+ * リスク・機会にリスクの種類（riskType）を追加する前の形式で保存された版の例。
+ * risks_opportunities の各要素から riskType のキーが欠けている（キーそのものが無い）。
+ */
+export const fictionalVersionBeforeRiskType: SsbjReportVersion = {
+  ...fictionalVersion,
+  snapshot: {
+    ...fictionalSnapshot,
+    sections: {
+      ...fictionalSnapshot.sections,
+      risks_opportunities: fictionalRisksOpportunities.map(item => {
+        const legacy: Record<string, unknown> = { ...item };
+        delete legacy.riskType;
+        return legacy as SsbjRiskOpportunity;
+      }),
+    },
+  },
+};
