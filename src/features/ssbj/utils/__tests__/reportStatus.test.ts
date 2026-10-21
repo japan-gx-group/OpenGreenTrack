@@ -41,6 +41,26 @@ describe('ssbjStatusActions', () => {
     expect(ssbjStatusActions(approved, 'approver', 'viewer')[0].allowed).toBe(true);
   });
 
+  it('自己承認: レビューを依頼した本人は、管理者でも承認できない（差戻し・取り下げはできる）', () => {
+    const requestedByAdmin = review({ status: 'in_review', approverUserId: 'approver', reviewRequestedByUserId: 'admin-user' });
+    const options = ssbjStatusActions(requestedByAdmin, 'admin-user', 'admin');
+    expect(options.map(option => [option.action, option.allowed])).toEqual([
+      ['approve', false], ['reopen', true], ['withdraw', true],
+    ]);
+    expect(options[0].reason).toContain('レビューを依頼した本人は承認できません');
+    // 指定された承認者は承認できる。
+    expect(ssbjStatusActions(requestedByAdmin, 'approver', 'logger')[0].allowed).toBe(true);
+  });
+
+  it('自己承認: サーバが返した理由（依頼の後に変更した）があれば承認させず、理由を出す', () => {
+    const options = ssbjStatusActions(inReview, 'approver', 'logger', 'edited_after_request');
+    expect(options[0]).toEqual({
+      action: 'approve', allowed: false, reason: expect.stringContaining('レビューの依頼の後に内容を変更したため'),
+    });
+    // 承認の権限が無い人には、権限の理由のほうを出す。
+    expect(ssbjStatusActions(inReview, 'logger', 'logger', 'edited_after_request')[0].reason).toContain('承認者か、管理者');
+  });
+
   it('ログインしていない（ID が無い）ときは承認者とみなさない', () => {
     expect(ssbjStatusActions(review({ status: 'in_review', approverUserId: null }), null, null)[0].allowed).toBe(false);
   });

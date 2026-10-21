@@ -141,7 +141,7 @@ describe('SsbjJudgements', () => {
 describe('SsbjJudgements（承認ロック）', () => {
   it('承認済みのレポートでは編集の操作を出さず、ロックの案内を出す', async () => {
     vi.mocked(getSsbjReport).mockResolvedValue({ ...report, review: { status: 'approved' as const, approverUserId: 'u', approvedAt: '2025-06-05T00:00:00.000Z', approvedByUserId: 'u',
-      approvedVersionId: null, statusChangedAt: null } });
+      approvedVersionId: null, statusChangedAt: null, reviewRequestedByUserId: null } });
     rendered = render(<SsbjJudgements reportId={report.id} />);
     await settle();
     expect(rows().length).toBeGreaterThan(0);

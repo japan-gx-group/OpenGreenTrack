@@ -10,7 +10,8 @@ SSBJ（サステナビリティ基準委員会）基準に沿った開示レポ�
 
 > 関連: 規約 [`AGENTS.md`](../AGENTS.md) / 画面・URL [`functional-spec.md`](functional-spec.md) /
 > OGT の算定範囲と制約 [`coverage-and-limitations.md`](coverage-and-limitations.md) /
-> R1 の対象範囲（T01 の合意） [`ssbj-r1-scope.md`](ssbj-r1-scope.md)
+> R1 の対象範囲（T01 の合意） [`ssbj-r1-scope.md`](ssbj-r1-scope.md) /
+> 書き込み経路とロール別の権限（R2-09） [`authorization-matrix.md`](authorization-matrix.md)
 
 ---
 
@@ -511,7 +512,7 @@ R1 の初回対象（[`ssbj-r1-scope.md`](ssbj-r1-scope.md) §5.1）に含める
 |---|---|
 | DB | `supabase/migrations/20260929182558_ssbj_report_preview.sql`。スナップショットの組み立て関数 `ssbj_build_report_snapshot`、作業中の内容を返す RPC `preview_ssbj_report`（ともに service_role 限定）、版生成 RPC `create_ssbj_report_version` を組み立て関数を使う形に置き換え（引数・検証・採番・戻り値と、T11 の過去版の複製は同じ） |
 | API | `GET /api/ssbj/reports/[reportId]/preview`（`services/previewServer.ts`） |
-| 画面 | `components/SsbjPreview.client.tsx`（表示する内容の選択・内部メモの表示・印刷ビューへのリンク）、`SsbjPreviewDocument.tsx`（本文。画面と印刷ビューで共通）、`SsbjPreviewStrategy.tsx`・`SsbjPreviewGhg.tsx`・`SsbjPreviewEvidence.tsx`、`SsbjPreviewPrintView.client.tsx`。レポートの内容の入口に「プレビュー」 |
+| 画面 | `components/SsbjPreview.client.tsx`（表示する内容の選択・画面での内部メモの表示・印刷ビューへのリンク）、`SsbjPreviewDocument.tsx`（本文。画面と印刷ビューで共通）、`SsbjPreviewStrategy.tsx`・`SsbjPreviewGhg.tsx`・`SsbjPreviewEvidence.tsx`、`SsbjPreviewPrintView.client.tsx`。レポートの内容の入口に「プレビュー」 |
 | コード | `services/previewService.ts`（`SsbjPreviewSource`）、`hooks/useSsbjPreviewSource.ts`・`useSsbjVersionSummaries.ts`、`utils/preview.ts` |
 | テスト | `scripts/db/__tests__/ssbjReportPreviewPolicy.test.ts`（組み立て関数の一本化・置き換えた版生成 RPC の検証の残存・権限）、本文・画面・印刷ビュー・Route Handler・サーバ処理の単体テスト |
 
@@ -522,14 +523,21 @@ R1 の初回対象（[`ssbj-r1-scope.md`](ssbj-r1-scope.md) §5.1）に含める
   （基本情報の項目を足したときに片方だけ直す事故を防ぐ）。作業中の内容は保存しない。
 - **表示している内容が作業中か保存版かを、本文の先頭に必ず出す。** 保存版は版番号・保存日時・版 ID を出す。作業中の内容は
   保存版になっていない変更を含むと明示する。
-- **内部メモは既定で出さない。** 「内部メモも表示する」を選んだときだけ、開示する文章とは別の行に「開示しない」と明示して出す（§5）。
-  印刷ビューにも同じ選択を渡す。
+- **内部メモは既定で出さない。** 「内部メモも表示する」を選んだときだけ、画面のプレビューで、開示する文章とは別の行に
+  「開示しない」と明示して出す（§5）。
+- **印刷・PDF には、内部メモと内部記録を常に出さない。** 画面での「内部メモも表示する」の選択は印刷ビューに渡さず、印刷ビューは
+  URL に `internal=1` などが付いていても読まない（印刷ビューが受け取るのは `source` だけ）。対象は四本柱の文章・リスク・機会・
+  時間軸の定義の内部メモ、判断の内部の検討理由、根拠文書の内部記録（資料名・版・保管先・参照位置・主管部署）。
+  開示する文章・開示用参照文・GHG の数値・版情報は従来どおり出す。
+  **なぜ:** 内部情報は画面で確認するために表示を切り替えるが、PDF はそのままレポートとして共有されうる。画面の選択が
+  PDF に引き継がれると、「開示しない」と付いた情報を意図せず渡してしまう。内部記録を含む社内確認用の出力は CSV・Excel の
+  「内部記録」の列で行う（PDF に社内用の出力は設けない）。
 - **PDF は新しいライブラリを使わず、本体のレポートと同じ印刷ビュー方式（`window.print()` と `report-print-*` のクラス）で出す。**
   `ssbj-r1-scope.md` で R1 の出力に PDF を含めたため、T12 の範囲に入れた。
 - **プレビューが描けないセクションは、黙って落とさず名前を出す。** 文章（T05）・判断（T09）などが加わったとき、
   その機能の PR で描画を足すまでの間も、出力漏れに気づけるようにするため。
 - **根拠文書（T10）は、開示用参照文だけを常に出す。** 資料名・版・保管先・参照位置・主管部署は内部記録として、
-  「内部メモも表示する」を選んだときだけ「開示しない」と明示して出す（T10 の画面の区分と同じ）。
+  画面のプレビューで「内部メモも表示する」を選んだときだけ「開示しない」と明示して出す（T10 の画面の区分と同じ。印刷・PDF には出さない）。
 - **四本柱のうち、まだ入力欄の無い章（ガバナンス・リスク管理）は、その旨を表示する。** 空欄にすると「記載なし」と読めるため。
 - 表示する保存版の選択は、Radix のセレクトの操作が jsdom で難しいため、画面のテストではなく印刷ビューのテスト（URL の `source`）で確かめている。
 
@@ -593,7 +601,7 @@ R1 の初回対象（[`ssbj-r1-scope.md`](ssbj-r1-scope.md) §5.1）に含める
 
 | 対象 | 内容 |
 |---|---|
-| 全体テスト（ローカルのみ） | `e2e/ssbj/r1-acceptance.e2e.ts`（16 手順を順に実行）、`e2e/ssbj/support.ts`・`global-setup.ts`・`global-teardown.ts`。設定は `playwright.ssbj.config.ts`。承認ロック・操作履歴・復元などは `e2e/ssbj/r1-requirements.e2e.ts`（9 手順。同じ設定で一緒に流れる） |
+| 全体テスト（ローカルのみ） | `e2e/ssbj/r1-acceptance.e2e.ts`（16 手順を順に実行）、`e2e/ssbj/support.ts`・`global-setup.ts`・`global-teardown.ts`。設定は `playwright.ssbj.config.ts`。承認ロック・操作履歴・復元などは `e2e/ssbj/r1-requirements.e2e.ts`（10 手順。同じ設定で一緒に流れる） |
 | 単体テスト（CI で実行） | `__fixtures__/fictionalReportTexts.ts`（架空の保存版の値を「開示する内容」「内部記録」「GHG の数値」に分けた一覧）を使い、`versionCsv.test.ts`・`SsbjPreviewDocument.test.tsx` で欠落と取り違えを、`ogtCandidateService.test.ts` で二重加算を、`fictionalReport.test.ts` で架空の保存版が全セクションを含むことを確かめる |
 | 修正 | レポートの新規作成ダイアログが、高さ 720px 程度の画面で「作成する」まで届かなかった（ダイアログの中をスクロールできるようにした） |
 
@@ -664,11 +672,11 @@ T14 の確認事項と、確かめている場所:
 
 | 対象 | 内容 |
 |---|---|
-| DB | `20261002090000_ssbj_audit_logs.sql`（`ssbj_audit_logs`・`ssbj_audit_row_change`・`record_ssbj_export`）、`20261002090100_ssbj_report_status.sql`（`ssbj_reports` の状態の列・`reject_ssbj_change_when_approved`・`change_ssbj_report_status`）、`20261002090200_ssbj_restore_version.sql`（`ssbj_restore_section__*`・`restore_ssbj_report_version`）、`20261009090000_ssbj_report_write_lock.sql`（承認と保存の排他。`reject_ssbj_change_when_approved` の定義し直し・`lock_ssbj_report_working_rows`） |
+| DB | `20261002090000_ssbj_audit_logs.sql`（`ssbj_audit_logs`・`ssbj_audit_row_change`・`record_ssbj_export`）、`20261002090100_ssbj_report_status.sql`（`ssbj_reports` の状態の列・`reject_ssbj_change_when_approved`・`change_ssbj_report_status`）、`20261002090200_ssbj_restore_version.sql`（`ssbj_restore_section__*`・`restore_ssbj_report_version`）、`20261009090000_ssbj_report_write_lock.sql`（承認と保存の排他。`reject_ssbj_change_when_approved` の定義し直し・`lock_ssbj_report_working_rows`）、`20261010100000_ssbj_self_approval_guard.sql`（自己承認の禁止と差戻しの理由の必須化。`ssbj_reports."reviewRequestedByUserId"`・`ssbj_approval_blocker`・`ssbj_my_approval_blocker`・`change_ssbj_report_status` の定義し直し） |
 | API | `POST /api/ssbj/reports/[reportId]/status`、`POST /api/ssbj/reports/[reportId]/versions/[versionId]/restore`（どちらも service_role 限定の RPC を呼ぶ。操作者・組織はセッションから決める） |
-| 画面 | `SsbjReportStatusCard.client.tsx`・`SsbjReportStatusBadge.tsx`・`SsbjLockedNotice.tsx`、`SsbjAuditLogs.client.tsx`、`SsbjVersions.client.tsx`（復元・Excel）・`SsbjVersionActionDialog.client.tsx`、`SsbjEditorLayout.client.tsx`・`SsbjOgtReferencePanel.tsx`・`SsbjOgtChangeBanner.tsx`、`SsbjNarrativeItemCard.client.tsx`（テンプレート） |
-| コード | `utils/reportStatus.ts`・`utils/auditLog.ts`・`utils/writeError.ts`、`services/reportWorkflowServer.ts`・`reportWorkflowClient.ts`・`auditLogService.ts`・`memberService.ts`・`versionXlsx.ts` |
-| テスト | `scripts/db/__tests__/ssbjAuditLogsPolicy.test.ts`・`ssbjReportStatusPolicy.test.ts`（取り付け漏れ・権限・遷移）・`ssbjReportWriteLock.test.ts`（承認と保存の排他・ロックを取る順番）、API・サービス・画面の単体テスト、全体テスト `e2e/ssbj/r1-requirements.e2e.ts`（9 手順） |
+| 画面 | `SsbjReportStatusCard.client.tsx`・`SsbjReopenDialog.client.tsx`（差戻しの理由）・`SsbjReportStatusBadge.tsx`・`SsbjLockedNotice.tsx`、`SsbjAuditLogs.client.tsx`、`SsbjVersions.client.tsx`（復元・Excel）・`SsbjVersionActionDialog.client.tsx`、`SsbjEditorLayout.client.tsx`・`SsbjOgtReferencePanel.tsx`・`SsbjOgtChangeBanner.tsx`、`SsbjNarrativeItemCard.client.tsx`（テンプレート） |
+| コード | `utils/reportStatus.ts`・`utils/auditLog.ts`・`utils/writeError.ts`、`services/reportWorkflowServer.ts`・`reportWorkflowClient.ts`・`approvalBlockerService.ts`・`auditLogService.ts`・`memberService.ts`・`versionXlsx.ts`、`hooks/useSsbjApprovalBlocker.ts` |
+| テスト | `scripts/db/__tests__/ssbjAuditLogsPolicy.test.ts`・`ssbjReportStatusPolicy.test.ts`（取り付け漏れ・権限・遷移）・`ssbjReportWriteLock.test.ts`（承認と保存の排他・ロックを取る順番）・`ssbjSelfApprovalGuardPolicy.test.ts`（自己承認・差戻しの理由）、API・サービス・画面の単体テスト、全体テスト `e2e/ssbj/r1-requirements.e2e.ts`（10 手順） |
 
 決めたこと（状態管理と承認ロック）:
 
@@ -688,6 +696,20 @@ T14 の確認事項と、確かめている場所:
   作業中データの行を書き換える RPC（版の復元・OGT の値の採用）は、最初に `lock_ssbj_report_working_rows` で作業中データの行（テーブルは名前順、行は主キー順）とレポートの行をロックする。
   状態の変更・保存版の作成は、作業中データを読むだけでロックしない。
 - **差戻すと承認の記録（承認日時・承認者・承認した版）は消す。** 承認したこと・差戻したことは、操作履歴と保存版のメモ（「承認時の保存版」）に残る。
+- **書く人と承認する人を分ける（自己承認の禁止）。** 次の 3 つを状態の変更の RPC が拒否する（`P2056`。管理者でも拒否する）。
+  1 人で依頼から承認まで回せると、承認の記録が意味を持たないため。
+  1. レビュー依頼で、承認者に依頼者自身を指定する（画面は承認者の選択肢に自分を出さない）
+  2. レビューを依頼した本人が承認する（依頼者は `ssbj_reports."reviewRequestedByUserId"` に記録する）
+  3. レビュー依頼の後に作業中データを変更した利用者が承認する（操作履歴の、最後のレビュー依頼より後の、その人の作成・更新・削除・復元で判定する。
+     保存版の作成・ファイルの出力は内容を変えないので数えない）
+- **承認できない理由は、承認ボタンを押す前に画面に出す。** 判定の正本は RPC で、画面は同じ判定の関数（`ssbj_my_approval_blocker`。ログイン中の利用者・自組織のレポートだけ）に問い合わせる。
+  作業中の内容が変わる（`draftRevision` が進む）と問い合わせ直す。
+- **差戻しは理由が必須**（空白だけも不可。`P2057`）。何を直すべきかを記録に残すため。画面は差戻しのダイアログで理由を入力させ、操作履歴の状態の変更にコメントとして残す。
+  「空白」には改行・タブ・全角スペース・NBSP も含める。DB は前後の空白を除いてから判定し（`btrim()` は半角スペースしか除かないので使わない）、
+  API も同じく前後の空白を除いて、差戻しで空なら RPC を呼ばずに 400 を返す。コメントは前後の空白を除いて記録する。
+- **依頼者の列を変える状態の変更の更新では、行ごとの操作履歴を止める**（`ssbj.suppress_audit`）。依頼のたびに「基本情報の更新」が履歴に並ばないように。
+  行ごとの記録を無視する列の一覧（`ssbj_audit_row_change`）は変えていない。
+- 依頼者の列は、この列を足す前に依頼されたレポートでは空になる。その場合は、操作履歴の最後のレビュー依頼の操作者を依頼者とみなす（マイグレーションにデータを入れないため。AGENTS.md R12）。
 
 決めたこと（操作履歴）:
 
