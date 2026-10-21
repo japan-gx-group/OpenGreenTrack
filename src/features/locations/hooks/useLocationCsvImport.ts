@@ -60,50 +60,64 @@ export function useLocationCsvImport(
     if (!importPreview) return;
     const { plan } = importPreview;
     setIsImporting(true);
+    // 作成・更新の途中で throw しても一覧を取り直す（作成分が書き込み済みなのに画面が変わらない、という状態を残さないため）。
+    // throw した工程の件数は service から返らず確定できないので null（件数不明）のままにし、0件とは区別する。
+    let addedCount: number | null = null;
+    let updatedCount: number | null = null;
+    const runtimeErrors: LocationImportRowError[] = [];
+    let writeFailure: string | null = null;
     try {
       // 行ごとに addLocation / updateLocation を呼ぶと、テンプレートが想定する規模
       // （数百行）で往復回数が現実的でなくなるため、一括版を使う。
       // 失敗は添字で返るので、行番号つきのエラーへ戻す。
       const createResult = await addLocations(plan.creates.map(create => create.location));
-      const updateResult = await updateLocations(
-        plan.updates.map(update => ({ id: update.targetId, location: update.location })),
-      );
-
-      const addedCount = createResult.created.length;
-      const updatedCount = updateResult.updated.length;
-      const runtimeErrors: LocationImportRowError[] = [
+      addedCount = createResult.created.length;
+      runtimeErrors.push(
         ...createResult.failures.map(failure => ({
           row: plan.creates[failure.index].row,
           reasons: [failure.message],
         })),
+      );
+
+      const updateResult = await updateLocations(
+        plan.updates.map(update => ({ id: update.targetId, location: update.location })),
+      );
+      updatedCount = updateResult.updated.length;
+      runtimeErrors.push(
         ...updateResult.failures.map(failure => ({
           row: plan.updates[failure.index].row,
           reasons: [failure.message],
         })),
-      ];
-
-      // 書き込みはここまでで確定している（行ごとに実行するため部分的に反映され得る）。
-      // 結果の通知を先に済ませ、この後の再取得が失敗しても「どの行が失敗したか」を失わない。
-      const allErrors = [...plan.errors, ...runtimeErrors].sort((a, b) => a.row - b.row);
-      setImportErrors(allErrors);
-      // 記入例行はエラーでもスキップでもないので、除外したときだけ末尾に添える
-      const exampleNote = plan.exampleRowCount > 0 ? `・記入例${plan.exampleRowCount}件を除外` : '';
-      showToast(
-        `CSVインポート完了: 追加${addedCount}件・更新${updatedCount}件・スキップ${plan.skipCount}件・エラー${allErrors.length}件${exampleNote}`,
-        allErrors.length > 0 ? 'error' : 'success',
       );
+    } catch (error: unknown) {
+      writeFailure = error instanceof Error ? error.message : 'CSVインポートに失敗しました';
+    }
 
-      // 1件でも反映されたら一覧を取り直す（採番されたIDと更新後の値を表示に反映するため）。
+    // 書き込みはここまでで確定している（行ごとに実行するため部分的に反映され得る）。
+    // 結果の通知を先に済ませ、この後の再取得が失敗しても「どの行が失敗したか」を失わない。
+    const allErrors = [...plan.errors, ...runtimeErrors].sort((a, b) => a.row - b.row);
+    setImportErrors(allErrors);
+    // 記入例行はエラーでもスキップでもないので、除外したときだけ末尾に添える
+    const exampleNote = plan.exampleRowCount > 0 ? `・記入例${plan.exampleRowCount}件を除外` : '';
+    const countLabel = (count: number | null) => (count === null ? '件数不明' : `${count}件`);
+    const summary = `追加${countLabel(addedCount)}・更新${countLabel(updatedCount)}・スキップ${plan.skipCount}件・エラー${allErrors.length}件${exampleNote}`;
+    if (writeFailure !== null) {
+      showToast(`CSVインポートが途中で失敗しました（${writeFailure}）: ${summary}`, 'error');
+    } else {
+      showToast(`CSVインポート完了: ${summary}`, allErrors.length > 0 ? 'error' : 'success');
+    }
+
+    try {
+      // 反映された可能性があれば一覧を取り直す（採番されたIDと更新後の値を表示に反映するため）。
+      // throw した場合は件数に関係なく一部が書き込み済みかもしれないので取り直す。
       // 取込自体は成功しているため、再取得の失敗を取込の失敗として通知しない。
-      if (addedCount > 0 || updatedCount > 0) {
+      if (writeFailure !== null || (addedCount ?? 0) > 0 || (updatedCount ?? 0) > 0) {
         try {
           await reload();
         } catch {
           showToast('取込は完了しましたが、一覧の再取得に失敗しました。画面を再読み込みしてください。', 'error');
         }
       }
-    } catch (error: unknown) {
-      showToast(error instanceof Error ? error.message : 'CSVインポートに失敗しました', 'error');
     } finally {
       setIsImporting(false);
       setImportPreview(null);
