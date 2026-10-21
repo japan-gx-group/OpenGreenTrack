@@ -9,12 +9,13 @@ import {
   type SsbjLinkTarget,
   type SsbjRiskOpportunity,
   type SsbjRiskOpportunityKind,
+  type SsbjRiskOpportunityWorkingRecord,
   type SsbjRiskType,
   type SsbjTimeHorizon,
 } from '../types';
 import { fromFieldValue, toFieldValue } from '../utils/fieldValue';
 import type { SsbjRiskOpportunityInput } from '../utils/riskOpportunity';
-import { ssbjWriteErrorMessage } from '../utils/writeError';
+import { SsbjEditConflictError, ssbjWriteErrorMessage } from '../utils/writeError';
 
 export interface SsbjRiskOpportunityRow {
   id: string;
@@ -30,9 +31,13 @@ export interface SsbjRiskOpportunityRow {
   linkTargets: string[];
 }
 
+/** 画面が編集中に持つ行（更新の競合検知に使う updatedAt を添える）。 */
+export type SsbjRiskOpportunityWorkingRow = SsbjRiskOpportunityRow & { updatedAt: string };
+
+// updatedAt は文字列のまま受け取り、そのまま更新の条件に渡す（Date に変換するとマイクロ秒が落ちて一致しなくなる）。
 const SELECT_COLUMNS =
   'id, kind, title, riskTypeState, riskType, descriptionState, descriptionText, internalNote, ' +
-  'timeHorizonState, timeHorizon, linkTargets';
+  'timeHorizonState, timeHorizon, linkTargets, updatedAt';
 
 const isKind = (value: string): value is SsbjRiskOpportunityKind =>
   (SSBJ_RISK_OPPORTUNITY_KINDS as readonly string[]).includes(value);
@@ -61,6 +66,14 @@ export const toSsbjRiskOpportunity = (row: SsbjRiskOpportunityRow): SsbjRiskOppo
   };
 };
 
+/** DB 行 → 編集画面用のレコード（更新の競合検知に使う updatedAt を添える）。 */
+export const toSsbjRiskOpportunityWorkingRecord = (
+  row: SsbjRiskOpportunityWorkingRow,
+): SsbjRiskOpportunityWorkingRecord => ({
+  ...toSsbjRiskOpportunity(row),
+  updatedAt: row.updatedAt,
+});
+
 /** SsbjRiskOpportunityInput → 書き込む列（状態列＋値列の対に分解する）。 */
 export const toSsbjRiskOpportunityColumns = (input: SsbjRiskOpportunityInput) => {
   const riskType = fromFieldValue(input.riskType);
@@ -81,7 +94,7 @@ export const toSsbjRiskOpportunityColumns = (input: SsbjRiskOpportunityInput) =>
 };
 
 /** レポートのリスク・機会（登録順）。RLS により自組織の行だけが返る。 */
-export const listSsbjRisksOpportunities = async (reportId: string): Promise<SsbjRiskOpportunity[]> => {
+export const listSsbjRisksOpportunities = async (reportId: string): Promise<SsbjRiskOpportunityWorkingRecord[]> => {
   const supabase = createClient();
   const { data, error } = await supabase
     .from('ssbj_risks_opportunities')
@@ -93,14 +106,14 @@ export const listSsbjRisksOpportunities = async (reportId: string): Promise<Ssbj
   if (error) {
     throw new Error('リスク・機会の取得に失敗しました');
   }
-  return ((data ?? []) as unknown as SsbjRiskOpportunityRow[]).map(toSsbjRiskOpportunity);
+  return ((data ?? []) as unknown as SsbjRiskOpportunityWorkingRow[]).map(toSsbjRiskOpportunityWorkingRecord);
 };
 
 /** 登録。組織はレポートの組織を渡す（レポートの組織帰属は RLS の with check が検証する）。 */
 export const createSsbjRiskOpportunity = async (
   report: { id: string; organizationId: string },
   input: SsbjRiskOpportunityInput,
-): Promise<SsbjRiskOpportunity> => {
+): Promise<SsbjRiskOpportunityWorkingRecord> => {
   const supabase = createClient();
   const { data, error } = await supabase
     .from('ssbj_risks_opportunities')
@@ -111,19 +124,27 @@ export const createSsbjRiskOpportunity = async (
   if (error || !data) {
     throw new Error(ssbjWriteErrorMessage(error, 'リスク・機会の登録に失敗しました'));
   }
-  return toSsbjRiskOpportunity(data as unknown as SsbjRiskOpportunityRow);
+  return toSsbjRiskOpportunityWorkingRecord(data as unknown as SsbjRiskOpportunityWorkingRow);
 };
 
-/** 更新。レポート・組織は変更できない（列 GRANT で内容の列だけを許可している）。 */
+/**
+ * 更新。レポート・組織は変更できない（列 GRANT で内容の列だけを許可している）。
+ *
+ * target.updatedAt は編集を始めた時点の行の更新日時。更新の条件に含め、他の画面が先に同じ行を保存していれば
+ * 0 件更新になるので、SsbjEditConflictError で拒否する（先に保存された変更を古い値で上書きしない）。
+ * 条件と更新は 1 つの UPDATE 文なので、比べた直後に別の保存が入る隙間は無い（docs/ssbj-spec.md §8）。
+ * 行の updatedAt を使うのは、同じレポートの他の行や文章・判断の変更では変わらず、無関係な編集を競合にしないため。
+ */
 export const updateSsbjRiskOpportunity = async (
-  id: string,
+  target: Pick<SsbjRiskOpportunityWorkingRecord, 'id' | 'updatedAt'>,
   input: SsbjRiskOpportunityInput,
-): Promise<SsbjRiskOpportunity> => {
+): Promise<SsbjRiskOpportunityWorkingRecord> => {
   const supabase = createClient();
   const { data, error } = await supabase
     .from('ssbj_risks_opportunities')
     .update(toSsbjRiskOpportunityColumns(input))
-    .eq('id', id)
+    .eq('id', target.id)
+    .eq('updatedAt', target.updatedAt)
     .select(SELECT_COLUMNS)
     .maybeSingle();
 
@@ -131,10 +152,21 @@ export const updateSsbjRiskOpportunity = async (
     throw new Error(ssbjWriteErrorMessage(error, 'リスク・機会の更新に失敗しました'));
   }
   if (!data) {
-    // RLS で対象が見えない（削除済み・他組織）場合は 0 件更新になる。
+    // 0 件更新: 行が更新された（競合）か、削除済み・RLS で見えない。見えるかどうかで分ける。
+    const { data: current, error: currentError } = await supabase
+      .from('ssbj_risks_opportunities')
+      .select('id')
+      .eq('id', target.id)
+      .maybeSingle();
+    if (currentError) {
+      throw new Error('リスク・機会の更新に失敗しました');
+    }
+    if (current) {
+      throw new SsbjEditConflictError();
+    }
     throw new Error('リスク・機会が見つかりません。画面を開き直してください');
   }
-  return toSsbjRiskOpportunity(data as unknown as SsbjRiskOpportunityRow);
+  return toSsbjRiskOpportunityWorkingRecord(data as unknown as SsbjRiskOpportunityWorkingRow);
 };
 
 /** 削除。 */

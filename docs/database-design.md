@@ -292,6 +292,7 @@ SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず
 | `createdByUserId` / `updatedByUserId` | 登録・更新操作者ID | UUID | NULL | `set_row_actor` トリガが auth.uid() で上書き |
 | `createdAt` / `updatedAt` | 作成・更新日時 | TIMESTAMPTZ | NOT NULL | `updatedAt` は `set_updated_at` トリガ |
 | `draftRevision` | 作業中データの版数 | INTEGER | NOT NULL, DEFAULT 1 | 基本情報の変更（`bump_ssbj_reports_draft_revision` トリガ）と各機能テーブルの変更（`bump_ssbj_draft_revision`）で +1。保存版作成時の競合検知に使う（`20260927180425_ssbj_report_versions.sql`） |
+| `basicInfoRevision` | 基本情報の版数 | INTEGER | NOT NULL, DEFAULT 0 | `20261010103000_ssbj_basic_info_revision.sql` で追加。基本情報の列が変わったときだけ +1（`bump_ssbj_reports_own_draft_revision` トリガ）。画面は読込時の値を更新の条件に含め、0 件更新なら他の画面の変更との競合として保存を拒否する（docs/ssbj-spec.md §8） |
 | `status` | 状態 | VARCHAR(20) | NOT NULL, DEFAULT `draft`, CHECK(`draft` / `in_review` / `approved`) | `20261002090100_ssbj_report_status.sql` で追加（以下 6 列も同じ）。`change_ssbj_report_status`（service_role）だけが変える。`approved` の間は作業中データの変更をトリガーが拒否する（レポートの行をロックしてから判定し、承認と保存を 1 つずつ処理する。`20261009090000_ssbj_report_write_lock.sql`） |
 | `approverUserId` | 承認者 | UUID | NULL（レビュー中・承認済みは必須） | レビュー依頼で指定する自組織の利用者 |
 | `approvedAt` / `approvedByUserId` | 承認日時 / 承認した人 | TIMESTAMPTZ / UUID | `approved` のときだけ非 NULL | |
@@ -302,7 +303,7 @@ SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず
 - RLS は select / insert / update を自組織に限定し、insert / update の with check で `fiscalYearId` が自組織の年度であることを
   `exists` で検証する（FK は行の存在しか見ないため）。delete のポリシーと GRANT は持たない（R1 では削除を提供しない）。
 - `authenticated` への insert / update は列指定の GRANT。update は基本情報の列だけで、組織・年度は作成後に付け替えられない。
-  `draftRevision` も GRANT に含めず、トリガーだけが進める。
+  `draftRevision`・`basicInfoRevision` も GRANT に含めず、トリガーだけが進める。
 - 年度を参照するため、年度削除の可否判定（`src/features/settings/services/fiscalYears.ts` の `REFERENCING_TABLES`）の対象に含める。
 
 ### 3.12 SSBJ 保存版 (`ssbj_report_versions`) — SSBJ レポートの固定スナップショット（`supabase/migrations/20260927180425_ssbj_report_versions.sql`）

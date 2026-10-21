@@ -25,6 +25,7 @@ const report = {
   periodStart: '2024-04-01',
   periodEnd: '2025-03-31',
   draftRevision: 1,
+  basicInfoRevision: 0,
   review: FICTIONAL_DRAFT_REVIEW,
 };
 
