@@ -130,6 +130,36 @@ describe('SsbjPreviewDocument（根拠文書）', () => {
     expect(text()).toContain('保管先（内部記録・開示しない）');
     expect(text()).toContain('社内共有フォルダ/議事録（架空）');
   });
+
+  it('ファイルの SHA-256・保管先での版などは内部記録として、選んだときだけ出す', () => {
+    const sha256 = '592e812efee3d49cad9db811408e3e9ce2736f7da4ec7d90a21f0c262dc6a239';
+    rendered = render(<SsbjPreviewDocument source={saved} showInternalNotes={false} />);
+    expect(text()).not.toContain(sha256);
+    expect(text()).not.toContain('取締役会議事録_2024年度（架空）.pdf');
+    rendered.unmount();
+    rendered = render(<SsbjPreviewDocument source={saved} showInternalNotes />);
+    expect(text()).toContain(`SHA-256（内部記録・開示しない）${sha256}`);
+    expect(text()).toContain('保管先での版 ID（内部記録・開示しない）3.0');
+    expect(text()).toContain('保存担当（内部記録・開示しない）総務部 担当（架空）');
+    expect(text()).toContain('ファイルの記録日時（内部記録・開示しない）');
+  });
+
+  it('ファイルの記録を足す前の保存版（キーが無い）は、ファイルの記録を未入力と出す', () => {
+    const legacy = {
+      ...fictionalSnapshot,
+      sections: {
+        ...fictionalSnapshot.sections,
+        evidence: (fictionalSnapshot.sections.evidence ?? []).map(item => {
+          const copy: Record<string, unknown> = { ...item };
+          for (const key of ['fileName', 'fileSha256', 'fileStorageVersionId', 'fileStoredBy', 'fileRecordedAt']) delete copy[key];
+          return copy;
+        }),
+      },
+    } as unknown as SsbjReportSnapshotV1;
+    rendered = render(<SsbjPreviewDocument source={working(legacy)} showInternalNotes />);
+    expect(text()).toContain('SHA-256（内部記録・開示しない）未入力');
+    expect(text()).not.toContain('undefined');
+  });
 });
 
 describe('SsbjPreviewDocument（四本柱の文章）', () => {

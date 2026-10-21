@@ -67,14 +67,44 @@ describe('ssbjVersionToCsvRows', () => {
   it('根拠文書の参照情報を項目ごとの行に分け、開示内容欄に混ぜない', () => {
     const rows = ssbjVersionToCsvRows(fictionalVersion, GENERATED_AT);
     const evidence = rows.filter(row => row[0] === '根拠文書' && row[7] === '根拠ID: 5b1f0000-1111-4000-8000-000000000201');
-    expect(evidence).toHaveLength(6);
+    expect(evidence).toHaveLength(11);
     expect(evidence.find(row => row[2] === '開示用参照文')?.[4]).toBe('取締役会の開催記録に基づく。');
     expect(evidence.find(row => row[2] === '開示用参照文')?.[6]).toBe('');
     expect(evidence.find(row => row[2] === '資料名')?.[6]).toBe('取締役会議事録（架空）');
     expect(evidence.find(row => row[2] === '保管先')?.[6]).toBe('社内共有フォルダ/議事録（架空）');
     expect(evidence.find(row => row[2] === '主管部署')?.[6]).toBe('総務部');
     expect(evidence.every(row => row.every(cell => !cell.includes('\n')))).toBe(true);
-    expect(rows.filter(row => row[0] === '根拠文書')).toHaveLength(12);
+    expect(rows.filter(row => row[0] === '根拠文書')).toHaveLength(22);
+  });
+
+  it('根拠のファイルの SHA-256 と保管先での版を内部記録欄に入れ、開示内容欄には出さない', () => {
+    const rows = ssbjVersionToCsvRows(fictionalVersion, GENERATED_AT);
+    const evidence = rows.filter(row => row[0] === '根拠文書' && row[7] === '根拠ID: 5b1f0000-1111-4000-8000-000000000201');
+    const internal = (name: string) => evidence.find(row => row[2] === name);
+    expect(internal('ファイル名')?.slice(3)).toEqual(['入力済み', '', '', '取締役会議事録_2024年度（架空）.pdf', '根拠ID: 5b1f0000-1111-4000-8000-000000000201']);
+    expect(internal('SHA-256')?.[6]).toBe('592e812efee3d49cad9db811408e3e9ce2736f7da4ec7d90a21f0c262dc6a239');
+    expect(internal('保管先での版ID')?.[6]).toBe('3.0');
+    expect(internal('保存担当')?.[6]).toBe('総務部 担当（架空）');
+    expect(internal('ファイルの記録日時')?.[6]).toBe('2025-06-01T01:00:00.000Z');
+    for (const name of ['ファイル名', 'SHA-256', '保管先での版ID', '保存担当', 'ファイルの記録日時']) {
+      expect(internal(name)?.[4]).toBe('');
+    }
+    const withoutFile = rows.filter(row => row[0] === '根拠文書' && row[7] === '根拠ID: 5b1f0000-1111-4000-8000-000000000202');
+    expect(withoutFile.find(row => row[2] === 'SHA-256')?.slice(3, 7)).toEqual(['未入力', '', '', '']);
+  });
+
+  it('ファイルの記録を足す前の保存版（キーが無い）は、ファイルの記録を未入力として出す', () => {
+    const sections = fictionalVersion.snapshot.sections;
+    const legacyEvidence = (sections.evidence ?? []).map(item => {
+      const legacy: Record<string, unknown> = { ...item };
+      for (const key of ['fileName', 'fileSha256', 'fileStorageVersionId', 'fileStoredBy', 'fileRecordedAt']) delete legacy[key];
+      return legacy;
+    });
+    const snapshot = { ...fictionalVersion.snapshot, sections: { ...sections, evidence: legacyEvidence } } as unknown as SsbjReportSnapshotV1;
+    const rows = ssbjVersionToCsvRows({ ...fictionalVersion, snapshot }, GENERATED_AT);
+    const fileRows = rows.filter(row => row[0] === '根拠文書' && ['ファイル名', 'SHA-256', '保管先での版ID', '保存担当', 'ファイルの記録日時'].includes(row[2]));
+    expect(fileRows).toHaveLength(10);
+    expect(fileRows.every(row => row[3] === '未入力' && row[6] === '')).toBe(true);
   });
 });
 

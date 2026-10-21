@@ -531,6 +531,18 @@ export type SsbjEvidence = {
   internalLocation: string | null;
   referencePosition: string | null;
   ownerDepartment: string | null;
+  /**
+   * ファイルの照合用の記録（すべて内部記録・§5）。ファイル名・SHA-256・記録日時は、ファイルを選んだときに
+   * 一緒に決まる（3 つとも有るか、3 つとも null）。SHA-256 は小文字の 16 進 64 文字。記録日時は DB が決める。
+   * この記録を足す前の保存版にはキーが無い（表示・出力では null と同じく未入力として扱う）。
+   */
+  fileName: string | null;
+  fileSha256: string | null;
+  /** 保管先（文書管理の仕組みなど）でのファイルの版 ID。 */
+  fileStorageVersionId: string | null;
+  /** ファイルを保管先に保存した担当。 */
+  fileStoredBy: string | null;
+  fileRecordedAt: string | null;
   disclosure: SsbjFieldValue<string>;
 };
 

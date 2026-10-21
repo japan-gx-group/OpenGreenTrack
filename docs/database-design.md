@@ -366,7 +366,7 @@ SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず
 | `createdAt` / `updatedAt` | 作成・更新日時 | TIMESTAMPTZ | NOT NULL | `updatedAt` は `set_updated_at` トリガ |
 
 - RLS・GRANT の考え方は 3.13 と同じ（自組織に限定、レポートの組織帰属を `exists` で検証、レポート・組織は作成後に変えない）。
-### 3.15 SSBJ 根拠文書 (`ssbj_evidence`) — 項目ごとの参照情報（`supabase/migrations/20260929150000_ssbj_evidence.sql`）
+### 3.15 SSBJ 根拠文書 (`ssbj_evidence`) — 項目ごとの参照情報（`supabase/migrations/20260929150000_ssbj_evidence.sql`、ファイルの記録は `20261011090000_ssbj_evidence_file_hash.sql`）
 
 1 つの項目に複数の資料を登録できる作業中データ。`itemId` は共通の項目ID形式で検証する。項目マスターはまだ無いため、現時点では形式以外の存在検証をしない。
 
@@ -377,9 +377,13 @@ SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず
 | `documentTitle` | 資料名 | TEXT | NOT NULL、空白のみ不可 | |
 | `documentVersion` / `internalLocation` / `referencePosition` / `ownerDepartment` | 版・内部保管先・参照位置・主管部署 | TEXT | NULL | 開示内容とは別列。主管部署の必須化は別Issueで判断 |
 | `disclosureState` / `disclosureText` | 開示用参照文の状態・本文 | `ssbj_field_state` / TEXT | `answered` のときだけ本文を保持 | |
+| `fileName` | ファイル名 | TEXT | NULL、空白のみ不可 | 照合用の記録（内部記録）。ファイル本体は保存しない |
+| `fileSha256` | ファイルの SHA-256 | TEXT | NULL、CHECK（小文字の 16 進 64 文字） | ブラウザの中で計算した値 |
+| `fileStorageVersionId` / `fileStoredBy` | 保管先での版 ID・保存担当 | TEXT | NULL | 任意入力（内部記録） |
+| `fileRecordedAt` | ファイルの記録日時 | TIMESTAMPTZ | NULL | トリガー `set_ssbj_evidence_file_recorded_at` が決める（利用者に列の権限なし）。ファイル名・SHA-256・記録日時は 3 つとも有るか 3 つとも NULL（CHECK） |
 | `createdByUserId` / `updatedByUserId` / `createdAt` / `updatedAt` | 監査情報 | UUID / TIMESTAMPTZ | | |
 
-RLSは自組織に限定し、レポートの組織帰属も検証する。変更ごとに `draftRevision` を進め、`ssbj_snapshot_section__evidence` が固定版へ取り込む。
+RLSは自組織に限定し、レポートの組織帰属も検証する。変更ごとに `draftRevision` を進め、`ssbj_snapshot_section__evidence` が固定版へ取り込む（ファイルの記録も含む）。
 
 ### 3.16 SSBJ OGT 採用値 (`ssbj_ogt_adoptions`) — レポートに明示採用した OGT の値（`supabase/migrations/20260929180243_ssbj_ogt_adoptions.sql`）
 レポートごとに 1 行の作業中データ。採用し直すと行を置き換える。変更のたびに `ssbj_reports.draftRevision` を進め、
