@@ -2,7 +2,13 @@
 import React from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { render, type RenderResult } from '@/lib/testing/render';
-import { fictionalSnapshot, fictionalVersion } from '../../__fixtures__/fictionalReport';
+import {
+  fictionalRisksOpportunities,
+  fictionalSnapshot,
+  fictionalVersion,
+  fictionalVersionBeforeBasicInfoAdditions,
+  fictionalVersionBeforeRiskType,
+} from '../../__fixtures__/fictionalReport';
 import { fictionalDisclosedTexts, fictionalGhgValues, fictionalInternalTexts } from '../../__fixtures__/fictionalReportTexts';
 import type { SsbjPreviewSource } from '../../services/previewService';
 import type { SsbjReportSnapshotV1 } from '../../types';
@@ -80,6 +86,30 @@ describe('SsbjPreviewDocument', () => {
     rendered = render(<SsbjPreviewDocument source={working(snapshot)} showInternalNotes={false} />);
     const alert = rendered.container.querySelector('[role="alert"]');
     expect(alert?.textContent).toContain('future_section');
+  });
+
+  it('任意項目を追加する前の保存版でも、キーの無い基本情報を「未入力」と出す（印刷も同じ部品で描く）', () => {
+    const legacy = fictionalVersionBeforeBasicInfoAdditions;
+    rendered = render(<SsbjPreviewDocument source={{ ...saved, snapshot: legacy.snapshot }} showInternalNotes={false} />);
+    const valueOf = (label: string) =>
+      Array.from(rendered?.container.querySelectorAll('dt') ?? []).find(item => item.textContent === label)
+        ?.nextElementSibling?.textContent;
+    for (const label of ['親会社名', '親会社との関係', '親会社の持分比率', '測定アプローチ', '業種（SICS）']) {
+      expect(valueOf(label)).toBe('未入力');
+    }
+    expect(text()).not.toContain('undefined');
+  });
+
+  it('リスクの種類を追加する前の保存版でも、落ちずにリスクの種類を「未入力」と出す（印刷も同じ部品で描く）', () => {
+    const legacy = fictionalVersionBeforeRiskType;
+    rendered = render(<SsbjPreviewDocument source={{ ...saved, snapshot: legacy.snapshot }} showInternalNotes={false} />);
+    const riskTypeValues = Array.from(rendered.container.querySelectorAll('dt'))
+      .filter(item => item.textContent === 'リスクの種類')
+      .map(item => item.nextElementSibling?.textContent);
+    const riskCount = fictionalRisksOpportunities.filter(item => item.kind === 'risk').length;
+    expect(riskCount).toBeGreaterThan(0);
+    expect(riskTypeValues).toEqual(Array(riskCount).fill('未入力'));
+    expect(text()).not.toContain('undefined');
   });
 
   it('準拠や提出の完了を保証しない注記を必ず出す', () => {
