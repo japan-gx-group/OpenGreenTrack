@@ -1,6 +1,6 @@
 // SSBJ レポートの状態を変える API（レビュー依頼・取り下げ・承認・差戻し。docs/ssbj-spec.md §13）。
-// 権限（承認・差戻しは指定された承認者か管理者だけ）・状態の遷移・競合の検証は、service_role 限定の RPC
-// change_ssbj_report_status（supabase/migrations/20261002090100_ssbj_report_status.sql）が行う。
+// 権限（承認・差戻しは指定された承認者か管理者だけ）・自己承認の拒否・差戻しの理由の必須・状態の遷移・競合の検証は、
+// service_role 限定の RPC change_ssbj_report_status（supabase/migrations/20261010100000_ssbj_self_approval_guard.sql）が行う。
 // 操作者・組織はサーバ側のセッションから決め、クライアントから受け取らない。
 
 import { NextResponse } from 'next/server';
@@ -25,10 +25,12 @@ const ERROR_RESPONSES: Record<string, { status: number; error?: string }> = {
     status: 409,
     error: '他の変更と競合しました。画面を開き直してから、もう一度操作してください',
   },
-  // 次の 3 つは RPC のメッセージ（利用者向けの日本語）をそのまま返す。
+  // 次の 5 つは RPC のメッセージ（利用者向けの日本語）をそのまま返す。
   [SSBJ_WORKFLOW_SQLSTATE.approverInvalid]: { status: 400 },
   [SSBJ_WORKFLOW_SQLSTATE.forbidden]: { status: 403 },
   [SSBJ_WORKFLOW_SQLSTATE.invalidTransition]: { status: 409 },
+  [SSBJ_WORKFLOW_SQLSTATE.selfApproval]: { status: 403 },
+  [SSBJ_WORKFLOW_SQLSTATE.reopenReasonRequired]: { status: 400 },
 };
 
 export const POST = async (
@@ -74,6 +76,12 @@ export const POST = async (
     (typeof comment !== 'string' || comment.length > COMMENT_MAX_LENGTH)) {
     return NextResponse.json({ error: `コメントは${COMMENT_MAX_LENGTH}文字以内で入力してください` }, { status: 400 });
   }
+  // 前後の空白（改行・タブ・全角スペースを含む）は除き、空白だけなら書いていないものとする（画面と同じ判定）。
+  // 差戻しの理由が無ければ RPC を呼ばずに断る（DB も P2057 で拒否する）。
+  const trimmedComment = typeof comment === 'string' && comment.trim() !== '' ? comment.trim() : null;
+  if (action === 'reopen' && trimmedComment === null) {
+    return NextResponse.json({ error: '差戻しの理由を入力してください' }, { status: 400 });
+  }
 
   try {
     const result = await changeSsbjReportStatus({
@@ -83,7 +91,7 @@ export const POST = async (
       action: action as SsbjReportStatusAction,
       expectedDraftRevision,
       approverUserId: (approverUserId as string | null | undefined) ?? null,
-      comment: (comment as string | null | undefined) ?? null,
+      comment: trimmedComment,
     });
     return NextResponse.json(result, { status: 200 });
   } catch (error) {

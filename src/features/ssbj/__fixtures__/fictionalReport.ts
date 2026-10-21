@@ -66,6 +66,7 @@ export const FICTIONAL_DRAFT_REVIEW: SsbjReportReview = {
   approvedByUserId: null,
   approvedVersionId: null,
   statusChangedAt: null,
+  reviewRequestedByUserId: null,
 };
 
 /** 項目ごとの文章。項目 ID は架空（基準の項番号ではない）。 */
