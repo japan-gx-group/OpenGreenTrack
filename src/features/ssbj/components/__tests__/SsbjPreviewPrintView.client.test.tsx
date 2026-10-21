@@ -2,7 +2,8 @@
 import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, type RenderResult } from '@/lib/testing/render';
-import { fictionalVersion } from '../../__fixtures__/fictionalReport';
+import { fictionalSnapshot, fictionalVersion } from '../../__fixtures__/fictionalReport';
+import { fictionalDisclosedTexts, fictionalInternalTexts } from '../../__fixtures__/fictionalReportTexts';
 
 const mocks = vi.hoisted(() => ({ search: '' }));
 vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams(mocks.search) }));
@@ -24,6 +25,7 @@ beforeEach(() => {
     kind: 'version', versionId: fictionalVersion.id, versionNumber: 1,
     createdAt: fictionalVersion.createdAt, snapshot: fictionalVersion.snapshot,
   });
+  vi.mocked(getSsbjWorkingPreview).mockResolvedValue({ kind: 'working', draftRevision: 7, snapshot: fictionalSnapshot });
 });
 afterEach(() => {
   rendered?.unmount(); rendered = null;
@@ -34,7 +36,7 @@ afterEach(() => {
 
 describe('SsbjPreviewPrintView', () => {
   it('source に保存版の ID があれば、その保存版を読み込んで印刷ダイアログを開く', async () => {
-    mocks.search = `source=${fictionalVersion.id}&internal=0`;
+    mocks.search = `source=${fictionalVersion.id}`;
     rendered = render(<SsbjPreviewPrintView reportId={fictionalVersion.reportId} />);
     await flush(); await flush();
     expect(getSsbjVersionPreview).toHaveBeenCalledWith(fictionalVersion.reportId, fictionalVersion.id);
@@ -45,10 +47,17 @@ describe('SsbjPreviewPrintView', () => {
     expect(window.print).toHaveBeenCalledTimes(1);
   });
 
-  it('internal=1 なら内部メモも印刷に含める', async () => {
-    mocks.search = `source=${fictionalVersion.id}&internal=1`;
+  it.each([
+    ['保存版', `source=${fictionalVersion.id}&internal=1`],
+    ['作業中の内容', 'source=working&internal=1'],
+  ])('URL に internal=1 が付いていても、%sの印刷に内部情報を含めず、開示する内容はすべて含める', async (_label, search) => {
+    mocks.search = search;
     rendered = render(<SsbjPreviewPrintView reportId={fictionalVersion.reportId} />);
     await flush(); await flush();
-    expect(rendered.container.textContent).toContain('内部メモ（開示しない）');
+    const text = rendered.container.textContent ?? '';
+    expect(fictionalDisclosedTexts.filter(value => !text.includes(value))).toEqual([]);
+    expect(fictionalInternalTexts.filter(value => text.includes(value))).toEqual([]);
+    expect(text).not.toContain('開示しない');
   });
+
 });
