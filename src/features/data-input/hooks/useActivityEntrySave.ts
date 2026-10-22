@@ -91,6 +91,8 @@ export function useActivityEntrySave({
   // 月ごとに順に保存する（並列にしない。重複トリガーなど途中の失敗時に「どこまで保存されたか」を
   // 明確にするため）。途中で失敗しても保存済みの月は取り消さず、算定・履歴反映まで行ってから
   // 失敗した月をエラーとして伝える（グリッドは履歴再取得で保存済みの月が登録済み表示に変わる）。
+  // 保存済みの月の算定結果（件数・未算定の理由など）は失敗時も捨てず、保存済み件数と一緒にトーストで残す
+  // （フォームのエラー表示は失敗した月の案内だけを出す）。
   const saveBulk = async (items: BulkSaveItem[]) => {
     const saved: SavedManualActivityRecord[] = [];
     let overwriteCount = 0;
@@ -118,19 +120,24 @@ export function useActivityEntrySave({
           : MANUAL_ACTIVITY_CATEGORY_MAP[first.energyType].labelJP;
       const breakdown =
         overwriteCount > 0 ? `（新規${saved.length - overwriteCount}件・上書き${overwriteCount}件）` : '';
+      const savedSummary = `『${first.locationName}』の${categoryLabel}データを${saved.length}ヶ月分保存しました${breakdown}`;
       if (failure === null) {
-        showToast(
-          `『${first.locationName}』の${categoryLabel}データを${saved.length}ヶ月分保存しました${breakdown}。排出量を計算しています...`,
-          'success',
-        );
+        showToast(`${savedSummary}。排出量を計算しています...`, 'success');
       }
       const calcMessages = await runAutoCalculation([
         ...new Set(saved.map((record) => record.periodStart)),
       ]);
       await refreshHistory();
       onBulkSaved?.();
-      if (failure === null && calcMessages.length > 0) {
-        showToast(calcMessages.join('\n'), 'success');
+      if (failure === null) {
+        if (calcMessages.length > 0) {
+          showToast(calcMessages.join('\n'), 'success');
+        }
+      } else {
+        showToast(
+          [`${savedSummary}。${failure.item.label}以降は保存されていません。`, ...calcMessages].join('\n'),
+          'error',
+        );
       }
     }
 
