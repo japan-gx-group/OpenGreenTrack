@@ -19,7 +19,10 @@ export interface ProviderFactorRow {
   adjusted: number | null;
 }
 
-const MENU_RE = /メニュー[A-Z](?:\(残差\)|（残差）)?|\(参考値\)事業者全体|（参考値）事業者全体/;
+// 「事業者全体」行はほぼ「(参考値)事業者全体」だが、R6年度実績 R8.8.3版には「（参考）事業者全体」
+// 表記の事業者が1社だけある（A0034 泉佐野電力）。原典の表記ゆれなので「参考値」「参考」の両方を受ける。
+const MENU_RE =
+  /メニュー[A-Z](?:\(残差\)|（残差）)?|\(参考値?\)事業者全体|（参考値?）事業者全体/;
 const VALUE_RE = /\d\.\d{6}(?:※)?/g;
 const REG_RE = /^([A-Z]\d{4})\s+(.+)$/;
 
@@ -54,7 +57,7 @@ interface DenkiEntity {
 }
 
 const isComplete = (entity: DenkiEntity): boolean =>
-  entity.singleInline || entity.rows.some((r) => r.menuName?.includes('参考値') ?? false);
+  entity.singleInline || entity.rows.some((r) => r.menuName?.includes('事業者全体') ?? false);
 
 export interface DenkiParseResult {
   retailers: ProviderFactorRow[];

@@ -24,10 +24,24 @@ import {
   type ActivityEntryInitialValues,
   type ActivityEntryInput,
   type ManualEntryLocationOption,
+  type SavedManualActivityRecord,
 } from '../types';
+import {
+  buildDuplicateActivityRecordMessage,
+  formatDuplicatePeriodLabel,
+} from '../services/activityRecordDuplicates';
+import { useBulkEntryPreview } from '../hooks/useBulkEntryPreview';
+import { useBulkMonthEntries, type EntryInputMode } from '../hooks/useBulkMonthEntries';
+import { useDuplicateWarning } from '../hooks/useDuplicateWarning';
 import { useIdeaProductSelection } from '../hooks/useIdeaProductSelection';
 import { useKeyedLoader } from '../hooks/useKeyedLoader';
 import { useScope12FactorSelection } from '../hooks/useScope12FactorSelection';
+import {
+  BULK_VALIDATION_MESSAGES,
+  buildBulkMonthRows,
+  type BulkEntryTarget,
+  type BulkSaveItem,
+} from '../services/bulkEntry';
 import {
   DEFAULT_ENTRY_CATEGORY,
   ENTRY_PATH_LABELS,
@@ -47,6 +61,7 @@ import {
   buildCalculationResultView,
   buildPreviewRows,
   factorSourceRowText,
+  type PreviewRow,
 } from '../services/entryFormat';
 import {
   AMOUNT_INPUT_REJECTED_MESSAGE,
@@ -54,6 +69,7 @@ import {
   NOTE_MAX_LENGTH,
   SAVE_FAILURE_MESSAGES,
   VALIDATION_MESSAGES,
+  ZERO_AMOUNT_PREVIEW_NOTICE,
   amountValidationMessage,
   buildActivityEntryInput,
   normalizeAmountInput,
@@ -74,11 +90,20 @@ import {
 import {
   MIN_TARGET_MONTH,
   getCurrentYearMonth,
+  toPeriodDates,
   validateTargetMonth,
 } from '../services/manualEntryTargetMonth';
+import {
+  OUT_OF_RANGE_YEAR_VALUE,
+  buildTargetMonthDropdown,
+  nextTargetMonthAfterSave,
+  targetMonthForYearSwitch,
+} from '../services/targetMonthSelection';
 import { computeEstimatedScope3Emissions } from '../services/scope3InlineCalculation';
+import { ActivityEntryBulkSection } from './ActivityEntryBulkSection.client';
 import { ActivityEntryFactorSection } from './ActivityEntryFactorSection.client';
 import { ActivityEntryPreviewModal } from './ActivityEntryPreviewModal.client';
+import { BulkEntryPreviewModal } from './BulkEntryPreviewModal.client';
 import { EntryCalculationResult } from './EntryCalculationResult';
 import { EntryField, EntryNotice, EntrySection, FactorSourceChip, UnitBadge } from './EntryFormPrimitives';
 
@@ -96,7 +121,25 @@ export interface ActivityEntryFormProps {
   onDelete?: () => Promise<void>;
   /** 削除処理中フラグ（ボタンの二重押下防止）。 */
   isDeleting?: boolean;
+  /**
+   * 複数月まとめて入力（一括入力）の保存。create のときに指定すると入力方法の切替を表示する。
+   * reject 時は error.message をフォーム内に表示する（途中まで保存された場合の案内を含む）。
+   */
+  onSaveBulk?: (items: BulkSaveItem[]) => Promise<void>;
+  /**
+   * 読み込み済みの入力履歴（組織の全レコード）。拠点・カテゴリ・対象年月が揃った時点の
+   * 重複事前警告の照合と、一括入力で登録済みの月の照合（同じ重複キー）に使う。
+   * 未指定なら事前警告は出さず、一括入力でも既存レコードを照合しない（保存時チェックは従来どおり）。
+   */
+  historyRecords?: SavedManualActivityRecord[];
+  /** edit のとき編集中レコード自身を重複に数えないための除外 id。 */
+  excludeRecordId?: string;
+  /** 事前警告から重複レコードの編集を開く操作。指定時のみ「既存のレコードを開く」を表示する（新規入力用）。 */
+  onOpenDuplicateRecord?: (record: SavedManualActivityRecord) => void;
 }
+
+// historyRecords 未指定時の既定値。毎レンダー新しい [] を作ると useMemo の依存が毎回変わるため共有する。
+const NO_HISTORY_RECORDS: SavedManualActivityRecord[] = [];
 
 export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   locations,
@@ -106,6 +149,10 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   onCancel,
   onDelete,
   isDeleting = false,
+  onSaveBulk,
+  historyRecords = NO_HISTORY_RECORDS,
+  excludeRecordId,
+  onOpenDuplicateRecord,
 }) => {
   const isEdit = mode === 'edit';
   const initialCategory = useMemo(() => entryCategoryFromInitialValues(initialValues), [initialValues]);
@@ -120,7 +167,10 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   // composition が壊れて「何も入力できない」状態になるため、変換中は見たまま表示し、
   // 確定（compositionend）のタイミングでまとめて正規化・判定する。
   const isComposingAmountRef = useRef(false);
-  // 確定入力が数字にならなかったときに戻す先（直前にパターンを通過した値）。
+  // 確定入力が数字にならなかったときに戻す先（変換開始時点の表示値。パターンを通過済み）。
+  // 変換開始のたびに取り直し、保存で欄を空にしたときも空に戻す。
+  // 保存前の値を持ったままにすると、空欄に数字以外を入れた瞬間に古い活動量が復活し、
+  // 翌月分として再保存できてしまう。
   const lastValidAmountRef = useRef(initialValues?.amount ?? '');
   const [note, setNote] = useState(initialValues?.note ?? '');
   const [showPreview, setShowPreview] = useState(false);
@@ -147,11 +197,6 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   // この修正より前に登録された未来月レコードを編集する場合、対象年月を変えなければ
   // 他の項目（活動量・備考など）だけを直して保存できるようにする。
   const allowedFutureMonth = isEdit ? (initialValues?.targetMonth ?? null) : null;
-  // period は検証に通ったときだけ入る（エラー時は null）。以降のガードは period だけ見れば足りる。
-  const { period, error: targetMonthError } = useMemo(
-    () => validateTargetMonth(targetMonth, maxTargetMonth, { allowedFutureMonth }),
-    [targetMonth, maxTargetMonth, allowedFutureMonth],
-  );
 
   const path = entryPathOf(category);
   const factorSource = factorSourceOf(category);
@@ -161,6 +206,29 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   // 「未確定」= 初回ロード中のみ。失敗・年度未登録では true になりフォールバック導出に落ちる。
   const { fiscalYears, isLoading: isLoadingFiscalYears, setFiscalYearId } = useFiscalYear();
   const fiscalYearsReady = !isLoadingFiscalYears || fiscalYears.length > 0;
+
+  // 複数月まとめて入力（一括入力）。新規入力で onSaveBulk が渡されたときだけ切替を出す。
+  const bulkAvailable = !isEdit && onSaveBulk !== undefined;
+  const bulk = useBulkMonthEntries({ enabled: bulkAvailable, fiscalYears, maxTargetMonth });
+  const bulkPreview = useBulkEntryPreview();
+  const isBulk = bulkAvailable && bulk.mode === 'bulk';
+
+  // period は検証に通ったときだけ入る（エラー時は null）。以降のガードは period だけ見れば足りる。
+  // 一括入力では対象年月の代わりに選択年度の代表月を使う（係数の参照・推定用。検証エラーは出さない）。
+  const singleMonthValidation = useMemo(
+    () => validateTargetMonth(targetMonth, maxTargetMonth, { allowedFutureMonth }),
+    [targetMonth, maxTargetMonth, allowedFutureMonth],
+  );
+  const period = useMemo(
+    () =>
+      isBulk
+        ? bulk.representativeMonth !== null
+          ? toPeriodDates(bulk.representativeMonth)
+          : null
+        : singleMonthValidation.period,
+    [isBulk, bulk.representativeMonth, singleMonthValidation.period],
+  );
+  const targetMonthError = isBulk ? null : singleMonthValidation.error;
   // 係数解決コンテキストの適用年度。算定バッチと同様に会計年度マスタの開始年を正とする（無ければ4月始まりで導出）。
   // 係数の取得対象年度（開始年＋対象月の温対法年度）はこの値から useScope12FactorSelection が組み立てる。
   // IDEA 係数は年度非依存だが、算定バッチと同じ導出を通して整合させる。
@@ -195,18 +263,57 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     fiscalYearId: recordFiscalYearId,
   });
 
+  // 対象年月は算定期間（年度）→ 月 の2段プルダウンで選ぶ。係数が収録されていない期間外の
+  // 月を選んで未算定になる事故を防ぐ。年度マスタが空の組織だけ従来のネイティブ月入力へ
+  // フォールバックする（マスタ取得中はプルダウンを無効のまま出し、表示の切替を起こさない）。
+  const targetMonthDropdown = useMemo(
+    () => buildTargetMonthDropdown({ fiscalYears, targetMonth, maxTargetMonth, allowedFutureMonth }),
+    [fiscalYears, targetMonth, maxTargetMonth, allowedFutureMonth],
+  );
+  const useNativeTargetMonthInput = fiscalYearsReady && fiscalYears.length === 0;
+
+  const handleTargetMonthChange = (value: string) => {
+    setTargetMonth(value);
+    // 入力条件が変わったら係数の上書き選択は解除し、自動選択へ戻す。
+    scope12.onConditionChanged('targetMonth');
+  };
+
+  const handleTargetYearChange = (fiscalYearId: string) => {
+    // 合成の「算定期間外」行は現在値の表示専用（選び直しは実在の年度へ）。
+    const fiscalYear = fiscalYears.find((candidate) => candidate.id === fiscalYearId);
+    if (!fiscalYear) {
+      return;
+    }
+    const next = targetMonthForYearSwitch({
+      fiscalYear,
+      currentTargetMonth: targetMonth,
+      maxTargetMonth,
+      allowedFutureMonth,
+    });
+    if (next !== null && next !== targetMonth) {
+      handleTargetMonthChange(next);
+    }
+  };
+
   const appliedFactor = scope12.applied.status === 'resolved' ? scope12.applied.factor : null;
-  const unitInfo = resolveEntryUnit({
-    category,
-    mode,
-    initial:
-      isEdit && initialValues?.kind === 'scope12'
-        ? { energyType: initialValues.energyType, unit: initialValues.unit }
-        : null,
-    productUnit: idea.productDetail?.unit ?? null,
-    // 標準単位で換算できない係数（通勤に t-CO2e/km のカスタム係数、出張に kg-CO2/円 の公式係数を当てた場合など）は係数の分母単位で入力させる。
-    factorUnit: appliedFactor?.unit ?? null,
-  });
+  const productUnit = idea.productDetail?.unit ?? null;
+  // 標準単位で換算できない係数（通勤に t-CO2e/km のカスタム係数、出張に kg-CO2/円 の公式係数を当てた場合など）は係数の分母単位で入力させる。
+  const factorUnit = appliedFactor?.unit ?? null;
+  // 入力単位は一括入力グリッドの行の組み立て（useMemo）の依存になるため、派生元ごと参照を固定する。
+  const unitInfo = useMemo(
+    () =>
+      resolveEntryUnit({
+        category,
+        mode,
+        initial:
+          isEdit && initialValues?.kind === 'scope12'
+            ? { energyType: initialValues.energyType, unit: initialValues.unit }
+            : null,
+        productUnit,
+        factorUnit,
+      }),
+    [category, mode, isEdit, initialValues, productUnit, factorUnit],
+  );
   const currentUnit = unitInfo.unit;
   const isNonStandardUnit = unitInfo.kind === 'energy' && unitInfo.isNonStandard;
   const isFactorDerivedUnit = unitInfo.kind === 'energy' && unitInfo.isFactorDerived;
@@ -215,6 +322,40 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     category.kind === 'energy' && !isNonStandardUnit && !isFactorDerivedUnit
       ? (MANUAL_ACTIVITY_CATEGORY_MAP[category.energyType].amountGuide ?? null)
       : null;
+
+  // 一括入力グリッドの行。登録済みの月の照合キーは保存時の重複ブロックと同じ
+  // （Scope1/2: 拠点×種別×対象月 / Scope3積上げ: 拠点×カテゴリ×IDEA製品×対象月）。
+  // 入力単位は適用係数に依存して決まるため、行の組み立てはここ（currentUnit 確定後）で行う。
+  const bulkTarget = useMemo<BulkEntryTarget | null>(() => {
+    if (!isBulk) {
+      return null;
+    }
+    if (category.kind === 'scope3') {
+      return idea.productDetail
+        ? {
+            kind: 'scope3',
+            locationId: effectiveSelectedLocationId,
+            scope3CategoryId: category.categoryId,
+            ideaFactorId: idea.productDetail.id,
+          }
+        : null;
+    }
+    return { kind: 'scope12', locationId: effectiveSelectedLocationId, energyType: category.energyType };
+  }, [isBulk, category, effectiveSelectedLocationId, idea.productDetail]);
+  // 履歴全件との照合なので、入力のたび（活動量のキー入力など）に組み直さないようメモ化する。
+  const bulkRows = useMemo(
+    () =>
+      isBulk
+        ? buildBulkMonthRows({
+            months: bulk.months,
+            history: historyRecords,
+            target: bulkTarget,
+            maxTargetMonth,
+            currentUnit,
+          })
+        : [],
+    [isBulk, bulk.months, historyRecords, bulkTarget, maxTargetMonth, currentUnit],
+  );
 
   // この入力が Scope 3 の積上げ（calculated）側に載るカテゴリと、そのカテゴリの現在の算定方法。
   // 方式が direct のままだと算定は成功してもダッシュボードの Scope 3 合計に採用されないため、
@@ -238,10 +379,38 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     fiscalYearLabel: recordFiscalYear?.label ?? null,
   });
 
+  // 拠点・カテゴリ・対象年月（Scope3積上げはさらにIDEA製品）が揃った時点で、保存時と同じ重複キーを
+  // 読み込み済みの入力履歴に照合し、活動量を入れる前に「既に登録済み」を知らせる。
+  // 警告はプレビュー・保存を止めない（履歴が古い可能性があるため、確定判定は保存時チェックに委ねる）。
+  // 保存成功直後の同じ条件では警告しない（条件が変わるまでの抑止は useDuplicateWarning が持つ）。
+  // 一括入力では登録済みの月をグリッドの行ごとに示すため、代表月に対する事前警告は出さない。
+  const duplicate = useDuplicateWarning({
+    historyRecords,
+    excludeRecordId,
+    locationId: effectiveSelectedLocationId,
+    category,
+    periodStart: isBulk ? null : (period?.start ?? null),
+    ideaFactorId: idea.productDetail?.id ?? null,
+  });
+  const { candidate: duplicateCandidate, record: duplicateRecord } = duplicate;
+  const duplicateWarningText =
+    duplicateRecord && duplicateCandidate
+      ? buildDuplicateActivityRecordMessage({
+          locationName: selectedLocation?.name ?? null,
+          // 重複メッセージのカテゴリ表記は保存時（buildManualDuplicateMessage / buildScope3DuplicateMessage）と揃える。
+          categoryLabel:
+            category.kind === 'energy'
+              ? MANUAL_ACTIVITY_CATEGORY_MAP[category.energyType].labelJP
+              : `Scope3積上げ（カテゴリ${category.categoryId}）` +
+                (duplicateRecord.ideaProductName ? `・製品「${duplicateRecord.ideaProductName}」` : ''),
+          periodLabel: formatDuplicatePeriodLabel(duplicateCandidate.periodStart),
+        })
+      : null;
+
   const amountValidation = validateAmount(amount);
   const validAmount = amountValidation.kind === 'valid' ? amountValidation.value : null;
   // numeric(15,3) に収まらない桁数は入力欄の直下で即座に知らせる（計算結果が出ない理由を分かるようにする）。
-  // 空・0 は入力途中の状態なので、プレビュー / 保存時の検証（validateEntry）に任せる。
+  // 空は入力途中の状態なので、プレビュー / 保存時の検証（validateEntry）に任せる（0 は実績ゼロとして有効な値）。
   const amountDigitsError =
     amountValidation.kind === 'too-large' || amountValidation.kind === 'too-precise'
       ? amountValidationMessage(amountValidation)
@@ -286,17 +455,22 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     ? idea.isLoadingDetail
     : period !== null && (!fiscalYearsReady || scope12.isLoadingFactors || scope12.applied.status === 'pending');
   const isPreviewBlocked =
-    locations.length === 0 || initialLocationMissing || isSaving || isDeleting || isFactorLoading;
+    locations.length === 0 ||
+    initialLocationMissing ||
+    isSaving ||
+    isDeleting ||
+    isFactorLoading ||
+    bulkPreview.isResolving;
 
   // 全角数字・カンマ付きは正規化して受け付け、それでも数字にならない入力は直前の値に戻して理由を出す。
-  const commitAmount = (raw: string) => {
+  // 戻す先は経路ごとに呼び出し側が決める（通常入力は表示中の値、IME 確定は変換開始時点の値）。
+  const commitAmount = (raw: string, fallback: React.SetStateAction<string>) => {
     const normalized = normalizeAmountInput(raw);
     if (DECIMAL_PATTERN.test(normalized)) {
-      lastValidAmountRef.current = normalized;
       setAmount(normalized);
       setAmountRejected(false);
     } else {
-      setAmount(lastValidAmountRef.current);
+      setAmount(fallback);
       setAmountRejected(true);
     }
   };
@@ -307,12 +481,20 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
       setAmount(event.target.value);
       return;
     }
-    commitAmount(event.target.value);
+    // 変換を介さない入力では表示中の値がそのまま戻す先になる。ref を介さないので、
+    // 保存で欄を空にした後に古い値が復活することはない。
+    commitAmount(event.target.value, (prev) => (DECIMAL_PATTERN.test(prev) ? prev : ''));
+  };
+
+  const handleAmountCompositionStart = () => {
+    isComposingAmountRef.current = true;
+    // 変換開始時点の表示値は必ずパターンを通過しているので、確定が数字にならなかったときはここへ戻す。
+    lastValidAmountRef.current = amount;
   };
 
   const handleAmountCompositionEnd = (event: React.CompositionEvent<HTMLInputElement>) => {
     isComposingAmountRef.current = false;
-    commitAmount(event.currentTarget.value);
+    commitAmount(event.currentTarget.value, lastValidAmountRef.current);
   };
 
   const handleCategoryChange = (value: string) => {
@@ -398,9 +580,22 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
         // 編集はモーダルを閉じる（親が一覧を再取得する）。
         onCancel?.();
       } else {
-        // 続けて別の月・別製品を入力しやすいよう、拠点・カテゴリ・年月・係数/製品の選択は保持する。
+        // 続けて別の月・別製品を入力しやすいよう、拠点・カテゴリ・係数/製品の選択は保持する。
+        // 翌月へ送れないとき（当月・算定期間の末月）は対象年月も含めて条件がそのまま残るので、
+        // 今保存したレコードが履歴に加わっても条件を変えるまで重複警告は出さない。
+        duplicate.markSaved();
         setAmount('');
+        // 戻す先も空にする（保存前の活動量が次の入力で復活しないように）。
+        lastValidAmountRef.current = '';
         setNote('');
+        // 対象年月は翌月へ自動で送り、同一拠点の連続入力を「数量を打って保存」の繰り返しにする
+        // （当月まで。未来月と、年度マスタに登録済みの算定期間に属さない月には送らない）。
+        // 係数の上書き選択も保持する（同じ温対法年度内では候補が変わらず、年度をまたいで
+        // 候補に無くなった場合は自動選択へ安全側で戻る）。
+        const next = nextTargetMonthAfterSave({ targetMonth, maxTargetMonth, fiscalYears });
+        if (next !== null) {
+          setTargetMonth(next);
+        }
       }
     } catch (error) {
       // エラーはカード内のバナーに出す。プレビューモーダル（全面スクリム）を開いたままだと隠れて見えないため閉じる。
@@ -410,6 +605,120 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
       setIsSaving(false);
     }
   };
+
+  // ---- 複数月まとめて入力（一括入力） ----
+
+  const switchEntryMode = (nextMode: EntryInputMode) => {
+    if (!bulkAvailable || bulk.mode === nextMode) {
+      return;
+    }
+    bulk.setMode(nextMode);
+    setErrorMessage(null);
+    // 係数の参照に使う月（単月: 対象年月 / 一括: 年度の代表月）が切り替わるため、
+    // 対象年月の手動変更と同じ扱いで係数の上書き選択を解除する。
+    scope12.onConditionChanged('targetMonth');
+  };
+
+  // 一括入力の共通条件の検証。検証順序は単月（validateEntry）に合わせる
+  // （拠点 → 対象年度 → IDEA 製品 → 活動量（グリッドの月ごとに検証）→ 備考）。
+  const validateBulkShared = (): string | null => {
+    if (!effectiveSelectedLocationId) {
+      return VALIDATION_MESSAGES.location;
+    }
+    if (bulkRows.length === 0) {
+      return BULK_VALIDATION_MESSAGES.noFiscalYear;
+    }
+    if (isIdea) {
+      if (idea.detailError) {
+        return idea.detailError;
+      }
+      if (idea.selectedProductId === null || idea.productDetail === null) {
+        return idea.isFactorMissing ? SCOPE3_FACTOR_MISSING_MESSAGE : VALIDATION_MESSAGES.product;
+      }
+    }
+    if (note.length > NOTE_MAX_LENGTH) {
+      return VALIDATION_MESSAGES.note;
+    }
+    return null;
+  };
+
+  const handleBulkPreviewClick = async () => {
+    const sharedError = validateBulkShared();
+    if (sharedError) {
+      setErrorMessage(sharedError);
+      return;
+    }
+    if (!selectedLocation || currentUnit === null) {
+      setErrorMessage(VALIDATION_MESSAGES.inconsistent);
+      return;
+    }
+    setErrorMessage(null);
+    const openError = await bulkPreview.open({
+      rows: bulkRows,
+      amounts: bulk.amounts,
+      overwriteEnabled: bulk.overwriteEnabled,
+      category,
+      location: selectedLocation,
+      unit: currentUnit,
+      note,
+      fiscalYears,
+      selection: {
+        providerSelection: scope12.providerSelection,
+        // 事業者係数を選択中は候補セレクトの上書きは使われない。自動選択（候補先頭）の場合も
+        // 代表月の係数 ID を渡し、他の月でも適用可能ならその係数、不可なら各月の自動選択に落とす。
+        selectedFactorId: scope12.providerFactor !== null ? null : (scope12.selectedFactor?.id ?? null),
+      },
+      productDetail: idea.productDetail,
+    });
+    if (openError !== null) {
+      setErrorMessage(openError);
+    }
+  };
+
+  const handleBulkSave = async () => {
+    if (onSaveBulk === undefined || bulkPreview.state === null) {
+      return;
+    }
+    setIsSaving(true);
+    setErrorMessage(null);
+    try {
+      await onSaveBulk(bulkPreview.state.items);
+      bulkPreview.close();
+      bulk.clearAmounts();
+    } catch (error) {
+      // エラーはカード内のバナーに出す（単月保存と同じ。モーダルを開いたままだと隠れて見えないため閉じる）。
+      bulkPreview.close();
+      setErrorMessage(error instanceof Error ? error.message : SAVE_FAILURE_MESSAGES[path].create);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // 確認モーダルの共通条件行。月ごとの内容（活動量・適用係数・推定排出量）はモーダル側の表で見せる。
+  const bulkSummaryRows: PreviewRow[] =
+    bulkPreview.state !== null
+      ? [
+          { label: '拠点', value: selectedLocation?.name ?? '—' },
+          { label: 'カテゴリ', value: entryCategoryLabel(category) },
+          ...(isIdea && idea.productDetail !== null
+            ? [{ label: 'IDEA製品', value: idea.productDetail.productName }]
+            : [
+                {
+                  label: '係数の参照方式',
+                  value: factorSourceRowText({
+                    factorSource,
+                    isProviderFactorSelected: scope12.providerFactor !== null,
+                    isCandidateOverridden:
+                      scope12.providerFactor === null &&
+                      appliedFactor !== null &&
+                      scope12.factorCandidates[0]?.id !== appliedFactor.id,
+                    isSavedFactorKeptUnknown: false,
+                  }),
+                },
+              ]),
+          ...(note.trim() ? [{ label: '備考', value: note, note: '新規登録する月にのみ保存されます' }] : []),
+        ]
+      : [];
 
   const previewRows =
     showPreview && period && validAmount !== null && currentUnit !== null
@@ -442,12 +751,17 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
           estimatedEmissions,
         })
       : null;
-  const previewCaution =
+  const factorFallbackCaution =
     !isIdea && isEdit && !scope12.factorTouched && scope12.applied.status === 'resolved' && scope12.applied.fellBack
       ? scope12.applied.remapped
         ? '保存されていた係数は年度更新で入れ替わったため、同じ供給事業者・メニューの上記の係数で再計算されます。'
         : '保存されていた係数は現在の条件では適用できないため、上記の自動選択された係数で再計算されます。'
       : null;
+  // 活動量 0 は実績ゼロの記録として保存できるが、入力し忘れたまま確定するタイプミスを防ぐため確認表示を挟む。
+  const previewCautions = [
+    ...(validAmount === 0 ? [ZERO_AMOUNT_PREVIEW_NOTICE] : []),
+    ...(factorFallbackCaution ? [factorFallbackCaution] : []),
+  ];
 
   return (
     <>
@@ -529,6 +843,33 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
               )}
             </EntryField>
 
+            {/* 入力方法の切替（単月 / 複数月まとめて入力）。新規入力のみ。 */}
+            {bulkAvailable && (
+              <div className="md:col-span-2">
+                <span className="mb-1.5 block text-sm font-medium text-text-muted">入力方法</span>
+                <div role="group" aria-label="入力方法" className="flex flex-wrap gap-2">
+                  <button
+                    id="manual-entry-mode-single"
+                    type="button"
+                    aria-pressed={!isBulk}
+                    onClick={() => switchEntryMode('single')}
+                    className={isBulk ? 'gt-btn' : 'gt-btn-primary'}
+                  >
+                    単月入力
+                  </button>
+                  <button
+                    id="manual-entry-mode-bulk"
+                    type="button"
+                    aria-pressed={isBulk}
+                    onClick={() => switchEntryMode('bulk')}
+                    className={isBulk ? 'gt-btn-primary' : 'gt-btn'}
+                  >
+                    複数月まとめて入力
+                  </button>
+                </div>
+              </div>
+            )}
+
             <EntryField htmlFor="manual-location-select" label="拠点">
               <select
                 id="manual-location-select"
@@ -549,24 +890,103 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
               </select>
             </EntryField>
 
-            <EntryField htmlFor="manual-target-month" label="対象年月" error={targetMonthError}>
-              <input
-                id="manual-target-month"
-                type="month"
-                value={targetMonth}
-                min={MIN_TARGET_MONTH}
-                max={maxTargetMonth}
-                onChange={(event) => {
-                  setTargetMonth(event.target.value);
-                  scope12.onConditionChanged('targetMonth');
-                }}
-                disabled={isConditionLocked}
-                className="gt-field"
-                aria-invalid={targetMonthError !== null}
-                aria-describedby={targetMonthError ? 'manual-target-month-error' : undefined}
-              />
-            </EntryField>
+            {isBulk ? (
+              <EntryField htmlFor="manual-bulk-fiscal-year" label="対象年度">
+                <select
+                  id="manual-bulk-fiscal-year"
+                  value={bulk.fiscalYearId ?? ''}
+                  onChange={(event) => {
+                    bulk.selectFiscalYear(event.target.value);
+                    // 係数の参照に使う代表月が変わるため、対象年月の変更と同じ扱いにする。
+                    scope12.onConditionChanged('targetMonth');
+                  }}
+                  disabled={isConditionLocked || bulk.fiscalYearOptions.length === 0}
+                  className="gt-field"
+                >
+                  {bulk.fiscalYearOptions.map((fiscalYear) => (
+                    <option key={fiscalYear.id} value={fiscalYear.id}>
+                      {fiscalYear.label}
+                    </option>
+                  ))}
+                </select>
+                {bulk.fiscalYearOptions.length === 0 && (
+                  <p className="mt-1.5 text-sm text-warning">{BULK_VALIDATION_MESSAGES.noFiscalYear}</p>
+                )}
+              </EntryField>
+            ) : (
+              <EntryField htmlFor="manual-target-month" label="対象年月" error={targetMonthError}>
+                {useNativeTargetMonthInput ? (
+                  // 算定期間（年度マスタ）が未登録の組織は選択肢を組み立てられないため、従来の月入力で受ける。
+                  <input
+                    id="manual-target-month"
+                    type="month"
+                    value={targetMonth}
+                    min={MIN_TARGET_MONTH}
+                    max={maxTargetMonth}
+                    onChange={(event) => handleTargetMonthChange(event.target.value)}
+                    disabled={isConditionLocked}
+                    className="gt-field"
+                    aria-invalid={targetMonthError !== null}
+                    aria-describedby={targetMonthError ? 'manual-target-month-error' : undefined}
+                  />
+                ) : (
+                  <div className="flex gap-2">
+                    {/* 見出しの「対象年月」は月セレクトに付くため、年度側には不可視のラベルで名前を与える。 */}
+                    <label htmlFor="manual-target-month-year" className="sr-only">
+                      対象年度
+                    </label>
+                    <select
+                      id="manual-target-month-year"
+                      value={targetMonthDropdown.selectedYearValue}
+                      onChange={(event) => handleTargetYearChange(event.target.value)}
+                      disabled={isConditionLocked || !fiscalYearsReady}
+                      className="gt-field"
+                    >
+                      {targetMonthDropdown.yearOptions.map((option) => (
+                        <option key={option.value} value={option.value} disabled={option.value === OUT_OF_RANGE_YEAR_VALUE}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      id="manual-target-month"
+                      value={targetMonth}
+                      onChange={(event) => handleTargetMonthChange(event.target.value)}
+                      disabled={isConditionLocked || !fiscalYearsReady}
+                      className="gt-field"
+                      aria-invalid={targetMonthError !== null}
+                      aria-describedby={targetMonthError ? 'manual-target-month-error' : undefined}
+                    >
+                      {/* 未来月は disabled で見せる（「当月まで」を選択肢の形で伝える）。 */}
+                      {targetMonthDropdown.monthOptions.map((option) => (
+                        <option key={option.value} value={option.value} disabled={option.disabled}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </EntryField>
+            )}
           </div>
+
+          {/* 条件が揃った時点の重複事前警告。活動量まで入力して保存時に弾かれる手戻りを防ぐ。 */}
+          {duplicateWarningText && duplicateRecord && (
+            <div data-testid="manual-duplicate-warning">
+              <EntryNotice variant="warning">
+                {duplicateWarningText}
+                {onOpenDuplicateRecord && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenDuplicateRecord(duplicateRecord)}
+                    className="ml-1 font-semibold underline"
+                  >
+                    既存のレコードを開く
+                  </button>
+                )}
+              </EntryNotice>
+            </div>
+          )}
         </EntrySection>
 
         {locations.length > 0 && (
@@ -582,7 +1002,30 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
           </EntrySection>
         )}
 
-        {locations.length > 0 && (
+        {locations.length > 0 && isBulk && (
+          <EntrySection step={3} title="活動量と計算結果" titleId="manual-step-3">
+            <ActivityEntryBulkSection
+              rows={bulkRows}
+              amounts={bulk.amounts}
+              amountRejected={bulk.amountRejected}
+              overwriteEnabled={bulk.overwriteEnabled}
+              unit={currentUnit}
+              amountGuide={amountGuide}
+              disabled={isConditionLocked || isSaving}
+              onAmountChange={bulk.setAmount}
+              onAmountCompositionStart={bulk.beginAmountComposition}
+              onAmountCompositionEnd={bulk.endAmountComposition}
+              onToggleOverwrite={(month) =>
+                bulk.toggleOverwrite(
+                  month,
+                  bulkRows.find((row) => row.month === month)?.existing?.amount ?? null,
+                )
+              }
+            />
+          </EntrySection>
+        )}
+
+        {locations.length > 0 && !isBulk && (
           <EntrySection step={3} title="活動量と計算結果" titleId="manual-step-3">
             <div className="grid grid-cols-1 gap-x-5 gap-y-4 md:grid-cols-2">
               <EntryField
@@ -606,9 +1049,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
                     placeholder="0.000"
                     value={amount}
                     onChange={handleAmountChange}
-                    onCompositionStart={() => {
-                      isComposingAmountRef.current = true;
-                    }}
+                    onCompositionStart={handleAmountCompositionStart}
                     onCompositionEnd={handleAmountCompositionEnd}
                     aria-describedby="manual-unit-display"
                     className="gt-field"
@@ -643,7 +1084,12 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
         )}
 
         {locations.length > 0 && (
-          <EntrySection step={4} title="備考" titleId="manual-step-4" hint={`(任意・${NOTE_MAX_LENGTH}文字以内)`}>
+          <EntrySection
+            step={4}
+            title="備考"
+            titleId="manual-step-4"
+            hint={`(任意・${NOTE_MAX_LENGTH}文字以内${isBulk ? '・新規登録する月にのみ保存' : ''})`}
+          >
             <div>
               {/* 見出しが視覚上のラベルを兼ねるため、入力欄には不可視のラベルで名前と補足を紐づける。 */}
               <label htmlFor="manual-note-input" className="sr-only">
@@ -712,11 +1158,11 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
             <button
               id="manual-preview-button"
               type="button"
-              onClick={handlePreviewClick}
+              onClick={isBulk ? handleBulkPreviewClick : handlePreviewClick}
               disabled={isPreviewBlocked}
               className="gt-btn-primary min-w-36 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isEdit ? '変更内容を確認' : '入力プレビュー'}
+              {bulkPreview.isResolving ? '係数を確認しています...' : isEdit ? '変更内容を確認' : '入力プレビュー'}
             </button>
           </div>
         </div>
@@ -726,10 +1172,20 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
         <ActivityEntryPreviewModal
           mode={mode}
           rows={previewRows}
-          caution={previewCaution}
+          cautions={previewCautions}
           isSaving={isSaving}
           onClose={closePreview}
           onSave={handleSave}
+        />
+      )}
+
+      {bulkPreview.state && (
+        <BulkEntryPreviewModal
+          summaryRows={bulkSummaryRows}
+          preview={bulkPreview.state.preview}
+          isSaving={isSaving}
+          onClose={bulkPreview.close}
+          onSave={handleBulkSave}
         />
       )}
     </>

@@ -16,13 +16,15 @@ const period = { start: '2024-11-01', end: '2024-11-30' };
 const MISSING = '参照していた係数が削除されています。製品を再選択してください';
 
 describe('parseValidAmount / DECIMAL_PATTERN', () => {
-  it('半角数字と小数点のみ受け付け、0 より大きい値だけ数値にする', () => {
+  it('半角数字と小数点のみ受け付け、0 以上の値だけ数値にする', () => {
     expect(DECIMAL_PATTERN.test('12.5')).toBe(true);
     expect(DECIMAL_PATTERN.test('1.')).toBe(true);
     expect(DECIMAL_PATTERN.test('1,000')).toBe(false);
     expect(DECIMAL_PATTERN.test('１２')).toBe(false);
     expect(parseValidAmount('12.5')).toBe(12.5);
-    expect(parseValidAmount('0')).toBeNull();
+    // 0 は実績ゼロ（休止拠点・契約のみの月など）の記録として許可し、入力漏れ（レコード無し）と区別する。
+    expect(parseValidAmount('0')).toBe(0);
+    expect(parseValidAmount('0.000')).toBe(0);
     expect(parseValidAmount('')).toBeNull();
     expect(parseValidAmount('.')).toBeNull();
     expect(parseValidAmount('abc')).toBeNull();
@@ -36,7 +38,7 @@ describe('parseValidAmount / DECIMAL_PATTERN', () => {
     expect(validateAmount('1.0001')).toEqual({ kind: 'too-precise' });
     expect(validateAmount('1000000000000')).toEqual({ kind: 'too-large' });
     expect(validateAmount('9999999999999999')).toEqual({ kind: 'too-large' });
-    expect(validateAmount('0')).toEqual({ kind: 'invalid' });
+    expect(validateAmount('0')).toEqual({ kind: 'valid', value: 0 });
     expect(validateAmount('')).toEqual({ kind: 'invalid' });
     expect(parseValidAmount('0.0004')).toBeNull();
     expect(parseValidAmount('1000000000000')).toBeNull();
@@ -64,9 +66,18 @@ describe('parseValidAmount / DECIMAL_PATTERN', () => {
     expect(DECIMAL_PATTERN.test(normalizeAmountInput('１２３'))).toBe(true);
   });
 
+  // NFKC 正規化だと上付き数字や丸数字まで半角数字に化けて、数字ではない入力が通ってしまう。
+  // 変換するのは全角数字・全角小数点・桁区切りカンマだけに限定していることを固定する。
+  it('normalizeAmountInput: 上付き数字・丸数字は数字に変換せず、そのまま弾かれる', () => {
+    expect(normalizeAmountInput('10²')).toBe('10²');
+    expect(normalizeAmountInput('①')).toBe('①');
+    expect(DECIMAL_PATTERN.test(normalizeAmountInput('10²'))).toBe(false);
+    expect(DECIMAL_PATTERN.test(normalizeAmountInput('①'))).toBe(false);
+  });
+
   it('検証結果ごとの文言を返す', () => {
     expect(amountValidationMessage({ kind: 'valid', value: 1 })).toBeNull();
-    expect(amountValidationMessage({ kind: 'invalid' })).toBe('活動量は0より大きい半角数字で入力してください。');
+    expect(amountValidationMessage({ kind: 'invalid' })).toBe('活動量は0以上の半角数字で入力してください。');
     expect(amountValidationMessage({ kind: 'too-precise' })).toBe('活動量は小数第3位までで入力してください。');
     expect(amountValidationMessage({ kind: 'too-large' })).toBe(
       '活動量は整数部12桁以内（999,999,999,999 以下）で入力してください。',
@@ -91,9 +102,11 @@ describe('validateEntry', () => {
     expect(validateEntry({ ...base, targetMonthError: '対象年月を選択してください。' }, { factorMissing: MISSING })).toBe(
       '対象年月を選択してください。',
     );
-    expect(validateEntry({ ...base, amount: '0' }, { factorMissing: MISSING })).toBe(
-      '活動量は0より大きい半角数字で入力してください。',
+    expect(validateEntry({ ...base, amount: '' }, { factorMissing: MISSING })).toBe(
+      '活動量は0以上の半角数字で入力してください。',
     );
+    // 0 は実績ゼロの記録として検証を通す（確認表示はプレビュー側）。
+    expect(validateEntry({ ...base, amount: '0' }, { factorMissing: MISSING })).toBeNull();
     expect(validateEntry({ ...base, amount: '0.0004' }, { factorMissing: MISSING })).toBe(
       VALIDATION_MESSAGES.amountTooPrecise,
     );

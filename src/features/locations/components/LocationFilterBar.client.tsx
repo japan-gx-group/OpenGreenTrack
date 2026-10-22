@@ -43,8 +43,9 @@ export const LocationFilterBar = ({ filters, activeFilters, onChange }: Location
   <div className="flex flex-col gap-3">
     <div className="gt-filter-bar" style={{ marginTop: 0 }}>
       <div className="gt-filter-field">
-        <label className="gt-field-label">地域</label>
+        <label className="gt-field-label" htmlFor="location-filter-region">地域</label>
         <select
+          id="location-filter-region"
           className="gt-field gt-field-select"
           value={filters.selectedRegion}
           onChange={(e) => { filters.setSelectedRegion(e.target.value as Region | AllOption); onChange(); }}
@@ -55,8 +56,9 @@ export const LocationFilterBar = ({ filters, activeFilters, onChange }: Location
         </select>
       </div>
       <div className="gt-filter-field">
-        <label className="gt-field-label">拠点種別</label>
+        <label className="gt-field-label" htmlFor="location-filter-type">拠点種別</label>
         <select
+          id="location-filter-type"
           className="gt-field gt-field-select"
           value={filters.selectedType}
           onChange={(e) => { filters.setSelectedType(e.target.value as LocationType | AllOption); onChange(); }}
@@ -67,8 +69,9 @@ export const LocationFilterBar = ({ filters, activeFilters, onChange }: Location
         </select>
       </div>
       <div className="gt-filter-field">
-        <label className="gt-field-label">稼働状況</label>
+        <label className="gt-field-label" htmlFor="location-filter-status">稼働状況</label>
         <select
+          id="location-filter-status"
           className="gt-field gt-field-select"
           value={filters.selectedStatus}
           onChange={(e) => { filters.setSelectedStatus(e.target.value as LocationStatus | AllOption); onChange(); }}
@@ -94,7 +97,7 @@ export const LocationFilterBar = ({ filters, activeFilters, onChange }: Location
           {filters.searchQuery && (
             <button
               type="button"
-              onClick={() => filters.setSearchQuery('')}
+              onClick={() => { filters.setSearchQuery(''); onChange(); }}
               aria-label="検索キーワードをクリア"
               className="absolute right-3 text-text-subtle hover:text-text-main"
             >

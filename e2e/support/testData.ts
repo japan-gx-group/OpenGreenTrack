@@ -89,8 +89,10 @@ export const E2E_NOTE_MARKER = '[e2e-smoke] Playwrightスモークテストが�
 export const E2E_SEARCH_KEYWORD = 'e2e-smoke';
 
 /**
- * 入力履歴の「対象期間」列に出る開始日の表記（例: '2024-11' → '2024/11/01'）。
+ * 入力履歴の「対象期間」列の表記（例: '2024-11' → '2024年11月'）。
  * DataInput の toHistoryPeriod と同じ整形。テストが自分の保存した行だけを特定するために使う。
  */
-export const toHistoryPeriodStart = (targetMonth: string): string =>
-  `${targetMonth.replace('-', '/')}/01`;
+export const toHistoryPeriodLabel = (targetMonth: string): string => {
+  const [yearText, monthText] = targetMonth.split('-');
+  return `${yearText}年${Number(monthText)}月`;
+};

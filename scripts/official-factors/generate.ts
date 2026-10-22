@@ -113,6 +113,21 @@ const buildYearRows = (source: YearSource): YearRows => {
 
   const denki = parseDenki(readData('denki.txt'));
 
+  // 原典改版の読み替え SQL（revisionFollowupStatements）の前提検証: 残差メニューは事業者ごとに高々1つ。
+  // 複数あると「旧残差行 → 現行残差行」の対応が providerNumber + factorType で一意に決まらなくなる。
+  const residualCounts = new Map<string, number>();
+  for (const retailer of denki.retailers) {
+    if (retailer.menuName?.includes('残差')) {
+      residualCounts.set(retailer.providerNumber, (residualCounts.get(retailer.providerNumber) ?? 0) + 1);
+    }
+  }
+  for (const [providerNumber, count] of residualCounts) {
+    assert(
+      count === 1,
+      `${source.year}年度 ${providerNumber} の残差メニューが${count}件あります（原典改版の読み替えの前提が崩れる）`,
+    );
+  }
+
   const pushProviderRows = (
     provider: ProviderFactorRow,
     base: Pick<FactorSeedRow, 'energyType' | 'scope' | 'unit' | 'sourceDocumentName' | 'sourceUrl'> & {
@@ -410,6 +425,76 @@ const insertStatements = (rows: SqlRow[]): string[] => {
   return statements;
 };
 
+// --- 原典改版の後始末（残差メニューの読み替えと消滅行のアーカイブ） -----------------
+//
+// 公表資料は公表後も改版され、メニュー名の変更・メニューの消滅が起きる（例: R6年度実績の
+// R8.7.23・R8.8.3 一部追加・更新では、1月公表時に係数が確定していなかった事業者へ実績値が反映され、
+// 177社でメニュー構成が変わった。東京電力EPの残差は メニューM(残差)→メニューL(残差)）。
+// メニュー名は行の安定キーの構成要素なので、改名された行は別 ID の新規行になり、upsert だけでは旧名の行が
+// active のまま残って「原典の最新版に存在しないメニュー」が選択肢と算定に使われ続ける。upsert の後に:
+//
+//   1. 残差メニューの読み替え: 旧残差行への明示選択（activity_records."emissionFactorId"）を、同一事業者・
+//      同一係数種別・同一年度の現行残差行へ付け替える。残差メニューは原典上事業者ごとに高々1つ
+//      （buildYearRows で検証）なので、新旧の対応は providerNumber + factorType で一意に決まる。
+//      改名は呼び名の変更であって契約メニューの実体（残差メニュー）は変わらないため、付け替えが正しい解釈。
+//      emission_results は付け替えない（過去の算定がどの行・どの値で行われたかの記録のため）。
+//      付け替えたレコードの再算定の要否確認は README「原典改版の追従」参照。
+//   2. 消滅行のアーカイブ: upsert 後も旧版の出典表記（sourceDocumentName）のまま残った行＝最新版に
+//      存在しない行を archived にする。ただし activity_records から参照中の行は active のまま残す
+//      （archived にすると算定時の明示選択フィルタ（status='active'）から外れ、黙って代替値に落ちる。
+//      残差以外のメニューは新旧の対応を機械的に決められず読み替えもできない。残存行は README の
+//      確認SQLで洗い出して個別対処する）。
+//
+// 検出キーは source.json の documents（出典表記）なので、改版を取り込むときは出典表記も必ず新しい版に変える。
+// どちらも冪等（1 は旧行への参照が無くなれば対象ゼロ、2 は archived 済み・参照中を除外）。
+// 年度ごとの seed に、その年度の行だけを対象として出力する（年度ごとのファイルは互いに独立のまま）。
+// 出典表記が変わらない訂正（転記ミスの修正など）で安定キーを変えた場合はこの仕組みでは拾えないため、
+// 従来どおり個別の冪等文を出力すること（README「行の ID（安定キー）」）。
+const revisionFollowupStatements = (source: YearSource): string[] => {
+  const year = source.year;
+  const denkiDocSql = sqlString(source.documents.denki);
+  const statements = [
+    `-- ${year}年度 電気: 原典改版で改名された残差メニューの読み替え（旧残差行への明示選択を現行残差行へ付け替える）
+update activity_records as ar
+set "emissionFactorId" = cur.id
+from emission_factors as old
+join emission_factors as cur
+  on cur."organizationId" is null
+  and cur."energyType" = 'electricity'
+  and cur."applicableYear" = old."applicableYear"
+  and cur."providerNumber" = old."providerNumber"
+  and cur."factorType" = old."factorType"
+  and cur."menuName" like '%残差%'
+  and cur."sourceDocumentName" = ${denkiDocSql}
+where ar."emissionFactorId" = old.id
+  and old."organizationId" is null
+  and old."energyType" = 'electricity'
+  and old."applicableYear" = ${year}
+  and old."menuName" like '%残差%'
+  and old."sourceDocumentName" is distinct from ${denkiDocSql};`,
+  ];
+  const utilityDocs = [
+    ['electricity', source.documents.denki],
+    ['city_gas', source.documents.gas],
+    ['heat', source.documents.heat],
+  ] as const;
+  for (const [energyType, doc] of utilityDocs) {
+    statements.push(
+      `-- ${year}年度 ${energyType}: 最新の公表資料に存在しない事業者別係数行のアーカイブ（明示選択から参照中の行は残す）
+update emission_factors as ef
+set status = 'archived'
+where ef."organizationId" is null
+  and ef.source = 'utility'
+  and ef."energyType" = '${energyType}'
+  and ef."applicableYear" = ${year}
+  and ef."sourceDocumentName" is distinct from ${sqlString(doc)}
+  and ef.status = 'active'
+  and not exists (select 1 from activity_records ar where ar."emissionFactorId" = ef.id);`,
+    );
+  }
+  return statements;
+};
+
 // 1 年度分の seed のヘッダ。出典と権利の表示は年度ごとのファイルそれぞれに入れる（再配布時もこの表示を保持する）。
 const yearFileHeader = ({ source, data }: YearRows): string => `-- 公式排出係数マスタ ${source.year} 年度分（OpenGreenTrack の初期データ。本番環境にも投入する共通マスタ）
 -- scripts/official-factors/generate.ts による自動生成。手編集しないこと（修正は data/${source.year}/ を直して再生成する）。
@@ -451,6 +536,9 @@ const yearFileHeader = ({ source, data }: YearRows): string => `-- 公式排出�
 -- 変更のない行は where … is distinct from で更新をスキップするため、再投入で updatedAt が動くのは値が変わった行だけ。
 -- status は上書きしない（運用で archived にした行を再投入で active に戻さないため）。
 -- updatedAt は set_emission_factors_updated_at トリガーが更新する。
+-- upsert の後の update 群は原典改版（rev 更新）の後始末（この年度の行だけが対象。冪等。詳細は generate.ts）:
+--   1. 改名された残差メニューの読み替え（旧残差行への明示選択を現行残差行へ付け替える）
+--   2. 最新の公表資料に存在しない事業者別係数行のアーカイブ（明示選択から参照中の行は残す）
 -- 公表資料のある年度の行だけを作る（未公表年度の行は作らない）。対象年度の係数が無い間は算定側
 -- （resolveEmissionFactor の effectiveYearsFor）が直近の過年度を暫定適用し、入力フォームに「暫定適用」と
 -- 理由を表示する。以前の版が作っていた翌年度コピー行の後始末は ${CLEANUP_FILE_NAME} にある。
@@ -522,7 +610,8 @@ for (const yearRow of yearRows) {
   const year = yearRow.source.year;
   const fileName = yearFileName(year);
   const rows = sqlRows.filter((row) => row.applicableYear === year);
-  writeFileSync(join(OUTPUT_DIR, fileName), yearFileHeader(yearRow) + insertStatements(rows).join('\n\n') + '\n');
+  const statements = [...insertStatements(rows), ...revisionFollowupStatements(yearRow.source)];
+  writeFileSync(join(OUTPUT_DIR, fileName), yearFileHeader(yearRow) + statements.join('\n\n') + '\n');
   written.add(fileName);
 }
 writeFileSync(join(OUTPUT_DIR, CLEANUP_FILE_NAME), cleanupFileHeader + cleanupStatement + '\n');
