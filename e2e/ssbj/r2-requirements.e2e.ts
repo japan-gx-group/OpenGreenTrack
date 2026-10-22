@@ -6,7 +6,7 @@
 // 実画面と実データ（ローカル Supabase のデモシード）で、1 つのレポートを順に操作して確かめる（手順は順番に実行する）。
 // 入力は入力担当（算定 花子）、承認は承認担当（確認 三郎）、閲覧は閲覧者（報告 次郎）が行い、管理者（環境 太郎）は
 // レビューの依頼・差戻しと、OGT の元データの変更に使う。前提・実行方法は docs/ssbj-spec.md §13（設定は playwright.ssbj.config.ts）。
-// 印刷・PDF に内部メモが出ないことの確認は、その修正（#64）が ssbj に入ってから足す（docs/ssbj-r2-trial.md）。
+// 内部メモ・内部記録は、画面のプレビューで「内部メモも表示する」を選んだときだけ出て、印刷・PDF と閲覧者には出ない（手順 8・10）。
 
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
@@ -104,13 +104,24 @@ const downloadVersionCsv = async (page: Page, versionNumber: number): Promise<st
   return parseSsbjCsv(await readFile((await download.path())!)).filter(row => row[0] !== '生成日時');
 };
 
-/** 印刷ビュー（PDF と同じ内容）を、印刷ダイアログを出さずに開く。 */
-const openPrintView = async (actor: Actor, source: string, internal: boolean): Promise<Page> => {
+/**
+ * 印刷ビュー（PDF と同じ内容）を、印刷ダイアログを出さずに開く。印刷には内部メモ・内部記録を出さない。
+ * URL に internal=1 を付けても出ないことを確かめられるよう、付けて開くこともできる。
+ */
+const openPrintView = async (actor: Actor, source: string, extraQuery = ''): Promise<Page> => {
   const print = await actor.context.newPage();
   await print.addInitScript(() => { window.print = () => undefined; });
-  await print.goto(reportPath(`/preview/print?source=${source}&internal=${internal ? '1' : '0'}`));
+  await print.goto(reportPath(`/preview/print?source=${source}${extraQuery}`));
   await expect(print.getByTestId('ssbj-preview-source')).toBeVisible();
   return print;
+};
+
+/** 画面のプレビューで、指定の内容（作業中 / 保存版の ID）を「内部メモも表示する」を選んで開き、外部算定値の欄を返す。 */
+const openPreviewWithInternalNotes = async (actor: Actor, source: string) => {
+  await actor.page.goto(reportPath(source === 'working' ? '/preview' : `/preview?source=${source}`));
+  await expect(actor.page.getByTestId('ssbj-preview-source')).toBeVisible();
+  await actor.page.getByLabel('内部メモも表示する（開示しない内容）').click();
+  return actor.page.getByTestId('ssbj-preview-external-emissions');
 };
 
 const adoptOnScreen = async (page: Page) => {
@@ -163,10 +174,16 @@ test('2. 権限（画面）: 承認担当には編集の操作が出ず、閲覧
   }
   await expect(approver.page.getByRole('button', { name: '外部算定値を追加' })).toHaveCount(0);
   await approver.page.goto(reportPath('/narratives'));
+  // ロールを読み込む前は編集の操作を出さないので、ロールの案内（承認担当）が出てから「無いこと」を確かめる。
+  await expect(approver.page.getByTestId('ssbj-role-notice')).toContainText('承認担当');
   await expect(approver.page.getByTestId('ssbj-narrative-item').first()).toBeVisible();
   await expect(approver.page.getByRole('button', { name: '編集', exact: true })).toHaveCount(0);
 
+  // 入力担当には出る「新規作成」が、閲覧者には出ない（ロールの読み込みが終わってから確かめる）。
+  await editor.page.goto('/ssbj');
+  await expect(editor.page.getByRole('button', { name: '新規作成' })).toBeVisible();
   await viewer.page.goto('/ssbj');
+  await viewer.page.waitForLoadState('networkidle');
   await expect(viewer.page.getByRole('button', { name: '新規作成' })).toHaveCount(0);
   await viewer.page.goto(reportPath());
   await expect(viewer.page.getByText('SSBJレポートが見つかりません').first()).toBeVisible();
@@ -212,7 +229,7 @@ test('4. 権限（PostgREST の直接呼び出し）: 画面を通さずに書�
   expect((await admin.client.from('ssbj_ogt_adoptions').select('id').eq('reportId', reportId)).data).toHaveLength(1);
 
   // 閲覧者: 承認前のレポート・作業中データ・操作履歴は見えず、レポートも作れない。
-  for (const table of ['ssbj_reports', 'ssbj_external_emissions', 'ssbj_evidence', 'ssbj_audit_logs', 'ssbj_ogt_adoptions']) {
+  for (const table of ['ssbj_reports', 'ssbj_report_versions', 'ssbj_external_emissions', 'ssbj_evidence', 'ssbj_audit_logs', 'ssbj_ogt_adoptions']) {
     const column = table === 'ssbj_reports' ? 'id' : 'reportId';
     const { data, error } = await viewer.client.from(table).select('*').eq(column, reportId);
     expect(error, table).toBeNull();
@@ -221,10 +238,12 @@ test('4. 権限（PostgREST の直接呼び出し）: 画面を通さずに書�
   const create = await viewer.client.from('ssbj_reports').insert({ organizationId, fiscalYearId, title: `${SSBJ_E2E_TITLE_PREFIX} 閲覧者` });
   expect(create.error?.code).toBe('42501');
 
-  // 入力担当: ロールの割り当て（管理者だけ）を自分で変えられない。
+  // 入力担当: ロールの割り当て（管理者だけ）を自分で変えられない。割り当てに使う列は書けるので、拒否は管理者だけのポリシーによる。
   const promote = await editor.client.from('ssbj_member_roles')
-    .upsert({ organizationId, userId: editor.userId, role: 'approver' });
+    .insert({ organizationId, userId: editor.userId, role: 'approver' });
   expect(promote.error?.code).toBe('42501');
+  const demote = await editor.client.from('ssbj_member_roles').update({ role: 'editor' }).eq('userId', approver.userId).select('userId');
+  expect(demote.data).toEqual([]);
   expect((await reportRow()).draftRevision).toBe(before.draftRevision);
 });
 
@@ -325,7 +344,7 @@ test('7. 数値（出力）: 保存版・CSV・印刷で、値は出典ごとに
     expect(scope1Row[COLUMN.disclosure]).not.toBe(addDecimals([scope1.value.value, EXTERNAL_VALUE]));
   }
 
-  const print = await openPrintView(editor, version1.id, false);
+  const print = await openPrintView(editor, version1.id);
   await expect(print.locator('body')).toContainText('出典: OGT 算定値');
   const section = print.getByTestId('ssbj-preview-external-emissions');
   await expect(section).toContainText('出典: 外部算定値');
@@ -340,15 +359,18 @@ test('8. 根拠: 外部算定値から、根拠文書・算定した者・確認
     .map(row => [row[COLUMN.item], row[COLUMN.internal]]));
   expect(details).toMatchObject({ 根拠文書: EVIDENCE_TITLE, 算定した者: CALCULATED_BY, 確認者: '環境 太郎' });
 
-  // 出典の詳細は内部記録: 印刷・プレビューでは「内部メモも表示する」を選んだときだけ出る。
-  const plain = await openPrintView(editor, version1!.id, false);
-  await expect(plain.getByTestId('ssbj-preview-external-emissions')).not.toContainText(CALCULATED_BY);
-  await plain.close();
-  const internal = await openPrintView(editor, version1!.id, true);
-  const section = internal.getByTestId('ssbj-preview-external-emissions');
+  // 出典の詳細は内部記録: 画面のプレビューで「内部メモも表示する」を選んだときだけ出て、印刷・PDF には出ない
+  // （URL に internal=1 を付けても出ない）。
+  for (const extraQuery of ['', '&internal=1']) {
+    const print = await openPrintView(editor, version1!.id, extraQuery);
+    await expect(print.getByTestId('ssbj-preview-external-emissions')).toContainText('出典: 外部算定値');
+    await expect(print.locator('body')).not.toContainText(CALCULATED_BY);
+    await expect(print.locator('body')).not.toContainText(EVIDENCE_TITLE);
+    await print.close();
+  }
+  const section = await openPreviewWithInternalNotes(editor, version1!.id);
   await expect(section).toContainText(CALCULATED_BY);
   await expect(section).toContainText(`根拠文書: ${EVIDENCE_TITLE}`);
-  await internal.close();
 
   // 根拠文書の画面で、同じ資料に辿り着ける。外部算定値が参照している間は消せない。
   await editor.page.goto(reportPath('/evidence'));
@@ -385,11 +407,18 @@ test('9. 承認: レビューを依頼した本人は承認できず、指定さ
   expect(locked.error?.code).toBe('P2051');
 });
 
-test('10. 閲覧者は、承認したレポートの承認した版だけを見て出力できる', async () => {
+test('10. 閲覧者は、承認したレポートの承認した版の開示する内容だけを見て出力できる（内部メモ・内部記録は受け取らない）', async () => {
   const { data: reports } = await viewer.client.from('ssbj_reports').select('id').eq('id', reportId);
   expect(reports).toHaveLength(1);
-  expect((await versionsOfReport(viewer.client)).map(version => version.id)).toEqual([approvedVersionId]);
+  // 保存版の行は、承認した版も含めて読めない（内部記録を含むため）。承認した版は、内部記録を除いて API が返す。
+  expect(await versionsOfReport(viewer.client)).toEqual([]);
   expect((await viewer.client.from('ssbj_external_emissions').select('id').eq('reportId', reportId)).data).toEqual([]);
+  const api = await viewer.page.request.get(`/api/ssbj/reports/${reportId}/approved-version`);
+  expect(api.status()).toBe(200);
+  const body = await api.text();
+  expect((JSON.parse(body) as { id: string }).id).toBe(approvedVersionId);
+  expect(body).toContain(EXTERNAL_VALUE);
+  for (const internal of [CALCULATED_BY, EVIDENCE_TITLE]) expect(body).not.toContain(internal);
 
   const approved = await viewer.client.rpc('record_ssbj_export', { p_report_id: reportId, p_format: 'csv', p_version_id: approvedVersionId });
   expect(approved.error).toBeNull();
@@ -399,6 +428,14 @@ test('10. 閲覧者は、承認したレポートの承認した版だけを見�
   await viewer.page.goto(reportPath('/preview'));
   await expect(viewer.page.getByTestId('ssbj-preview-source')).toContainText('保存版 第2版');
   await expect(viewer.page.getByTestId('ssbj-preview-external-emissions')).toContainText('出典: 外部算定値');
+  await expect(viewer.page.getByLabel('内部メモも表示する（開示しない内容）')).toHaveCount(0);
+  await expect(viewer.page.getByRole('article')).not.toContainText(CALCULATED_BY);
+
+  // CSV には内部記録の列が無く、内部記録も入らない。操作履歴へのリンクも出ない。
+  const csv = await downloadVersionCsv(viewer.page, 2);
+  expect(csv.find(row => row[0] === '章')).toEqual(['章', '対象ID', '項目', '状態', '開示内容', '単位', '注記']);
+  expect(csv.flat().some(cell => cell.includes(CALCULATED_BY) || cell.includes(EVIDENCE_TITLE))).toBe(false);
+  await expect(viewer.page.getByRole('link', { name: '操作履歴を見る' })).toHaveCount(0);
 });
 
 test('11. 承認した内容は、差戻した後に元データ・根拠・拠点名を変えても、保存版のまま変わらない', async () => {
@@ -432,18 +469,17 @@ test('11. 承認した内容は、差戻した後に元データ・根拠・拠�
     expect(after.snapshot).toEqual(before.snapshot);
     expect(await downloadVersionCsv(admin.page, before.versionNumber)).toEqual(csvBefore);
 
-    // 印刷（承認した版）は保存した時点の根拠と値、作業中の内容は変えた後の根拠と値を出す。
-    const approvedPrint = await openPrintView(admin, approvedVersionId, true);
-    const approvedSection = approvedPrint.getByTestId('ssbj-preview-external-emissions');
+    // 承認した版は保存した時点の根拠と値、作業中の内容は変えた後の根拠と値を出す（根拠は内部記録なので画面のプレビューで確かめる）。
+    const approvedPrint = await openPrintView(admin, approvedVersionId);
+    await expect(approvedPrint.getByTestId('ssbj-preview-external-emissions')).toContainText(`${EXTERNAL_VALUE} t-CO2e`);
+    await approvedPrint.close();
+    const approvedSection = await openPreviewWithInternalNotes(admin, approvedVersionId);
     await expect(approvedSection).toContainText(`根拠文書: ${EVIDENCE_TITLE}`);
     await expect(approvedSection).toContainText(`${EXTERNAL_VALUE} t-CO2e`);
     await expect(approvedSection).not.toContainText(EVIDENCE_TITLE_CHANGED);
-    await approvedPrint.close();
-    const workingPrint = await openPrintView(admin, 'working', true);
-    const workingSection = workingPrint.getByTestId('ssbj-preview-external-emissions');
+    const workingSection = await openPreviewWithInternalNotes(admin, 'working');
     await expect(workingSection).toContainText(EVIDENCE_TITLE_CHANGED);
     await expect(workingSection).toContainText(`${EXTERNAL_VALUE_CHANGED} t-CO2e`);
-    await workingPrint.close();
   } finally {
     await restoreScope3DirectValue();
     await restoreLocationName();
