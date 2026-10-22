@@ -283,6 +283,11 @@ export type SsbjReportRecord = SsbjReportBasicInfo & {
  */
 export type SsbjReportWorkingRecord = SsbjReportRecord & {
   draftRevision: number;
+  /**
+   * 読込時点の基本情報の版数（基本情報の列が変わったときだけ進む）。基本情報を更新するときに渡し、
+   * 他の画面で先に保存された基本情報を古い値で上書きしないようにする（docs/ssbj-spec.md §8）。保存版の report には含めない。
+   */
+  basicInfoRevision: number;
   review: SsbjReportReview;
 };
 
@@ -569,6 +574,18 @@ export type SsbjEvidence = {
   internalLocation: string | null;
   referencePosition: string | null;
   ownerDepartment: string | null;
+  /**
+   * ファイルの照合用の記録（すべて内部記録・§5）。ファイル名・SHA-256・記録日時は、ファイルを選んだときに
+   * 一緒に決まる（3 つとも有るか、3 つとも null）。SHA-256 は小文字の 16 進 64 文字。記録日時は DB が決める。
+   * この記録を足す前の保存版にはキーが無い（表示・出力では null と同じく未入力として扱う）。
+   */
+  fileName: string | null;
+  fileSha256: string | null;
+  /** 保管先（文書管理の仕組みなど）でのファイルの版 ID。 */
+  fileStorageVersionId: string | null;
+  /** ファイルを保管先に保存した担当。 */
+  fileStoredBy: string | null;
+  fileRecordedAt: string | null;
   disclosure: SsbjFieldValue<string>;
 };
 
@@ -585,6 +602,14 @@ export type SsbjRiskOpportunity = {
   timeHorizon: SsbjFieldValue<SsbjTimeHorizon>;
   /** 関連する章・項目（章の順、同じ章では章そのものを先に並べる）。 */
   linkTargets: SsbjLinkTarget[];
+};
+
+/**
+ * 画面が編集中に持つリスク・機会 1 件。updatedAt は読込時点の行の更新日時で、更新するときに渡して
+ * 他の画面で先に保存された同じ行の変更を古い値で上書きしないようにする（docs/ssbj-spec.md §8）。保存版には含めない。
+ */
+export type SsbjRiskOpportunityWorkingRecord = SsbjRiskOpportunity & {
+  updatedAt: string;
 };
 
 /**
@@ -626,6 +651,7 @@ export interface SsbjSnapshotSections {
 /** 保存版の中身（ssbj_report_versions.snapshot）。形式を変えるときは schemaVersion を上げる。 */
 export type SsbjReportSnapshotV1 = {
   schemaVersion: 1;
+  /** 任意項目を足す前に保存した版では、その項目のキーが無い。読む側は欠落を null と同じく未入力と扱う。 */
   report: SsbjReportRecord;
   sections: Partial<SsbjSnapshotSections>;
 };

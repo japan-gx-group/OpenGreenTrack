@@ -26,7 +26,7 @@ import { SsbjPreview } from '../SsbjPreview.client';
 import { getMySsbjRole } from '../../services/memberRoleService';
 
 const report = { ...fictionalReportBasicInfo, fiscalYearLabel: '2024年度',
-  periodStart: '2024-04-01', periodEnd: '2025-03-31', draftRevision: 7, review: FICTIONAL_DRAFT_REVIEW };
+  periodStart: '2024-04-01', periodEnd: '2025-03-31', draftRevision: 7, basicInfoRevision: 0, review: FICTIONAL_DRAFT_REVIEW };
 let rendered: RenderResult | null = null;
 const flush = async () => { await act(async () => { await Promise.resolve(); }); };
 const settle = async () => { for (let i = 0; i < 4; i += 1) await flush(); };
@@ -45,7 +45,7 @@ beforeEach(() => {
     },
   ]);
 });
-afterEach(() => { rendered?.unmount(); rendered = null; vi.clearAllMocks(); });
+afterEach(() => { rendered?.unmount(); rendered = null; vi.restoreAllMocks(); vi.clearAllMocks(); });
 
 describe('SsbjPreview', () => {
   it('最初は作業中の内容を出し、印刷ビューへのリンクに表示中の内容を渡す', async () => {
@@ -55,11 +55,11 @@ describe('SsbjPreview', () => {
     expect(getSsbjVersionPreview).not.toHaveBeenCalled();
     expect(rendered.container.querySelector('[data-testid="ssbj-preview-source"]')?.textContent).toContain('作業中の内容');
     const printLink = Array.from(rendered.container.querySelectorAll('a')).find(a => a.textContent?.includes('印刷・PDF'));
-    expect(printLink?.getAttribute('href')).toBe(`/ssbj/${report.id}/preview/print?source=working&internal=0`);
+    expect(printLink?.getAttribute('href')).toBe(`/ssbj/${report.id}/preview/print?source=working`);
     expect(printLink?.getAttribute('target')).toBe('_blank');
   });
 
-  it('内部メモの表示を選ぶと、本文と印刷ビューの両方に反映する', async () => {
+  it('内部メモの表示を選ぶと画面の本文には出すが、印刷ビューへのリンクには渡さない', async () => {
     rendered = render(<SsbjPreview reportId={report.id} />);
     await settle();
     expect(rendered.container.textContent).not.toContain('内部メモ（開示しない）');
@@ -67,7 +67,7 @@ describe('SsbjPreview', () => {
     await act(async () => { click(checkbox!); });
     expect(rendered.container.textContent).toContain('内部メモ（開示しない）');
     const printLink = Array.from(rendered.container.querySelectorAll('a')).find(a => a.textContent?.includes('印刷・PDF'));
-    expect(printLink?.getAttribute('href')).toContain('internal=1');
+    expect(printLink?.getAttribute('href')).toBe(`/ssbj/${report.id}/preview/print?source=working`);
   });
 
   it('存在しない・他組織のレポートでは内容を取得しない', async () => {
