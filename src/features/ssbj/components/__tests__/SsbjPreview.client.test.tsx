@@ -94,6 +94,6 @@ describe('SsbjPreview（閲覧者）', () => {
     expect(getSsbjVersionPreview).toHaveBeenCalled();
     expect(rendered.container.querySelector('[data-testid="ssbj-preview-source"]')?.textContent).toContain('保存版');
     const printLink = Array.from(rendered.container.querySelectorAll('a')).find(a => a.textContent?.includes('印刷'));
-    expect(printLink?.getAttribute('href')).toBe(`/ssbj/${report.id}/preview/print?source=${fictionalVersion.id}&internal=0`);
+    expect(printLink?.getAttribute('href')).toBe(`/ssbj/${report.id}/preview/print?source=${fictionalVersion.id}`);
   });
 });
