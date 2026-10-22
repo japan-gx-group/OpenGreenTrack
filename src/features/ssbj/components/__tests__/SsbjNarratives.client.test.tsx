@@ -50,6 +50,14 @@ const setTextareaValue = (textarea: HTMLTextAreaElement, value: string): void =>
   });
 };
 
+const setInputValue = (element: HTMLInputElement, value: string): void => {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+  act(() => {
+    setter?.call(element, value);
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+};
+
 const cards = () => Array.from(document.querySelectorAll<HTMLElement>('[data-testid="ssbj-narrative-item"]'));
 const cardOf = (label: string) => {
   const card = cards().find(element => element.querySelector('h3')?.textContent === label);
@@ -373,6 +381,30 @@ describe('SsbjNarratives（穴埋めテンプレート・2 画面エディタ・
       expect(choiceSelects(card)[1].value).toBe('other');
       expect(choicesOf(card)?.querySelector<HTMLInputElement>('input')?.value).toBe('経営会議');
       expect(buttonIn(card, 'テンプレートを入れる')).toBeDefined();
+    });
+
+    it('選んだ選択肢で使わない欄は出さず、入力が残っていても保存しない', async () => {
+      rendered = render(<SsbjNarratives reportId={report.id} />);
+      await settle();
+      const card = cardOf('監督のための情報の入手方法と頻度');
+      click(buttonIn(card, '編集'));
+      click(buttonIn(card, '選択肢から下書きを作る'));
+      expect(choiceSelects(card)).toHaveLength(1);
+      setSelectValue(choiceSelects(card)[0], 'reported');
+      expect(choiceSelects(card)).toHaveLength(4);
+      setInputValue(choicesOf(card)!.querySelector('input')!, '管理本部長');
+      setSelectValue(choiceSelects(card)[1], 'yearly');
+      setSelectValue(choiceSelects(card)[0], 'not_reported');
+      expect(choiceSelects(card)).toHaveLength(1);
+      expect(choicesOf(card)!.querySelector('input')).toBeNull();
+      await act(async () => { click(buttonIn(card, '保存')); });
+      await settle();
+      expect(saveSsbjNarrative).toHaveBeenCalledWith(
+        expect.anything(), 'governance.oversight_information', expect.anything(),
+        { version: SSBJ_NARRATIVE_CHOICE_TEMPLATE_VERSION, choices: { reporting: 'not_reported' }, texts: {} },
+      );
+      expect(cardOf('監督のための情報の入手方法と頻度').querySelector('[data-testid="ssbj-template-chosen"]')?.textContent)
+        .not.toContain('管理本部長');
     });
 
     it('選択式テンプレートの無い項目には、選択肢のボタンを出さない', async () => {

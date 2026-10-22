@@ -13,6 +13,7 @@ import type { SsbjNarrativeTemplateInput } from '../types';
 import {
   SSBJ_TEMPLATE_OTHER_OPTION_ID,
   SSBJ_TEMPLATE_TEXT_MAX_LENGTH,
+  activeSsbjTemplateSlotIds,
   buildSsbjNarrativeDraft,
   emptySsbjNarrativeTemplateInput,
   isCurrentSsbjNarrativeTemplateInput,
@@ -46,6 +47,8 @@ export const SsbjNarrativeTemplateChoices = ({
   const current = input && !isStale ? input : emptySsbjNarrativeTemplateInput();
   const draft = buildSsbjNarrativeDraft(template, current);
   const unfilled = unfilledSsbjTemplateSlots(template, current);
+  // 選んだ選択肢で使わない欄（例: 報告していないときの報告する人）は出さない（下書きに入らず、保存もしない）。
+  const activeSlotIds = activeSsbjTemplateSlotIds(template, current);
 
   const setChoice = (slotId: string, optionId: string) =>
     onChange({ ...current, choices: { ...current.choices, [slotId]: optionId } });
@@ -64,7 +67,7 @@ export const SsbjNarrativeTemplateChoices = ({
         </p>
       )}
       <div className="grid gap-3 sm:grid-cols-2">
-        {template.slots.map(slot => {
+        {template.slots.filter(slot => activeSlotIds.has(slot.id)).map(slot => {
           const fieldId = `${id}-${slot.id}`;
           if (slot.kind === 'text') {
             return (

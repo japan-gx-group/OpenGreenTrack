@@ -85,7 +85,7 @@ export function useSsbjNarrativeForm(
   const save = async (input: SsbjDisclosableText): Promise<boolean> => {
     setIsSaving(true);
     try {
-      await onSave(itemId, input, normalizeSsbjNarrativeTemplateInput(values.templateInput));
+      await onSave(itemId, input, normalizeSsbjNarrativeTemplateInput(itemId, values.templateInput));
       return true;
     } catch (error) {
       setErrors([error instanceof Error ? error.message : '保存に失敗しました']);
@@ -102,7 +102,7 @@ export function useSsbjNarrativeForm(
     const input = normalizeSsbjNarrativeInput(values);
     const validationErrors = [
       ...validateSsbjNarrativeInput(itemId, input),
-      ...validateSsbjNarrativeTemplateInput(itemId, normalizeSsbjNarrativeTemplateInput(values.templateInput)),
+      ...validateSsbjNarrativeTemplateInput(itemId, normalizeSsbjNarrativeTemplateInput(itemId, values.templateInput)),
     ];
     setErrors(validationErrors);
     if (validationErrors.length > 0) return false;

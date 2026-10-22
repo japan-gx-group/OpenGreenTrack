@@ -5,6 +5,7 @@ import {
   SSBJ_NARRATIVE_CHOICE_TEMPLATES,
   SSBJ_NARRATIVE_CHOICE_TEMPLATE_VERSION,
   SSBJ_TEMPLATE_TEXT_MAX_LENGTH,
+  activeSsbjTemplateSlotIds,
   buildSsbjNarrativeDraft,
   describeSsbjNarrativeTemplateInput,
   emptySsbjNarrativeTemplateInput,
@@ -180,14 +181,40 @@ describe('buildSsbjNarrativeDraft', () => {
   });
 });
 
+describe('activeSsbjTemplateSlotIds', () => {
+  it('文型にある欄と、選んだ選択肢の文にある欄だけを使う', () => {
+    expect(activeSsbjTemplateSlotIds(oversightInformation, input({}))).toEqual(new Set(['reporting']));
+    expect(activeSsbjTemplateSlotIds(oversightInformation, input({ reporting: 'not_reported' }))).toEqual(new Set(['reporting']));
+    expect(activeSsbjTemplateSlotIds(oversightInformation, input({ reporting: 'reported' })))
+      .toEqual(new Set(['reporting', 'reporter', 'frequency', 'body', 'content']));
+    expect(activeSsbjTemplateSlotIds(riskProcess, input({}))).toEqual(new Set(riskProcess.slots.map(slot => slot.id)));
+  });
+});
+
 describe('normalizeSsbjNarrativeTemplateInput', () => {
   it('空の選択・空の補足、「その他」以外の選択肢の補足を落とす。何も無ければ null', () => {
-    expect(normalizeSsbjNarrativeTemplateInput(input({ body: 'board', x: '' }, { body: '経営会議' })))
+    const itemId = 'governance.oversight_body';
+    expect(normalizeSsbjNarrativeTemplateInput(itemId, input({ body: 'board', x: '' }, { body: '経営会議' })))
       .toEqual(input({ body: 'board' }));
-    expect(normalizeSsbjNarrativeTemplateInput(input({ body: 'other' }, { body: ' 経営会議 ' })))
+    expect(normalizeSsbjNarrativeTemplateInput(itemId, input({ body: 'other' }, { body: ' 経営会議 ' })))
       .toEqual(input({ body: 'other' }, { body: '経営会議' }));
-    expect(normalizeSsbjNarrativeTemplateInput(input({ body: '' }, { reporter: ' ' }))).toBeNull();
-    expect(normalizeSsbjNarrativeTemplateInput(null)).toBeNull();
+    expect(normalizeSsbjNarrativeTemplateInput(itemId, input({ body: '' }, { reporter: ' ' }))).toBeNull();
+    expect(normalizeSsbjNarrativeTemplateInput(itemId, null)).toBeNull();
+  });
+
+  it('選んだ選択肢で使わない欄の値は保存しない', () => {
+    const itemId = 'governance.oversight_information';
+    const leftover = input({ reporting: 'not_reported', frequency: 'yearly', body: 'other' }, { reporter: '管理本部長', body: '経営会議' });
+    expect(normalizeSsbjNarrativeTemplateInput(itemId, leftover)).toEqual(input({ reporting: 'not_reported' }));
+    const reported = input({ reporting: 'reported', frequency: 'yearly' }, { reporter: '管理本部長' });
+    expect(normalizeSsbjNarrativeTemplateInput(itemId, reported)).toEqual(reported);
+  });
+
+  it('定義に無い欄は落とさず検証で知らせ、以前の版の選択は今の定義で使う欄を判断しない', () => {
+    const unknown = normalizeSsbjNarrativeTemplateInput('governance.oversight_body', input({ unknown: 'board' }));
+    expect(validateSsbjNarrativeTemplateInput('governance.oversight_body', unknown)).not.toEqual([]);
+    const stale = { version: 'r2-trial-1', choices: { reporting: 'not_reported' }, texts: { reporter: '管理本部長' } };
+    expect(normalizeSsbjNarrativeTemplateInput('governance.oversight_information', stale)).toEqual(stale);
   });
 });
 
@@ -239,5 +266,11 @@ describe('parseSsbjNarrativeTemplateInput と describeSsbjNarrativeTemplateInput
     expect(describeSsbjNarrativeTemplateInput('governance.oversight_body', { version: 'old', choices: { body: 'board' }, texts: {} }))
       .toEqual([]);
     expect(describeSsbjNarrativeTemplateInput('governance.oversight_body', null)).toEqual([]);
+  });
+
+  it('選んだ選択肢で使わない欄は、値が残っていても出さない', () => {
+    expect(describeSsbjNarrativeTemplateInput(
+      'governance.oversight_information', input({ reporting: 'not_reported', frequency: 'yearly' }, { reporter: '管理本部長' }),
+    )).toEqual([{ label: '定期的な報告', value: '定期的な報告はしていない' }]);
   });
 });

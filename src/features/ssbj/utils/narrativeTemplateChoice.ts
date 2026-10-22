@@ -284,16 +284,47 @@ export const unfilledSsbjTemplateSlots = (
   return template.slots.filter(slot => draft.includes(placeholderOf(slot))).map(slot => slot.label);
 };
 
-/** 選択と補足入力を保存用に整える。空の補足入力・「その他」以外の選択肢の補足は落とす。何も無ければ null。 */
+const slotReferences = (text: string): string[] => [...text.matchAll(SLOT_REFERENCE)].map(match => match[1]);
+
+/**
+ * 今の選択で下書きに使う欄の ID（文型にある欄と、選んだ選択肢の文にある欄）。
+ * 選んだ選択肢では使わない欄（例: 報告していないときの報告する人）は含めない。画面に出さず、保存も表示もしない。
+ */
+export const activeSsbjTemplateSlotIds = (
+  template: SsbjNarrativeChoiceTemplate,
+  input: SsbjNarrativeTemplateInput,
+): Set<string> => {
+  const inPattern = slotReferences(template.pattern);
+  // 選択肢の文の {欄 ID} は 1 段だけ置き換えるので、文型にある欄の選択肢だけを見る（buildSsbjNarrativeDraft と同じ）。
+  const inChosenOptions = template.slots
+    .filter(slot => inPattern.includes(slot.id))
+    .flatMap(slot => slotReferences(chosenOption(slot, input)?.text ?? ''));
+  return new Set([...inPattern, ...inChosenOptions]);
+};
+
+/**
+ * 選択と補足入力を保存用に整える。空の補足入力・「その他」以外の選択肢の補足・今の選択で使わない欄の値は落とす。何も無ければ null。
+ * 定義に無い欄は落とさずに残す（検証で知らせるため）。以前の版の選択は、今の定義で使う欄を判断できないので、空の値を落とすだけにする。
+ */
 export const normalizeSsbjNarrativeTemplateInput = (
+  itemId: string,
   input: SsbjNarrativeTemplateInput | null,
 ): SsbjNarrativeTemplateInput | null => {
   if (!input) return null;
-  const choices = Object.fromEntries(Object.entries(input.choices).filter(([, optionId]) => optionId !== ''));
+  const template = findSsbjNarrativeChoiceTemplate(itemId);
+  const unused = new Set<string>();
+  if (template && isCurrentSsbjNarrativeTemplateInput(input)) {
+    const active = activeSsbjTemplateSlotIds(template, input);
+    for (const slot of template.slots) if (!active.has(slot.id)) unused.add(slot.id);
+  }
+  const choices = Object.fromEntries(
+    Object.entries(input.choices).filter(([slotId, optionId]) => optionId !== '' && !unused.has(slotId)),
+  );
   const texts = Object.fromEntries(
     Object.entries(input.texts)
       .map(([slotId, text]) => [slotId, text.trim()] as const)
-      .filter(([slotId, text]) => text !== '' && (!(slotId in choices) || choices[slotId] === SSBJ_TEMPLATE_OTHER_OPTION_ID)),
+      .filter(([slotId, text]) => text !== '' && !unused.has(slotId)
+        && (!(slotId in choices) || choices[slotId] === SSBJ_TEMPLATE_OTHER_OPTION_ID)),
   );
   if (Object.keys(choices).length === 0 && Object.keys(texts).length === 0) return null;
   return { version: input.version, choices, texts };
@@ -338,15 +369,17 @@ export const parseSsbjNarrativeTemplateInput = (value: unknown): SsbjNarrativeTe
   return { version, choices, texts };
 };
 
-/** 保存済みの選択を、画面に出す「欄の名前: 選んだ値」の一覧にする（今の版でないときは空）。 */
+/** 保存済みの選択を、画面に出す「欄の名前: 選んだ値」の一覧にする（今の版でないときは空。今の選択で使わない欄は出さない）。 */
 export const describeSsbjNarrativeTemplateInput = (
   itemId: string,
   input: SsbjNarrativeTemplateInput | null | undefined,
 ): { label: string; value: string }[] => {
   const template = findSsbjNarrativeChoiceTemplate(itemId);
   if (!template || !input || !isCurrentSsbjNarrativeTemplateInput(input)) return [];
+  const active = activeSsbjTemplateSlotIds(template, input);
   // 選択肢は、選んだ選択肢の名前で出す（下書きの文は {欄 ID} や【 】を含むことがあるため）。
   return template.slots
+    .filter(slot => active.has(slot.id))
     .map(slot => ({ label: slot.label, value: chosenOption(slot, input)?.label ?? slotValue(slot, input) }))
     .filter(entry => entry.value !== `【${entry.label}】`);
 };
