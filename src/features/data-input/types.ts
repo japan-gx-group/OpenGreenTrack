@@ -187,6 +187,15 @@ export interface SavedManualActivityRecord {
   emissionFactorId: string | null;
   /** 算定済みの排出量（t-CO2e）。未算定（emission_results が無い）の場合は null。 */
   emissions: number | null;
+  /**
+   * 実際に算定で適用された係数のスナップショット（emission_results.appliedFactor*）。
+   * 保存時の指定（emissionFactorId）ではなく算定結果側を参照するため、自動解決・
+   * 暫定適用・代替値フォールバックで実際に使われた係数が反映される。未算定は null。
+   * 公式係数の name は事業者名・メニュー名・基礎/調整後を含む。
+   */
+  appliedFactorName: string | null;
+  appliedFactorValue: number | null;
+  appliedFactorUnit: string | null;
   /** Scope3積上げレコードのカテゴリ（1〜15）。それ以外のレコードは null。 */
   scope3CategoryId: number | null;
   /** 参照する IDEA 製品（idea_factors.id）。参照切れ・Scope3以外は null。 */
