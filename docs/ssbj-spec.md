@@ -816,14 +816,15 @@ R2-10 の SSBJ のロールを、SSBJ の各テーブル・状態の変更・閲
 | DB | `20261023100000_ssbj_role_policies.sql`: 各テーブルに `AS RESTRICTIVE` のポリシー（書き込みは入力担当か管理者、作業中データ・保存版・操作履歴の閲覧は閲覧者以外、閲覧者は承認済みのレポートだけ）。`record_ssbj_export`（閲覧者は承認した版の CSV / Excel だけ）と `change_ssbj_report_status`（SSBJ のロールで判定。承認者は承認担当か管理者だけ）を置き換えた |
 | 画面 | 入力担当か管理者でなければ編集の操作を出さず、理由を出す（`SsbjRoleNotice.tsx`）。閲覧者には作業中の内容の画面の代わりに案内を出す（`SsbjWorkingAccessGuard.client.tsx`。各ページで包む）。詳細の「レポートの内容」は閲覧者にプレビューと保存履歴だけ。閲覧者のプレビュー・印刷・保存履歴は、承認した版の開示する内容を `GET /api/ssbj/reports/[reportId]/approved-version` から読む（内部メモの表示の切替・操作履歴へのリンク・出力履歴を出さず、CSV / Excel に内部記録の列を入れない）。一覧の新規作成と空の一覧の案内をロールで出し分ける |
 | コード | `utils/reportStatus.ts` の `isSsbjReadOnly`、`utils/writeError.ts`（42501 = ロールで止められた）、`components/SsbjReportContentsNav.tsx`（`workingAccess`）、`utils/disclosedSnapshot.ts`（保存版から内部メモ・内部記録を除く。項目の分類の表）、`services/approvedVersionServer.ts`・`hooks/useSsbjApprovedVersion.ts`、`services/versionCsv.ts` の `internalRecords` |
-| テスト | `scripts/db/__tests__/ssbjRolePoliciesPolicy.test.ts`（作業中データのテーブルの取り付け漏れの検出を含む）、画面の単体テスト（承認担当は読むだけ・閲覧者の入口とプレビュー・保存履歴・一覧）、`utils/__tests__/disclosedSnapshot.test.ts`（内部記録が残らないことと、分類の足し忘れの検出）、`approved-version` の Route Handler・CSV / Excel の単体テスト、全体テスト 26 手順 |
+| テスト | `scripts/db/__tests__/ssbjRolePoliciesPolicy.test.ts`（すべての `ssbj_` のテーブルのポリシーの付け忘れの検出を含む）、画面の単体テスト（承認担当は読むだけ・閲覧者の入口とプレビュー・保存履歴・一覧）、`utils/__tests__/disclosedSnapshot.test.ts`（内部記録が残らないことと、分類の足し忘れの検出）、`approved-version` の Route Handler・CSV / Excel の単体テスト、全体テスト 26 手順 |
 
 決めたこと:
 
 - **既存のポリシーは書き換えず、`AS RESTRICTIVE` のポリシーを重ねる。** 各機能のポリシー（自組織であること）をそのまま残し、ロールの条件だけを足せる。
   ほかの変更が同じテーブルのポリシーを置き換えても食い違いにくい。
-- **SSBJ のテーブルを足すときは、承認ロックのトリガーと同じく、RESTRICTIVE のポリシーも足す。** 承認ロックのトリガーを付けたテーブルに
-  ポリシーが無ければ、机上テストが落ちる（取り付け漏れの検出）。
+- **SSBJ のテーブルを足すときは、承認ロックのトリガーと同じく、RESTRICTIVE のポリシーも足す。** マイグレーションで作った `ssbj_` のテーブルの
+  うち、利用者に許した操作（permissive のポリシー）に RESTRICTIVE のポリシーが重なっていないものがあれば、机上テストが落ちる（付け忘れの検出）。
+  重ねないテーブル（ロールの割り当ての `ssbj_member_roles`）は、理由と一緒にテストに書く。
 - **閲覧者が見られるのは、承認済みのレポートの「今の」承認した版だけ。** 差戻すとレポートごと見えなくなる。承認前の内容や検討の経過を、
   確定した開示と取り違えないため。基本情報は承認済みの間は承認した版と同じ（承認ロック）なので、レポートの行は見せる。
 - **閲覧者には、承認した保存版でも内部メモ・内部記録（§5）を見せない。** 閲覧者は確定した開示を確かめて出力する人で、出力は社外に共有されうる。
