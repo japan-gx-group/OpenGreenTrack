@@ -12,6 +12,7 @@ import {
 import type { SsbjRiskCandidateDecisionInput } from '../utils/industryCandidates';
 import type { SsbjRiskOpportunityInput } from '../utils/riskOpportunity';
 import { ssbjWriteErrorMessage } from '../utils/writeError';
+import { throwIfSsbjEditForbidden } from './memberRoleService';
 import {
   toSsbjRiskOpportunityColumns,
   toSsbjRiskOpportunityWorkingRecord,
@@ -126,6 +127,8 @@ export const deleteSsbjRiskCandidateDecision = async (
     .select('candidateId');
   if (error) throw new Error(ssbjWriteErrorMessage(error, '候補への判断の取り消しに失敗しました'));
   if ((data ?? []).length === 0) {
+    // ロールで止められた削除もエラーにならず 0 行になる。今も編集できるかを確かめ、できなければ権限のメッセージにする。
+    await throwIfSsbjEditForbidden();
     throw new Error(
       '他の画面で変更されたため、未検討に戻していません。画面を開き直してください（登録したリスク・機会が残っている採用は、先にそれを削除すると戻せます）',
     );

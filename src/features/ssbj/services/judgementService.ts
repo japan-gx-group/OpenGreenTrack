@@ -12,6 +12,7 @@ import {
 } from '../types';
 import { fromFieldValue, toFieldValue } from '../utils/fieldValue';
 import { SsbjEditConflictError, ssbjWriteErrorMessage } from '../utils/writeError';
+import { throwIfSsbjEditForbidden } from './memberRoleService';
 
 type SsbjJudgementRow = {
   requirementId: string;
@@ -160,6 +161,10 @@ export const saveSsbjJudgementQuickChange = async (
     .maybeSingle();
   if (updated.error) throw new Error(ssbjWriteErrorMessage(updated.error, '該当性・重要性の判断の保存に失敗しました'));
   // 0 件更新: 読込後に他の画面で保存されたか、削除された。どちらも最新を読み直してから選び直してもらう。
-  if (!updated.data) throw new SsbjEditConflictError();
+  // ロールで止められた更新も 0 件になるので、先に今も編集できるかを確かめる（できなければ権限のメッセージにする）。
+  if (!updated.data) {
+    await throwIfSsbjEditForbidden();
+    throw new SsbjEditConflictError();
+  }
   return toSsbjJudgementWorkingRecord(updated.data as SsbjJudgementRow & { updatedAt: string });
 };

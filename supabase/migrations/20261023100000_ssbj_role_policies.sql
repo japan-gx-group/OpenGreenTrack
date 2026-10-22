@@ -56,6 +56,15 @@ as restrictive for update to authenticated using ((select ssbj_current_user_can_
 create policy "ssbj_judgements_delete_requires_ssbj_editor" on ssbj_judgements
 as restrictive for delete to authenticated using ((select ssbj_current_user_can_edit()));
 
+-- 業種の候補への判断（20261018130000_ssbj_risk_candidate_decisions.sql）。「採用して登録」の RPC は呼び出した利用者の権限で
+-- 動く（security invoker）ので、リスク・機会と判断の両方にこのポリシーがかかり、入力担当か管理者だけが採用できる。
+create policy "ssbj_risk_candidate_decisions_insert_requires_ssbj_editor" on ssbj_risk_candidate_decisions
+as restrictive for insert to authenticated with check ((select ssbj_current_user_can_edit()));
+create policy "ssbj_risk_candidate_decisions_update_requires_ssbj_editor" on ssbj_risk_candidate_decisions
+as restrictive for update to authenticated using ((select ssbj_current_user_can_edit())) with check ((select ssbj_current_user_can_edit()));
+create policy "ssbj_risk_candidate_decisions_delete_requires_ssbj_editor" on ssbj_risk_candidate_decisions
+as restrictive for delete to authenticated using ((select ssbj_current_user_can_edit()));
+
 -- OGT の値の採用は service_role の RPC（Route Handler でロールを確かめる）。利用者が直接できるのは取り消し（delete）だけ。
 create policy "ssbj_ogt_adoptions_delete_requires_ssbj_editor" on ssbj_ogt_adoptions
 as restrictive for delete to authenticated using ((select ssbj_current_user_can_edit()));
@@ -80,6 +89,8 @@ as restrictive for select to authenticated using ((select ssbj_current_user_can_
 create policy "ssbj_narratives_select_requires_working_access" on ssbj_narratives
 as restrictive for select to authenticated using ((select ssbj_current_user_can_view_working()));
 create policy "ssbj_judgements_select_requires_working_access" on ssbj_judgements
+as restrictive for select to authenticated using ((select ssbj_current_user_can_view_working()));
+create policy "ssbj_risk_candidate_decisions_select_requires_working_access" on ssbj_risk_candidate_decisions
 as restrictive for select to authenticated using ((select ssbj_current_user_can_view_working()));
 create policy "ssbj_ogt_adoptions_select_requires_working_access" on ssbj_ogt_adoptions
 as restrictive for select to authenticated using ((select ssbj_current_user_can_view_working()));
