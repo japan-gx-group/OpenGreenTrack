@@ -579,6 +579,29 @@ export type SsbjRiskOpportunity = {
   linkTargets: SsbjLinkTarget[];
 };
 
+/** 業種から出した候補（utils/industryCandidates.ts）への利用者の判断。採用は登録したリスク・機会につなぐ。 */
+export const SSBJ_RISK_CANDIDATE_DECISIONS = ['adopted', 'excluded'] as const;
+
+export type SsbjRiskCandidateDecisionKind = (typeof SSBJ_RISK_CANDIDATE_DECISIONS)[number];
+
+/**
+ * 候補 1 件への判断（ssbj_risk_candidate_decisions の 1 行。作業中データだけに持ち、保存版には含めない）。
+ * 判断は候補を検討の出発点にしたかどうかの記録で、該当性・重要性の判断（T09）ではない。
+ */
+export type SsbjRiskCandidateDecision = {
+  candidateId: string;
+  /** 判断したときの候補の定義の版。 */
+  candidateVersion: string;
+  /** 判断したときのレポートの業種（SICS の産業コード。未選択なら null）。 */
+  industryCode: string | null;
+  decision: SsbjRiskCandidateDecisionKind;
+  /** 採用・除外の理由（内部の記録。開示しない）。除外では必須。 */
+  reason: string | null;
+  /** 採用して登録したリスク・機会。外部キーではないので、削除しても ID は残る（残っているかは ssbjCandidateStatus が一覧の ID で確かめる）。 */
+  riskOpportunityId: string | null;
+  updatedAt: string;
+};
+
 /**
  * 画面が編集中に持つリスク・機会 1 件。updatedAt は読込時点の行の更新日時で、更新するときに渡して
  * 他の画面で先に保存された同じ行の変更を古い値で上書きしないようにする（docs/ssbj-spec.md §8）。保存版には含めない。

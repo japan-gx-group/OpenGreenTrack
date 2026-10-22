@@ -450,6 +450,7 @@ test('15. 他の組織からは、画面・API・DB のどこからも見えず�
     ['ssbj_report_time_horizons', 'reportId'],
     ['ssbj_evidence', 'reportId'],
     ['ssbj_ogt_adoptions', 'reportId'],
+    ['ssbj_risk_candidate_decisions', 'reportId'],
   ];
   for (const [table, column] of tables) {
     const { data, error } = await orgB.from(table).select('*').eq(column, reportId);
