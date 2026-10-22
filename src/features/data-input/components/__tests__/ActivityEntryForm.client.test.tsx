@@ -849,7 +849,7 @@ describe('ActivityEntryForm', () => {
   it('活動量 0 は排出量 0 で概算され、プレビューの確認表示を経て保存できる', async () => {
     const { container, onSave } = renderForm();
     await flush();
-    setInputValue(monthInput(container), '2024-11');
+    setSelectValue(monthInput(container), '2024-11');
 
     // 0 より大きい値では確認表示を出さない。
     setInputValue(amountInput(container), '10000');
