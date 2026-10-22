@@ -497,6 +497,9 @@ describe('SsbjRisksOpportunities（業種から出した候補）', () => {
     }));
     expect(row().textContent).not.toContain('除外した理由');
     expect(findButton('除外', row())).toBeDefined();
+    expect(document.body.textContent).toContain('候補を未検討に戻しました');
+    // 未検討に戻せるのは除外か、登録したリスク・機会が削除済みの採用だけなので、「リスク・機会は残る」とは出さない。
+    expect(document.body.textContent).not.toContain('登録したリスク・機会は残ります');
   });
 
   it('他の画面で先に判断されていたら、除外を保存せずに理由を出し、未検討のままにする', async () => {

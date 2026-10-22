@@ -579,7 +579,7 @@ export type SsbjRiskCandidateDecision = {
   decision: SsbjRiskCandidateDecisionKind;
   /** 採用・除外の理由（内部の記録。開示しない）。除外では必須。 */
   reason: string | null;
-  /** 採用して登録したリスク・機会。登録したものを削除したら null。 */
+  /** 採用して登録したリスク・機会。外部キーではないので、削除しても ID は残る（残っているかは ssbjCandidateStatus が一覧の ID で確かめる）。 */
   riskOpportunityId: string | null;
   updatedAt: string;
 };

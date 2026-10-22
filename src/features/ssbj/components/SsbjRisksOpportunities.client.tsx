@@ -132,7 +132,7 @@ export const SsbjRisksOpportunities = ({ reportId }: { reportId: string }) => {
   const undoCandidate = async (candidate: SsbjIndustryCandidate) => {
     if (!report) return;
     await candidates.undo(report.id, candidate.id);
-    showToast('候補を未検討に戻しました（登録したリスク・機会は残ります）', 'success');
+    showToast('候補を未検討に戻しました', 'success');
   };
 
   const handleSubmit = async (event: FormEvent) => {
