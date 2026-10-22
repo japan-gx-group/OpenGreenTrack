@@ -43,6 +43,12 @@ export interface BulkMonthFactor {
   factorIdToSave: string | null;
   /** 保存後の算定で実際に適用される係数の判定（単月入力のプレビューと同じ基準）。 */
   applied: AppliedFactorResolution;
+  /**
+   * 供給事業者を選択しているのに、この月の温対法年度にはその事業者（計算方法）の係数行が無く、
+   * 自動選択（候補先頭＝代替値）へ落ちたか。保存する id 自体を自動選択の係数にするため
+   * applied.fellBack では検出できず、確認モーダルで月ごとに代替値の適用を知らせるために別に持つ。
+   */
+  providerFellBack: boolean;
 }
 
 /** テストで Supabase を使わずに差し替えるための取得関数群。 */
@@ -106,13 +112,13 @@ export const resolveBulkMonthFactors = async (args: {
       providerFactors = listApplicableProviderFactors(scope, yearFactors, fetched);
     }
 
-    const providerFactor =
-      args.selection.providerSelection.providerName === null
-        ? null
-        : resolveProviderFactor(
-            listMenuOptions(providerFactors, args.selection.providerSelection),
-            args.selection.providerSelection.menuName,
-          );
+    const providerSelected = args.selection.providerSelection.providerName !== null;
+    const menuOptions = providerSelected
+      ? listMenuOptions(providerFactors, args.selection.providerSelection)
+      : [];
+    const providerFactor = providerSelected
+      ? resolveProviderFactor(menuOptions, args.selection.providerSelection.menuName)
+      : null;
     const candidates = listEntryFactorCandidates(scope, yearFactors);
     const selectedFactor = resolveSelectedFactor({
       providerFactor,
@@ -128,9 +134,11 @@ export const resolveBulkMonthFactors = async (args: {
         yearFactors,
         providerFactors,
         providerLoadStatus: providerCategory ? 'ready' : 'none',
-        providerNameSelected: args.selection.providerSelection.providerName !== null,
+        providerNameSelected: providerSelected,
         factorIdToSave,
       }),
+      // 事業者の係数行がこの月の年度に 1 つも無いときだけ（メニュー未選択で絞れない場合は含めない）。
+      providerFellBack: providerSelected && menuOptions.length === 0,
     });
   }
   return result;

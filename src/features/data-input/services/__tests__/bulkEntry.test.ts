@@ -7,12 +7,12 @@ import {
   buildBulkPreview,
   buildBulkSaveItems,
   collectBulkEntries,
-  formatYearMonthLabel,
-  listFiscalYearMonths,
   type BulkCollectedEntry,
   type BulkMonthRow,
 } from '../bulkEntry';
 import type { BulkMonthFactor } from '../bulkFactorResolution';
+import { ZERO_AMOUNT_PREVIEW_NOTICE } from '../entrySubmission';
+import { toYearMonthLabel } from '../targetMonthSelection';
 
 const record = (
   overrides: Partial<SavedManualActivityRecord> & Pick<SavedManualActivityRecord, 'id' | 'periodStart'>,
@@ -60,31 +60,6 @@ const factor = (
   ...overrides,
 });
 
-describe('listFiscalYearMonths', () => {
-  it('会計年度の開始月から終了月までを昇順で列挙する', () => {
-    expect(listFiscalYearMonths({ id: 'fy', startDate: '2026-04-01', endDate: '2027-03-31' })).toEqual([
-      '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09',
-      '2026-10', '2026-11', '2026-12', '2027-01', '2027-02', '2027-03',
-    ]);
-    expect(listFiscalYearMonths({ id: 'fy', startDate: '2026-01-01', endDate: '2026-12-31' })[0]).toBe('2026-01');
-  });
-
-  it('期間が異常なマスタでも上限で打ち切る（終了日が先なら空）', () => {
-    expect(listFiscalYearMonths({ id: 'fy', startDate: '2026-04-01', endDate: '2026-01-31' })).toEqual([]);
-    expect(
-      listFiscalYearMonths({ id: 'fy', startDate: '2020-04-01', endDate: '2030-03-31' }),
-    ).toHaveLength(24);
-  });
-});
-
-describe('formatYearMonthLabel', () => {
-  it('YYYY-MM を「YYYY年M月」にする（解釈できなければそのまま）', () => {
-    expect(formatYearMonthLabel('2026-04')).toBe('2026年4月');
-    expect(formatYearMonthLabel('2026-12')).toBe('2026年12月');
-    expect(formatYearMonthLabel('broken')).toBe('broken');
-  });
-});
-
 describe('buildBulkMonthRows', () => {
   const months = ['2026-04', '2026-05', '2026-06'];
 
@@ -94,7 +69,7 @@ describe('buildBulkMonthRows', () => {
     const rows = buildBulkMonthRows({
       months,
       history: [existingSameUnit, existingOtherUnit],
-      target: { kind: 'energy', locationId: 'loc-1', energyType: 'electricity' },
+      target: { kind: 'scope12', locationId: 'loc-1', energyType: 'electricity' },
       maxTargetMonth: '2026-05',
       currentUnit: 'kWh',
     });
@@ -112,7 +87,7 @@ describe('buildBulkMonthRows', () => {
         record({ id: 'r1', periodStart: '2026-04-01', locationId: 'loc-2' }),
         record({ id: 'r2', periodStart: '2026-04-01', energyType: 'city_gas' }),
       ],
-      target: { kind: 'energy', locationId: 'loc-1', energyType: 'electricity' },
+      target: { kind: 'scope12', locationId: 'loc-1', energyType: 'electricity' },
       maxTargetMonth: '2026-07',
       currentUnit: 'kWh',
     });
@@ -161,7 +136,7 @@ describe('buildBulkMonthRows', () => {
 
 describe('collectBulkEntries', () => {
   const row = (overrides: Partial<BulkMonthRow> & Pick<BulkMonthRow, 'month'>): BulkMonthRow => ({
-    label: formatYearMonthLabel(overrides.month),
+    label: toYearMonthLabel(overrides.month),
     isFuture: false,
     existing: null,
     canOverwrite: false,
@@ -324,7 +299,10 @@ describe('buildBulkSaveItems', () => {
 });
 
 describe('buildBulkPreview', () => {
-  const resolved = (factorRow: CandidateFactorRow, flags: Partial<{ fellBack: boolean; provisional: boolean }> = {}): BulkMonthFactor => ({
+  const resolved = (
+    factorRow: CandidateFactorRow,
+    flags: Partial<{ fellBack: boolean; provisional: boolean; providerFellBack: boolean }> = {},
+  ): BulkMonthFactor => ({
     factorIdToSave: factorRow.id,
     applied: {
       status: 'resolved',
@@ -334,6 +312,7 @@ describe('buildBulkPreview', () => {
       ambiguous: false,
       provisional: flags.provisional ?? false,
     },
+    providerFellBack: flags.providerFellBack ?? false,
   });
 
   it('月ごとの推定排出量と合計を算定エンジンと同じ丸めで出す', () => {
@@ -391,6 +370,7 @@ describe('buildBulkPreview', () => {
               ambiguous: true,
               provisional: false,
             },
+            providerFellBack: false,
           } satisfies BulkMonthFactor,
         ],
         ['2026-05', resolved(mismatch)],
@@ -403,5 +383,33 @@ describe('buildBulkPreview', () => {
     expect(preview.monthRows[1].emissionsText).toBe('—');
     expect(preview.monthRows[1].warning).toContain('単位を係数の単位へ換算できない');
     expect(preview.totalEmissionsText).toBe('—');
+  });
+
+  it('事業者の係数行が無い月は代替値へ落ちることを知らせ、活動量 0 の月は実績ゼロの確認表示を添える', () => {
+    const national = factor({ id: 'national', name: '電気（代替値・全国）', factorValue: 0.0005 });
+    const preview = buildBulkPreview({
+      entries: [
+        { month: '2026-04', label: '2026年4月', amount: 10000, action: 'create', existing: null },
+        { month: '2026-05', label: '2026年5月', amount: 0, action: 'create', existing: null },
+      ],
+      unit: 'kWh',
+      isIdea: false,
+      factorByMonth: new Map([
+        ['2026-04', resolved(national, { providerFellBack: true })],
+        ['2026-05', resolved(national)],
+      ]),
+      productDetail: null,
+      fiscalYears: [],
+    });
+    // 保存する係数 ID 自体が代替値になるため applied.fellBack では分からず、事業者のフォールバックを別に知らせる。
+    expect(preview.monthRows[0].warning).toBe(
+      '選択中の供給事業者の係数はこの月の年度には登録されていないため、代替値（自動選択された係数）で算定されます。',
+    );
+    expect(preview.monthRows[1]).toMatchObject({
+      amountText: '0 kWh',
+      emissionsText: '0',
+      warning: ZERO_AMOUNT_PREVIEW_NOTICE,
+    });
+    expect(preview.totalEmissionsText).toBe('5 t-CO2e');
   });
 });

@@ -1600,4 +1600,71 @@ describe('ActivityEntryForm', () => {
     expect(alertText(container)).toContain('登録する月の活動量を入力してください');
     expect(onSaveBulk).not.toHaveBeenCalled();
   });
+
+  it('一括入力: 全月が未来の年度は対象年度の選択肢に出さず、当月が属する年度を既定にする', async () => {
+    Object.assign(fiscalYearMock, { fiscalYears: [FY2025, FY2024, FY2023] });
+    const { container } = renderBulkForm();
+    await flush();
+    await clickAsync(q(container, '#manual-entry-mode-bulk'));
+
+    const yearSelect = q<HTMLSelectElement>(container, '#manual-bulk-fiscal-year');
+    expect([...yearSelect.options].map((option) => option.value)).toEqual(['fy2024', 'fy2023']);
+    expect(yearSelect.value).toBe('fy2024');
+  });
+
+  it('一括入力: 登録済みの月はグリッドの行で示し、代表月に対する重複の事前警告は出さない', async () => {
+    // 代表月（年度内で最初に入力できる月 = 2024-04）に既存レコードがある。
+    const existing = savedRecord({ id: 'rec-apr', periodStart: '2024-04-01' });
+    const { container } = renderBulkForm({ historyRecords: [existing] });
+    await flush();
+    await clickAsync(q(container, '#manual-entry-mode-bulk'));
+
+    expect(q(container, '[data-testid="manual-bulk-grid"]').textContent).toContain('登録済み: 500 kWh');
+    expect(container.querySelector('[data-testid="manual-duplicate-warning"]')).toBeNull();
+  });
+
+  it('一括入力: 全角数字・カンマは半角へ正規化して受け付け、数字にならない入力は理由を出して戻す', async () => {
+    const { container } = renderBulkForm();
+    await flush();
+    await clickAsync(q(container, '#manual-entry-mode-bulk'));
+
+    const input = bulkAmountInput(container, '2024-11');
+    setInputValue(input, '１２，３４５．５');
+    expect(input.value).toBe('12345.5');
+    expect(container.querySelector('[data-testid="manual-bulk-amount-rejected-2024-11"]')).toBeNull();
+
+    setInputValue(input, '12345.5a');
+    expect(input.value).toBe('12345.5');
+    expect(q(container, '[data-testid="manual-bulk-amount-rejected-2024-11"]').textContent).toBe(
+      '活動量は数字と小数点のみ入力できます。',
+    );
+
+    // IME 変換中は巻き戻さず、確定時に正規化する。
+    fireComposition(input, 'compositionstart');
+    setInputValue(input, '６７８');
+    expect(input.value).toBe('６７８');
+    fireComposition(input, 'compositionend');
+    expect(input.value).toBe('678');
+    expect(container.querySelector('[data-testid="manual-bulk-amount-rejected-2024-11"]')).toBeNull();
+  });
+
+  it('一括入力: 活動量 0 の月は実績ゼロとして確認表示を添えて保存する', async () => {
+    const { container, onSaveBulk } = renderBulkForm();
+    await flush();
+    await clickAsync(q(container, '#manual-entry-mode-bulk'));
+
+    setInputValue(bulkAmountInput(container, '2024-11'), '0');
+    await clickAsync(previewButton(container));
+
+    const table = q(container, '[data-testid="manual-bulk-preview-table"]');
+    expect(table.textContent).toContain('0 kWh');
+    expect(table.textContent).toContain('活動量 0 で保存します');
+    await clickAsync(q(container, '#manual-bulk-save-button'));
+
+    expect(onSaveBulk.mock.calls[0][0][0]).toMatchObject({
+      action: 'create',
+      month: '2024-11',
+      entry: { kind: 'scope12', input: { amount: 0 } },
+    });
+  });
 });

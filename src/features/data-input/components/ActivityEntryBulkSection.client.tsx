@@ -8,28 +8,37 @@
 import React from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { amountFieldLabel } from '../services/entryFormat';
+import { AMOUNT_INPUT_REJECTED_MESSAGE } from '../services/entrySubmission';
 import type { BulkMonthRow } from '../services/bulkEntry';
 
 export interface ActivityEntryBulkSectionProps {
   rows: BulkMonthRow[];
   amounts: Record<string, string>;
+  /** 正規化しても数字にならず弾いた月（行の直下に理由を出す） */
+  amountRejected: Record<string, boolean>;
   overwriteEnabled: Record<string, boolean>;
   unit: string | null;
   /** 活動量の数え方の補足（単月入力と同じ文言）。null なら出さない */
   amountGuide: string | null;
   disabled: boolean;
   onAmountChange: (month: string, value: string) => void;
+  /** IME 変換の開始・確定（変換中の値を巻き戻さないために、状態側へ伝える） */
+  onAmountCompositionStart: (month: string) => void;
+  onAmountCompositionEnd: (month: string, value: string) => void;
   onToggleOverwrite: (month: string) => void;
 }
 
 export const ActivityEntryBulkSection = ({
   rows,
   amounts,
+  amountRejected,
   overwriteEnabled,
   unit,
   amountGuide,
   disabled,
   onAmountChange,
+  onAmountCompositionStart,
+  onAmountCompositionEnd,
   onToggleOverwrite,
 }: ActivityEntryBulkSectionProps) => (
   <div className="flex flex-col gap-2" data-testid="manual-bulk-grid">
@@ -55,9 +64,16 @@ export const ActivityEntryBulkSection = ({
               placeholder={row.isFuture || (row.existing !== null && !overwriting) ? '' : '0.000'}
               value={amounts[row.month] ?? ''}
               onChange={(event) => onAmountChange(row.month, event.target.value)}
+              onCompositionStart={() => onAmountCompositionStart(row.month)}
+              onCompositionEnd={(event) => onAmountCompositionEnd(row.month, event.currentTarget.value)}
               disabled={inputDisabled}
               className="gt-field w-40 disabled:cursor-not-allowed disabled:opacity-50"
             />
+            {amountRejected[row.month] === true && (
+              <span className="text-xs text-danger" data-testid={`manual-bulk-amount-rejected-${row.month}`}>
+                {AMOUNT_INPUT_REJECTED_MESSAGE}
+              </span>
+            )}
             {row.isFuture && <span className="text-xs text-text-muted">未来月のため入力できません</span>}
             {row.existing !== null && !row.isFuture && (
               <>

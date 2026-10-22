@@ -56,8 +56,20 @@ const tepco2025 = factor({
   source: 'utility',
 });
 
+// 2024 年度の係数行しか無い事業者（翌年度の公表前・撤退など）。
+const KEPCO = '関西電力';
+const kepco2024 = factor({
+  id: 'kepco-2024',
+  name: `${KEPCO}（調整後）`,
+  factorValue: 0.00035,
+  applicableYear: 2024,
+  providerName: KEPCO,
+  providerNumber: 'A0001',
+  source: 'utility',
+});
+
 const yearPool = [national2024, national2025];
-const providerPool = [tepco2024, tepco2025];
+const providerPool = [tepco2024, tepco2025, kepco2024];
 
 const fetchers = () => {
   const fetchYearFactors = vi.fn(async (years: number[]) =>
@@ -94,6 +106,32 @@ describe('resolveBulkMonthFactors', () => {
     const applied = result.get('2025-04')?.applied;
     expect(applied?.status === 'resolved' && applied.factor?.id).toBe('tepco-2025');
     expect(applied?.status === 'resolved' && applied.fellBack).toBe(false);
+    expect(result.get('2025-02')?.providerFellBack).toBe(false);
+    expect(result.get('2025-04')?.providerFellBack).toBe(false);
+  });
+
+  it('選択した事業者の係数行が無い月は代替値（自動選択）へ落とし、その月だけフォールバックを立てる', async () => {
+    const result = await resolveBulkMonthFactors({
+      months: ['2025-02', '2025-04'],
+      location: LOCATION,
+      energyType: 'electricity',
+      fiscalYears: FISCAL_YEARS,
+      selection: {
+        providerSelection: {
+          factorType: 'adjusted',
+          providerName: normalizeProviderName(KEPCO),
+          menuName: null,
+        },
+        selectedFactorId: null,
+      },
+      fetchers: fetchers(),
+    });
+    expect(result.get('2025-02')).toMatchObject({ factorIdToSave: 'kepco-2024', providerFellBack: false });
+    // 2025 年度には関西電力の行が無いため、その月は代替値を保存し、確認モーダルで知らせる。
+    const fallen = result.get('2025-04');
+    expect(fallen).toMatchObject({ factorIdToSave: 'national-2025', providerFellBack: true });
+    // 保存する id 自体が代替値なので算定上の「指定どおりに使われない」フォールバックにはならない。
+    expect(fallen?.applied.status === 'resolved' && fallen.applied.fellBack).toBe(false);
   });
 
   it('標準係数の上書き選択は、その月の候補に無ければ自動選択へ戻す', async () => {

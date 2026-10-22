@@ -37,6 +37,7 @@ import { useIdeaProductSelection } from '../hooks/useIdeaProductSelection';
 import { useKeyedLoader } from '../hooks/useKeyedLoader';
 import { useScope12FactorSelection } from '../hooks/useScope12FactorSelection';
 import {
+  BULK_VALIDATION_MESSAGES,
   buildBulkMonthRows,
   type BulkEntryTarget,
   type BulkSaveItem,
@@ -295,17 +296,24 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   };
 
   const appliedFactor = scope12.applied.status === 'resolved' ? scope12.applied.factor : null;
-  const unitInfo = resolveEntryUnit({
-    category,
-    mode,
-    initial:
-      isEdit && initialValues?.kind === 'scope12'
-        ? { energyType: initialValues.energyType, unit: initialValues.unit }
-        : null,
-    productUnit: idea.productDetail?.unit ?? null,
-    // 標準単位で換算できない係数（通勤に t-CO2e/km のカスタム係数、出張に kg-CO2/円 の公式係数を当てた場合など）は係数の分母単位で入力させる。
-    factorUnit: appliedFactor?.unit ?? null,
-  });
+  const productUnit = idea.productDetail?.unit ?? null;
+  // 標準単位で換算できない係数（通勤に t-CO2e/km のカスタム係数、出張に kg-CO2/円 の公式係数を当てた場合など）は係数の分母単位で入力させる。
+  const factorUnit = appliedFactor?.unit ?? null;
+  // 入力単位は一括入力グリッドの行の組み立て（useMemo）の依存になるため、派生元ごと参照を固定する。
+  const unitInfo = useMemo(
+    () =>
+      resolveEntryUnit({
+        category,
+        mode,
+        initial:
+          isEdit && initialValues?.kind === 'scope12'
+            ? { energyType: initialValues.energyType, unit: initialValues.unit }
+            : null,
+        productUnit,
+        factorUnit,
+      }),
+    [category, mode, isEdit, initialValues, productUnit, factorUnit],
+  );
   const currentUnit = unitInfo.unit;
   const isNonStandardUnit = unitInfo.kind === 'energy' && unitInfo.isNonStandard;
   const isFactorDerivedUnit = unitInfo.kind === 'energy' && unitInfo.isFactorDerived;
@@ -332,19 +340,22 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
           }
         : null;
     }
-    return { kind: 'energy', locationId: effectiveSelectedLocationId, energyType: category.energyType };
+    return { kind: 'scope12', locationId: effectiveSelectedLocationId, energyType: category.energyType };
   }, [isBulk, category, effectiveSelectedLocationId, idea.productDetail]);
-  // useMemo にしない（currentUnit が係数由来の派生値のため手動メモ化は React Compiler が保持できない。
-  // 自動メモ化に任せる）。
-  const bulkRows = isBulk
-    ? buildBulkMonthRows({
-        months: bulk.months,
-        history: historyRecords ?? [],
-        target: bulkTarget,
-        maxTargetMonth,
-        currentUnit,
-      })
-    : [];
+  // 履歴全件との照合なので、入力のたび（活動量のキー入力など）に組み直さないようメモ化する。
+  const bulkRows = useMemo(
+    () =>
+      isBulk
+        ? buildBulkMonthRows({
+            months: bulk.months,
+            history: historyRecords,
+            target: bulkTarget,
+            maxTargetMonth,
+            currentUnit,
+          })
+        : [],
+    [isBulk, bulk.months, historyRecords, bulkTarget, maxTargetMonth, currentUnit],
+  );
 
   // この入力が Scope 3 の積上げ（calculated）側に載るカテゴリと、そのカテゴリの現在の算定方法。
   // 方式が direct のままだと算定は成功してもダッシュボードの Scope 3 合計に採用されないため、
@@ -372,12 +383,13 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   // 読み込み済みの入力履歴に照合し、活動量を入れる前に「既に登録済み」を知らせる。
   // 警告はプレビュー・保存を止めない（履歴が古い可能性があるため、確定判定は保存時チェックに委ねる）。
   // 保存成功直後の同じ条件では警告しない（条件が変わるまでの抑止は useDuplicateWarning が持つ）。
+  // 一括入力では登録済みの月をグリッドの行ごとに示すため、代表月に対する事前警告は出さない。
   const duplicate = useDuplicateWarning({
     historyRecords,
     excludeRecordId,
     locationId: effectiveSelectedLocationId,
     category,
-    periodStart: period?.start ?? null,
+    periodStart: isBulk ? null : (period?.start ?? null),
     ideaFactorId: idea.productDetail?.id ?? null,
   });
   const { candidate: duplicateCandidate, record: duplicateRecord } = duplicate;
@@ -614,7 +626,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
       return VALIDATION_MESSAGES.location;
     }
     if (bulkRows.length === 0) {
-      return '会計年度が登録されていないため、複数月まとめて入力は使用できません。設定画面で会計年度を登録してください。';
+      return BULK_VALIDATION_MESSAGES.noFiscalYear;
     }
     if (isIdea) {
       if (idea.detailError) {
@@ -898,9 +910,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
                   ))}
                 </select>
                 {bulk.fiscalYearOptions.length === 0 && (
-                  <p className="mt-1.5 text-sm text-warning">
-                    会計年度が登録されていないため、複数月まとめて入力は使用できません。設定画面で会計年度を登録してください。
-                  </p>
+                  <p className="mt-1.5 text-sm text-warning">{BULK_VALIDATION_MESSAGES.noFiscalYear}</p>
                 )}
               </EntryField>
             ) : (
@@ -997,11 +1007,14 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
             <ActivityEntryBulkSection
               rows={bulkRows}
               amounts={bulk.amounts}
+              amountRejected={bulk.amountRejected}
               overwriteEnabled={bulk.overwriteEnabled}
               unit={currentUnit}
               amountGuide={amountGuide}
               disabled={isConditionLocked || isSaving}
               onAmountChange={bulk.setAmount}
+              onAmountCompositionStart={bulk.beginAmountComposition}
+              onAmountCompositionEnd={bulk.endAmountComposition}
               onToggleOverwrite={(month) =>
                 bulk.toggleOverwrite(
                   month,

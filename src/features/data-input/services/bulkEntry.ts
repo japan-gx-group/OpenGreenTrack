@@ -2,14 +2,19 @@
 // （純関数・副作用なし）。
 // グリッドの行は「会計年度の各月 × 既存レコードの有無 × 未来月ガード」で決まり、
 // 既存レコードがある月は値を表示してスキップ（既定）か上書きを選べるようにする。
-// 重複判定キーは保存時ブロック（activityRecordDuplicates / DB トリガー）と同じ
-// 「拠点 × エネルギー種別 × 対象月」（Scope3積上げはさらにカテゴリ × IDEA製品）に合わせる。
+// 重複判定キーは事前警告・保存時ブロック（activityRecordDuplicates / DB トリガー）と同じ
+// 「拠点 × エネルギー種別 × 対象月」（Scope3積上げはさらにカテゴリ × IDEA製品）で、照合も同じ純関数を使う。
 
 import type { EnergyType } from '@/features/calculation/types';
 import type { IdeaProductDetail } from '@/features/factors/services/ideaProductSearch';
 import type { ActivityEntryInput, SavedManualActivityRecord } from '../types';
+import {
+  findDuplicateActivityRecord,
+  type ActivityEntryDuplicateCandidate,
+} from './activityRecordDuplicates';
 import type { BulkMonthFactor } from './bulkFactorResolution';
 import {
+  ZERO_AMOUNT_PREVIEW_NOTICE,
   buildActivityEntryInput,
   validateAmount,
   amountValidationMessage,
@@ -21,62 +26,23 @@ import {
   computeEstimatedEmissions,
   type FiscalYearRange,
 } from './inlineCalculation';
-import { nextYearMonth, toPeriodDates } from './manualEntryTargetMonth';
+import { toPeriodDates } from './manualEntryTargetMonth';
 import { computeEstimatedScope3Emissions } from './scope3InlineCalculation';
-
-/** 'YYYY-MM' を「YYYY年M月」へ整形する。グリッドの行ラベル・エラーメッセージに使う。 */
-export const formatYearMonthLabel = (month: string): string => {
-  const matched = /^(\d{4})-(\d{2})$/.exec(month);
-  if (!matched) {
-    return month;
-  }
-  return `${matched[1]}年${Number(matched[2])}月`;
-};
-
-// 会計年度マスタの期間異常（終了日が開始日より前・極端に長い期間）でグリッドが壊れないための上限。
-// 通常の会計年度は 12 ヶ月、設立年度などの変則でも 24 ヶ月あれば収まる。
-const MAX_BULK_MONTHS = 24;
-
-/** 会計年度の期間に含まれる月（'YYYY-MM'）を開始月から順に列挙する。 */
-export const listFiscalYearMonths = (fiscalYear: FiscalYearRange): string[] => {
-  const startMonth = fiscalYear.startDate.slice(0, 7);
-  const endMonth = fiscalYear.endDate.slice(0, 7);
-  const months: string[] = [];
-  let month: string | null = startMonth;
-  while (month !== null && month <= endMonth && months.length < MAX_BULK_MONTHS) {
-    months.push(month);
-    month = nextYearMonth(month);
-  }
-  return months;
-};
+import { toYearMonthLabel } from './targetMonthSelection';
 
 /**
- * 一括入力の対象（既存レコードの照合キー）。
- * energy は保存時ブロックと同じ「拠点 × エネルギー種別 × 対象月」、
- * scope3 は「拠点 × カテゴリ × IDEA製品 × 対象月」（activityRecordService の事前チェックと同じ）。
+ * 一括入力の対象（既存レコードの照合キーのうち対象月を除いた部分）。月ごとに periodStart を足して、
+ * 事前警告・保存時ブロックと同じ重複キー（ActivityEntryDuplicateCandidate）として照合する。
+ * scope12 は「拠点 × エネルギー種別 × 対象月」、scope3 は「拠点 × カテゴリ × IDEA製品 × 対象月」。
  */
 export type BulkEntryTarget =
-  | { kind: 'energy'; locationId: string; energyType: EnergyType }
+  | { kind: 'scope12'; locationId: string; energyType: EnergyType }
   | { kind: 'scope3'; locationId: string; scope3CategoryId: number; ideaFactorId: string };
 
-const matchesTarget = (
-  record: SavedManualActivityRecord,
-  target: BulkEntryTarget,
-  month: string,
-): boolean => {
-  if (record.periodStart.slice(0, 7) !== month) {
-    return false;
-  }
-  if (target.kind === 'energy') {
-    return record.locationId === target.locationId && record.energyType === target.energyType;
-  }
-  return (
-    record.locationId === target.locationId &&
-    record.energyType === 'scope3_activity' &&
-    record.scope3CategoryId === target.scope3CategoryId &&
-    record.ideaFactorId === target.ideaFactorId
-  );
-};
+const toDuplicateCandidate = (target: BulkEntryTarget, month: string): ActivityEntryDuplicateCandidate => ({
+  ...target,
+  periodStart: `${month}-01`,
+});
 
 export interface BulkMonthRow {
   /** 'YYYY-MM' */
@@ -107,13 +73,11 @@ export const buildBulkMonthRows = (args: {
   const target = args.target;
   return args.months.map((month) => {
     const existing =
-      target === null
-        ? null
-        : (args.history.find((record) => matchesTarget(record, target, month)) ?? null);
+      target === null ? null : findDuplicateActivityRecord(args.history, toDuplicateCandidate(target, month));
     const isFuture = month > args.maxTargetMonth;
     return {
       month,
-      label: formatYearMonthLabel(month),
+      label: toYearMonthLabel(month),
       isFuture,
       existing,
       canOverwrite:
@@ -135,6 +99,9 @@ export interface BulkCollectedEntry {
 export const BULK_VALIDATION_MESSAGES = {
   noEntries: '登録する月の活動量を入力してください。',
   overwriteEmpty: '上書きする活動量を入力してください。',
+  /** 入力できる月（当月以前）を含む会計年度が無い（未登録、または登録済みの年度が全月未来） */
+  noFiscalYear:
+    '入力できる月を含む会計年度が登録されていないため、複数月まとめて入力は使用できません。設定画面で会計年度を登録してください。',
 } as const;
 
 /**
@@ -142,6 +109,7 @@ export const BULK_VALIDATION_MESSAGES = {
  *   - 未来月・既存あり（上書き未選択）の行は入力値が残っていても対象にしない
  *   - 上書きを選択した行は入力必須
  *   - 空欄の行はスキップ（その月は登録しない）
+ *   - 活動量の検証は単月入力と同じ validateAmount（0 は実績ゼロとして有効、負数・桁あふれは不可）
  */
 export const collectBulkEntries = (args: {
   rows: BulkMonthRow[];
@@ -265,6 +233,8 @@ const BULK_MONTH_WARNINGS = {
   ambiguous: '同順位の候補が複数あるため未算定になります。単月入力で係数を選択してください。',
   noFactor: '適用できる係数が無いため未算定になります。',
   fellBack: '選択中の係数はこの月には適用できないため、自動選択された係数で算定されます。',
+  providerFellBack:
+    '選択中の供給事業者の係数はこの月の年度には登録されていないため、代替値（自動選択された係数）で算定されます。',
   provisional: '対象年度の公式係数が未公表のため、過年度の係数を暫定適用します。',
   unitMismatch: '活動量の単位を係数の単位へ換算できないため未算定になります。',
   unresolved: '適用される係数を判定できませんでした。算定時に自動解決します。',
@@ -301,19 +271,22 @@ const resolveMonthEmissions = (args: {
     };
   }
   const emissions = computeEstimatedEmissions(args.entry.amount, args.unit, applied.factor);
-  const warning = applied.fellBack
-    ? BULK_MONTH_WARNINGS.fellBack
-    : applied.provisional
-      ? BULK_MONTH_WARNINGS.provisional
-      : emissions === null
-        ? BULK_MONTH_WARNINGS.unitMismatch
-        : null;
+  const warning = args.monthFactor?.providerFellBack
+    ? BULK_MONTH_WARNINGS.providerFellBack
+    : applied.fellBack
+      ? BULK_MONTH_WARNINGS.fellBack
+      : applied.provisional
+        ? BULK_MONTH_WARNINGS.provisional
+        : emissions === null
+          ? BULK_MONTH_WARNINGS.unitMismatch
+          : null;
   return { emissions, factorText: factorNameWithValue(applied.factor), warning };
 };
 
 /**
  * 確認モーダルの表示内容を組み立てる。推定排出量は単月入力と同じ計算
  * （算定エンジンと同じ単位換算・丸め）を月ごとの適用係数で行う。
+ * 活動量 0 の月は単月入力のプレビューと同じ確認表示を行に添える（係数の注意がある月はそちらを優先）。
  */
 export const buildBulkPreview = (args: {
   entries: BulkCollectedEntry[];
@@ -347,7 +320,7 @@ export const buildBulkPreview = (args: {
       amountText: `${entry.amount.toLocaleString()} ${args.unit}`,
       factorText,
       emissionsText: emissions === null ? '—' : formatEmissions(emissions),
-      warning,
+      warning: warning ?? (entry.amount === 0 ? ZERO_AMOUNT_PREVIEW_NOTICE : null),
     };
   });
   return {
