@@ -85,6 +85,21 @@ describe('操作履歴', () => {
   it('組織の削除に伴う連鎖削除では記録しない（デモデータの入れ直しを止めない）', () => {
     expect(roles).toContain('if not exists (select 1 from public.organizations o where o.id = v_row."organizationId") then return null;');
   });
+
+  it('解除の操作者に、行に残っている以前の更新者を使わない（利用者の削除に伴う解除は操作者を空にし、member_deleted を残す）', () => {
+    // 記録するトリガー関数の最後の定義を調べる（あとから定義し直したときにも、この規則を外さないため）。
+    const definitions = readdirSync(migrationsDir).sort()
+      .filter(file => readFileSync(path.join(migrationsDir, file), 'utf8').includes('function ssbj_audit_member_role_change()'));
+    const latest = migration(definitions[definitions.length - 1]);
+    const deleteBranch = latest.slice(latest.indexOf("if tg_op = 'DELETE' then"), latest.indexOf("elsif tg_op = 'INSERT' then"));
+
+    expect(latest).toContain("v_actor uuid := coalesce(auth.uid(), nullif(current_setting('ssbj.actor_user_id', true), '')::uuid);");
+    expect(deleteBranch).not.toContain('updatedByUserId');
+    expect(deleteBranch).toContain('if not exists (select 1 from public.profiles p where p.id = old."userId") then');
+    expect(deleteBranch).toContain("jsonb_build_object('reason', 'member_deleted')");
+    expect(latest).toContain('values (v_row."organizationId", null, v_actor, v_action, \'member_role\'');
+    expect(latest).toContain('if not exists (select 1 from public.organizations o where o.id = v_row."organizationId") then return null;');
+  });
 });
 
 describe('OGT 本体の権限の仕組みは変えない', () => {
