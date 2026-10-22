@@ -58,19 +58,30 @@ export const downloadSsbjWorkbook = async (workbook: Workbook, fileName: string)
   downloadBlob(new Blob([buffer], { type: XLSX_MIME }), fileName);
 };
 
-// 保存版の CSV の列（章 / 対象ID / 項目 / 状態 / 開示内容 / 単位 / 内部記録 / 注記）に合わせた幅と折り返し。
-const VERSION_COLUMN_WIDTHS = [20, 34, 30, 14, 60, 10, 44, 44];
-const VERSION_WRAP_COLUMNS = [2, 4, 6, 7];
+// 保存版の CSV の列（章 / 対象ID / 項目 / 状態 / 開示内容 / 単位 / 内部記録 / 注記）ごとの幅と折り返し。
+// 見出しの行の列名から決める（内部記録の列を出さない出力でも、列がずれないようにするため）。
+const VERSION_COLUMNS: Record<string, { width: number; wrap: boolean }> = {
+  章: { width: 20, wrap: false },
+  対象ID: { width: 34, wrap: false },
+  項目: { width: 30, wrap: true },
+  状態: { width: 14, wrap: false },
+  開示内容: { width: 60, wrap: true },
+  単位: { width: 10, wrap: false },
+  内部記録: { width: 44, wrap: true },
+  注記: { width: 44, wrap: true },
+};
 
 /** 保存版の CSV の行から、Excel のシートを作る（見出しの行は「章」で始まる行）。 */
 export const ssbjVersionSheet = (rows: string[][]): SsbjXlsxSheet => {
   const headerIndex = rows.findIndex(row => row[0] === '章' && row[1] === '対象ID');
+  const columns = (headerIndex >= 0 ? rows[headerIndex] : Object.keys(VERSION_COLUMNS))
+    .map(name => VERSION_COLUMNS[name] ?? { width: 20, wrap: false });
   return {
     name: 'SSBJレポート',
     rows,
     headerRowIndex: headerIndex >= 0 ? headerIndex : null,
-    columnWidths: VERSION_COLUMN_WIDTHS,
-    wrapColumns: VERSION_WRAP_COLUMNS,
+    columnWidths: columns.map(column => column.width),
+    wrapColumns: columns.flatMap((column, index) => (column.wrap ? [index] : [])),
   };
 };
 

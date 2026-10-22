@@ -29,8 +29,15 @@ const note = (value: OgtAdoptedValue): string => {
       : '');
 };
 
-/** GHG セクションの行。採用していない（null）版は「未採用」の 1 行にして、欠落と区別する。 */
-export const ghgAdoptionCsvRows = (reportId: string, ghg: SsbjGhgAdoption | null): string[][] => {
+/**
+ * GHG セクションの行。採用していない（null）版は「未採用」の 1 行にして、欠落と区別する。
+ * internalRecords が false なら内部記録の列を空にする（閲覧者の保存版には取得元・件数が無い。versionCsv.ts が列ごと除く）。
+ */
+export const ghgAdoptionCsvRows = (
+  reportId: string,
+  ghg: SsbjGhgAdoption | null,
+  { internalRecords = true }: { internalRecords?: boolean } = {},
+): string[][] => {
   if (ghg === null) {
     return [[GROUP, reportId, 'OGT の値', '未採用', '', '', '', 'OGT の候補値をレポートに採用していません']];
   }
@@ -47,7 +54,7 @@ export const ghgAdoptionCsvRows = (reportId: string, ghg: SsbjGhgAdoption | null
       value.value.state === 'answered' ? OGT_DATA_QUALITY_LABELS[value.dataQuality] : '未算定',
       value.value.state === 'answered' ? value.value.value : '',
       value.unit,
-      internalRecord(value),
+      internalRecords ? internalRecord(value) : '',
       note(value),
     ]);
   }
