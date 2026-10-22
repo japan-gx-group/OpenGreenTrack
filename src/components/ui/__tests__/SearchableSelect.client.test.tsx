@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import React from 'react';
+import React, { act } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { click, focusElement, keyDown, render, setInputValue } from '@/lib/testing/render';
 import { SearchableSelect, type SearchableSelectOption } from '../SearchableSelect.client';
@@ -27,6 +27,14 @@ const getInput = (container: HTMLElement): HTMLInputElement => {
 
 const listedLabels = (container: HTMLElement): string[] =>
   [...container.querySelectorAll('[role="option"]')].map((item) => item.textContent ?? '');
+
+// コンポーネントの枠外クリック検知は document の pointerdown リスナー。
+// jsdom は PointerEvent 未実装のため、同名イベントを MouseEvent で発火する（ハンドラは target しか見ない）。
+const pointerDownOutside = (): void => {
+  act(() => {
+    document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+  });
+};
 
 describe('SearchableSelect', () => {
   afterEach(() => {
@@ -168,6 +176,102 @@ describe('SearchableSelect', () => {
 
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith(null);
+    unmount();
+  });
+
+  it('検索語を残したまま枠外クリックで閉じると、onQueryChange("") の後に onSearchAbandoned が検索語付きで呼ばれる', () => {
+    const onQueryChange = vi.fn();
+    const onSearchAbandoned = vi.fn();
+    const { container, unmount } = render(
+      <SearchableSelect
+        id="location"
+        options={options}
+        value={null}
+        onChange={() => {}}
+        onQueryChange={onQueryChange}
+        onSearchAbandoned={onSearchAbandoned}
+      />,
+    );
+    const input = getInput(container);
+    focusElement(input);
+    setInputValue(input, '東京');
+
+    pointerDownOutside();
+
+    expect(container.querySelector('[role="listbox"]')).toBeNull();
+    expect(onSearchAbandoned).toHaveBeenCalledTimes(1);
+    expect(onSearchAbandoned).toHaveBeenCalledWith('東京');
+    // 親は onQueryChange で警告を消し、onSearchAbandoned で出し直せる（この順序が契約）
+    expect(onQueryChange).toHaveBeenLastCalledWith('');
+    const lastQueryChangeOrder = onQueryChange.mock.invocationCallOrder.at(-1)!;
+    const abandonedOrder = onSearchAbandoned.mock.invocationCallOrder[0]!;
+    expect(lastQueryChangeOrder).toBeLessThan(abandonedOrder);
+    unmount();
+  });
+
+  it('検索語が空のまま枠外クリックで閉じても onSearchAbandoned は呼ばれない', () => {
+    const onSearchAbandoned = vi.fn();
+    const { container, unmount } = render(
+      <SearchableSelect
+        id="location"
+        options={options}
+        value={null}
+        onChange={() => {}}
+        onSearchAbandoned={onSearchAbandoned}
+      />,
+    );
+    focusElement(getInput(container));
+
+    pointerDownOutside();
+
+    expect(container.querySelector('[role="listbox"]')).toBeNull();
+    expect(onSearchAbandoned).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('検索語から候補を選択して閉じたときは onSearchAbandoned は呼ばれない', () => {
+    const onSearchAbandoned = vi.fn();
+    const { container, unmount } = render(
+      <SearchableSelect
+        id="location"
+        options={options}
+        value={null}
+        onChange={() => {}}
+        onSearchAbandoned={onSearchAbandoned}
+      />,
+    );
+    const input = getInput(container);
+    focusElement(input);
+    setInputValue(input, '大阪');
+
+    const osakaButton = container.querySelector<HTMLButtonElement>('[role="option"] button');
+    expect(osakaButton).not.toBeNull();
+    click(osakaButton!);
+
+    expect(onSearchAbandoned).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('検索語を残したまま Escape で閉じたときも onSearchAbandoned が呼ばれる', () => {
+    const onSearchAbandoned = vi.fn();
+    const { container, unmount } = render(
+      <SearchableSelect
+        id="location"
+        options={options}
+        value={null}
+        onChange={() => {}}
+        onSearchAbandoned={onSearchAbandoned}
+      />,
+    );
+    const input = getInput(container);
+    focusElement(input);
+    setInputValue(input, '東京');
+
+    keyDown(input, 'Escape');
+
+    expect(container.querySelector('[role="listbox"]')).toBeNull();
+    expect(onSearchAbandoned).toHaveBeenCalledTimes(1);
+    expect(onSearchAbandoned).toHaveBeenCalledWith('東京');
     unmount();
   });
 
