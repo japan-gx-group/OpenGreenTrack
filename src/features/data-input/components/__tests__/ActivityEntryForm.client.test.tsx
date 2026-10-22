@@ -832,6 +832,38 @@ describe('ActivityEntryForm', () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
+  // 休止拠点・契約のみの月など、実績ゼロを「入力漏れ」と区別して記録できるようにする。
+  // タイプミス（入力し忘れたまま確定）を防ぐため、プレビューに確認表示を挟んでから保存する。
+  it('活動量 0 は排出量 0 で概算され、プレビューの確認表示を経て保存できる', async () => {
+    const { container, onSave } = renderForm();
+    await flush();
+    setInputValue(monthInput(container), '2024-11');
+
+    // 0 より大きい値では確認表示を出さない。
+    setInputValue(amountInput(container), '10000');
+    const nonZeroPreview = openPreview(container);
+    expect(nonZeroPreview.textContent).not.toContain('活動量 0 で保存します');
+    click(findButton(container, 'キャンセル'));
+
+    setInputValue(amountInput(container), '0');
+    expect(container.querySelector('[data-testid="manual-amount-error"]')).toBeNull();
+    expect(resultEmissionsText(container)).toBe('0 t-CO2e');
+
+    const preview = openPreview(container);
+    expect(previewRowText(container, '活動量')).toContain('0 kWh');
+    expect(previewRowText(container, '推定排出量')).toContain('0 t-CO2e');
+    expect(preview.textContent).toContain(
+      '活動量 0 で保存します。実績ゼロの記録として排出量 0 で算定されます。入力漏れでないかご確認ください。',
+    );
+
+    await saveFromPreview(container);
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onSave).toHaveBeenCalledWith({
+      kind: 'scope12',
+      input: expect.objectContaining({ amount: 0, unit: 'kWh' }),
+    });
+  });
+
   it('保存失敗（Error）: message をフォーム内の alert に表示し、入力は消さない', async () => {
     const duplicateMessage = '『大阪支社』の電気・2024年11月 の活動量は既に登録済みです。';
     const { container, onSave } = renderForm();
