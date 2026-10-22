@@ -99,7 +99,7 @@ SSBJ（サステナビリティ基準委員会）基準に沿った開示レポ�
   **別の列・別のプロパティ**に分ける。1 列＋「公開/内部」フラグにはしない。
 - 型の例: `SsbjDisclosableText = { disclosure: SsbjFieldValue<string>; internalNote: string | null }`。
 - プレビュー・CSV の「開示内容」欄には `internal…` を出さない。内部記録を出す場合は別の列・欄に「内部」と明示する。
-- 根拠文書の内部保管先（T10）も内部記録として扱う。
+- 根拠文書の内部保管先（T10）も内部記録として扱う。ファイルの SHA-256 などの照合用の記録（R2-22）も同じ。
 
 **なぜ:** フラグ方式だと出力処理のフィルタ漏れ 1 つで内部情報が開示欄に混ざる。列を分けておけば、
 開示欄は `disclosure…` だけを読む実装になり、混入が構造的に起きない。
@@ -220,12 +220,24 @@ T08a が OGT から**候補値**（`OgtCandidateValue`）を取得・表示し�
   履歴（T11）・CSV（T13）は必ず固定版から読み、**OGT の最新値を再取得しない**。
 - **競合防止:** 画面は読込時の `draftRevision` を保持し、保存時にそれを渡す。DB 側でレポート行をロックして比較し、
   一致しなければ保存を拒否する（同時保存・古い画面からの保存の両方を防ぐ）。
+- **作業中データの編集の競合:** 基本情報とリスク・機会の更新は、編集を始めた時点の値を条件に含めた 1 つの UPDATE 文で行い、
+  0 件更新（読込後に他の画面が同じ対象を保存した）なら保存を拒否して「他の画面で更新されました。最新の内容を確認して再編集してください」と
+  知らせる（`SsbjEditConflictError`。先に保存された変更は残し、古い値と自動で混ぜ合わせない。入力中の値は画面に残し、表示は最新に読み直す）。
+  競合の単位は対象の行で、`draftRevision`（レポート全体で進む）は使わない。文章・判断など関係の無い変更まで競合にしないため。
+  - 基本情報: `ssbj_reports."basicInfoRevision"`（基本情報の列が変わったときだけ +1。`updatedAt` は各機能の変更に伴う
+    `draftRevision` の繰り上げでも変わるので使わない）。
+  - リスク・機会: 対象行の `updatedAt`（文字列のまま保持して条件に渡す）。
+  - 文章・判断・時間軸の定義・根拠文書の更新は、まだ行の ID（またはレポートと項目の組）だけを条件にしており、同じ対象を古い画面から
+    保存すると上書きする（最初の 1 行を同時に作ったときの重複だけは検知している）。
 - **部分保存の防止:** 版番号の採番・スナップショット生成・版の insert は 1 つの DB 関数（1 トランザクション）で行う。
 - **書き込み経路:** 作業中データは `authenticated` + RLS（組織分離）。固定版は `service_role` 限定の RPC を
   Server Action から呼ぶ。呼び出し前に `getCurrentProfile()` で呼び出し元の組織をサーバ側で確定する。
 - **不変性:** `ssbj_report_versions` は `authenticated` に SELECT のみ。UPDATE はトリガーで全ロール拒否。
   過去版からの新版作成（T11）は旧版のスナップショットをそのまま複製し、旧版と作業中データを変更しない（`sourceVersionId` に元の版を残す）。
 - 保存版の形式を変えるときは `schemaVersion` を上げ、読み込み側で旧形式も読めるようにする。
+  `report` やセクションの要素に任意項目を足すだけなら `schemaVersion` は上げない。足す前の版にはそのキーが無いため、
+  読み込み側（保存履歴・プレビュー・印刷・CSV / Excel）はキーの欠落を `null` と同じく「未入力」と扱う（保存版は書き換えない。
+  例: 基本情報の親会社名・持分比率・業種、リスク・機会のリスクの種類）。
 
 **なぜ:** 作業中データを直接出力に使うと、OGT の値や他の人の編集で出力が後から変わり、
 「社内で確認したのはどの内容か」を再現できない。固定版を分ければ、元データが更新されても旧版を再現できる。
@@ -434,6 +446,30 @@ R1 の初回対象（[`ssbj-r1-scope.md`](ssbj-r1-scope.md) §5.1）に含める
 - 内部保管先は開示用参照文と別列・別プロパティにする（§5）。開示用参照文には§4の4状態を使う。
 - 保存版の既存形式は `sections` が任意キーを受け付けるため `schemaVersion: 1` を維持する。過去版からの復元関数は復元契約が確定したときに追加する。
 
+#### R2 の追加（根拠のファイルの SHA-256 と保管先での版）
+
+資料名・版・保管先を文字で記録するだけでは、承認した後にファイルが差し替えられても気づけない。ファイルが同じものかを機械的に確かめられるようにした。
+
+| 対象 | 内容 |
+|---|---|
+| DB | `20261011090000_ssbj_evidence_file_hash.sql`。`ssbj_evidence` にファイル名・SHA-256・保管先での版 ID・保存担当・記録日時の列を足し、記録日時を決めるトリガー（`set_ssbj_evidence_file_recorded_at`）を付ける。保存版への取り込み（`ssbj_snapshot_section__evidence`）と復元（`ssbj_restore_section__evidence`）を定義し直す |
+| 画面 | `/ssbj/[reportId]/evidence` の登録・編集で「ファイルを選ぶ」と、ブラウザの中で SHA-256 を計算して記録する（`SsbjEvidenceFileFields.client.tsx`）。一覧の「照合」でファイルを選び直すと、記録した値と一致するかを出す（`SsbjEvidenceFileVerifyDialog.client.tsx`） |
+| 出力 | 保存版・プレビュー（内部メモも表示するときだけ）・CSV・Excel に内部記録として入れる。開示内容の欄には出さない |
+| コード | `utils/fileHash.ts`（SHA-256 の計算と形式の判定）、`hooks/useSsbjFileHash.ts`、`utils/evidence.ts`・`services/evidenceService.ts`・`services/versionCsv.ts`・`components/SsbjPreviewEvidence.tsx` |
+| テスト | `scripts/db/__tests__/ssbjEvidenceFileHash.test.ts`（制約・権限・記録日時・保存版と復元）、`utils/__tests__/fileHash.test.ts`、画面・CSV・プレビューの単体テスト |
+
+決めたこと:
+
+- **ファイル本体はアップロードも保存もしない。** ブラウザの中で SHA-256 を計算し、値だけを記録する。外部にファイルを送らずに済み、保管の責任は今の保管先のまま変わらない
+  （取り込んで使う方式は R2-04 で検討する）。照合するときは、手元に同じファイルを用意する。
+- **SHA-256 は小文字の 16 進 64 文字に揃え、形式は DB の check 制約でも拒否する。** 画面を通らない書き込み（PostgREST の直接呼び出し）でも形式違いを残さないため。
+- **ファイル名・SHA-256・記録日時は 3 つとも有るか、3 つとも無いかにする。** どれも同じファイルを選んだときに一緒に決まるため。保管先での版 ID・保存担当は、ファイルの記録が無くても入れられる（手で入力する任意の項目）。
+- **記録日時は DB が決め、利用者には書かせない**（列の権限を与えない）。ファイル名か SHA-256 が変わったときだけ新しくし、ほかの項目の編集では変えない。
+  版の復元では、版に残っている記録日時をそのまま戻す（ファイルを記録し直したわけではないため）。記録した人は操作履歴に残る。
+- **照合は何も保存しないため、承認済みのレポートでも使える。** 承認した後にファイルが差し替えられていないかを確かめるのが目的のため。照合の結果は記録しない。
+- **保存版の形式は `schemaVersion: 1` のまま。** 根拠文書にキーを足しただけのため。足す前の保存版にはキーが無いので、プレビュー・CSV・Excel は null と同じく「未入力」と出し、復元ではファイルの記録の無い行として戻す。
+- Web Crypto は安全な接続（https・localhost）でしか使えないため、それ以外のアドレスで開いた画面では SHA-256 を計算できない旨を出す。
+
 ### 要求項目マスター（T32a・暫定）
 
 初回対象の要求（[`ssbj-r1-scope.md`](ssbj-r1-scope.md) §5.1）ごとに、要求 ID・要約・基準の項番号・記載ガイド・入力先を
@@ -503,7 +539,7 @@ R1 の初回対象（[`ssbj-r1-scope.md`](ssbj-r1-scope.md) §5.1）に含める
 |---|---|
 | DB | `supabase/migrations/20260929182558_ssbj_report_preview.sql`。スナップショットの組み立て関数 `ssbj_build_report_snapshot`、作業中の内容を返す RPC `preview_ssbj_report`（ともに service_role 限定）、版生成 RPC `create_ssbj_report_version` を組み立て関数を使う形に置き換え（引数・検証・採番・戻り値と、T11 の過去版の複製は同じ） |
 | API | `GET /api/ssbj/reports/[reportId]/preview`（`services/previewServer.ts`） |
-| 画面 | `components/SsbjPreview.client.tsx`（表示する内容の選択・内部メモの表示・印刷ビューへのリンク）、`SsbjPreviewDocument.tsx`（本文。画面と印刷ビューで共通）、`SsbjPreviewStrategy.tsx`・`SsbjPreviewGhg.tsx`・`SsbjPreviewEvidence.tsx`、`SsbjPreviewPrintView.client.tsx`。レポートの内容の入口に「プレビュー」 |
+| 画面 | `components/SsbjPreview.client.tsx`（表示する内容の選択・画面での内部メモの表示・印刷ビューへのリンク）、`SsbjPreviewDocument.tsx`（本文。画面と印刷ビューで共通）、`SsbjPreviewStrategy.tsx`・`SsbjPreviewGhg.tsx`・`SsbjPreviewEvidence.tsx`、`SsbjPreviewPrintView.client.tsx`。レポートの内容の入口に「プレビュー」 |
 | コード | `services/previewService.ts`（`SsbjPreviewSource`）、`hooks/useSsbjPreviewSource.ts`・`useSsbjVersionSummaries.ts`、`utils/preview.ts` |
 | テスト | `scripts/db/__tests__/ssbjReportPreviewPolicy.test.ts`（組み立て関数の一本化・置き換えた版生成 RPC の検証の残存・権限）、本文・画面・印刷ビュー・Route Handler・サーバ処理の単体テスト |
 
@@ -514,14 +550,21 @@ R1 の初回対象（[`ssbj-r1-scope.md`](ssbj-r1-scope.md) §5.1）に含める
   （基本情報の項目を足したときに片方だけ直す事故を防ぐ）。作業中の内容は保存しない。
 - **表示している内容が作業中か保存版かを、本文の先頭に必ず出す。** 保存版は版番号・保存日時・版 ID を出す。作業中の内容は
   保存版になっていない変更を含むと明示する。
-- **内部メモは既定で出さない。** 「内部メモも表示する」を選んだときだけ、開示する文章とは別の行に「開示しない」と明示して出す（§5）。
-  印刷ビューにも同じ選択を渡す。
+- **内部メモは既定で出さない。** 「内部メモも表示する」を選んだときだけ、画面のプレビューで、開示する文章とは別の行に
+  「開示しない」と明示して出す（§5）。
+- **印刷・PDF には、内部メモと内部記録を常に出さない。** 画面での「内部メモも表示する」の選択は印刷ビューに渡さず、印刷ビューは
+  URL に `internal=1` などが付いていても読まない（印刷ビューが受け取るのは `source` だけ）。対象は四本柱の文章・リスク・機会・
+  時間軸の定義の内部メモ、判断の内部の検討理由、根拠文書の内部記録（資料名・版・保管先・参照位置・主管部署）。
+  開示する文章・開示用参照文・GHG の数値・版情報は従来どおり出す。
+  **なぜ:** 内部情報は画面で確認するために表示を切り替えるが、PDF はそのままレポートとして共有されうる。画面の選択が
+  PDF に引き継がれると、「開示しない」と付いた情報を意図せず渡してしまう。内部記録を含む社内確認用の出力は CSV・Excel の
+  「内部記録」の列で行う（PDF に社内用の出力は設けない）。
 - **PDF は新しいライブラリを使わず、本体のレポートと同じ印刷ビュー方式（`window.print()` と `report-print-*` のクラス）で出す。**
   `ssbj-r1-scope.md` で R1 の出力に PDF を含めたため、T12 の範囲に入れた。
 - **プレビューが描けないセクションは、黙って落とさず名前を出す。** 文章（T05）・判断（T09）などが加わったとき、
   その機能の PR で描画を足すまでの間も、出力漏れに気づけるようにするため。
 - **根拠文書（T10）は、開示用参照文だけを常に出す。** 資料名・版・保管先・参照位置・主管部署は内部記録として、
-  「内部メモも表示する」を選んだときだけ「開示しない」と明示して出す（T10 の画面の区分と同じ）。
+  画面のプレビューで「内部メモも表示する」を選んだときだけ「開示しない」と明示して出す（T10 の画面の区分と同じ。印刷・PDF には出さない）。
 - **四本柱のうち、まだ入力欄の無い章（ガバナンス・リスク管理）は、その旨を表示する。** 空欄にすると「記載なし」と読めるため。
 - 表示する保存版の選択は、Radix のセレクトの操作が jsdom で難しいため、画面のテストではなく印刷ビューのテスト（URL の `source`）で確かめている。
 
@@ -731,7 +774,7 @@ SSBJ の中だけで使うロール（入力担当・承認担当・閲覧者）
 
 | 対象 | 内容 |
 |---|---|
-| DB | `20261010110000_ssbj_member_roles.sql`（`ssbj_member_roles`、判定の関数 `ssbj_user_role` ほか、ロールの記録のため `ssbj_audit_logs."reportId"` を空にできるようにした）、`20261023090000_ssbj_member_roles_audit_actor.sql`（利用者の削除に伴う解除の操作者を空にする） |
+| DB | `20261020100000_ssbj_member_roles.sql`（`ssbj_member_roles`、判定の関数 `ssbj_user_role` ほか、ロールの記録のため `ssbj_audit_logs."reportId"` を空にできるようにした）、`20261023090000_ssbj_member_roles_audit_actor.sql`（利用者の削除に伴う解除の操作者を空にする） |
 | 画面 | `/ssbj/roles`（`SsbjMemberRoles.client.tsx`）。一覧画面から「SSBJ の権限」で入る |
 | コード | `types.ts` の `SSBJ_MEMBER_ROLES`・`SsbjEffectiveRole`・`SSBJ_ROLE_LABELS`、`utils/memberRole.ts`、`services/memberRoleService.ts`、`hooks/useSsbjMemberRoles.ts`・`useSsbjMyRole.ts` |
 | テスト | `scripts/db/__tests__/ssbjMemberRolesPolicy.test.ts`、純関数・サービス・画面の単体テスト |

@@ -1,7 +1,8 @@
 // プレビュー（T12）の「根拠文書」欄（表示のみ）。保存版の sections.evidence（T10）を描く。
-// 開示用参照文だけを常に出し、資料名・版・保管先・参照位置・主管部署は内部記録として
+// 開示用参照文だけを常に出し、資料名・版・保管先・参照位置・主管部署・ファイルの照合用の記録は内部記録として
 // showInternalNotes のときだけ「開示しない」と明示して出す（docs/ssbj-spec.md §5）。
 
+import { formatDateTime } from '@/lib/datetime';
 import type { SsbjEvidence } from '../types';
 import { formatFieldValue, isAnswered } from '../utils/fieldValue';
 import { formatLinkTarget } from '../utils/riskOpportunity';
@@ -9,7 +10,7 @@ import { formatLinkTarget } from '../utils/riskOpportunity';
 const Row = ({ label, value, muted }: { label: string; value: string; muted: boolean }) => (
   <div className="flex flex-col gap-1 sm:flex-row sm:gap-4">
     <dt className="w-44 shrink-0 text-xs font-semibold text-text-muted">{label}</dt>
-    <dd className={muted ? 'm-0 text-sm text-text-muted' : 'm-0 text-sm whitespace-pre-wrap'}>{value}</dd>
+    <dd className={muted ? 'm-0 text-sm text-text-muted' : 'm-0 text-sm whitespace-pre-wrap [overflow-wrap:anywhere]'}>{value}</dd>
   </div>
 );
 
@@ -19,6 +20,12 @@ const INTERNAL_FIELDS: [string, (item: SsbjEvidence) => string | null][] = [
   ['保管先', item => item.internalLocation],
   ['参照位置', item => item.referencePosition],
   ['主管部署', item => item.ownerDepartment],
+  // ファイルの照合用の記録は、記録を足す前の保存版ではキーが無い（undefined）ため、null と同じく未入力にする。
+  ['ファイル名', item => item.fileName ?? null],
+  ['SHA-256', item => item.fileSha256 ?? null],
+  ['保管先での版 ID', item => item.fileStorageVersionId ?? null],
+  ['保存担当', item => item.fileStoredBy ?? null],
+  ['ファイルの記録日時', item => (item.fileRecordedAt ? formatDateTime(item.fileRecordedAt) : null)],
 ];
 
 export const SsbjPreviewEvidence = ({

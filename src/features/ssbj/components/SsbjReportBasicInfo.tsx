@@ -1,5 +1,7 @@
 // SSBJ レポートの基本情報の表示（表示のみ）。任意項目の未入力は「未入力」と出し、空欄や「なし」にしない。
 // 業種は、該当する産業別ガイダンスの巻へのリンクを添える（本文は転記しない。docs/ssbj-r1-scope.md §6）。
+// 保存版の report は保存した時点の形のまま表示する。親会社名・持分比率・業種などの任意項目を追加する前に
+// 保存した版にはそのキーが無い（undefined）ため、未入力の判定は null と undefined の両方を拾う（== null）。
 
 import { ExternalLink } from 'lucide-react';
 import { formatDateTime } from '@/lib/datetime';
@@ -12,21 +14,21 @@ import { findSicsIndustry, formatSicsIndustry, sicsGuidanceUrl } from '../utils/
 
 const UNANSWERED_LABEL = '未入力';
 
-const Row = ({ label, value }: { label: string; value: string | null }) => (
+const Row = ({ label, value }: { label: string; value: string | null | undefined }) => (
   <div className="flex flex-col gap-1 sm:flex-row sm:gap-4">
     <dt className="w-40 shrink-0 text-xs font-semibold text-text-muted">{label}</dt>
-    <dd className={value === null ? 'm-0 text-sm text-text-muted' : 'm-0 text-sm whitespace-pre-wrap'}>
+    <dd className={value == null ? 'm-0 text-sm text-text-muted' : 'm-0 text-sm whitespace-pre-wrap'}>
       {value ?? UNANSWERED_LABEL}
     </dd>
   </div>
 );
 
-const IndustryRow = ({ code }: { code: string | null }) => {
+const IndustryRow = ({ code }: { code: string | null | undefined }) => {
   const industry = code ? findSicsIndustry(code) : undefined;
   return (
     <div className="flex flex-col gap-1 sm:flex-row sm:gap-4">
       <dt className="w-40 shrink-0 text-xs font-semibold text-text-muted">業種（SICS）</dt>
-      {code === null ? (
+      {code == null ? (
         <dd className="m-0 text-sm text-text-muted">{UNANSWERED_LABEL}</dd>
       ) : (
         <dd className="m-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
@@ -62,7 +64,7 @@ export const SsbjReportBasicInfo = ({ report }: { report: SsbjReportRecord }) =>
     />
     <Row
       label="親会社の持分比率"
-      value={report.ownershipPercentage === null ? null : `${report.ownershipPercentage}%`}
+      value={report.ownershipPercentage == null ? null : `${report.ownershipPercentage}%`}
     />
     <Row
       label="測定アプローチ"

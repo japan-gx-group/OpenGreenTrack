@@ -25,6 +25,7 @@ const report = {
   periodStart: '2024-04-01',
   periodEnd: '2025-03-31',
   draftRevision: 1,
+  basicInfoRevision: 0,
   review: FICTIONAL_DRAFT_REVIEW,
 };
 
@@ -51,6 +52,25 @@ const open = async () => {
   await flush();
   await flush();
 };
+
+// SHA-256 の計算（Web Crypto）は非同期に終わるため、タイマーを数回回して反映を待つ。
+const settle = async () => {
+  for (let i = 0; i < 5; i += 1) {
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  }
+};
+const chooseFile = async (input: HTMLInputElement, file: File) => {
+  Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+  await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })); });
+  await settle();
+};
+const dialogElement = () => {
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
+  if (!dialog) throw new Error('ダイアログがありません');
+  return dialog;
+};
+// 架空の根拠文書（fictionalEvidence[0]）に記録した SHA-256 の元になった中身。
+const RECORDED_CONTENT = '取締役会議事録（架空）の PDF の中身';
 
 describe('SsbjEvidencePage', () => {
   it('内部保管先と開示用参照文を別の行に表示する', async () => {
@@ -112,6 +132,64 @@ describe('SsbjEvidencePage', () => {
   });
 });
 
+describe('SsbjEvidencePage（ファイルの SHA-256）', () => {
+  it('ファイルを選ぶと SHA-256 を計算して記録し、ファイル本体は保存に渡さない', async () => {
+    vi.mocked(createSsbjEvidence).mockImplementation(async (_report, input) => ({
+      ...input, id: 'new-evidence', fileRecordedAt: '2025-06-05T00:00:00.000Z',
+    }));
+    await open();
+    click(button('根拠文書を追加'));
+    const dialog = dialogElement();
+    setInputValue(dialog.querySelector<HTMLInputElement>('#evidence-slug')!, 'new_item');
+    setInputValue(dialog.querySelector<HTMLInputElement>('#evidence-title')!, '追加資料');
+    await chooseFile(dialog.querySelector<HTMLInputElement>('#evidence-file')!, new File(['abc'], 'minutes.pdf'));
+    const sha256 = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad';
+    expect(dialog.querySelector('[data-testid="ssbj-evidence-file-record"]')?.textContent).toContain(sha256);
+    setInputValue(dialog.querySelector<HTMLInputElement>('#evidence-storage-version')!, 'v7');
+    click(button('保存する', dialog));
+    await flush();
+
+    expect(createSsbjEvidence).toHaveBeenCalledWith(report, expect.objectContaining({
+      fileName: 'minutes.pdf', fileSha256: sha256, fileStorageVersionId: 'v7', fileStoredBy: null,
+    }));
+    const input = vi.mocked(createSsbjEvidence).mock.calls[0][1];
+    expect(Object.values(input).some(value => value instanceof Blob)).toBe(false);
+    expect(document.body.textContent).toContain(sha256);
+  });
+
+  it('照合で、同じファイルなら「一致」、1 バイトでも違えば「不一致」を出す', async () => {
+    await open();
+    click(button('照合'));
+    const dialog = dialogElement();
+    const input = dialog.querySelector<HTMLInputElement>('#evidence-verify-file')!;
+    const result = () => dialog.querySelector<HTMLElement>('[data-testid="ssbj-evidence-verify-result"]');
+
+    await chooseFile(input, new File([RECORDED_CONTENT], '別名で保存した議事録.pdf'));
+    expect(result()?.dataset.result).toBe('match');
+    expect(result()?.textContent).toContain('一致しました');
+
+    await chooseFile(input, new File([`${RECORDED_CONTENT} `], '取締役会議事録_2024年度（架空）.pdf'));
+    expect(result()?.dataset.result).toBe('mismatch');
+    expect(result()?.textContent).toContain('一致しません');
+    expect(createSsbjEvidence).not.toHaveBeenCalled();
+    expect(updateSsbjEvidence).not.toHaveBeenCalled();
+  });
+
+  it('ファイルの記録を外して保存できる', async () => {
+    vi.mocked(updateSsbjEvidence).mockImplementation(async (id, input) => ({ ...input, id, fileRecordedAt: null }));
+    await open();
+    click(button('編集'));
+    const dialog = dialogElement();
+    expect(dialog.textContent).toContain(fictionalEvidence[0].fileSha256);
+    click(button('ファイルの記録を外す', dialog));
+    click(button('保存する', dialog));
+    await flush();
+    expect(updateSsbjEvidence).toHaveBeenCalledWith(fictionalEvidence[0].id, expect.objectContaining({
+      fileName: null, fileSha256: null, fileStorageVersionId: '3.0',
+    }));
+  });
+});
+
 describe('SsbjEvidencePage（承認ロック）', () => {
   it('承認済みのレポートでは追加・編集・削除を出さず、ロックの案内を出す', async () => {
     vi.mocked(getSsbjReport).mockResolvedValue({ ...report, review: { status: 'approved' as const, approverUserId: 'u', approvedAt: '2025-06-05T00:00:00.000Z', approvedByUserId: 'u',
@@ -121,5 +199,7 @@ describe('SsbjEvidencePage（承認ロック）', () => {
     expect(labels.some(label => label?.includes('根拠文書を追加'))).toBe(false);
     expect(labels.some(label => label?.endsWith('編集') || label?.endsWith('削除'))).toBe(false);
     expect(document.querySelector('[data-testid="ssbj-locked-notice"]')).not.toBeNull();
+    // 照合は何も保存しないため、承認済みでも使える（ファイルの記録がある根拠にだけ出す）。
+    expect(labels.filter(label => label === '照合')).toHaveLength(1);
   });
 });

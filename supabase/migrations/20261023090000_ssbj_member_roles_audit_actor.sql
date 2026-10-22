@@ -1,5 +1,5 @@
 -- SSBJ 開示レポート（R2）: SSBJ のロールの解除の記録で、利用者の削除に伴う解除を、ロールを割り当てた人の操作として残さない
--- （20261010110000_ssbj_member_roles.sql の ssbj_audit_member_role_change を定義し直す。docs/database-design.md 3.20）。
+-- （20261020100000_ssbj_member_roles.sql の ssbj_audit_member_role_change を定義し直す。docs/database-design.md 3.20）。
 --
 -- 退会（POST /api/account/delete）とメンバーの削除（設定の saveMemberChanges）は、利用者のセッションを持たない管理クライアントで
 -- auth.users を消す。auth.users → profiles → ssbj_member_roles の連鎖削除では auth.uid() が空になり、以前の定義は
