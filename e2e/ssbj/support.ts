@@ -95,6 +95,27 @@ export const restoreScope3DirectValue = async (): Promise<Scope3DirectValue | nu
   return value;
 };
 
+// 拠点名を一時的に変える手順（R2 の全体テスト）も同じく、変える前の名前を控えておき、中断されても次の実行で戻す。
+const PENDING_LOCATION_FILE = path.join(tmpdir(), 'opengreentrack-e2e-ssbj-restore-location.json');
+
+type LocationName = { id: string; name: string };
+
+/** 変える前の拠点名を控える。 */
+export const rememberLocationName = async (value: LocationName): Promise<void> => {
+  await writeFile(PENDING_LOCATION_FILE, JSON.stringify(value), 'utf8');
+};
+
+/** 控えてある拠点名があれば戻して控えを消す。戻した値を返す（控えが無ければ null）。 */
+export const restoreLocationName = async (): Promise<LocationName | null> => {
+  if (!existsSync(PENDING_LOCATION_FILE)) return null;
+  const value = JSON.parse(await readFile(PENDING_LOCATION_FILE, 'utf8')) as LocationName;
+  const supabase = await createUserClient(ORG_A_USER);
+  const { error } = await supabase.from('locations').update({ name: value.name }).eq('id', value.id);
+  if (error) throw new Error(`OGT の拠点名を元に戻せませんでした（${value.id}）: ${error.message}`);
+  await unlink(PENDING_LOCATION_FILE);
+  return value;
+};
+
 /** 画面からログインする。 */
 export const signIn = async (page: Page, user: DemoUser): Promise<void> => {
   await page.goto('/login');
