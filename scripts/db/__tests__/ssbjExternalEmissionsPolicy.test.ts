@@ -20,6 +20,7 @@ const migration = (suffix: string): string => {
     .split(/\r?\n/).filter(line => !line.trimStart().startsWith('--')).join(' ').replace(/\s+/g, ' ');
 };
 const external = migration('_ssbj_external_emissions.sql');
+const scope2Overlap = migration('_ssbj_scope2_basis_overlap.sql');
 
 describe('値の制約', () => {
   it('対象ガス・Scope 2 の基準の値は types.ts と同じ', () => {
@@ -70,6 +71,30 @@ describe('二重計上の防止', () => {
   it('外部算定値と OGT の採用値の両方の書き込みで、トランザクションの最後に確かめる', () => {
     expect(external).toContain('create constraint trigger check_ssbj_external_emissions_overlap after insert or update on ssbj_external_emissions deferrable initially deferred');
     expect(external).toContain('create constraint trigger check_ssbj_ogt_adoptions_overlap after insert or update on ssbj_ogt_adoptions deferrable initially deferred');
+  });
+});
+
+describe('Scope 2 の二重計上の防止（R2-23）', () => {
+  it('Scope 2 は、CO2 を含み、同じ基準の OGT の合計が算定済みのとき OGT と重なる', () => {
+    expect(scope2Overlap).toContain("when p_scope = 2 and 'CO2' = any (p_gases) and exists (");
+    expect(scope2Overlap).toContain(
+      "and v.value -> 'method' -> 'basisTotals' -> (case p_basis when 'location' then 'locationBased' when 'market' then 'marketBased' end) ->> 'state' = 'answered'",
+    );
+  });
+
+  it('Scope 1・Scope 3 と、外部算定値どうしの判定は 20261023110000 と同じ', () => {
+    expect(scope2Overlap).toContain("when p_scope <> 2 and 'CO2' = any (p_gases) and exists (");
+    expect(scope2Overlap).toContain("and (v.value ->> 'scope')::smallint = p_scope and (v.value ->> 'scope3CategoryId')::smallint is not distinct from p_category and v.value -> 'value' ->> 'state' = 'answered'");
+    expect(scope2Overlap).toContain('and e.scope = p_scope and e."scope3CategoryId" is not distinct from p_category and e."scope2Basis" is not distinct from p_basis and e.gases && p_gases');
+    expect(scope2Overlap).toContain("using errcode = 'P2071'");
+    expect(scope2Overlap).toContain("using errcode = 'P2072'");
+  });
+
+  it('置き換えた判定の関数は service_role 限定のまま', () => {
+    const fn = 'ssbj_external_emission_overlap(uuid, uuid, smallint, smallint, text, varchar[])';
+    expect(scope2Overlap).toContain(`revoke execute on function ${fn} from public, anon, authenticated;`);
+    expect(scope2Overlap).toContain(`grant execute on function ${fn} to service_role;`);
+    expect(scope2Overlap).toContain("security definer set search_path = ''");
   });
 });
 

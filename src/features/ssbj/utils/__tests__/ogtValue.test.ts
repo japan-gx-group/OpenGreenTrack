@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fictionalOgtCandidates } from '../../__fixtures__/fictionalReport';
-import type { OgtCandidateValue } from '../../types';
+import type { OgtCandidateValue, OgtScope2BasisTotals } from '../../types';
 import {
   checkOgtCandidateValue,
   deriveDirectInputDataQuality,
@@ -87,6 +87,39 @@ describe('checkOgtCandidateValue', () => {
       method: { kind: 'calculated' },
     };
     expect(checkOgtCandidateValue(invalid)).toContain('Scope 3 カテゴリは 1〜15 です: 16');
+  });
+});
+
+describe('checkOgtCandidateValue（Scope 2 の基準別）', () => {
+  const scope2 = fictionalOgtCandidates.find(candidate => candidate.scope === 2)!;
+  const withTotals = (basisTotals: OgtScope2BasisTotals, overrides: Partial<OgtCandidateValue> = {}): OgtCandidateValue =>
+    scope2.scope === 2 ? { ...scope2, ...overrides, method: { ...scope2.method, basisTotals } } as OgtCandidateValue : scope2;
+  const answered = (value: string) => ({ state: 'answered' as const, value });
+  const unanswered = { state: 'unanswered' as const };
+
+  it('十進表記でない基準別の合計を検出する', () => {
+    expect(checkOgtCandidateValue(withTotals({
+      locationBased: answered('1e3'), marketBased: answered('1.000'), marketContract: answered('0'),
+    }))).toContain('基準別の合計が十進表記の文字列ではありません');
+  });
+
+  it('未算定の Scope 2 に基準別の値があれば検出する（0 を入れない）', () => {
+    expect(checkOgtCandidateValue(withTotals(
+      { locationBased: answered('0'), marketBased: unanswered, marketContract: unanswered },
+      { dataQuality: 'not_calculated', value: unanswered },
+    ))).toContain('未算定の Scope 2 では、基準別の合計も未算定にしてください');
+  });
+
+  it('マーケット基準と、そのうち契約に基づく分の片方だけがあれば検出する', () => {
+    expect(checkOgtCandidateValue(withTotals({
+      locationBased: answered('1.000'), marketBased: answered('1.000'), marketContract: unanswered,
+    }))).toContain('マーケット基準の合計と、そのうち契約に基づく分は、両方そろえて出してください');
+  });
+
+  it('未算定・非該当などの状態は算定済みか未算定に限る', () => {
+    expect(checkOgtCandidateValue(withTotals({
+      locationBased: { state: 'not_applicable' }, marketBased: unanswered, marketContract: unanswered,
+    }))).toContain('基準別の合計は算定済みか未算定のどちらかにしてください');
   });
 });
 

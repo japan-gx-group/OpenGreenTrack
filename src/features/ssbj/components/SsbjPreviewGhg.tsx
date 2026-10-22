@@ -5,7 +5,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { formatDateTime } from '@/lib/datetime';
 import type { OgtAdoptedValue, SsbjGhgAdoption } from '../types';
 import { formatDecimalForDisplay } from '../utils/decimal';
-import { OGT_DATA_QUALITY_LABELS, ogtMethodLabel, ogtValueLabel } from '../utils/ogtValue';
+import {
+  formatScope2BasisTotal, OGT_DATA_QUALITY_LABELS, ogtMethodLabel, ogtValueLabel, scope2BasisTotalsOf,
+} from '../utils/ogtValue';
 
 const ValueRow = ({ value }: { value: OgtAdoptedValue }) => (
   <TableRow>
@@ -51,6 +53,10 @@ export const SsbjPreviewGhg = ({ ghg }: { ghg: SsbjGhgAdoption | null | undefine
   const categories = ghg.values.filter(value => value.scope3CategoryId !== null);
   const scope2 = ghg.values.find(value => value.scope === 2);
   const breakdown = scope2?.scope === 2 ? scope2.method.factorTypeBreakdown : null;
+  const basisTotals = scope2BasisTotalsOf(ghg.values);
+  const breakdownText = breakdown
+    ? ` 係数区分の内訳：基礎 ${formatDecimalForDisplay(breakdown.basic)}／調整後 ${formatDecimalForDisplay(breakdown.adjusted)}／区分なし ${formatDecimalForDisplay(breakdown.unclassified)} t-CO2e`
+    : '';
 
   return (
     <div className="flex flex-col gap-4">
@@ -58,11 +64,44 @@ export const SsbjPreviewGhg = ({ ghg }: { ghg: SsbjGhgAdoption | null | undefine
         出典: OGT 算定値。OGT から採用した値（採用日時 {formatDateTime(ghg.adoptedAt)}）。集計範囲は組織全体、単位は t-CO2e。
       </p>
       <ValueTable values={totals} />
-      <p className="m-0 text-sm text-text-muted">
-        OGT の Scope 2 算定値は、ロケーション基準・マーケット基準の区別がありません（基準不明）。基準ごとの Scope 2 は、「外部で算定した排出量」に示したものだけです。
-        {breakdown &&
-          ` 係数区分の内訳：基礎 ${formatDecimalForDisplay(breakdown.basic)}／調整後 ${formatDecimalForDisplay(breakdown.adjusted)}／区分なし ${formatDecimalForDisplay(breakdown.unclassified)} t-CO2e`}
-      </p>
+      {basisTotals ? (
+        <>
+          <h4 className="m-0 text-sm font-bold">Scope 2 の基準別</h4>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>基準</TableHead>
+                <TableHead className="text-right">排出量</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow>
+                <TableCell>ロケーション基準</TableCell>
+                <TableCell className="text-right tabular-nums">{formatScope2BasisTotal(basisTotals.locationBased)}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell>マーケット基準</TableCell>
+                <TableCell className="text-right tabular-nums">{formatScope2BasisTotal(basisTotals.marketBased)}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell className="whitespace-normal">うち契約したメニューの係数による分</TableCell>
+                <TableCell className="text-right tabular-nums">{formatScope2BasisTotal(basisTotals.marketContract)}</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+          <p className="m-0 text-sm text-text-muted">
+            上の表の Scope 2 は、温対法の係数区分（基礎 / 調整後）による基準の区別のない値です。
+            マーケット基準のうち契約したメニューの係数によらない分は、代替値で補っています。
+            「外部で算定した排出量」の Scope 2 は、OGT の値とは別の値です（足し合わせていません）。
+            {breakdownText}
+          </p>
+        </>
+      ) : (
+        <p className="m-0 text-sm text-text-muted">
+          OGT の Scope 2 算定値は、ロケーション基準・マーケット基準の区別がありません（基準不明）。基準ごとの Scope 2 は、「外部で算定した排出量」に示したものだけです。
+          {breakdownText}
+        </p>
+      )}
       <h4 className="m-0 text-sm font-bold">Scope 3 カテゴリ別</h4>
       <ValueTable values={categories} />
       {ghg.supplierReferences.length > 0 && (

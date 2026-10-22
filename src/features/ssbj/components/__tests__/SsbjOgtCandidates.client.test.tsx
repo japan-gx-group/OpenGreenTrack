@@ -69,15 +69,36 @@ beforeEach(() => {
 afterEach(() => { rendered?.unmount(); rendered = null; vi.clearAllMocks(); });
 
 describe('SsbjOgtCandidates', () => {
-  it('レポートの年度で取得し、基準不明・回答済み 0・未算定・参考値を表示する', async () => {
+  it('レポートの年度で取得し、Scope 2 の基準別・回答済み 0・未算定・参考値を表示する', async () => {
     rendered = render(<SsbjOgtCandidates reportId={report.id} />);
     await settle();
     expect(getOgtCandidates).toHaveBeenCalledWith(expect.objectContaining({ fiscalYearId: report.fiscalYearId }));
     const content = rendered.container.textContent ?? '';
-    expect(content).toContain('ロケーション基準・マーケット基準は不明');
+    // 既定ではロケーション基準の値を Scope 2 の行に出し、両方の基準の値を並べる。
+    expect(content).toContain('Scope 2（ロケーション基準）1,150.000 t-CO2e');
+    expect(content).toContain('ロケーション基準 1,150.000 t-CO2e／マーケット基準 1,172.400 t-CO2e');
+    expect(content).not.toContain('ロケーション基準・マーケット基準は不明');
     expect(content).toContain('0 t-CO2e');
     expect(content).toContain('未算定');
     expect(content).toContain('Scope 3 の候補値・合計には加算していません');
+  });
+
+  it('基準別の値が無い候補値では、基準の切り替えを出さず「不明」と表示する', async () => {
+    vi.mocked(getOgtCandidates).mockResolvedValue({
+      candidates: fictionalOgtCandidates.map(candidate => {
+        if (candidate.scope !== 2) return candidate;
+        const method = { ...candidate.method };
+        delete method.basisTotals;
+        return { ...candidate, method };
+      }),
+      suppliers: fictionalSupplierReferences,
+    });
+    rendered = render(<SsbjOgtCandidates reportId={report.id} />);
+    await settle();
+    const content = rendered.container.textContent ?? '';
+    expect(content).toContain('ロケーション基準・マーケット基準は不明');
+    expect(content).toContain('Scope 21,165.750 t-CO2e');
+    expect(rendered.container.querySelector('#scope2-basis-view')).toBeNull();
   });
 
   it('存在しない・他組織のレポートでは候補値を取得しない', async () => {

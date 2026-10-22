@@ -11,7 +11,9 @@ const report: SsbjReportRecord = {
 const input = () => ({
   report,
   numeric: {
-    aggregate: { scope1: '12.000', scope2: '4.000', scope3: '7.000', updatedAt: '2025-04-01T00:00:00Z' },
+    aggregate: { scope1: '12.000', scope2: '4.000', scope3: '7.000', updatedAt: '2025-04-01T00:00:00Z',
+      scope2LocationBased: '4.200' as string | null, scope2MarketBased: '3.900' as string | null,
+      scope2MarketContract: '2.500' as string | null },
     scope2Breakdown: { basic: '1.000', adjusted: '3.000', unclassified: '0' },
     // 値 0 の直接入力は既存 RPC から返らない。カテゴリ 6 の 7 は積上げの採用値。
     categories: [{ categoryId: 6, emissions: '7.000' }],
@@ -57,6 +59,49 @@ describe('buildOgtCandidates', () => {
     expect(candidates[0].value).toEqual({ state: 'unanswered' });
     expect(candidates[1].value).toEqual({ state: 'unanswered' });
     expect(candidates[2].value).toEqual({ state: 'unanswered' });
+  });
+});
+
+describe('buildOgtCandidates（Scope 2 の基準別）', () => {
+  const withBasis = (values: { scope2LocationBased: string | null; scope2MarketBased: string | null; scope2MarketContract: string | null }) => {
+    const base = input();
+    return { ...base, numeric: { ...base.numeric, aggregate: { ...base.numeric.aggregate, ...values } } };
+  };
+
+  it('基準別の合計を十進文字列のまま添え、値そのものは基準の区別のない合計のままにする', () => {
+    const { candidates } = buildOgtCandidates(input());
+    expect(candidates[1]).toMatchObject({ scope: 2, value: { state: 'answered', value: '4.000' },
+      method: { scope2Basis: 'unknown', basisTotals: {
+        locationBased: { state: 'answered', value: '4.200' },
+        marketBased: { state: 'answered', value: '3.900' },
+        marketContract: { state: 'answered', value: '2.500' },
+      } } });
+  });
+
+  it('基準別の明細が揃っていない（null）基準は 0 にせず未算定にする', () => {
+    const { candidates } = buildOgtCandidates(withBasis({
+      scope2LocationBased: '4.200', scope2MarketBased: null, scope2MarketContract: null,
+    }));
+    expect(candidates[1].method).toMatchObject({ basisTotals: {
+      locationBased: { state: 'answered', value: '4.200' },
+      marketBased: { state: 'unanswered' },
+      marketContract: { state: 'unanswered' },
+    } });
+  });
+
+  it('Scope 2 が未算定なら、基準別に 0 が入っていても未算定にする', () => {
+    const base = withBasis({ scope2LocationBased: '0', scope2MarketBased: '0', scope2MarketContract: '0' });
+    const { candidates } = buildOgtCandidates({ ...base, activityCoverage: [] });
+    expect(candidates[1].value).toEqual({ state: 'unanswered' });
+    expect(candidates[1].method).toMatchObject({ basisTotals: {
+      locationBased: { state: 'unanswered' }, marketBased: { state: 'unanswered' }, marketContract: { state: 'unanswered' },
+    } });
+  });
+
+  it('基準別の合計が十進表記でなければ候補値を作らない', () => {
+    expect(() => buildOgtCandidates(withBasis({
+      scope2LocationBased: '1e3', scope2MarketBased: '3.900', scope2MarketContract: '2.500',
+    }))).toThrow('OGT の排出量を正確に取得できませんでした');
   });
 });
 

@@ -295,7 +295,8 @@ export const fictionalOgtCandidates: OgtCandidateValue[] = [
     coverage: { calculatedCount: 24, uncalculatedCount: 0 },
     source: aggregateSource,
   },
-  // Scope 2: 基準不明（OGT にマーケット／ロケーション基準の区別が無い）・一部未算定・基礎/調整後が混在
+  // Scope 2: 値は基準の区別なし（温対法の係数区分）・一部未算定・基礎/調整後が混在。
+  // 基準別はロケーション基準・マーケット基準とも算定済みで、マーケット基準には標準係数で補った分がある
   {
     scope: 2,
     scope3CategoryId: null,
@@ -303,6 +304,11 @@ export const fictionalOgtCandidates: OgtCandidateValue[] = [
       kind: 'activity_based',
       scope2Basis: 'unknown',
       factorTypeBreakdown: { basic: '120.500', adjusted: '1045.250', unclassified: '0' },
+      basisTotals: {
+        locationBased: { state: 'answered', value: '1150.000' },
+        marketBased: { state: 'answered', value: '1172.400' },
+        marketContract: { state: 'answered', value: '1045.250' },
+      },
     },
     value: { state: 'answered', value: '1165.750' },
     unit: 't-CO2e',

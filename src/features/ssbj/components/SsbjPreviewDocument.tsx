@@ -5,6 +5,7 @@
 import { formatDateTime } from '@/lib/datetime';
 import type { SsbjPreviewSource } from '../services/previewService';
 import { SSBJ_SECTION_LABELS } from '../types';
+import { scope2BasisTotalsOf } from '../utils/ogtValue';
 import { unsupportedPreviewSections } from '../utils/preview';
 import { SsbjPreviewEvidence } from './SsbjPreviewEvidence';
 import { SsbjPreviewExternalEmissions } from './SsbjPreviewExternalEmissions';
@@ -17,9 +18,17 @@ import { SsbjReportBasicInfo } from './SsbjReportBasicInfo';
 const NOTES = [
   'このプレビューは社内確認用の試行版です。SSBJ 基準への準拠や、対外提出の完了を保証しません（準拠しているとは記述しません）。',
   'OGT の公式係数は実質 CO2 のみを対象としており、7 種類の温室効果ガスを CO2 相当に集約した値ではありません。',
-  'OGT の Scope 2 算定値は、ロケーション基準・マーケット基準を区別していません（基準不明）。基準ごとの Scope 2 は、「外部で算定した排出量」に示したものだけです。',
+];
+const NOTES_AFTER_SCOPE2 = [
   '「算定済み」は登録済みのデータがすべて算定済みという意味で、データが網羅されていることは意味しません。',
 ];
+
+// Scope 2 の注記は、その版が基準別の値を持つかどうかで変える（基準別の値を取り込む前の保存版は区別なしのまま）。
+// 「外部で算定した排出量」の Scope 2 は基準ごとの値なので、どちらの注記でも、文書全体に基準別の値が無いとは書かない。
+const SCOPE2_NOTE_WITH_BASIS =
+  'OGT の Scope 2 算定値は、ロケーション基準・マーケット基準の値と、温対法の係数区分による基準の区別のない値を併記しています。「未算定」の基準の値は含みません。「外部で算定した排出量」の Scope 2 は、OGT の値とは別に示しています（足し合わせていません）。';
+const SCOPE2_NOTE_WITHOUT_BASIS =
+  'OGT の Scope 2 算定値は、ロケーション基準・マーケット基準を区別していません（基準不明）。基準ごとの Scope 2 は、「外部で算定した排出量」に示したものだけです。';
 
 const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
   <section className="report-print-section flex flex-col gap-3">
@@ -107,6 +116,8 @@ export const SsbjPreviewDocument = ({
       <Section title="注記">
         <ul className="m-0 flex list-disc flex-col gap-1 pl-5 text-sm">
           {NOTES.map(note => <li key={note}>{note}</li>)}
+          <li>{sections.ghg && scope2BasisTotalsOf(sections.ghg.values) ? SCOPE2_NOTE_WITH_BASIS : SCOPE2_NOTE_WITHOUT_BASIS}</li>
+          {NOTES_AFTER_SCOPE2.map(note => <li key={note}>{note}</li>)}
           {sections.ghg && sections.ghg.supplierReferences.length > 0 && (
             <li>サプライヤー別排出量は参考値であり、Scope 3 の合計には含めていません。</li>
           )}

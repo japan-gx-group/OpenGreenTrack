@@ -114,19 +114,56 @@ describe('ssbjVersionToCsvRows', () => {
 });
 
 describe('ssbjVersionToCsvRows（GHG排出量）', () => {
-  it('採用値を区分ごとの行にし、未算定を 0 にせず、Scope 2 の基準不明と参考値を注記する', () => {
+  it('採用値を区分ごとの行にし、未算定を 0 にせず、Scope 2 の基準別の行と参考値を出す', () => {
     const rows = ssbjVersionToCsvRows(fictionalVersion, GENERATED_AT);
     const ghg = rows.filter(row => row[0] === 'GHG排出量');
     expect(ghg[0]).toEqual(['GHG排出量', fictionalVersion.reportId, '採用日時', '入力済み', '2025-06-03T02:00:00+00:00', '', '', '']);
     expect(ghg.find(row => row[1] === 'scope1')?.slice(2, 6)).toEqual(['Scope 1', '算定済み', '812.345', 't-CO2e']);
     const scope2 = ghg.find(row => row[1] === 'scope2');
-    expect(scope2?.[7]).toContain('基準不明');
+    expect(scope2?.[7]).toContain('基準の区別のない値');
     expect(scope2?.[7]).toContain('基礎 120.500／調整後 1045.250／区分なし 0');
+    expect(ghg.find(row => row[1] === 'scope2.location_based')?.slice(2, 6))
+      .toEqual(['Scope 2（ロケーション基準）', '一部未算定', '1150.000', 't-CO2e']);
+    const market = ghg.find(row => row[1] === 'scope2.market_based');
+    expect(market?.slice(2, 6)).toEqual(['Scope 2（マーケット基準）', '一部未算定', '1172.400', 't-CO2e']);
+    expect(market?.[7]).toContain('契約したメニューの係数による分 1045.250');
     // 直接入力で確認した結果の 0（回答済み）は 0 のまま、未算定は空欄＋「未算定」。
     expect(ghg.find(row => row[1] === 'scope3.category1')?.slice(3, 5)).toEqual(['算定済み', '0']);
     expect(ghg.some(row => row[3] === '未算定' && row[4] === '')).toBe(true);
     const reference = rows.find(row => row[0] === 'GHG排出量（参考値）');
     expect(reference?.[7]).toContain('Scope 3 の合計には含めない');
+  });
+
+  it('基準別が未算定の基準は、空欄＋「未算定」の行にする（0 にしない）', () => {
+    const ghg = fictionalVersion.snapshot.sections.ghg!;
+    const values = ghg.values.map(value => value.scope === 2
+      ? { ...value, method: { ...value.method, basisTotals: {
+        locationBased: { state: 'answered' as const, value: '1150.000' },
+        marketBased: { state: 'unanswered' as const }, marketContract: { state: 'unanswered' as const },
+      } } }
+      : value);
+    const snapshot: SsbjReportSnapshotV1 = {
+      ...fictionalVersion.snapshot, sections: { ...fictionalVersion.snapshot.sections, ghg: { ...ghg, values } },
+    };
+    const rows = ssbjVersionToCsvRows({ ...fictionalVersion, snapshot }, GENERATED_AT);
+    expect(rows.find(row => row[1] === 'scope2.market_based')?.slice(3, 5)).toEqual(['未算定', '']);
+    expect(rows.find(row => row[1] === 'scope2.location_based')?.slice(3, 5)).toEqual(['一部未算定', '1150.000']);
+  });
+
+  it('基準別の値を取り込む前の保存版は、基準別の行を出さず「基準不明」と注記する', () => {
+    const ghg = fictionalVersion.snapshot.sections.ghg!;
+    const values = ghg.values.map(value => {
+      if (value.scope !== 2) return value;
+      const method = { ...value.method };
+      delete method.basisTotals;
+      return { ...value, method };
+    });
+    const snapshot: SsbjReportSnapshotV1 = {
+      ...fictionalVersion.snapshot, sections: { ...fictionalVersion.snapshot.sections, ghg: { ...ghg, values } },
+    };
+    const rows = ssbjVersionToCsvRows({ ...fictionalVersion, snapshot }, GENERATED_AT);
+    expect(rows.some(row => row[1]?.startsWith('scope2.'))).toBe(false);
+    expect(rows.find(row => row[1] === 'scope2')?.[7]).toContain('基準不明');
   });
 
   it('採用していない版は「未採用」の 1 行にする（欠落と区別する）', () => {
@@ -231,11 +268,11 @@ describe('ssbjVersionToCsvRows（R1 の全体確認）', () => {
     expect(ghgRows.find(row => row[1] === 'scope3.category4')?.slice(3, 5)).toEqual(['未算定', '']);
   });
 
-  it('採用値は 1 区分 1 行で、サプライヤー別の値は参考値として別の章に出す（二重加算しない）', () => {
+  it('採用値は 1 区分 1 行（Scope 2 は基準別の 2 行を加える）で、サプライヤー別の値は参考値として別の章に出す（二重加算しない）', () => {
     const ghg = fictionalVersion.snapshot.sections.ghg!;
     const adopted = rows().filter(row => row[0] === 'GHG排出量' && row[2] !== '採用日時');
     const references = rows().filter(row => row[0] === 'GHG排出量（参考値）');
-    expect(adopted).toHaveLength(ghg.values.length);
+    expect(adopted).toHaveLength(ghg.values.length + 2);
     expect(new Set(adopted.map(row => row[1])).size).toBe(adopted.length);
     expect(references).toHaveLength(ghg.supplierReferences.length);
     expect(references.every(row => row[7].includes('Scope 3 の合計には含めない'))).toBe(true);
