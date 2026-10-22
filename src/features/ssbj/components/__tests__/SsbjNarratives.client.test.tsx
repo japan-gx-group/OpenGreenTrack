@@ -23,6 +23,7 @@ vi.mock('../../services/ogtAdoptionService', async importOriginal => ({
 import { listSsbjNarratives, saveSsbjNarrative } from '../../services/narrativeService';
 import { getSsbjWorkingPreview } from '../../services/previewService';
 import { getSsbjReport } from '../../services/reportService';
+import { SSBJ_NARRATIVE_CHOICE_TEMPLATE_VERSION } from '../../utils/narrativeTemplateChoice';
 import { SSBJ_NARRATIVE_ITEMS } from '../../utils/requirementMaster';
 import { SsbjNarratives } from '../SsbjNarratives.client';
 
@@ -254,7 +255,7 @@ describe('SsbjNarratives（穴埋めテンプレート・2 画面エディタ・
     const bodyOf = (card: HTMLElement) => card.querySelector<HTMLTextAreaElement>('textarea[aria-label="開示する文章"]')!;
     const riskProcessDraft =
       '年 1 回、各部門へのヒアリングでリスクを識別している。識別したリスクは、発生可能性と影響の大きさで評価し、優先順位を付けている。' +
-      'シナリオ分析は用いていない。前期からプロセスを変更していない。';
+      'リスクの識別・評価に、シナリオ分析は用いていない。前期からプロセスを変更していない。';
 
     beforeEach(() => {
       vi.mocked(saveSsbjNarrative).mockImplementation(
@@ -282,7 +283,7 @@ describe('SsbjNarratives（穴埋めテンプレート・2 画面エディタ・
         'risk_management.risk_process',
         { disclosure: { state: 'answered', value: `${riskProcessDraft}リスク管理委員会が結果を確認している。` }, internalNote: null },
         {
-          version: 'r2-trial-2',
+          version: SSBJ_NARRATIVE_CHOICE_TEMPLATE_VERSION,
           choices: { frequency: 'yearly', method: 'hearing', assessment: 'likelihood_and_impact', scenario: 'not_used', change: 'unchanged' },
           texts: {},
         },
@@ -360,7 +361,7 @@ describe('SsbjNarratives（穴埋めテンプレート・2 画面エディタ・
         ...fictionalNarratives.filter(narrative => narrative.itemId !== 'governance.oversight_body'),
         {
           ...fictionalNarratives.find(narrative => narrative.itemId === 'governance.oversight_body')!,
-          templateInput: { version: 'r2-trial-2', choices: { body: 'other' }, texts: { body: '経営会議' } },
+          templateInput: { version: SSBJ_NARRATIVE_CHOICE_TEMPLATE_VERSION, choices: { body: 'other' }, texts: { body: '経営会議' } },
         },
       ]);
       rendered = render(<SsbjNarratives reportId={report.id} />);

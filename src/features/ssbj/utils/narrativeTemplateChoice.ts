@@ -11,7 +11,7 @@
 import type { SsbjItemId, SsbjNarrativeTemplateInput } from '../types';
 
 /** テンプレート定義の版。選択肢の ID・文例を変えたら上げる（保存済みの古い選択を、新しい選択肢と取り違えないため）。 */
-export const SSBJ_NARRATIVE_CHOICE_TEMPLATE_VERSION = 'r2-trial-2';
+export const SSBJ_NARRATIVE_CHOICE_TEMPLATE_VERSION = 'r2-trial-3';
 
 /** 補足入力 1 欄の最大文字数。 */
 export const SSBJ_TEMPLATE_TEXT_MAX_LENGTH = 500;
@@ -36,7 +36,7 @@ export type SsbjNarrativeChoiceTemplate = {
 const FREQUENCY_OPTIONS: SsbjTemplateChoiceOption[] = [
   { id: 'yearly', label: '年 1 回', text: '年 1 回' },
   { id: 'half_yearly', label: '年 2 回', text: '年 2 回' },
-  { id: 'quarterly', label: '四半期ごと', text: '四半期ごと' },
+  { id: 'quarterly', label: '四半期ごと', text: '四半期ごとに' },
   { id: 'monthly', label: '毎月', text: '毎月' },
 ];
 
@@ -127,11 +127,14 @@ export const SSBJ_NARRATIVE_CHOICE_TEMPLATES: readonly SsbjNarrativeChoiceTempla
             text: '影響は【影響が集中している事業所・地域・工程】に集中している。',
           },
           { id: 'spread', label: '集中していない', text: '影響は特定の事業所・地域・工程に集中していない。' },
-          { id: 'unidentified', label: 'まだ特定できていない', text: '影響が集中している事業所・地域・工程は、まだ特定できていない。' },
+          {
+            id: 'unidentified', label: 'まだ特定できていない',
+            text: '影響が特定の事業所・地域・工程に集中しているかは、まだ特定できていない。',
+          },
         ],
       },
     ],
-    pattern: '{driver}により、{business}に{impact}が{timing}。{concentration}',
+    pattern: '{driver}により、{business}において{impact}が{timing}。{concentration}',
   },
   {
     itemId: 'risk_management.risk_process',
@@ -165,8 +168,8 @@ export const SSBJ_NARRATIVE_CHOICE_TEMPLATES: readonly SsbjNarrativeChoiceTempla
       {
         kind: 'choice', id: 'scenario', label: 'シナリオ分析', allowOther: false,
         options: [
-          { id: 'used', label: '用いている', text: '用いている' },
-          { id: 'not_used', label: '用いていない', text: '用いていない' },
+          { id: 'used', label: '用いている', text: 'リスクの識別・評価に、シナリオ分析を用いている。' },
+          { id: 'not_used', label: '用いていない', text: 'リスクの識別・評価に、シナリオ分析は用いていない。' },
         ],
       },
       {
@@ -178,11 +181,19 @@ export const SSBJ_NARRATIVE_CHOICE_TEMPLATES: readonly SsbjNarrativeChoiceTempla
         ],
       },
     ],
-    pattern: '{frequency}、{method}でリスクを識別している。{assessment}シナリオ分析は{scenario}。{change}',
+    pattern: '{frequency}、{method}でリスクを識別している。{assessment}{scenario}{change}',
   },
   {
     itemId: 'metrics_targets.ghg_measurement_method',
     slots: [
+      // どのスコープをその方法で測定しているかも選ぶ（SHK 制度にスコープ 3 の方法は無いので、すべての排出を 1 つの方法で測ったと言い切らない）。
+      {
+        kind: 'choice', id: 'scope', label: '対象のスコープ', allowOther: true,
+        options: [
+          { id: 'scope_1_2', label: 'スコープ 1・2', text: 'スコープ 1・2 の温室効果ガス排出' },
+          { id: 'scope_1_2_3', label: 'スコープ 1・2・3', text: 'スコープ 1・2・3 の温室効果ガス排出' },
+        ],
+      },
       {
         kind: 'choice', id: 'method', label: '測定方法', allowOther: true,
         options: [
@@ -194,12 +205,16 @@ export const SSBJ_NARRATIVE_CHOICE_TEMPLATES: readonly SsbjNarrativeChoiceTempla
         kind: 'choice', id: 'reason', label: 'この方法を選んだ理由', allowOther: true,
         options: [
           { id: 'parent', label: '親会社の指定', text: '親会社の指定に従ったため' },
-          { id: 'legal_reporting', label: '法令に基づく報告と揃えるため', text: '法令に基づく報告と測定方法を揃えるため' },
+          // どの方法を選んでも使える言い方にし、揃える先の報告は【 】で書かせる（法令の報告に限ると GHG プロトコルと食い違うため）。
+          {
+            id: 'existing_reporting', label: '既に行っている報告と揃えるため',
+            text: '既に行っている【報告の名称】と測定方法を揃えるため',
+          },
           { id: 'customer', label: '取引先の要請', text: '取引先の要請に応えるため' },
         ],
       },
     ],
-    pattern: '温室効果ガス排出は{method}で測定している。この方法を選んだ理由は、{reason}である。',
+    pattern: '{scope}は、{method}で測定している。この方法を選んだ理由は、{reason}である。',
   },
 ];
 

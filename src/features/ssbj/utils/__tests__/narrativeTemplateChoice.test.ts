@@ -28,6 +28,7 @@ const oversightBody = findSsbjNarrativeChoiceTemplate('governance.oversight_body
 const oversightInformation = findSsbjNarrativeChoiceTemplate('governance.oversight_information')!;
 const businessImpact = findSsbjNarrativeChoiceTemplate('strategy.business_model_impact')!;
 const riskProcess = findSsbjNarrativeChoiceTemplate('risk_management.risk_process')!;
+const measurementMethod = findSsbjNarrativeChoiceTemplate('metrics_targets.ghg_measurement_method')!;
 
 describe('テンプレートの定義', () => {
   it('要求項目マスターにある要求の項目だけに付け、四本柱のすべての章に代表の項目がある', () => {
@@ -48,7 +49,7 @@ describe('テンプレートの定義', () => {
 
   it('文型の固定の部分に、会社によって違う事実を書かない（レビューで指摘された言い切り）', () => {
     const patterns = SSBJ_NARRATIVE_CHOICE_TEMPLATES.map(template => template.pattern).join('\n');
-    for (const phrase of ['集中している', '評価・優先順位付けしている', '前期からプロセスを', 'サステナビリティ関連', '報告している']) {
+    for (const phrase of ['集中している', '評価・優先順位付けしている', '前期からプロセスを', 'サステナビリティ関連', '報告している', '温室効果ガス排出は']) {
       expect(patterns).not.toContain(phrase);
     }
   });
@@ -63,6 +64,7 @@ describe('テンプレートの定義', () => {
     expect(optionIds(riskProcess, 'change')).toContain('first_year');
     expect(optionIds(oversightInformation, 'reporting')).toContain('not_reported');
     expect(optionIds(oversightBody, 'scope')).toContain('climate');
+    expect(optionIds(measurementMethod, 'scope')).toEqual(['scope_1_2', 'scope_1_2_3']);
   });
 });
 
@@ -109,6 +111,42 @@ describe('buildSsbjNarrativeDraft', () => {
       .toContain('【監督する機関・責任者】');
   });
 
+  it('測定方法の文は、選んだスコープについてだけ書き、すべての排出を 1 つの方法で測ったと言い切らない', () => {
+    expect(buildSsbjNarrativeDraft(measurementMethod, input({ scope: 'scope_1_2', method: 'shk', reason: 'parent' }))).toBe(
+      'スコープ 1・2 の温室効果ガス排出は、温対法の算定・報告・公表制度（SHK 制度）の方法で測定している。' +
+      'この方法を選んだ理由は、親会社の指定に従ったためである。',
+    );
+    expect(buildSsbjNarrativeDraft(measurementMethod, input({ method: 'ghg_protocol' })))
+      .toBe('【対象のスコープ】は、GHG プロトコルの方法で測定している。この方法を選んだ理由は、【この方法を選んだ理由】である。');
+  });
+
+  it('揃える先の報告を理由にするときは、どの測定方法とも食い違わない言い方にし、報告の名称は【 】で残す', () => {
+    const draft = buildSsbjNarrativeDraft(
+      measurementMethod, input({ scope: 'scope_1_2_3', method: 'ghg_protocol', reason: 'existing_reporting' }),
+    );
+    expect(draft).toContain('既に行っている【報告の名称】と測定方法を揃えるため');
+    expect(draft).not.toContain('法令');
+  });
+
+  it('影響の集中が未特定のときは、集中があることを前提にしない', () => {
+    expect(buildSsbjNarrativeDraft(businessImpact, input(
+      { impact: 'cost_increase', timing: 'expected', concentration: 'unidentified' },
+      { driver: '電力価格の上昇', business: '主力の金属加工品' },
+    ))).toBe(
+      '電力価格の上昇により、主力の金属加工品において製造原価の上昇が生じることが見込まれる。' +
+      '影響が特定の事業所・地域・工程に集中しているかは、まだ特定できていない。',
+    );
+  });
+
+  it('シナリオ分析は何に用いるかを書き、頻度は「四半期ごとに」でつなぐ', () => {
+    expect(buildSsbjNarrativeDraft(riskProcess, input({
+      frequency: 'quarterly', method: 'meeting', assessment: 'impact_only', scenario: 'used', change: 'unchanged',
+    }))).toBe(
+      '四半期ごとに、部門横断の会議でリスクを識別している。識別したリスクは、影響の大きさで評価し、優先順位を付けている。' +
+      'リスクの識別・評価に、シナリオ分析を用いている。前期からプロセスを変更していない。',
+    );
+  });
+
   it('何も選んでいなければ、すべての欄が【 】になる', () => {
     const draft = buildSsbjNarrativeDraft(riskProcess, emptySsbjNarrativeTemplateInput());
     expect(ssbjTemplatePlaceholders(draft)).toHaveLength(riskProcess.slots.length);
@@ -152,6 +190,9 @@ describe('validateSsbjNarrativeTemplateInput', () => {
   it('以前の版の選択は、今の選択肢として検証せずに残す', () => {
     expect(validateSsbjNarrativeTemplateInput('governance.oversight_body', { version: 'r2-trial-1', choices: { body: 'old' }, texts: {} }))
       .toEqual([]);
+    expect(validateSsbjNarrativeTemplateInput(
+      'metrics_targets.ghg_measurement_method', { version: 'r2-trial-2', choices: { reason: 'legal_reporting' }, texts: {} },
+    )).toEqual([]);
   });
 });
 
