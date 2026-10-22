@@ -842,7 +842,7 @@ OGT で算定できない排出量（CO2 以外のガス、対応していない
 
 | 対象 | 内容 |
 |---|---|
-| DB | `20261010130000_ssbj_external_emissions.sql`: `ssbj_external_emissions`（§10 の登録規約 1〜8。R2-12 と同じ形の RESTRICTIVE のポリシー）、重なりの判定 `ssbj_external_emission_overlap`、遅延の制約トリガー（外部算定値の書き込みと、OGT の値の採用の両方。P2071 / P2072）、保存版セクション `ssbj_snapshot_section__external_emissions` と復元 `ssbj_restore_section__external_emissions` |
+| DB | `20261023110000_ssbj_external_emissions.sql`: `ssbj_external_emissions`（§10 の登録規約 1〜8。R2-12 と同じ形の RESTRICTIVE のポリシー）、重なりの判定 `ssbj_external_emission_overlap`、遅延の制約トリガー（外部算定値の書き込みと、OGT の値の採用の両方。P2071 / P2072）、保存版セクション `ssbj_snapshot_section__external_emissions` と復元 `ssbj_restore_section__external_emissions` |
 | 画面 | `/ssbj/[reportId]/external`（`SsbjExternalEmissions.client.tsx`・`SsbjExternalEmissionDialog.client.tsx`）。詳細の「レポートの内容」から入る。プレビューの「指標及び目標」に、OGT の値とは別の表で出す（`SsbjPreviewExternalEmissions.tsx`） |
 | 出力 | CSV・Excel に「GHG排出量（外部算定値）」の行（`services/versionCsvExternal.ts`）。OGT の値の行の注記は「出典: OGT 算定値」から始める |
 | コード | `types.ts` の `SsbjExternalEmission`・`SsbjExternalEmissionSnapshot`・`SSBJ_GHG_GASES`・`SSBJ_SCOPE2_BASES`、`utils/externalEmission.ts`、`services/externalEmissionService.ts`、`hooks/useSsbjExternalEmissions.ts`・`useSsbjExternalEmissionForm.ts`。採用の API は重なりを 409 で返す（`ogtAdoptionServer.ts`） |

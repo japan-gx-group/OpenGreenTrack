@@ -484,7 +484,7 @@ SSBJ の中だけで使うロールの割り当て。権限の規則の正本は
   作業中データの書き込み（`ssbj_reports` の作成・更新を含む）は入力担当か管理者だけ。作業中データ・操作履歴の select は閲覧者以外。
   閲覧者が select できるのは、承認済みの `ssbj_reports` と、その `approvedVersionId` の `ssbj_report_versions` だけ。
 
-### 3.21 SSBJ 外部算定値 (`ssbj_external_emissions`) — 外部で算定した排出量（`supabase/migrations/20261010130000_ssbj_external_emissions.sql`）
+### 3.21 SSBJ 外部算定値 (`ssbj_external_emissions`) — 外部で算定した排出量（`supabase/migrations/20261023110000_ssbj_external_emissions.sql`）
 OGT で算定できない排出量（CO2 以外のガス、対応していない排出源、子会社から届いた値など）を、出典と確認者を付けてレポートに採用する作業中データ。
 変更のたびに `ssbj_reports.draftRevision` を進め、保存版には `ssbj_snapshot_section__external_emissions` で取り込む。
 
