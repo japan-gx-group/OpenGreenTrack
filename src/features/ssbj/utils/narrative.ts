@@ -7,6 +7,7 @@ import type {
   SsbjItemId,
   SsbjNarrative,
   SsbjNarrativeItem,
+  SsbjNarrativeTemplateInput,
   SsbjSectionId,
 } from '../types';
 import { isSsbjItemId, sectionOfItem } from './ids';
@@ -20,16 +21,28 @@ const TEMPLATE_PLACEHOLDER = /【[^【】]*】/g;
 /** 本文に残っている、テンプレートの埋める部分（【 】）。 */
 export const ssbjTemplatePlaceholders = (text: string): string[] => text.match(TEMPLATE_PLACEHOLDER) ?? [];
 
-/** 1 項目の編集フォームの値。本文は「入力済み」のときだけ保存する。 */
-export type SsbjNarrativeFormValues = { state: SsbjFieldState; text: string; internalNote: string };
+/**
+ * 1 項目の編集フォームの値。本文は「入力済み」のときだけ保存する。
+ * templateInput は選択式テンプレートの選択（使っていなければ null。状態にかかわらず保存する作業用の情報）。
+ */
+export type SsbjNarrativeFormValues = {
+  state: SsbjFieldState;
+  text: string;
+  internalNote: string;
+  templateInput: SsbjNarrativeTemplateInput | null;
+};
 
 /** 行がまだ無い項目の文章（未入力）。 */
 export const EMPTY_SSBJ_DISCLOSABLE_TEXT: SsbjDisclosableText = { disclosure: { state: 'unanswered' }, internalNote: null };
 
-export const toSsbjNarrativeFormValues = (text: SsbjDisclosableText): SsbjNarrativeFormValues => ({
+export const toSsbjNarrativeFormValues = (
+  text: SsbjDisclosableText,
+  templateInput: SsbjNarrativeTemplateInput | null = null,
+): SsbjNarrativeFormValues => ({
   state: text.disclosure.state,
   text: text.disclosure.state === 'answered' ? text.disclosure.value : '',
   internalNote: text.internalNote ?? '',
+  templateInput,
 });
 
 /**
@@ -76,8 +89,16 @@ export const validateSsbjNarrativeInput = (itemId: string, input: SsbjDisclosabl
   return errors;
 };
 
-/** 表示・出力する 1 項目。マスターに無い項目（ID の見直しで消えた項目など）は item が null。 */
-export type SsbjNarrativeEntry = { itemId: SsbjItemId; item: SsbjNarrativeItem | null; text: SsbjDisclosableText };
+/**
+ * 表示・出力する 1 項目。マスターに無い項目（ID の見直しで消えた項目など）は item が null。
+ * templateInput は作業中データの選択式テンプレートの選択（保存版から作った項目・使っていない項目は null）。
+ */
+export type SsbjNarrativeEntry = {
+  itemId: SsbjItemId;
+  item: SsbjNarrativeItem | null;
+  text: SsbjDisclosableText;
+  templateInput: SsbjNarrativeTemplateInput | null;
+};
 
 /**
  * 章の文章を、マスターの項目の順に並べる。保存された文章が無い項目は未入力として出し、
@@ -87,13 +108,21 @@ export const ssbjNarrativeEntriesOfSection = (
   sectionId: SsbjSectionId,
   narratives: readonly SsbjNarrative[],
 ): SsbjNarrativeEntry[] => {
-  const byItem = new Map(narratives.map(narrative => [narrative.itemId, narrative.text]));
+  const byItem = new Map(narratives.map(narrative => [narrative.itemId, narrative]));
   const entries: SsbjNarrativeEntry[] = SSBJ_NARRATIVE_ITEMS
     .filter(item => sectionOfItem(item.id) === sectionId)
-    .map(item => ({ itemId: item.id, item, text: byItem.get(item.id) ?? EMPTY_SSBJ_DISCLOSABLE_TEXT }));
+    .map(item => {
+      const narrative = byItem.get(item.id);
+      return {
+        itemId: item.id,
+        item,
+        text: narrative?.text ?? EMPTY_SSBJ_DISCLOSABLE_TEXT,
+        templateInput: narrative?.templateInput ?? null,
+      };
+    });
   for (const narrative of narratives) {
     if (sectionOfItem(narrative.itemId) === sectionId && !findSsbjNarrativeItem(narrative.itemId)) {
-      entries.push({ itemId: narrative.itemId, item: null, text: narrative.text });
+      entries.push({ itemId: narrative.itemId, item: null, text: narrative.text, templateInput: narrative.templateInput ?? null });
     }
   }
   return entries;

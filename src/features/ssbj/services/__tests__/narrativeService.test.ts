@@ -27,13 +27,22 @@ import { saveSsbjNarrative, toSsbjNarrative } from '../narrativeService';
 
 const report = { id: 'report-1', organizationId: 'org-1' };
 const text = { disclosure: { state: 'answered' as const, value: '本文' }, internalNote: null };
-const row = { itemId: 'governance.oversight_body', disclosureState: 'answered', disclosureText: '本文', internalNote: null };
+const row = {
+  itemId: 'governance.oversight_body', disclosureState: 'answered', disclosureText: '本文', internalNote: null, templateInput: null,
+};
+const templateInput = { version: 'r2-trial-1', choices: { body: 'board' }, texts: {} };
 
 afterEach(() => vi.clearAllMocks());
 
 describe('toSsbjNarrative', () => {
   it('状態と値が食い違う行は補正せず例外にする', () => {
     expect(() => toSsbjNarrative({ ...row, disclosureState: 'unconfirmed' })).toThrow();
+  });
+
+  it('選択式テンプレートの選択を読み、形の違う値は使わない（null）', () => {
+    expect(toSsbjNarrative({ ...row, templateInput }).templateInput).toEqual(templateInput);
+    expect(toSsbjNarrative({ ...row, templateInput: { version: 1 } }).templateInput).toBeNull();
+    expect(toSsbjNarrative({ ...row, templateInput: ['board'] }).templateInput).toBeNull();
   });
 });
 
@@ -43,8 +52,11 @@ describe('saveSsbjNarrative', () => {
     await expect(saveSsbjNarrative(report, 'governance.oversight_body', text)).resolves.toEqual({
       itemId: 'governance.oversight_body',
       text,
+      templateInput: null,
     });
-    expect(mocks.update).toHaveBeenCalledWith({ disclosureState: 'answered', disclosureText: '本文', internalNote: null });
+    expect(mocks.update).toHaveBeenCalledWith({
+      disclosureState: 'answered', disclosureText: '本文', internalNote: null, templateInput: null,
+    });
     expect(mocks.insert).not.toHaveBeenCalled();
   });
 
@@ -55,6 +67,13 @@ describe('saveSsbjNarrative', () => {
     expect(mocks.insert).toHaveBeenCalledWith(expect.objectContaining({
       reportId: 'report-1', organizationId: 'org-1', itemId: 'governance.oversight_body',
     }));
+  });
+
+  it('選択式テンプレートの選択を本文と一緒に送る（本文の代わりにはしない）', async () => {
+    mocks.updateSelect.mockResolvedValue({ data: [{ ...row, templateInput }], error: null });
+    const saved = await saveSsbjNarrative(report, 'governance.oversight_body', text, templateInput);
+    expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ disclosureText: '本文', templateInput }));
+    expect(saved.templateInput).toEqual(templateInput);
   });
 
   it('同時に最初の文章が作られた（23505）ときは開き直しを促す', async () => {

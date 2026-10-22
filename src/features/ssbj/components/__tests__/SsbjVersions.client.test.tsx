@@ -165,6 +165,8 @@ describe('SsbjVersions', () => {
     const { container } = await renderScreen();
     await act(async () => { click(buttonWith(container, 'この版の内容に戻す')); await Promise.resolve(); });
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('自動で残します');
+    // 保存版に含めない選択式テンプレートの選択は残らないことも伝える（「失われるものは無い」と読ませない）。
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('選択式テンプレートで選んだ内容は保存版に含めないため、戻すと消えます');
     await act(async () => { click(buttonWith(document.querySelector('[role="dialog"]')!, 'この版の内容に戻す')); await Promise.resolve(); });
     expect(restoreSsbjReportVersion).toHaveBeenCalledWith(fictionalVersion.reportId, fictionalVersion.id, 3);
     expect(container.textContent).toContain('版 1 の内容に戻しました');

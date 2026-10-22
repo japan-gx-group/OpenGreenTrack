@@ -177,7 +177,8 @@ test('4. OGT の値をレポートに採用する', async () => {
 test('5. 該当性・重要性・記載しない理由を記録する', async () => {
   await page.goto(reportPath('/judgements'));
   const row = page.getByTestId('ssbj-judgement-row').filter({ hasText: 'REQ-CLM-020' });
-  await row.getByRole('button', { name: '編集' }).click();
+  // 一覧では該当性・重要性だけを選べる。記載しない理由・説明・根拠は「詳細」のダイアログで記録する。
+  await row.getByRole('button', { name: '詳細', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel('該当性').selectOption('applicable');
   await dialog.getByLabel('重要性', { exact: true }).selectOption('material');
@@ -188,6 +189,16 @@ test('5. 該当性・重要性・記載しない理由を記録する', async ()
   await dialog.getByRole('button', { name: '変更を保存' }).click();
   await expect(dialog).toBeHidden();
   await expect(row).toContainText('経過措置を適用');
+
+  // 一覧の選択はその場で保存する。同じ行で続けて選ぶと、1 回目は行を作り、2 回目は読込時の更新日時を条件に更新する。
+  // 選択欄は保存が終わってから選んだ値になる。
+  const quick = page.getByTestId('ssbj-judgement-row').filter({ hasText: 'REQ-CLM-028' });
+  await quick.getByLabel('REQ-CLM-028 の該当性').selectOption('applicable');
+  await expect(quick.getByLabel('REQ-CLM-028 の該当性')).toHaveValue('applicable');
+  await quick.getByLabel('REQ-CLM-028 の重要性').selectOption('material');
+  await expect(quick.getByLabel('REQ-CLM-028 の重要性')).toHaveValue('material');
+  await expect(quick.getByRole('alert')).toHaveCount(0);
+  await expect(quick).toContainText('根拠が未入力');
 });
 
 test('6. 根拠文書・主管部署を登録する', async () => {
@@ -218,6 +229,9 @@ test('7. 画面を開き直しても、入力した内容がそのまま再表�
   const judgement = page.getByTestId('ssbj-judgement-row').filter({ hasText: 'REQ-CLM-020' });
   await expect(judgement).toContainText('経過措置を適用');
   await expect(judgement).toContainText(INPUT.judgement);
+  const quick = page.getByTestId('ssbj-judgement-row').filter({ hasText: 'REQ-CLM-028' });
+  await expect(quick.getByLabel('REQ-CLM-028 の該当性')).toHaveValue('applicable');
+  await expect(quick.getByLabel('REQ-CLM-028 の重要性')).toHaveValue('material');
 
   await page.goto(reportPath('/evidence'));
   await expect(page.getByText(INPUT.evidenceTitle)).toBeVisible();
@@ -436,6 +450,7 @@ test('15. 他の組織からは、画面・API・DB のどこからも見えず�
     ['ssbj_report_time_horizons', 'reportId'],
     ['ssbj_evidence', 'reportId'],
     ['ssbj_ogt_adoptions', 'reportId'],
+    ['ssbj_risk_candidate_decisions', 'reportId'],
   ];
   for (const [table, column] of tables) {
     const { data, error } = await orgB.from(table).select('*').eq(column, reportId);
