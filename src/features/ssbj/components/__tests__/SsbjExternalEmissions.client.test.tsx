@@ -39,7 +39,9 @@ vi.mock('../../services/memberRoleService', async importOriginal => ({
 }));
 
 import { listSsbjEvidence } from '../../services/evidenceService';
-import { createSsbjExternalEmission, listSsbjExternalEmissions } from '../../services/externalEmissionService';
+import {
+  createSsbjExternalEmission, deleteSsbjExternalEmission, listSsbjExternalEmissions,
+} from '../../services/externalEmissionService';
 import { getMySsbjRole } from '../../services/memberRoleService';
 import { getSsbjReport } from '../../services/reportService';
 import { SsbjExternalEmissions } from '../SsbjExternalEmissions.client';
@@ -129,6 +131,19 @@ describe('SsbjExternalEmissions', () => {
       }),
     );
     expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain('OGT の採用値に含まれています');
+  });
+
+  it('削除が 0 件で止められたら、一覧から外さず、開き直しを案内する', async () => {
+    vi.mocked(deleteSsbjExternalEmission).mockRejectedValueOnce(
+      new Error('外部算定値を削除できませんでした（他の画面で削除されたか、SSBJ のロールが変わった可能性があります）。画面を開き直してください'),
+    );
+    const { container } = await open();
+    await act(async () => { click(button('削除', container.querySelector<HTMLElement>('[data-testid="ssbj-external-emission"]')!)); });
+    await act(async () => { click(button('削除する')); });
+    await settle();
+    expect(deleteSsbjExternalEmission).toHaveBeenCalledWith(emission.id);
+    expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain('画面を開き直してください');
+    expect(container.querySelectorAll('[data-testid="ssbj-external-emission"]')).toHaveLength(1);
   });
 
   it('入力担当か管理者でなければ、追加・編集・削除を出さない', async () => {

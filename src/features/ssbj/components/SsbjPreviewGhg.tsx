@@ -59,7 +59,7 @@ export const SsbjPreviewGhg = ({ ghg }: { ghg: SsbjGhgAdoption | null | undefine
       </p>
       <ValueTable values={totals} />
       <p className="m-0 text-sm text-text-muted">
-        Scope 2 はロケーション基準・マーケット基準の区別がありません（基準不明）。ロケーション基準の値は含みません。
+        OGT の Scope 2 算定値は、ロケーション基準・マーケット基準の区別がありません（基準不明）。基準ごとの Scope 2 は、「外部で算定した排出量」に示したものだけです。
         {breakdown &&
           ` 係数区分の内訳：基礎 ${formatDecimalForDisplay(breakdown.basic)}／調整後 ${formatDecimalForDisplay(breakdown.adjusted)}／区分なし ${formatDecimalForDisplay(breakdown.unclassified)} t-CO2e`}
       </p>

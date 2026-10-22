@@ -89,6 +89,9 @@ export const externalEmissionErrorMessage = (
   return ssbjWriteErrorMessage(error, fallback);
 };
 
+/** 更新・削除が 0 件だったときの、考えられる理由（RLS で止められた操作はエラーにならず 0 件になる）。 */
+const NOT_CHANGED_REASON = '他の画面で削除されたか、SSBJ のロールが変わった可能性があります';
+
 export const listSsbjExternalEmissions = async (reportId: string): Promise<SsbjExternalEmission[]> => {
   const { data, error } = await createClient()
     .from('ssbj_external_emissions')
@@ -123,12 +126,19 @@ export const updateSsbjExternalEmission = async (
     .update(toColumns(input))
     .eq('id', id)
     .select(SELECT_COLUMNS)
-    .single();
-  if (error || !data) throw new Error(externalEmissionErrorMessage(error, '外部算定値の保存に失敗しました'));
+    .maybeSingle();
+  if (error) throw new Error(externalEmissionErrorMessage(error, '外部算定値の保存に失敗しました'));
+  if (!data) throw new Error(`外部算定値を保存できませんでした（${NOT_CHANGED_REASON}）。画面を開き直してください`);
   return toSsbjExternalEmission(data as unknown as SsbjExternalEmissionRow);
 };
 
+/**
+ * 外部算定値を削除する。削除した行を返させ、0 件なら例外にする（呼び出し元は一覧から外さない）。
+ * RLS で止められた削除はエラーにならず 0 件になるため（画面を開いた後に承認担当・閲覧者に変えられた場合など）、
+ * エラーだけを見ると、DB に残っている値を画面から消してしまう。
+ */
 export const deleteSsbjExternalEmission = async (id: string): Promise<void> => {
-  const { error } = await createClient().from('ssbj_external_emissions').delete().eq('id', id);
+  const { data, error } = await createClient().from('ssbj_external_emissions').delete().eq('id', id).select('id');
   if (error) throw new Error(externalEmissionErrorMessage(error, '外部算定値の削除に失敗しました'));
+  if (!data?.length) throw new Error(`外部算定値を削除できませんでした（${NOT_CHANGED_REASON}）。画面を開き直してください`);
 };

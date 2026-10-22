@@ -417,6 +417,8 @@ export type SsbjMemberRoleLog = {
   userId: string;
   role: SsbjMemberRole | null;
   previousRole: SsbjMemberRole | null;
+  /** 利用者の削除（退会・メンバーの削除）に伴う解除か。操作者は空（システム）になる。 */
+  memberDeleted: boolean;
   createdAt: string;
 };
 
