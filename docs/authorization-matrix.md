@@ -58,7 +58,7 @@ SSBJ 開示レポートで、データを書き換えられる経路をすべて
 
 - 承認済みの間は、どのロールでも作業中データを変えられない（承認ロック。[`ssbj-spec.md`](ssbj-spec.md) §13）。
 - ロールの条件は、各テーブルの既存のポリシー（自組織であること）に、`AS RESTRICTIVE` のポリシーを重ねて効かせる
-  （`20261010120000_ssbj_role_policies.sql`）。書き込みは `ssbj_current_user_can_edit()`、閲覧は `ssbj_current_user_can_view_working()`。
+  （`20261023100000_ssbj_role_policies.sql`）。書き込みは `ssbj_current_user_can_edit()`、閲覧は `ssbj_current_user_can_view_working()`。
 - **SSBJ のテーブルを足すときは**、承認ロックのトリガーと一緒に、同じ形の RESTRICTIVE のポリシー（利用者が書ける操作ごとと select）を足し、
   この表に行を足す。付け忘れは `scripts/db/__tests__/ssbjRolePoliciesPolicy.test.ts` が検出する。
 

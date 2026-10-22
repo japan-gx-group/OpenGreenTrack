@@ -813,7 +813,7 @@ R2-10 の SSBJ のロールを、SSBJ の各テーブル・状態の変更・閲
 
 | 対象 | 内容 |
 |---|---|
-| DB | `20261010120000_ssbj_role_policies.sql`: 各テーブルに `AS RESTRICTIVE` のポリシー（書き込みは入力担当か管理者、作業中データ・操作履歴の閲覧は閲覧者以外、閲覧者は承認済みのレポートと承認した版だけ）。`record_ssbj_export`（閲覧者は承認した版の CSV / Excel だけ）と `change_ssbj_report_status`（SSBJ のロールで判定。承認者は承認担当か管理者だけ）を置き換えた |
+| DB | `20261023100000_ssbj_role_policies.sql`: 各テーブルに `AS RESTRICTIVE` のポリシー（書き込みは入力担当か管理者、作業中データ・操作履歴の閲覧は閲覧者以外、閲覧者は承認済みのレポートと承認した版だけ）。`record_ssbj_export`（閲覧者は承認した版の CSV / Excel だけ）と `change_ssbj_report_status`（SSBJ のロールで判定。承認者は承認担当か管理者だけ）を置き換えた |
 | 画面 | 入力担当か管理者でなければ編集の操作を出さず、理由を出す（`SsbjRoleNotice.tsx`）。閲覧者には作業中の内容の画面の代わりに案内を出す（`SsbjWorkingAccessGuard.client.tsx`。各ページで包む）。詳細の「レポートの内容」は閲覧者にプレビューと保存履歴だけ。プレビューは閲覧者に承認した版を既定にする。一覧の新規作成と空の一覧の案内をロールで出し分ける |
 | コード | `utils/reportStatus.ts` の `isSsbjReadOnly`、`utils/writeError.ts`（42501 = ロールで止められた）、`components/SsbjReportContentsNav.tsx`（`workingAccess`） |
 | テスト | `scripts/db/__tests__/ssbjRolePoliciesPolicy.test.ts`（作業中データのテーブルの取り付け漏れの検出を含む）、画面の単体テスト（承認担当は読むだけ・閲覧者の入口とプレビュー・一覧）、全体テスト 26 手順 |
