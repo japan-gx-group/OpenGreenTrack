@@ -76,6 +76,17 @@ export const toPeriodDates = (yearMonth: string): ManualEntryPeriodDates | null 
   return { start: `${yearMonth}-01`, end: `${yearText}-${monthText}-${lastDay}` };
 };
 
+// periodStart / periodEnd が同一月の月初〜月末に一致するときだけ「2026年3月」表記を返す。
+// 月単位でない期間（将来サポートする可能性がある）は null を返し、呼び出し側が範囲表記へ落とす。
+export const toMonthlyPeriodLabel = (periodStart: string, periodEnd: string): string | null => {
+  const period = toPeriodDates(periodStart.slice(0, 7));
+  if (!period || period.start !== periodStart || period.end !== periodEnd) {
+    return null;
+  }
+  const [yearText, monthText] = periodStart.split('-');
+  return `${yearText}年${Number(monthText)}月`;
+};
+
 // 対象年月を検証する。YEAR_MONTH_PATTERN で桁が固定されるため、上限・下限の比較は
 // 文字列の辞書順でそのまま成立する。
 export const validateTargetMonth = (

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   getCurrentYearMonth,
   nextYearMonth,
+  toMonthlyPeriodLabel,
   toPeriodDates,
   validateTargetMonth,
 } from '../manualEntryTargetMonth';
@@ -24,6 +25,20 @@ describe('manualEntryTargetMonth', () => {
     expect(toPeriodDates('2026-00')).toBeNull();
     expect(toPeriodDates('2026/07')).toBeNull();
     expect(toPeriodDates('')).toBeNull();
+  });
+
+  it('月初〜月末に一致する期間を「2026年3月」表記にする', () => {
+    expect(toMonthlyPeriodLabel('2026-03-01', '2026-03-31')).toBe('2026年3月');
+    expect(toMonthlyPeriodLabel('2026-11-01', '2026-11-30')).toBe('2026年11月');
+    expect(toMonthlyPeriodLabel('2024-02-01', '2024-02-29')).toBe('2024年2月');
+  });
+
+  it('月初〜月末に一致しない期間はnullを返す（呼び出し側が範囲表記へ落とす）', () => {
+    expect(toMonthlyPeriodLabel('2026-03-02', '2026-03-31')).toBeNull();
+    expect(toMonthlyPeriodLabel('2026-03-01', '2026-03-30')).toBeNull();
+    expect(toMonthlyPeriodLabel('2026-03-01', '2026-04-30')).toBeNull();
+    expect(toMonthlyPeriodLabel('2025-02-01', '2025-02-29')).toBeNull();
+    expect(toMonthlyPeriodLabel('', '')).toBeNull();
   });
 
   it('未入力・不正形式を保存前エラーにする', () => {

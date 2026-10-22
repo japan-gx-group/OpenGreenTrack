@@ -23,7 +23,7 @@ import {
   TEST_AMOUNT_KWH,
   TEST_FISCAL_YEAR_LABEL,
   TEST_LOCATION_NAME,
-  toHistoryPeriodStart,
+  toHistoryPeriodLabel,
 } from './support/testData';
 
 test.describe('基幹導線スモーク', () => {
@@ -41,7 +41,7 @@ test.describe('基幹導線スモーク', () => {
     const historyRows = page
       .locator('table tbody tr')
       .filter({ hasText: TEST_LOCATION_NAME })
-      .filter({ hasText: toHistoryPeriodStart(SAVE_TARGET_MONTH) });
+      .filter({ hasText: toHistoryPeriodLabel(SAVE_TARGET_MONTH) });
     await expect(historyRows).toHaveCount(1);
 
     const savedRow = historyRows.first();

@@ -43,11 +43,6 @@ export const DataInput = () => {
     uncalculatedItems,
   } = useActivityHistory(showToast);
   const historyFilters = useHistoryFilters(history);
-  // 一括入力で「登録済みの月」を照合するための元レコード（履歴行の表示用整形を挟まない）。
-  const historyRecords = useMemo(
-    () => history.flatMap((item) => (item.record ? [item.record] : [])),
-    [history],
-  );
   // 入力履歴のページネーション。検索・フィルターの絞り込みを先に適用し、その結果に対してページングする。
   const pagination = usePagination(historyFilters.filteredHistory, DEFAULT_HISTORY_PAGE_SIZE);
   const historyStartIndex = pagination.totalCount === 0
@@ -79,6 +74,12 @@ export const DataInput = () => {
     refreshHistory: refreshManualHistory,
     showToast,
   });
+  // 重複事前警告と一括入力の「登録済みの月」の照合用に、履歴行から元レコード（表示用整形を挟まない）を
+  // 取り出して両フォームへ渡す。
+  const historyRecords = useMemo(
+    () => history.flatMap((item) => (item.record ? [item.record] : [])),
+    [history],
+  );
   const entrySave = useActivityEntrySave({
     // 新しい行は先頭に入るため、追加分が見えるよう1ページ目へ戻す。
     onSaved: (record) => { prependManualHistory(record); pagination.resetPage(); },
@@ -108,6 +109,8 @@ export const DataInput = () => {
           onSave={entrySave.save}
           onSaveBulk={entrySave.saveBulk}
           historyRecords={historyRecords}
+          // 事前警告の「既存のレコードを開く」から編集モーダルを開き、合算入力へ直行できるようにする。
+          onOpenDuplicateRecord={editor.open}
         />
 
         {/* History Table */}
@@ -172,7 +175,11 @@ export const DataInput = () => {
 
       <DataInputToast message={toast?.message ?? null} />
 
-      <ActivityRecordEditModal editor={editor} locations={manualEntryLocations} />
+      <ActivityRecordEditModal
+        editor={editor}
+        locations={manualEntryLocations}
+        historyRecords={historyRecords}
+      />
     </>
   );
 };

@@ -27,6 +27,9 @@ const record = (
   createdAt: '2026-01-01T00:00:00Z',
   emissionFactorId: null,
   emissions: null,
+  appliedFactorName: null,
+  appliedFactorValue: null,
+  appliedFactorUnit: null,
   scope3CategoryId: null,
   ideaFactorId: null,
   ideaProductName: null,
@@ -178,13 +181,32 @@ describe('collectBulkEntries', () => {
     ]);
   });
 
-  it('不正な活動量は月ラベル付きの最初のエラーを返す', () => {
+  it('不正な活動量は月ラベル付きの最初のエラーを返す（単月入力と同じ検証）', () => {
     const { error } = collectBulkEntries({
       rows: [row({ month: '2026-04' }), row({ month: '2026-05' })],
-      amounts: { '2026-04': '100', '2026-05': '0' },
+      amounts: { '2026-04': '100', '2026-05': '1.2345' },
       overwriteEnabled: {},
     });
-    expect(error).toBe('2026年5月: 活動量は0より大きい半角数字で入力してください。');
+    expect(error).toBe('2026年5月: 活動量は小数第3位までで入力してください。');
+    expect(
+      collectBulkEntries({
+        rows: [row({ month: '2026-04' })],
+        amounts: { '2026-04': 'abc' },
+        overwriteEnabled: {},
+      }).error,
+    ).toBe('2026年4月: 活動量は0以上の半角数字で入力してください。');
+  });
+
+  it('活動量 0 は実績ゼロの記録として対象に含める', () => {
+    const { entries, error } = collectBulkEntries({
+      rows: [row({ month: '2026-04' })],
+      amounts: { '2026-04': '0' },
+      overwriteEnabled: {},
+    });
+    expect(error).toBeNull();
+    expect(entries).toEqual([
+      { month: '2026-04', label: '2026年4月', amount: 0, action: 'create', existing: null },
+    ]);
   });
 
   it('登録済みの月は上書きを選んだときだけ対象にし、入力必須にする', () => {
