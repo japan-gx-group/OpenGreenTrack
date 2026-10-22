@@ -232,7 +232,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   const amountValidation = validateAmount(amount);
   const validAmount = amountValidation.kind === 'valid' ? amountValidation.value : null;
   // numeric(15,3) に収まらない桁数は入力欄の直下で即座に知らせる（計算結果が出ない理由を分かるようにする）。
-  // 空・0 は入力途中の状態なので、プレビュー / 保存時の検証（validateEntry）に任せる。
+  // 空は入力途中の状態なので、プレビュー / 保存時の検証（validateEntry）に任せる（0 は実績ゼロとして有効な値）。
   const amountDigitsError =
     amountValidation.kind === 'too-large' || amountValidation.kind === 'too-precise'
       ? amountValidationMessage(amountValidation)
