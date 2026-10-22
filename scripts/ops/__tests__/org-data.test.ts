@@ -5,15 +5,19 @@
 // ほかの組織の行が変わると止まること）は、ローカル Supabase での演習で確かめ、手順書に記録している。
 
 import { createHash } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  buildCommittedDeletionRecord,
   buildDeleteSql,
   buildExportFiles,
   buildExportSql,
+  buildStartedDeletionRecord,
   buildSummarySql,
+  buildTableCheckSql,
+  deletionRecordPathError,
   exportRowExpression,
   isInsideDirectory,
   MARKER,
@@ -23,9 +27,11 @@ import {
   parseDeleteOutput,
   parseExportOutput,
   parseSummaryOutput,
+  psqlConnection,
+  psqlFailure,
   UsageError,
 } from '../org-data.ts';
-import { ORG_DATA_TABLES } from '../orgDataTables.ts';
+import { ORG_DATA_TABLES, SHARED_TABLES } from '../orgDataTables.ts';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
 
@@ -130,7 +136,7 @@ describe('SQL の組み立て', () => {
     }
   });
 
-  it('監査ログ（system_audit_logs）は、明示したときだけ消す。既定では、監査ログがあれば何も消さずに止める（Issue #160）', () => {
+  it('監査ログ（system_audit_logs）は、明示したときだけ消す。既定では、監査ログがあれば何も消さずに止める', () => {
     const keep = buildDeleteSql(ORG, true);
     expect(keep).not.toContain('delete from public.system_audit_logs');
     expect(keep).toContain('Issue #160');
@@ -162,6 +168,128 @@ describe('SQL の組み立て', () => {
     const sql = buildDeleteSql(ORG, true);
     expect(sql).toContain("select to_regclass('storage.objects') is not null as has_storage \\gset");
     expect(sql.indexOf('Storage にこの組織のファイルが残っています')).toBeLessThan(sql.indexOf('delete from'));
+  });
+
+  it('commit は最後の区切りの行（end）の後にある（psql の出力から、確定の前に止まったかを判断するため）', () => {
+    const sql = buildDeleteSql(ORG, true);
+    expect(sql.indexOf('commit;')).toBeGreaterThan(sql.indexOf(`\\echo ${MARKER} end`));
+  });
+});
+
+describe('DB のテーブルと一覧の照合', () => {
+  const check = buildTableCheckSql();
+
+  it('organizationId の列か organizations への外部キーを持つ public のテーブルを探す', () => {
+    expect(check).toContain("n.nspname = 'public'");
+    expect(check).toContain("a.attname = 'organizationId'");
+    expect(check).toContain("k.contype = 'f' and k.confrelid = 'public.organizations'::regclass");
+    expect(check).toContain('raise exception');
+    expect(check).toContain('scripts/ops/orgDataTables.ts');
+  });
+
+  it('一覧（組織に属するテーブルと、組織に属さないテーブル）にあるものは除く', () => {
+    const listed = check.match(/<> all \(array\[(.*?)\]::text\[\]\)/)?.[1] ?? '';
+    const names = [...listed.matchAll(/'([^']+)'/g)].map(match => match[1]);
+    expect(names).toEqual([...ORG_DATA_TABLES.map(table => table.name), ...Object.keys(SHARED_TABLES)]);
+  });
+
+  it('どのサブコマンドも、組織のデータを読む・消す前に照合する', () => {
+    for (const sql of [buildSummarySql(ORG), buildExportSql(ORG), buildDeleteSql(ORG, true, true)]) {
+      const at = sql.indexOf(check);
+      expect(at).toBeGreaterThan(sql.indexOf('begin isolation level'));
+      expect(at).toBeLessThan(sql.indexOf('組織が見つかりません'));
+      expect(at).toBeLessThan(sql.indexOf(`\\echo ${MARKER} organization`));
+    }
+    const deleteSql = buildDeleteSql(ORG, true, true);
+    expect(deleteSql.indexOf(check)).toBeLessThan(deleteSql.indexOf('delete from'));
+  });
+});
+
+describe('psql の接続文字列', () => {
+  it('パスワードを psql の引数から外し、環境変数 PGPASSWORD で渡す', () => {
+    expect(psqlConnection('postgresql://postgres.abc:s3cret@db.example.com:5432/postgres?sslmode=require')).toEqual({
+      args: ['postgresql://postgres.abc@db.example.com:5432/postgres?sslmode=require'],
+      env: { PGPASSWORD: 's3cret' },
+    });
+    expect(psqlConnection('postgres://u:p@h/d')).toEqual({ args: ['postgres://u@h/d'], env: { PGPASSWORD: 'p' } });
+  });
+
+  it('パスワードの %XX はもとの文字に戻し、ほかのクエリは書かれたまま残す', () => {
+    const { args, env } = psqlConnection('postgresql://u:p%40ss%2Fw+rd@h:6543/db?sslmode=verify-full&options=-c%20search_path%3Dx&application_name=a+b');
+    expect(env).toEqual({ PGPASSWORD: 'p@ss/w+rd' });
+    expect(args).toEqual(['postgresql://u@h:6543/db?sslmode=verify-full&options=-c%20search_path%3Dx&application_name=a+b']);
+    expect(args.join(' ')).not.toContain('p%40ss');
+  });
+
+  it('クエリの password も取り出す（user の後のものより優先する。libpq と同じ）', () => {
+    expect(psqlConnection('postgresql://u:old@h/db?password=new&sslmode=require')).toEqual({
+      args: ['postgresql://u@h/db?sslmode=require'], env: { PGPASSWORD: 'new' },
+    });
+    expect(psqlConnection('postgresql://h/db?password=only')).toEqual({ args: ['postgresql://h/db'], env: { PGPASSWORD: 'only' } });
+  });
+
+  it('パスワードが無ければ、接続文字列をそのまま渡す', () => {
+    expect(psqlConnection('postgresql://u@h/db')).toEqual({ args: ['postgresql://u@h/db'], env: {} });
+    expect(psqlConnection('postgresql://h:5432/db')).toEqual({ args: ['postgresql://h:5432/db'], env: {} });
+    expect(psqlConnection('postgresql://:@h/db')).toEqual({ args: ['postgresql://h/db'], env: {} });
+    expect(psqlConnection('host=h dbname=db')).toEqual({ args: ['host=h dbname=db'], env: {} });
+  });
+
+  it('key=value 形式でパスワードを含むものや、%XX の誤りは受け付けない', () => {
+    expect(() => psqlConnection("host=h password='x y' dbname=db")).toThrow('postgresql://');
+    expect(() => psqlConnection('postgresql://u:%zz@h/db')).toThrow('%XX');
+  });
+});
+
+describe('psql の失敗の知らせ', () => {
+  it('確定まで進まない SQL は「何も変えていません」', () => {
+    const error = psqlFailure('ERROR: x', `${MARKER} end\n`, false, false);
+    expect(error.commitUnknown).toBe(false);
+    expect(error.message).toContain('何も変えていません');
+  });
+
+  it('実際の削除は、出力に end が無ければ確定の前に止まっている', () => {
+    const error = psqlFailure('ERROR: Storage にこの組織のファイルが残っています', `${MARKER} organization\n組織\n`, false, true);
+    expect(error.commitUnknown).toBe(false);
+    expect(error.message).toContain('何も変えていません');
+  });
+
+  it('実際の削除で、end の後や途中で止められたときは、確定したか分からないと伝える', () => {
+    for (const error of [
+      psqlFailure('server closed the connection unexpectedly', `${MARKER} result\nlocations|1|0\n${MARKER} end\n`, false, true),
+      psqlFailure('killed', '', true, true),
+    ]) {
+      expect(error.commitUnknown).toBe(true);
+      expect(error.message).toContain('確定したかは分かりません');
+      expect(error.message).toContain('summary');
+      expect(error.message).not.toContain('何も変えていません');
+    }
+  });
+});
+
+describe('削除の記録', () => {
+  const started = buildStartedDeletionRecord({
+    organizationId: ORG, organizationName: '組織', startedAt: '2026-10-23T00:00:00.000Z',
+    target: 'ローカル', operator: 'op', deleteAuditLogs: false,
+  });
+
+  it('削除を始める前の記録は started で、確定したか分からないことを書く', () => {
+    expect(started).toMatchObject({
+      kind: 'ogt-organization-deletion', status: 'started', organization: { id: ORG, name: '組織' },
+      startedAt: '2026-10-23T00:00:00.000Z', finishedAt: null, target: 'ローカル', operator: 'op', tables: [],
+    });
+    expect(started.note).toContain('summary');
+  });
+
+  it('確定した後の記録は committed で、件数と確かめたことを書く', () => {
+    const rows = [{ name: 'locations', targetRows: 2, otherRows: 5 }];
+    const committed = buildCommittedDeletionRecord(started, rows, '2026-10-23T00:00:01.000Z', true);
+    expect(committed).toMatchObject({
+      status: 'committed', organization: { id: ORG, name: '組織' }, startedAt: started.startedAt,
+      finishedAt: '2026-10-23T00:00:01.000Z', tables: rows, auditLogs: '消した（--delete-audit-logs）',
+    });
+    expect(committed.checks).toHaveLength(2);
+    expect(JSON.parse(JSON.stringify(committed))).not.toHaveProperty('note');
   });
 });
 
@@ -235,5 +363,27 @@ describe('置き場所', () => {
     expect(isInsideDirectory('/a/b', '/a/b')).toBe(true);
     expect(isInsideDirectory('/a/b', '/a/bc')).toBe(false);
     expect(isInsideDirectory('/a/b', '/a')).toBe(false);
+  });
+
+  it('`..` で始まる名前のファイル・ディレクトリも、リポジトリの中として扱う', () => {
+    expect(isInsideDirectory('/a/b', '/a/b/..data')).toBe(true);
+    expect(isInsideDirectory('/a/b', '/a/b/..data/x.json')).toBe(true);
+    expect(isInsideDirectory('/a/b', '/a/c')).toBe(false);
+    const repo = path.resolve(process.cwd());
+    expect(outsideRepositoryError(path.join(repo, '..data'), repo)).toContain('リポジトリの中');
+  });
+
+  it('削除の記録は、リポジトリの外の、まだ無いファイルで、置くディレクトリがあるときだけ受け付ける', () => {
+    const repo = path.resolve(process.cwd());
+    dir = mkdtempSync(path.join(tmpdir(), 'org-data-'));
+    expect(deletionRecordPathError(path.join(repo, 'deletion.json'), repo)).toContain('リポジトリの中');
+    expect(deletionRecordPathError(path.join(dir, 'deletion.json'), repo)).toBeNull();
+    writeFileSync(path.join(dir, 'existing.json'), '{}');
+    expect(deletionRecordPathError(path.join(dir, 'existing.json'), repo)).toContain('すでにあります');
+    expect(deletionRecordPathError(path.join(dir, 'missing', 'deletion.json'), repo)).toContain('ディレクトリがありません');
+    writeFileSync(path.join(dir, 'file'), '');
+    expect(deletionRecordPathError(path.join(dir, 'file', 'deletion.json'), repo)).toContain('ディレクトリがありません');
+    mkdirSync(path.join(dir, 'records'));
+    expect(deletionRecordPathError(path.join(dir, 'records', 'deletion.json'), repo)).toBeNull();
   });
 });

@@ -11,28 +11,35 @@
 //   既定      ローカル Supabase の DB コンテナ（supabase/config.toml の project_id から supabase_db_<project_id>）の中で psql を実行する
 //   --db-url-from-env  ホストの psql で、環境変数 OGT_DB_URL の DB に接続する（接続文字列をコマンドの引数に出さない。ps で見えるため）
 //   --db-url  ホストの psql で任意の DB に接続する（引数は ps で見えるので、共用のマシンでは --db-url-from-env を使う）
+//   ホストの psql には、パスワードを除いた接続文字列を引数で、パスワードを環境変数 PGPASSWORD で渡す（psql の引数も ps で見えるため）。
+//   ホストの psql は 10 以上が要る（SQL で \if を使う）。
 // service_role キーは使わない（DB に postgres ユーザーで接続し、RLS の対象外で読む・消す）。
 //
 // 安全のための決まり:
+//   - どのサブコマンドも、始めに DB の組織に属するテーブル（"organizationId" の列か organizations への外部キーを持つもの）が
+//     一覧（orgDataTables.ts）にそろっているかを確かめる。一覧に無いテーブルがあれば何もせずに止まる
+//     （DB より古いチェックアウトで実行して、書き出しや削除の確認から漏れないように）
 //   - 書き出し先・削除の記録の保存先は、リポジトリの外に限る（組織のデータをコミットしてしまわないため）
 //   - 書き出しは 1 つのトランザクション（repeatable read・read only）で読み、テーブルごとの行数を DB の件数と照らし合わせる
 //   - 削除は 1 つのトランザクション（repeatable read）で行い、確定の前に「この組織の行が 0 件」
 //     「ほかの組織の行の件数とチェックサムが変わっていない」を確かめる。満たさなければ何も消さずに止まる
 //   - 実際に削除するには --execute・--confirm-name（DB の組織名と一致すること）・--record をそろえる
-//   - OGT 本体の監査ログ（system_audit_logs）は、組織への外部キーが意図的に on delete restrict。消してよいかは Issue #160 で合意するまで
-//     既定では消さず、監査ログのある組織は何も消さずに止まる。--delete-audit-logs を明示したときだけ、先に消す
+//   - 削除の記録は、削除を始める前に status: started（確定したかまだ分からない）で作る（作れなければ何も消さない）。
+//     確定の後に status: committed で書き直し、書き直せなければ記録の JSON を画面に出す（削除したのに記録が無い、を起こさないため）
+//   - OGT 本体の監査ログ（system_audit_logs）は、組織への外部キーが意図的に on delete restrict。消してよいかを本体のメンテナーと
+//     合意するまで既定では消さず、監査ログのある組織は何も消さずに止まる。--delete-audit-logs を明示したときだけ、先に消す
 //
 // 出力: 結果の表（summary は --json で JSON）。終了コード: 0 = 成功 / 1 = 引数エラー・実行環境エラー・SQL エラー・確認の失敗
 // 単体テスト: scripts/ops/__tests__/org-data.test.ts（純粋関数だけを対象にし、docker / psql / DB には触れない）
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { containerNameFromConfig, DEFAULT_CONFIG_PATH, parseContainerNames, redactDbUrl } from '../db/seed.ts';
-import { ORG_DATA_TABLES, type OrgDataTable } from './orgDataTables.ts';
+import { containerNameFromConfig, DEFAULT_CONFIG_PATH, parseContainerNames } from '../db/seed.ts';
+import { ORG_DATA_TABLES, type OrgDataTable, SHARED_TABLES } from './orgDataTables.ts';
 
 /** リポジトリルート（このファイルは scripts/ops/ 直下にある） */
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -254,6 +261,30 @@ const organizationNameSql = (organizationId: string): string =>
   `\\echo ${MARKER} organization\nselect name from public.organizations where id = ${literal(organizationId)}::uuid;`;
 
 /**
+ * DB にある組織に属するテーブルが、一覧（ORG_DATA_TABLES か SHARED_TABLES）にそろっていなければ止める。
+ * 組織に属するテーブルは、public スキーマで "organizationId" の列か organizations への外部キーを持つもの。
+ * DB より古いチェックアウトでスクリプトを動かすと、増えたテーブルが書き出し・削除の確認から漏れるため、毎回 DB で確かめる。
+ */
+export const buildTableCheckSql = (): string => {
+  const listed = [...ORG_DATA_TABLES.map(table => table.name), ...Object.keys(SHARED_TABLES)];
+  return `do $$
+declare
+  missing text;
+begin
+  select string_agg(c.relname::text, ', ' order by c.relname) into missing
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public' and c.relkind in ('r', 'p') and not c.relispartition
+    and (exists (select 1 from pg_attribute a where a.attrelid = c.oid and a.attname = 'organizationId' and a.attnum > 0 and not a.attisdropped)
+      or exists (select 1 from pg_constraint k where k.conrelid = c.oid and k.contype = 'f' and k.confrelid = 'public.organizations'::regclass))
+    and c.relname::text <> all (array[${listed.map(literal).join(', ')}]::text[]);
+  if missing is not null then
+    raise exception '組織のデータの一覧（scripts/ops/orgDataTables.ts）に無い、組織に属するテーブルが DB にあります: %。リポジトリを DB と同じか新しい版にしてから実行してください（何もしていません）', missing;
+  end if;
+end
+$$;`;
+};
+
+/**
  * summary の SQL。テーブルごとに「件数|チェックサム」を出す（auth.users と Storage は件数だけ）。
  * チェックサムは、行の JSON の md5 を主キー順につないだものの md5（全列を使う。書き出さない列も含める）。
  */
@@ -264,6 +295,7 @@ export const buildSummarySql = (organizationId: string): string => {
   return [
     '\\set ON_ERROR_STOP 1',
     'begin isolation level repeatable read read only;',
+    buildTableCheckSql(),
     requireOrganization(organizationId),
     organizationNameSql(organizationId),
     `\\echo ${MARKER} summary`,
@@ -285,6 +317,7 @@ export const buildExportSql = (organizationId: string): string => {
   return [
     '\\set ON_ERROR_STOP 1',
     'begin isolation level repeatable read read only;',
+    buildTableCheckSql(),
     requireOrganization(organizationId),
     organizationNameSql(organizationId),
     ...tables,
@@ -324,14 +357,16 @@ const snapshotSql = (organizationId: string, tempTable: string): string => {
  * 試行（execute = false）は最後に rollback し、実際の削除（execute = true）は commit する。
  * 消す順番: （deleteAuditLogs のときだけ）system_audit_logs → 組織のユーザー（auth.users。profiles は連鎖削除）→
  * organizations（ほかのテーブルは連鎖削除）。
- * system_audit_logs は organizations への外部キーが意図的に on delete restrict（スキーマの §7）。消してよいかは Issue #160 で
+ * system_audit_logs は organizations への外部キーが意図的に on delete restrict（スキーマの §7）。消してよいかを本体のメンテナーと
  * 合意するまで、既定では消さずに、監査ログがあれば何も消さずに止める（本体の設計判断をこのスクリプトで変えないため）。
+ * commit は最後の区切りの行（end）の後に置く。psql が失敗したとき、出力に end が無ければ確定していないと分かる（psqlFailure）。
  */
 export const buildDeleteSql = (organizationId: string, execute: boolean, deleteAuditLogs = false): string => {
   const org = `${literal(organizationId)}::uuid`;
   return [
     '\\set ON_ERROR_STOP 1',
     'begin isolation level repeatable read;',
+    buildTableCheckSql(),
     requireOrganization(organizationId),
     organizationNameSql(organizationId),
     // Storage のファイルは SQL で消すと実体が残るため、このスクリプトでは消さない。残っていれば止める（手順書の §「Storage」）。
@@ -483,10 +518,11 @@ export const parseDeleteOutput = (output: string): { organizationName: string; r
 
 // ---- 書き出し・記録のファイル ----
 
-/** child がディレクトリ parent の中（parent 自身を含む）にあるか。 */
+/** child がディレクトリ parent の中（parent 自身を含む）にあるか。`..data` のような名前は中にあるものとして扱う。 */
 export const isInsideDirectory = (parent: string, child: string): boolean => {
   const relative = path.relative(parent, child);
-  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+  const goesUp = relative === '..' || relative.startsWith(`..${path.sep}`);
+  return !goesUp && !path.isAbsolute(relative);
 };
 
 /** 存在する一番近い祖先まで realpath で解決する（シンボリックリンク経由でリポジトリの中を指すのを見逃さない）。 */
@@ -508,6 +544,21 @@ export const outsideRepositoryError = (target: string, repoRoot: string = REPO_R
   isInsideDirectory(resolveReal(repoRoot), resolveReal(target))
     ? `リポジトリの中には書き出せません（組織のデータをコミットしてしまわないため）: ${target}`
     : null;
+
+/**
+ * 削除の記録の保存先として使えるか（リポジトリの外・まだ無い・置くディレクトリがある）。使えなければ理由を返す。
+ * 削除を始める前に確かめる。書けるかどうかは、この後に記録を排他的に作って確かめる（runDelete）。
+ */
+export const deletionRecordPathError = (record: string, repoRoot: string = REPO_ROOT): string | null => {
+  const inside = outsideRepositoryError(record, repoRoot);
+  if (inside) return inside;
+  if (existsSync(record)) return `削除の記録の保存先がすでにあります（上書きしないため）: ${record}`;
+  const directory = path.dirname(path.resolve(record));
+  if (!existsSync(directory) || !statSync(directory).isDirectory()) {
+    return `削除の記録を置くディレクトリがありません: ${directory}`;
+  }
+  return null;
+};
 
 const sha256 = (content: string | Buffer): string => createHash('sha256').update(content).digest('hex');
 
@@ -553,29 +604,149 @@ export const buildExportFiles = (
 
 export interface DeletionRecord {
   kind: 'ogt-organization-deletion';
+  /** started = 削除を始める前に書いた（確定したかはまだ分からない）/ committed = 削除を確定した */
+  status: 'started' | 'committed';
   organization: { id: string; name: string };
   startedAt: string;
-  finishedAt: string;
+  /** 削除を確定した日時（started のあいだは null） */
+  finishedAt: string | null;
   target: string;
   operator: string;
   tables: DeleteRow[];
   checks: string[];
-  /** 監査ログ（system_audit_logs）の扱い（Issue #160） */
+  /** 監査ログ（system_audit_logs）の扱い */
   auditLogs: string;
+  note?: string;
 }
+
+/** 削除を始める前に作る記録（このまま残っていれば、確定したか分からないことを中身に書く）。 */
+export const buildStartedDeletionRecord = (params: {
+  organizationId: string; organizationName: string; startedAt: string; target: string; operator: string; deleteAuditLogs: boolean;
+}): DeletionRecord => ({
+  kind: 'ogt-organization-deletion',
+  status: 'started',
+  organization: { id: params.organizationId, name: params.organizationName },
+  startedAt: params.startedAt,
+  finishedAt: null,
+  target: params.target,
+  operator: params.operator,
+  tables: [],
+  checks: [],
+  auditLogs: params.deleteAuditLogs ? '消す指定（--delete-audit-logs）' : '消さない（監査ログのある組織は消さずに止める）',
+  note: '削除を始める前に書いた記録。status が started のまま残っているときは、削除が確定したか分からない。summary で組織が残っているか確かめる',
+});
+
+/** 削除を確定した後の記録（始める前の記録を書き直す）。 */
+export const buildCommittedDeletionRecord = (
+  started: DeletionRecord, rows: DeleteRow[], finishedAt: string, deleteAuditLogs: boolean,
+): DeletionRecord => ({
+  ...started,
+  status: 'committed',
+  finishedAt,
+  tables: rows,
+  checks: ['削除の後、この組織の行が 0 件', 'ほかの組織の行の件数とチェックサム（auth.users は件数）が削除の前と同じ'],
+  auditLogs: deleteAuditLogs ? '消した（--delete-audit-logs）' : '無かった（監査ログのある組織は消さずに止める）',
+  note: undefined,
+});
+
+const recordJson = (record: DeletionRecord): string => `${JSON.stringify(record, null, 2)}\n`;
+
+/**
+ * psql の接続文字列から、パスワードを除いた接続文字列（psql の引数に渡す）と、パスワード（環境変数 PGPASSWORD で渡す）に分ける。
+ * psql の引数は同じマシンのほかの利用者から ps で見えるため。
+ * URI（postgresql://user:password@host/db?sslmode=require）は libpq と同じ読み方で、user の後の : から @ までと、
+ * クエリの password= を取り出す。ほかのクエリ（sslmode など）は書かれたまま残す（%XX は psql が読む）。
+ * key=value 形式でパスワードを含むものは、取り出しを誤らないよう受け付けない（URI で指定してもらう）。
+ */
+export const psqlConnection = (dbUrl: string): { args: string[]; env: Record<string, string> } => {
+  const decode = (value: string): string => {
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      throw new Error('接続文字列の %XX の書き方が正しくありません');
+    }
+  };
+  const uri = /^(postgres(?:ql)?:\/\/)(?:([^@/]*)@)?([\s\S]*)$/.exec(dbUrl);
+  if (uri === null) {
+    if (/(^|\s)password\s*=/i.test(dbUrl)) {
+      throw new Error('パスワードを含む接続文字列は postgresql:// で始まる形で指定してください（psql の引数にパスワードを出さないため）');
+    }
+    return { args: [dbUrl], env: {} };
+  }
+  const [, scheme, userInfo = null, rest] = uri;
+  let password: string | null = null;
+  let user = userInfo;
+  if (userInfo !== null && userInfo.includes(':')) {
+    user = userInfo.slice(0, userInfo.indexOf(':'));
+    const value = userInfo.slice(userInfo.indexOf(':') + 1);
+    if (value !== '') password = decode(value);
+  }
+  const queryStart = rest.indexOf('?');
+  let base = rest;
+  if (queryStart !== -1) {
+    base = rest.slice(0, queryStart);
+    const params = rest.slice(queryStart + 1).split('&').filter(param => {
+      const eq = param.indexOf('=');
+      if (eq === -1 || decode(param.slice(0, eq)) !== 'password') return true;
+      // クエリの password は、user の後のものより優先される（libpq と同じ）。空なら指定が無いのと同じ。
+      const value = decode(param.slice(eq + 1));
+      if (value !== '') password = value;
+      return false;
+    });
+    if (params.length > 0) base = `${base}?${params.join('&')}`;
+  }
+  const url = `${scheme}${user ? `${user}@` : ''}${base}`;
+  return { args: [url], env: password === null ? {} : { PGPASSWORD: password } };
+};
+
+/** psql の失敗。commitUnknown は、確定（commit）したかどうか分からないとき true。 */
+export class PsqlError extends Error {
+  readonly commitUnknown: boolean;
+  constructor(message: string, commitUnknown: boolean) {
+    super(message);
+    this.name = 'PsqlError';
+    this.commitUnknown = commitUnknown;
+  }
+}
+
+/**
+ * psql が失敗したときのエラーを作る。mayCommit は、SQL の最後で commit する実行（delete --execute）のとき true。
+ * commit は最後の区切りの行（end）の後にあるため、出力に end が無ければ確定の前に止まっている（何も変えていない）。
+ * end まで進んでいた、または psql が途中で止められた（出力が残っていない）ときは、確定したか分からない。
+ */
+export const psqlFailure = (detail: string, stdout: string, interrupted: boolean, mayCommit: boolean): PsqlError => {
+  const reachedEnd = stdout.split(/\r?\n/).includes(`${MARKER} end`);
+  if (mayCommit && (reachedEnd || interrupted)) {
+    return new PsqlError(
+      `psql がエラーで終了しました。削除が確定したかは分かりません。summary で組織が残っているか確かめてください:\n${detail}`, true,
+    );
+  }
+  return new PsqlError(`psql がエラーで終了しました（何も変えていません）:\n${detail}`, false);
+};
 
 // ---- ここから下は実行環境に触れる（単体テストの対象外） ----
 
-type Target = { kind: 'docker'; container: string } | { kind: 'psql'; dbUrl: string };
+type Target =
+  | { kind: 'docker'; container: string }
+  | { kind: 'psql'; connection: { args: string[]; env: Record<string, string> } };
 
 const describeTarget = (target: Target): string =>
-  target.kind === 'docker' ? `ローカル Supabase（DB コンテナ ${target.container}）` : `${redactDbUrl(target.dbUrl)}（ホストの psql）`;
+  target.kind === 'docker'
+    ? `ローカル Supabase（DB コンテナ ${target.container}）`
+    // connection.args はパスワードを除いた接続文字列（psqlConnection）。
+    : `${target.connection.args[0]}（ホストの psql）`;
 
 const resolveTarget = (options: OrgDataOptions): Target | string => {
   if (options.dbUrl !== null) {
+    let connection: { args: string[]; env: Record<string, string> };
+    try {
+      connection = psqlConnection(options.dbUrl);
+    } catch (error) {
+      return (error as Error).message;
+    }
     const result = spawnSync('psql', ['--version'], { stdio: 'ignore' });
     if (result.error || result.status !== 0) return 'ホストに psql が見つかりません。PostgreSQL クライアント（psql）をインストールしてください';
-    return { kind: 'psql', dbUrl: options.dbUrl };
+    return { kind: 'psql', connection };
   }
   let name = options.container;
   if (name === null) {
@@ -593,16 +764,23 @@ const resolveTarget = (options: OrgDataOptions): Target | string => {
   return { kind: 'docker', container: name };
 };
 
-/** SQL を psql に標準入力で渡して実行し、標準出力を返す（失敗したら psql のエラーを添えて Error）。 */
-const runPsql = (target: Target, sql: string): string => {
+/**
+ * SQL を psql に標準入力で渡して実行し、標準出力を返す（失敗したら psql のエラーを添えて PsqlError）。
+ * mayCommit は、SQL の最後で commit するとき true（失敗したときに、確定したか分からないと伝えるため）。
+ */
+const runPsql = (target: Target, sql: string, mayCommit = false): string => {
   const psqlArgs = ['-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-f', '-'];
-  const [command, args] = target.kind === 'docker'
-    ? ['docker', ['exec', '-i', target.container, 'psql', '-U', 'postgres', '-d', 'postgres', ...psqlArgs]]
-    : ['psql', [target.dbUrl, ...psqlArgs]];
+  const [command, args, env] = target.kind === 'docker'
+    ? ['docker', ['exec', '-i', target.container, 'psql', '-U', 'postgres', '-d', 'postgres', ...psqlArgs], process.env]
+    : ['psql', [...target.connection.args, ...psqlArgs], { ...process.env, ...target.connection.env }];
   // 大きな組織の書き出しでも収まるよう、出力の上限を広げる（行はすべてメモリに載る）。
-  const result = spawnSync(command, args, { input: sql, encoding: 'utf8', maxBuffer: 1024 * 1024 * 1024 });
-  if (result.error) throw new Error(`${command} を起動できません: ${result.error.message}`);
-  if (result.status !== 0) throw new Error(`psql がエラーで終了しました（何も変えていません）:\n${result.stderr.trim()}`);
+  const result = spawnSync(command, args, { input: sql, encoding: 'utf8', maxBuffer: 1024 * 1024 * 1024, env });
+  // 起動できなかったとき（pid が無い）は、何も実行していない。
+  if (result.error && !result.pid) throw new Error(`${command} を起動できません: ${result.error.message}`);
+  if (result.error || result.status !== 0) {
+    const detail = [result.stderr?.trim(), result.error?.message].filter(Boolean).join('\n');
+    throw psqlFailure(detail, result.stdout ?? '', result.error !== undefined || result.signal !== null, mayCommit);
+  }
   return result.stdout;
 };
 
@@ -643,47 +821,91 @@ const runExport = (options: OrgDataOptions, target: Target): number => {
   return 0;
 };
 
-const runDelete = (options: OrgDataOptions, target: Target): number => {
-  if (options.execute) {
-    const record = path.resolve(options.record!);
-    const inside = outsideRepositoryError(record);
-    if (inside) { console.error(`org-data: ${inside}`); return 1; }
-    if (existsSync(record)) { console.error(`org-data: 削除の記録の保存先がすでにあります（上書きしないため）: ${record}`); return 1; }
-    // 名前の確認は、削除と同じ SQL の中ではなく先に行う（違えば何も始めない）。
-    const { organizationName } = parseSummaryOutput(runPsql(target, buildSummarySql(options.organizationId)));
-    if (organizationName !== options.confirmName) {
-      console.error(`org-data: --confirm-name が組織名と一致しません（DB の組織名: ${organizationName}）。何も削除していません`);
-      return 1;
-    }
-  }
-  const startedAt = new Date().toISOString();
-  const { organizationName, rows } = parseDeleteOutput(
-    runPsql(target, buildDeleteSql(options.organizationId, options.execute, options.deleteAuditLogs)),
-  );
-  const finishedAt = new Date().toISOString();
+const printDeleteRows = (organizationName: string, options: OrgDataOptions, target: Target, rows: DeleteRow[]): void => {
   console.log(`org-data: ${organizationName}（${options.organizationId}）— ${describeTarget(target)}`);
   printTable(
     ['テーブル', options.execute ? '削除した件数' : '削除される件数', 'ほかの組織の件数（変わらない）'],
     rows.map(row => [row.name, String(row.targetRows), String(row.otherRows)]),
   );
+};
+
+const runDelete = (options: OrgDataOptions, target: Target): number => {
   if (!options.execute) {
+    const { organizationName, rows } = parseDeleteOutput(
+      runPsql(target, buildDeleteSql(options.organizationId, false, options.deleteAuditLogs)),
+    );
+    printDeleteRows(organizationName, options, target, rows);
     console.log('org-data: 試行です。確認のうえ元に戻したため、何も削除していません（実際に消すには --execute）');
     return 0;
   }
-  const record: DeletionRecord = {
-    kind: 'ogt-organization-deletion',
-    organization: { id: options.organizationId, name: organizationName },
-    startedAt,
-    finishedAt,
+
+  const recordPath = path.resolve(options.record!);
+  const pathError = deletionRecordPathError(recordPath);
+  if (pathError) { console.error(`org-data: ${pathError}。何も削除していません`); return 1; }
+  // 名前の確認は、削除と同じ SQL の中ではなく先に行う（違えば何も始めない）。
+  const { organizationName } = parseSummaryOutput(runPsql(target, buildSummarySql(options.organizationId)));
+  if (organizationName !== options.confirmName) {
+    console.error(`org-data: --confirm-name が組織名と一致しません（DB の組織名: ${organizationName}）。何も削除していません`);
+    return 1;
+  }
+
+  // 削除を始める前に、記録を排他的に作る（作れなければ何も消さない）。確定の後に書けず、記録が残らない事態を防ぐ。
+  const started = buildStartedDeletionRecord({
+    organizationId: options.organizationId,
+    organizationName,
+    startedAt: new Date().toISOString(),
     target: describeTarget(target),
     operator: userInfo().username,
-    tables: rows,
-    checks: ['削除の後、この組織の行が 0 件', 'ほかの組織の行の件数とチェックサム（auth.users は件数）が削除の前と同じ'],
-    auditLogs: options.deleteAuditLogs ? '消した（--delete-audit-logs）' : '無かった（監査ログのある組織は消さずに止める）',
-  };
-  writeFileSync(path.resolve(options.record!), `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 });
-  console.log(`org-data: 削除しました。削除の記録 → ${path.resolve(options.record!)}`);
-  return 0;
+    deleteAuditLogs: options.deleteAuditLogs,
+  });
+  try {
+    writeFileSync(recordPath, recordJson(started), { flag: 'wx', mode: 0o600 });
+  } catch (error) {
+    console.error(`org-data: 削除の記録を作れません（${(error as Error).message}）。何も削除していません`);
+    return 1;
+  }
+
+  let output: string;
+  try {
+    output = runPsql(target, buildDeleteSql(options.organizationId, true, options.deleteAuditLogs), true);
+  } catch (error) {
+    console.error(`org-data: ${(error as Error).message}`);
+    if (error instanceof PsqlError && !error.commitUnknown) {
+      // 確定していないので、始める前に作った記録を消す（同じ保存先でやり直せるように）。
+      try {
+        unlinkSync(recordPath);
+      } catch {
+        console.error(`org-data: 始める前に作った削除の記録を消せませんでした（何も削除していないので、消してかまいません）: ${recordPath}`);
+      }
+    } else {
+      console.error(`org-data: 始める前に作った削除の記録（status: started）を残しました。確かめた結果を書き添えて保管してください: ${recordPath}`);
+    }
+    return 1;
+  }
+
+  // ここまで来れば削除は確定している。出力を読めなくても、記録は残す。
+  const finishedAt = new Date().toISOString();
+  let rows: DeleteRow[] = [];
+  let parseError: string | null = null;
+  try {
+    rows = parseDeleteOutput(output).rows;
+    printDeleteRows(organizationName, options, target, rows);
+  } catch (error) {
+    parseError = (error as Error).message;
+    console.error(`org-data: 削除は確定しましたが、psql の出力を読み取れませんでした: ${parseError}`);
+  }
+  const record = buildCommittedDeletionRecord(started, rows, finishedAt, options.deleteAuditLogs);
+  if (parseError !== null) record.note = `削除は確定したが、テーブルごとの件数を読み取れなかった: ${parseError}`;
+  try {
+    writeFileSync(recordPath, recordJson(record), { mode: 0o600 });
+  } catch (error) {
+    console.error(`org-data: 削除は確定しました。ただし削除の記録を ${recordPath} に書けませんでした（${(error as Error).message}）。`);
+    console.error('org-data: 標準出力に出した次の JSON を、削除の記録として保存してください:');
+    console.log(recordJson(record).trimEnd());
+    return 1;
+  }
+  console.log(`org-data: 削除しました。削除の記録 → ${recordPath}`);
+  return parseError === null ? 0 : 1;
 };
 
 const main = (argv: string[]): number => {
