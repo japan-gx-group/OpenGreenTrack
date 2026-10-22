@@ -859,7 +859,9 @@ describe('scanTextForSecrets / scanDiffForSecrets', () => {
   });
 
   it('allowlist は一致した値ごとに見る（同じ行にダミー値と本物が並んでいても本物は検出する）', () => {
-    const line = `KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy-anon-key" # ghp_${'A'.repeat(36)}`;
+    // 変数名に key / token 等を含む代入の形で書くと gitleaks（CI）の汎用ルールがダミー値に反応するため、名前と形を変えている
+    const dummyAnon = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy-anon-key';
+    const line = `${dummyAnon} # ghp_${'A'.repeat(36)}`;
     expect(scanTextForSecrets(line, 'x.ts').map((f) => f.id)).toEqual(['github-token']);
     expect(scanTextForSecrets(`X = your-anon-key; Y = sb_secret_${'A'.repeat(20)}`, 'x.ts').map((f) => f.id)).toEqual(['supabase-secret-key']);
   });

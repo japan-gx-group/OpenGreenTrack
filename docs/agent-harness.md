@@ -204,7 +204,7 @@ Codex では `/hooks` でフックを確認して **信頼** する必要があ�
 | ruleset のバイパス | 管理者は常に可 | **PR 経由のみ**（`bypass_mode: pull_request`）か無効 |
 | Secret scanning / Push protection | 無効 | **有効**（公開リポジトリは無料。gitleaks と二重化） |
 | Dependabot security updates | 無効 | 有効（`dependabot.yml` の更新 PR と併用） |
-| Dependency graph | （公開リポジトリは既定で有効） | Dependency Review ジョブが使う |
+| Dependency graph | 無効（Dependency Review ジョブが「not supported」で失敗する） | **有効**（Settings → Code security → Dependency graph。Dependency Review と Dependabot の前提） |
 
 > **CODEOWNERS の所有者が 1 人のときの注意**: 現在の CODEOWNERS は所有者が 1 人（`@jgx-KenjiYoshioka`）。この状態で
 > 「Code Owner レビュー必須」を有効にすると、所有者自身が出した PR は自分で承認できないためマージできなくなる。
