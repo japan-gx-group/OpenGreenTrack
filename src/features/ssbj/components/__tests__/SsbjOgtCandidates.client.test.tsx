@@ -22,8 +22,16 @@ vi.mock('../../services/ogtAdoptionService', () => ({
   clearOgtAdoption: vi.fn(),
 }));
 
+
+// 採用・取り消しは SSBJ のロールが入力担当か管理者のときだけ出す。ここでは入力担当として操作する。
+vi.mock('../../services/memberRoleService', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../services/memberRoleService')>()),
+  getMySsbjRole: vi.fn(async () => 'editor'),
+}));
+
 import { getOgtCandidates } from '../../services/ogtCandidateService';
 import { adoptOgtCandidates, clearOgtAdoption, getOgtAdoption } from '../../services/ogtAdoptionService';
+import { getMySsbjRole } from '../../services/memberRoleService';
 import { getSsbjReport } from '../../services/reportService';
 import { ogtCandidateFingerprint } from '../../utils/ogtAdoption';
 import { SsbjOgtCandidates } from '../SsbjOgtCandidates.client';
@@ -139,6 +147,19 @@ describe('SsbjOgtCandidates（採用）', () => {
     await settle();
     expect(clearOgtAdoption).toHaveBeenCalledWith(report.id);
     expect(rendered.container.textContent).toContain('まだ採用していません');
+  });
+});
+
+describe('SsbjOgtCandidates（SSBJ のロール）', () => {
+  it('入力担当か管理者でなければ、採用・取り消しを出さない（候補値の確認はできる）', async () => {
+    vi.mocked(getMySsbjRole).mockResolvedValueOnce('approver');
+    vi.mocked(getOgtAdoption).mockResolvedValue(fictionalGhgAdoption);
+    rendered = render(<SsbjOgtCandidates reportId={report.id} />);
+    await settle();
+    const text = rendered.container.textContent ?? '';
+    expect(text).not.toContain('採用を取り消す');
+    expect(text).not.toContain('表示中の候補値で採用し直す');
+    expect(text).toContain('Scope 1');
   });
 });
 

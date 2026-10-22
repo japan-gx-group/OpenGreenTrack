@@ -4,6 +4,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  guardSsbjRole: vi.fn(),
   getCurrentProfile: vi.fn(),
   previewSsbjReport: vi.fn(),
   log: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), child: vi.fn() },
@@ -12,6 +13,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/currentProfile', () => ({ getCurrentProfile: mocks.getCurrentProfile }));
 vi.mock('@/lib/logging/requestLogger', () => ({ getRequestLogger: vi.fn(async () => mocks.log) }));
 vi.mock('@/features/ssbj/services/previewServer', () => ({ previewSsbjReport: mocks.previewSsbjReport }));
+
+vi.mock('@/features/ssbj/services/roleServer', () => ({ guardSsbjRole: mocks.guardSsbjRole }));
 
 import { GET } from '../route';
 
@@ -23,6 +26,7 @@ describe('GET /api/ssbj/reports/[reportId]/preview', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getCurrentProfile.mockResolvedValue({ id: 'user-1', organizationId: 'org-1' });
+    mocks.guardSsbjRole.mockResolvedValue(null);
     mocks.previewSsbjReport.mockResolvedValue({ draftRevision: 3, snapshot: { schemaVersion: 1 } });
   });
 
@@ -49,5 +53,19 @@ describe('GET /api/ssbj/reports/[reportId]/preview', () => {
     mocks.previewSsbjReport.mockRejectedValueOnce(new Error('boom'));
     expect((await GET(request(), params())).status).toBe(500);
     expect(mocks.log.error).toHaveBeenCalled();
+  });
+  it('SSBJ のロールが許さなければ 403 で、service_role の処理を呼ばない（docs/authorization-matrix.md §2.2）', async () => {
+    mocks.guardSsbjRole.mockResolvedValue({ status: 403, error: 'SSBJ のロールが閲覧者のため、この操作はできません' });
+    const response = await GET(request(), params());
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toContain('閲覧者のため');
+    expect(mocks.guardSsbjRole).toHaveBeenCalledWith({ id: 'user-1', organizationId: 'org-1' }, 'view_working', expect.any(Function));
+    expect(mocks.previewSsbjReport).not.toHaveBeenCalled();
+  });
+
+  it('SSBJ のロールを確かめられなければ 500（確かめないまま進めない）', async () => {
+    mocks.guardSsbjRole.mockResolvedValue({ status: 500, error: 'サーバー内部エラーが発生しました' });
+    expect((await GET(request(), params())).status).toBe(500);
+    expect(mocks.previewSsbjReport).not.toHaveBeenCalled();
   });
 });

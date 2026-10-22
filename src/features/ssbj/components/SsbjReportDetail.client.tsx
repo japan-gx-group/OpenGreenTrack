@@ -20,6 +20,8 @@ import { useSsbjReportForm } from '../hooks/useSsbjReportForm';
 import { useSsbjVersionSave } from '../hooks/useSsbjVersionSave';
 import type { SsbjReportStatusChangeResult } from '../services/reportWorkflowClient';
 import { updateSsbjReportBasicInfo } from '../services/reportService';
+import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
+import { canEditSsbj } from '../utils/memberRole';
 import { isSsbjReportLocked } from '../utils/reportStatus';
 import { toSsbjReportFormValues } from '../utils/reportValidation';
 import { SsbjEditConflictError } from '../utils/writeError';
@@ -60,6 +62,8 @@ export const SsbjReportDetail = ({ reportId }: { reportId: string }) => {
   };
 
   const versionSave = useSsbjVersionSave(reportId);
+  // 保存版の作成は、SSBJ のロールが入力担当か管理者のときだけ出す（API も同じ判定をする）。
+  const myRole = useSsbjMyRole();
 
   const handleSave = async (event: FormEvent) => {
     if (await form.submit(event)) {
@@ -166,12 +170,14 @@ export const SsbjReportDetail = ({ reportId }: { reportId: string }) => {
             </Card>
             <SsbjReportStatusCard report={report} disabled={isEditing} onChanged={handleStatusChanged} />
             <SsbjReportContentsNav reportId={report.id} />
-            <SsbjVersionSaveCard
-              isSaving={versionSave.isSaving}
-              errorMessage={versionSave.errorMessage}
-              disabled={isEditing}
-              onSave={() => void handleCreateVersion()}
-            />
+            {canEditSsbj(myRole.role) && (
+              <SsbjVersionSaveCard
+                isSaving={versionSave.isSaving}
+                errorMessage={versionSave.errorMessage}
+                disabled={isEditing}
+                onSave={() => void handleCreateVersion()}
+              />
+            )}
           </>
         ) : null}
       </div>

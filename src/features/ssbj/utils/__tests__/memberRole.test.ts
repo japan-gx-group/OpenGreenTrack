@@ -7,7 +7,10 @@ import {
   effectiveSsbjRole,
   isSsbjEffectiveRole,
   isSsbjMemberRole,
+  ssbjForbiddenMessage,
   ssbjMemberRoleLogText,
+  ssbjRoleAllows,
+  ssbjStatusActionPermission,
 } from '../memberRole';
 
 describe('値の検証', () => {
@@ -66,5 +69,26 @@ describe('ssbjMemberRoleLogText', () => {
   it('利用者の削除に伴う解除は、手動の解除と分けて書く（入力担当に戻ったとは書かない）', () => {
     expect(ssbjMemberRoleLogText(log({ action: 'delete', actorUserId: null, role: null, previousRole: 'viewer', memberDeleted: true }), '不明な利用者'))
       .toBe('不明な利用者 の割り当て（閲覧者）が、利用者の削除に伴い外れた');
+  });
+});
+
+describe('操作に要る権限', () => {
+  it('状態の操作: レビュー依頼・取り下げは edit、承認・差戻しは approve', () => {
+    expect(['submit', 'withdraw', 'approve', 'reopen'].map(action => ssbjStatusActionPermission(action as 'submit')))
+      .toEqual(['edit', 'edit', 'approve', 'approve']);
+  });
+
+  it('ロールと権限の対応は docs/authorization-matrix.md §1 のとおり', () => {
+    const roles = ['admin', 'editor', 'approver', 'viewer', null] as const;
+    expect(roles.map(role => ssbjRoleAllows(role, 'edit'))).toEqual([true, true, false, false, false]);
+    expect(roles.map(role => ssbjRoleAllows(role, 'view_working'))).toEqual([true, true, true, false, false]);
+    expect(roles.map(role => ssbjRoleAllows(role, 'approve'))).toEqual([true, false, true, false, false]);
+  });
+
+  it('拒否のメッセージは、今のロールと誰ならできるかを伝える', () => {
+    expect(ssbjForbiddenMessage('editor', 'approve')).toBe(
+      'SSBJ のロールが入力担当のため、この操作はできません。承認・差戻しは、承認担当か管理者だけができます',
+    );
+    expect(ssbjForbiddenMessage(null, 'edit')).toBe('この操作の権限がありません');
   });
 });

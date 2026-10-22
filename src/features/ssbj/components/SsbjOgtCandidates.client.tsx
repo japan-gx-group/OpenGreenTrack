@@ -21,6 +21,8 @@ import { changedOgtValueLabels, hasAdoptableOgtValue } from '../utils/ogtAdoptio
 import { OGT_DATA_QUALITY_LABELS, OGT_SOURCE_LABELS, ogtMethodLabel, ogtValueLabel } from '../utils/ogtValue';
 import { SsbjOgtAdoptionCard } from './SsbjOgtAdoptionCard.client';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
+import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
+import { canEditSsbj } from '../utils/memberRole';
 import { isSsbjReportLocked } from '../utils/reportStatus';
 import { SsbjLockedNotice } from './SsbjLockedNotice';
 
@@ -43,6 +45,8 @@ const CandidateRow = ({ candidate }: { candidate: OgtCandidateValue }) => (
 
 export const SsbjOgtCandidates = ({ reportId }: { reportId: string }) => {
   const { report, isLoading: reportLoading, errorMessage: reportError, isNotFound } = useSsbjReport(reportId);
+  // 採用・取り消しは、SSBJ のロールが入力担当か管理者のときだけ出す（API・DB も同じ判定をする）。
+  const myRole = useSsbjMyRole();
   const { data, isLoading: candidatesLoading, errorMessage: candidateError, refresh } = useOgtCandidates(report);
   const { adoption, isLoading: adoptionLoading, errorMessage: adoptionError, reload: reloadAdoption } = useOgtAdoption(report?.id ?? null);
   const adoptionActions = useOgtAdoptionActions(reportId);
@@ -96,7 +100,7 @@ export const SsbjOgtCandidates = ({ reportId }: { reportId: string }) => {
               adoption={adoption}
               changedLabels={adoption ? changedOgtValueLabels(adoption, data.candidates, data.suppliers) : []}
               canAdopt={hasAdoptableOgtValue(data.candidates)}
-              locked={isSsbjReportLocked(report.review)}
+              locked={isSsbjReportLocked(report.review) || !canEditSsbj(myRole.role)}
               isSubmitting={adoptionActions.isSubmitting}
               errorMessage={adoptionActions.errorMessage}
               onAdopt={async () => {
