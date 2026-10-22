@@ -11,12 +11,19 @@ vi.mock('../../services/previewService', () => ({
   getSsbjWorkingPreview: vi.fn(),
   getSsbjVersionPreview: vi.fn(),
 }));
+vi.mock('../../services/versionExportService', () => ({ getSsbjApprovedVersion: vi.fn() }));
+// SSBJ のロールは、既定で入力担当として開く。
+vi.mock('../../services/memberRoleService', () => ({ getMySsbjRole: vi.fn(async () => 'editor') }));
 
 import { getSsbjVersionPreview, getSsbjWorkingPreview } from '../../services/previewService';
+import { getMySsbjRole } from '../../services/memberRoleService';
+import { getSsbjApprovedVersion } from '../../services/versionExportService';
+import { toSsbjDisclosedSnapshot } from '../../utils/disclosedSnapshot';
 import { SsbjPreviewPrintView } from '../SsbjPreviewPrintView.client';
 
 let rendered: RenderResult | null = null;
 const flush = async () => { await act(async () => { await Promise.resolve(); }); };
+const settle = async () => { for (let i = 0; i < 4; i += 1) await flush(); };
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -38,7 +45,7 @@ describe('SsbjPreviewPrintView', () => {
   it('source に保存版の ID があれば、その保存版を読み込んで印刷ダイアログを開く', async () => {
     mocks.search = `source=${fictionalVersion.id}`;
     rendered = render(<SsbjPreviewPrintView reportId={fictionalVersion.reportId} />);
-    await flush(); await flush();
+    await settle();
     expect(getSsbjVersionPreview).toHaveBeenCalledWith(fictionalVersion.reportId, fictionalVersion.id);
     expect(getSsbjWorkingPreview).not.toHaveBeenCalled();
     expect(rendered.container.textContent).toContain('保存版 第1版');
@@ -53,11 +60,31 @@ describe('SsbjPreviewPrintView', () => {
   ])('URL に internal=1 が付いていても、%sの印刷に内部情報を含めず、開示する内容はすべて含める', async (_label, search) => {
     mocks.search = search;
     rendered = render(<SsbjPreviewPrintView reportId={fictionalVersion.reportId} />);
-    await flush(); await flush();
+    await settle();
     const text = rendered.container.textContent ?? '';
     expect(fictionalDisclosedTexts.filter(value => !text.includes(value))).toEqual([]);
     expect(fictionalInternalTexts.filter(value => text.includes(value))).toEqual([]);
     expect(text).not.toContain('開示しない');
   });
 
+  it('閲覧者は、source にかかわらず承認した保存版の開示する内容を API から読んで印刷する', async () => {
+    vi.mocked(getMySsbjRole).mockResolvedValueOnce('viewer');
+    vi.mocked(getSsbjApprovedVersion).mockResolvedValue({
+      id: fictionalVersion.id, reportId: fictionalVersion.reportId, versionNumber: 1, createdAt: fictionalVersion.createdAt,
+      note: '承認時の保存版', sourceVersionId: null, createdByUserId: null, creatorName: '不明',
+      snapshot: toSsbjDisclosedSnapshot(fictionalSnapshot).snapshot,
+    });
+    mocks.search = 'source=working&internal=1';
+    rendered = render(<SsbjPreviewPrintView reportId={fictionalVersion.reportId} />);
+    await settle();
+    expect(getSsbjApprovedVersion).toHaveBeenCalledWith(fictionalVersion.reportId);
+    expect(getSsbjWorkingPreview).not.toHaveBeenCalled();
+    expect(getSsbjVersionPreview).not.toHaveBeenCalled();
+    const text = rendered.container.textContent ?? '';
+    expect(text).toContain('保存版 第1版');
+    expect(fictionalDisclosedTexts.filter(value => !text.includes(value))).toEqual([]);
+    expect(fictionalInternalTexts.filter(value => text.includes(value))).toEqual([]);
+    await act(async () => { vi.advanceTimersByTime(400); });
+    expect(window.print).toHaveBeenCalledTimes(1);
+  });
 });

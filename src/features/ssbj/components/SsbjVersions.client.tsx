@@ -3,6 +3,9 @@
 // 固定版の履歴・内容・複製・復元と、CSV / Excel 出力の画面。内容と出力は固定版の snapshot のみから作る。
 // 出力は、出力履歴（system_audit_logs）と操作履歴（ssbj_audit_logs）に記録してからダウンロードさせる
 // （記録できなければ出力しない）。復元は、戻す前の作業中の内容をサーバが保存版として自動で残す。
+// 閲覧者は保存版の行を読めない（RLS）。承認した保存版の開示する内容（内部メモ・内部記録を除いたもの）だけを API から読み、
+// 内容の表示と出力に使う。出力には内部記録の列を入れず、操作履歴・出力履歴（組織の全員の出力）は出さない
+// （docs/authorization-matrix.md §2.3）。
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -15,6 +18,7 @@ import { useSsbjReport } from '../hooks/useSsbjReport';
 import { recordSsbjExport } from '../services/auditLogService';
 import { restoreSsbjReportVersion } from '../services/reportWorkflowClient';
 import {
+  getSsbjApprovedVersion,
   getSsbjCsvVersion,
   listSsbjCsvHistory,
   listSsbjVersions,
@@ -28,7 +32,7 @@ import type { SsbjCsvVersion } from '../services/versionCsv';
 import { saveSsbjReportVersion } from '../services/versionClient';
 import { buildSsbjWorkbook, downloadSsbjWorkbook, ssbjVersionSheet, ssbjVersionXlsxFileName } from '../services/versionXlsx';
 import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
-import { canEditSsbj } from '../utils/memberRole';
+import { canEditSsbj, canViewSsbjWorking } from '../utils/memberRole';
 import { isSsbjReportLocked } from '../utils/reportStatus';
 import { SsbjLockedNotice } from './SsbjLockedNotice';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
@@ -51,11 +55,17 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
   const [selectedVersion, setSelectedVersion] = useState<SsbjCsvVersion | null>(null);
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [successMessage, setSuccessMessage] = useState('');
+  // 閲覧者は、承認した保存版の開示する内容だけを API から読む。ロールが分かるまでは読まない。
+  const roleKnown = !myRole.isLoading;
+  const viewerOnly = roleKnown && !canViewSsbjWorking(myRole.role);
 
   useEffect(() => {
-    if (!report) return;
+    if (!report || !roleKnown) return;
     let active = true;
-    Promise.all([listSsbjVersions(reportId), listSsbjCsvHistory(reportId)])
+    const load: Promise<[SsbjVersionSummary[], SsbjCsvHistory[]]> = viewerOnly
+      ? getSsbjApprovedVersion(reportId).then(version => [[version], []])
+      : Promise.all([listSsbjVersions(reportId), listSsbjCsvHistory(reportId)]);
+    load
       .then(([savedVersions, savedHistory]) => {
         if (active) {
           setVersions(savedVersions);
@@ -69,15 +79,25 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
         if (active) setIsLoading(false);
       });
     return () => { active = false; };
-  }, [report, reportId]);
+  }, [report, reportId, roleKnown, viewerOnly]);
+
+  /** 内容の表示・出力に使う保存版。閲覧者は承認した版（内部記録を除いたもの）だけ。 */
+  const loadVersion = async (versionId: string): Promise<SsbjCsvVersion> => {
+    if (!viewerOnly) return getSsbjCsvVersion(reportId, versionId);
+    const version = await getSsbjApprovedVersion(reportId);
+    // 画面を開いた後に差戻し・承認し直しがあれば、表示していた版とは別の版になる。
+    if (version.id !== versionId) throw new Error('保存版が見つかりません。画面を開き直してください');
+    return version;
+  };
 
   const handleDownload = async (versionId: string, format: SsbjVersionExportFormat) => {
     setBusyVersionId(versionId);
     setErrorMessage('');
     try {
-      const version = await getSsbjCsvVersion(reportId, versionId);
+      const version = await loadVersion(versionId);
       const generatedAt = new Date().toISOString();
-      const rows = ssbjVersionToCsvRows(version, generatedAt);
+      // 閲覧者の出力には内部記録の列を入れない。
+      const rows = ssbjVersionToCsvRows(version, generatedAt, { internalRecords: !viewerOnly });
       // 記録してから出力する（誰がいつ出力したかを残せない出力をさせない）。
       await recordSsbjExport(reportId, format, version.id);
       const savedHistory = await recordSsbjCsvGeneration(version, format);
@@ -86,7 +106,7 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
       } else {
         await downloadSsbjWorkbook(await buildSsbjWorkbook([ssbjVersionSheet(rows)]), ssbjVersionXlsxFileName(version, generatedAt));
       }
-      setHistory(current => [savedHistory, ...current].slice(0, 20));
+      if (!viewerOnly) setHistory(current => [savedHistory, ...current].slice(0, 20));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : `${FORMAT_LABELS[format]}の出力に失敗しました`);
     } finally {
@@ -98,7 +118,7 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
     setBusyVersionId(versionId);
     setErrorMessage('');
     try {
-      setSelectedVersion(await getSsbjCsvVersion(reportId, versionId));
+      setSelectedVersion(await loadVersion(versionId));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '保存版の取得に失敗しました');
     } finally {
@@ -162,9 +182,11 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
           <Link href={`/ssbj/${encodeURIComponent(reportId)}`} className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline">
             <ArrowLeft size={16} /> レポート詳細へ戻る
           </Link>
-          <Link href={`/ssbj/${encodeURIComponent(reportId)}/history`} className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline">
-            <History size={16} /> 操作履歴を見る
-          </Link>
+          {canViewSsbjWorking(myRole.role) && (
+            <Link href={`/ssbj/${encodeURIComponent(reportId)}/history`} className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline">
+              <History size={16} /> 操作履歴を見る
+            </Link>
+          )}
         </div>
         <SsbjTrialNotice />
         {report && <SsbjLockedNotice report={report} />}
@@ -225,18 +247,21 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
                 <SsbjVersionContents version={selectedVersion} />
               </Card>
             )}
-            <Card>
-              <h2 className="m-0 mb-3 text-base font-bold">出力履歴（直近20件）</h2>
-              {history.length === 0 ? <p className="text-sm text-text-muted">出力履歴はありません。</p> : (
-                <ul className="m-0 list-none space-y-2 p-0 text-sm">
-                  {history.map(item => (
-                    <li key={item.id}>
-                      {FORMAT_LABELS[item.format]} · 版 {item.versionNumber} · {new Date(item.createdAt).toLocaleString('ja-JP')} · {item.versionId}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card>
+            {/* 出力履歴は組織の全員の出力を読む（OGT 本体の記録）。閲覧者には出さない。 */}
+            {!viewerOnly && (
+              <Card>
+                <h2 className="m-0 mb-3 text-base font-bold">出力履歴（直近20件）</h2>
+                {history.length === 0 ? <p className="text-sm text-text-muted">出力履歴はありません。</p> : (
+                  <ul className="m-0 list-none space-y-2 p-0 text-sm">
+                    {history.map(item => (
+                      <li key={item.id}>
+                        {FORMAT_LABELS[item.format]} · 版 {item.versionNumber} · {new Date(item.createdAt).toLocaleString('ja-JP')} · {item.versionId}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+            )}
           </>
         ) : null}
       </div>

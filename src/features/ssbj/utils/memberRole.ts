@@ -37,9 +37,10 @@ export const canApproveSsbj = (role: SsbjEffectiveRole | null): boolean => role 
 
 /**
  * 操作に要る権限（docs/authorization-matrix.md §2）。edit = 作業中データを変える（入力担当か管理者）、
- * view_working = 作業中の内容を見る（閲覧者以外）、approve = 承認・差戻し（承認担当か管理者）。
+ * view_working = 作業中の内容を見る（閲覧者以外）、approve = 承認・差戻し（承認担当か管理者）、
+ * view_approved = 承認した保存版の開示する内容を見る（すべてのロール）。
  */
-export type SsbjPermission = 'edit' | 'view_working' | 'approve';
+export type SsbjPermission = 'edit' | 'view_working' | 'approve' | 'view_approved';
 
 export const ssbjRoleAllows = (role: SsbjEffectiveRole | null, permission: SsbjPermission): boolean => {
   switch (permission) {
@@ -49,6 +50,8 @@ export const ssbjRoleAllows = (role: SsbjEffectiveRole | null, permission: SsbjP
       return canViewSsbjWorking(role);
     case 'approve':
       return canApproveSsbj(role);
+    case 'view_approved':
+      return role !== null;
   }
 };
 
@@ -60,6 +63,7 @@ const PERMISSION_WHO: Record<SsbjPermission, string> = {
   edit: 'レポートの内容を変える操作は、入力担当か管理者だけができます',
   view_working: '作業中の内容は、閲覧者には見えません（承認した保存版だけを見られます）',
   approve: '承認・差戻しは、承認担当か管理者だけができます',
+  view_approved: '承認した保存版は、組織の利用者だけが見られます',
 };
 
 /** ロールが操作を許さないときの、利用者向けのメッセージ。 */

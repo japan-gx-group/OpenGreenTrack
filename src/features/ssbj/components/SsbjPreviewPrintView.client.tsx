@@ -6,11 +6,16 @@
 // 表示する内容（作業中 / 保存版）はクエリ（source）で受け取る。
 // 印刷・PDF は社外に共有されうるため、内部メモと根拠文書の内部記録（開示しない内容）は常に出さない。
 // クエリに internal=1 などが付いていても読まない（URL を直接開いても内部情報が印刷に混ざらないようにする）。
+// 閲覧者は、クエリにかかわらず承認した保存版の開示する内容（内部メモ・内部記録を除いたもの）を API から読む
+// （閲覧者は保存版の行を読めない。docs/authorization-matrix.md §2.3）。
 
 import { useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { AlertCircle, Loader2, Printer } from 'lucide-react';
+import { useSsbjApprovedVersion } from '../hooks/useSsbjApprovedVersion';
+import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
 import { useSsbjPreviewSource } from '../hooks/useSsbjPreviewSource';
+import { canViewSsbjWorking } from '../utils/memberRole';
 import { parsePreviewSelection } from '../utils/preview';
 import { SsbjPreviewDocument } from './SsbjPreviewDocument';
 
@@ -18,7 +23,14 @@ export const SsbjPreviewPrintView = ({ reportId }: { reportId: string }) => {
   const searchParams = useSearchParams();
   const sourceParam = searchParams.get('source');
   const selection = useMemo(() => parsePreviewSelection(sourceParam), [sourceParam]);
-  const { source, isLoading, errorMessage } = useSsbjPreviewSource(reportId, selection);
+  // ロールが分かるまではどちらも読まない。
+  const myRole = useSsbjMyRole();
+  const roleKnown = !myRole.isLoading;
+  const viewerOnly = roleKnown && !canViewSsbjWorking(myRole.role);
+  const working = useSsbjPreviewSource(roleKnown && !viewerOnly ? reportId : null, selection);
+  const approved = useSsbjApprovedVersion(viewerOnly ? reportId : null);
+  const { source, errorMessage } = viewerOnly ? approved : working;
+  const isLoading = !roleKnown || (viewerOnly ? approved.isLoading : working.isLoading);
   // 読み込み完了後に一度だけ自動で印刷ダイアログを開くためのガード。
   const hasAutoPrinted = useRef(false);
 

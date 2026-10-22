@@ -74,6 +74,8 @@ describe('判断の状態', () => {
     const base = emptySsbjJudgement('REQ-CLM-020');
     expect(isSsbjJudgementRecorded(base)).toBe(false);
     expect(isSsbjJudgementRecorded({ ...base, explanation: { ...base.explanation, internalNote: 'メモ' } })).toBe(true);
+    // 内部の検討理由を除いた保存版（キーが無い）は、内部の検討理由が無いものとして扱う。
+    expect(isSsbjJudgementRecorded({ ...base, explanation: { disclosure: base.explanation.disclosure } } as SsbjJudgement)).toBe(false);
   });
 
   it('経過措置・商業上の機密で記載しないのに説明が入力済みでなければ知らせる', () => {

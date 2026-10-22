@@ -23,6 +23,17 @@ describe('保存版の Excel', () => {
     expect(worksheet.views[0]).toMatchObject({ state: 'frozen', ySplit: sheet.headerRowIndex! + 1 });
   });
 
+  it('列の幅と折り返しは見出しの列名で決め、内部記録の列を出さない出力でも列がずれない', () => {
+    const full = ssbjVersionSheet(ssbjVersionToCsvRows(fictionalVersion, GENERATED_AT));
+    expect(full.columnWidths).toEqual([20, 34, 30, 14, 60, 10, 44, 44]);
+    expect(full.wrapColumns).toEqual([2, 4, 6, 7]);
+    const rows = ssbjVersionToCsvRows(fictionalVersion, GENERATED_AT, { internalRecords: false });
+    const sheet = ssbjVersionSheet(rows);
+    expect(rows[sheet.headerRowIndex!]).toEqual(['章', '対象ID', '項目', '状態', '開示内容', '単位', '注記']);
+    expect(sheet.columnWidths).toEqual([20, 34, 30, 14, 60, 10, 44]);
+    expect(sheet.wrapColumns).toEqual([2, 4, 6]);
+  });
+
   it('数式に見える文字列も文字列のまま書く（数式として評価させない）', async () => {
     const workbook = await buildSsbjWorkbook([{
       name: 's', rows: [['=1+1', '@SUM(A1)']], headerRowIndex: null, columnWidths: [10, 10], wrapColumns: [],

@@ -59,11 +59,14 @@ export const emptySsbjJudgement = (requirementId: SsbjRequirementId): SsbjJudgem
   explanation: { disclosure: { state: 'unanswered' }, internalNote: null },
 });
 
-/** 判断が 1 つでも記録されているか（すべて既定のままなら未判断）。 */
+/**
+ * 判断が 1 つでも記録されているか（すべて既定のままなら未判断）。
+ * 内部の検討理由を除いた保存版（閲覧者に返すもの。utils/disclosedSnapshot.ts）ではキーが無いので、null と同じに扱う。
+ */
 export const isSsbjJudgementRecorded = (judgement: SsbjJudgement): boolean =>
   judgement.applicability !== 'unconfirmed' || judgement.materiality !== 'unconfirmed' ||
   judgement.omissionReason !== 'none' || judgement.explanation.disclosure.state !== 'unanswered' ||
-  judgement.explanation.internalNote !== null;
+  (judgement.explanation.internalNote ?? null) !== null;
 
 /**
  * 判断が済んでいないか（「未確認のみ」の絞り込みと件数に使う）。該当性が未確認、または該当なのに重要性が未確認のとき。

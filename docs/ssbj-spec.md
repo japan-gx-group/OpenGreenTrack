@@ -817,21 +817,34 @@ R2-10 の SSBJ のロールを、SSBJ の各テーブル・状態の変更・閲
 
 | 対象 | 内容 |
 |---|---|
-| DB | `20261023100000_ssbj_role_policies.sql`: 各テーブルに `AS RESTRICTIVE` のポリシー（書き込みは入力担当か管理者、作業中データ・操作履歴の閲覧は閲覧者以外、閲覧者は承認済みのレポートと承認した版だけ）。`record_ssbj_export`（閲覧者は承認した版の CSV / Excel だけ）と `change_ssbj_report_status`（SSBJ のロールで判定。承認者は承認担当か管理者だけ）を置き換えた |
-| 画面 | 入力担当か管理者でなければ編集の操作を出さず、理由を出す（`SsbjRoleNotice.tsx`）。閲覧者には作業中の内容の画面の代わりに案内を出す（`SsbjWorkingAccessGuard.client.tsx`。各ページで包む）。詳細の「レポートの内容」は閲覧者にプレビューと保存履歴だけ。プレビューは閲覧者に承認した版を既定にする。一覧の新規作成と空の一覧の案内をロールで出し分ける |
-| コード | `utils/reportStatus.ts` の `isSsbjReadOnly`、`utils/writeError.ts`（42501 = ロールで止められた）、`components/SsbjReportContentsNav.tsx`（`workingAccess`） |
-| テスト | `scripts/db/__tests__/ssbjRolePoliciesPolicy.test.ts`（作業中データのテーブルの取り付け漏れの検出を含む）、画面の単体テスト（承認担当は読むだけ・閲覧者の入口とプレビュー・一覧）、全体テスト 26 手順 |
+| DB | `20261023100000_ssbj_role_policies.sql`: 各テーブルに `AS RESTRICTIVE` のポリシー（書き込みは入力担当か管理者、作業中データ・保存版・操作履歴の閲覧は閲覧者以外、閲覧者は承認済みのレポートだけ）。`record_ssbj_export`（閲覧者は承認した版の CSV / Excel だけ）と `change_ssbj_report_status`（SSBJ のロールで判定。承認者は承認担当か管理者だけ）を置き換えた |
+| 画面 | 入力担当か管理者でなければ編集の操作を出さず、理由を出す（`SsbjRoleNotice.tsx`）。閲覧者には作業中の内容の画面の代わりに案内を出す（`SsbjWorkingAccessGuard.client.tsx`。各ページで包む）。詳細の「レポートの内容」は閲覧者にプレビューと保存履歴だけ。閲覧者のプレビュー・印刷・保存履歴は、承認した版の開示する内容を `GET /api/ssbj/reports/[reportId]/approved-version` から読む（内部メモの表示の切替・操作履歴へのリンク・出力履歴を出さず、CSV / Excel に内部記録の列を入れない）。一覧の新規作成と空の一覧の案内をロールで出し分ける |
+| コード | `utils/reportStatus.ts` の `isSsbjReadOnly`、`utils/writeError.ts`（42501 = ロールで止められた）、`services/memberRoleService.ts` の `throwIfSsbjEditForbidden`（0 件の更新・削除がロールで止められたものかを確かめる）、`components/SsbjReportContentsNav.tsx`（`workingAccess`）、`utils/disclosedSnapshot.ts`（保存版から内部メモ・内部記録を除く。項目の分類の表）、`services/approvedVersionServer.ts`・`hooks/useSsbjApprovedVersion.ts`、`services/versionCsv.ts` の `internalRecords` |
+| テスト | `scripts/db/__tests__/ssbjRolePoliciesPolicy.test.ts`（すべての `ssbj_` のテーブルのポリシーの付け忘れの検出を含む）、画面の単体テスト（承認担当は読むだけ・閲覧者の入口とプレビュー・保存履歴・一覧）、`utils/__tests__/disclosedSnapshot.test.ts`（内部記録が残らないことと、分類の足し忘れの検出）、`approved-version` の Route Handler・CSV / Excel の単体テスト、全体テスト 26 手順 |
 
 決めたこと:
 
 - **既存のポリシーは書き換えず、`AS RESTRICTIVE` のポリシーを重ねる。** 各機能のポリシー（自組織であること）をそのまま残し、ロールの条件だけを足せる。
   ほかの変更が同じテーブルのポリシーを置き換えても食い違いにくい。
-- **SSBJ のテーブルを足すときは、承認ロックのトリガーと同じく、RESTRICTIVE のポリシーも足す。** 承認ロックのトリガーを付けたテーブルに
-  ポリシーが無ければ、机上テストが落ちる（取り付け漏れの検出）。
+- **SSBJ のテーブルを足すときは、承認ロックのトリガーと同じく、RESTRICTIVE のポリシーも足す。** マイグレーションで作った `ssbj_` のテーブルの
+  うち、利用者に許した操作（permissive のポリシー）に RESTRICTIVE のポリシーが重なっていないものがあれば、机上テストが落ちる（付け忘れの検出）。
+  重ねないテーブル（ロールの割り当ての `ssbj_member_roles`）は、理由と一緒にテストに書く。
 - **閲覧者が見られるのは、承認済みのレポートの「今の」承認した版だけ。** 差戻すとレポートごと見えなくなる。承認前の内容や検討の経過を、
   確定した開示と取り違えないため。基本情報は承認済みの間は承認した版と同じ（承認ロック）なので、レポートの行は見せる。
+- **閲覧者には、承認した保存版でも内部メモ・内部記録（§5）を見せない。** 閲覧者は確定した開示を確かめて出力する人で、出力は社外に共有されうる。
+  保存版の snapshot は 1 つの列（jsonb）に内部記録を含み、RLS では一部だけを隠せない。そこで保存版の行は閲覧者に見せず、承認した版は
+  Route Handler（`approved-version`）が service_role で読み、内部記録を除いてから返す。画面で隠すだけでは、PostgREST を直接呼べば読めてしまう。
+- **閲覧者に返すのは、分類の表（`utils/disclosedSnapshot.ts`）で開示するとした項目だけ。** 表に無い項目・セクションも返さないので、
+  項目を足して分類を忘れても閲覧者には出ない（単体テストが架空の保存版で足し忘れを検出し、Route Handler もログに残す）。
+  内部記録は null にせずキーごと除く（読む側はキーの欠落を未入力と扱う。§8）。
+- **GHG の採用値の取得元（集計・算定バッチ）・件数と、採用した人は内部記録とした。** CSV で内部記録の列にだけ出し、プレビューには出していないため。
+  採用方式はプレビューに出すので開示する項目だが、閲覧者の CSV / Excel は内部記録の列ごと出さないので、採用方式も入らない（プレビューでは見える）。
 - **閲覧者に作業中の内容の画面を開かせない。** RLS は行を返さないだけなので、画面を出すとすべて「未入力」に見えてしまう。
 - **承認担当は作業中の内容を見られるが、編集はできない。** 直したいときは差戻し、入力担当が直してから依頼し直す。
+- **ロールで止められた更新・削除を、成功・競合・「見つかりません」と見せない。** RESTRICTIVE のポリシーの USING で止められた更新・削除は、
+  エラー（42501）にならず 0 件になる。画面を開いている間にロールが変わった利用者に正しく伝えるため、更新・削除が 0 件だったときは
+  `ssbj_current_user_can_edit()` で今も編集できるかを確かめ、できなければ権限のメッセージにする（基本情報・リスク・機会の更新、
+  リスク・機会と根拠文書の削除、根拠文書の更新、OGT の値の採用の取り消し）。作成（insert）は WITH CHECK で 42501 になるので、そのまま伝わる。
 - **状態の変更の RPC も SSBJ のロールで判定する**（Route Handler に任せない。RPC は操作者を引数で受け取るため、判定を 1 か所に置く）。
   `profiles.role` を直接読むのはやめ、`ssbj_user_role`（中で `profiles.role = 'admin'` を読む）に置き換えた。
 

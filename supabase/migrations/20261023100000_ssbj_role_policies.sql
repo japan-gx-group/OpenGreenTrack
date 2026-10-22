@@ -5,7 +5,8 @@
 -- ここでは、20261010110000_ssbj_member_roles.sql の判定の関数で、入力・承認・閲覧を分ける:
 --   - 作業中データの書き込み（レポートの作成・基本情報・文章・判断・リスク・機会・時間軸・根拠文書・採用の取り消し）は
 --     入力担当か管理者だけ（承認担当・閲覧者は書けない）
---   - 閲覧者は、承認済みのレポートと、その承認した保存版だけを見る（作業中データ・未承認の版・操作履歴は見えない）
+--   - 閲覧者は、承認済みのレポートだけを見る（作業中データ・保存版の行・操作履歴は見えない）。保存版は内部メモ・内部記録を
+--     含むため、承認した版の開示する内容だけを Route Handler（/api/ssbj/reports/[reportId]/approved-version）が除いて返す
 --   - 状態の変更は、レビュー依頼・取り下げが入力担当か管理者、承認・差戻しが管理者か指定された承認者（承認担当）。
 --     承認者に指定できるのは承認担当か管理者だけ
 --
@@ -59,23 +60,16 @@ as restrictive for delete to authenticated using ((select ssbj_current_user_can_
 create policy "ssbj_ogt_adoptions_delete_requires_ssbj_editor" on ssbj_ogt_adoptions
 as restrictive for delete to authenticated using ((select ssbj_current_user_can_edit()));
 
--- §2 閲覧者は、承認済みのレポートと、その承認した保存版だけを見る
+-- §2 閲覧者は、承認済みのレポートだけを見る
 
 create policy "ssbj_reports_select_viewer_approved_only" on ssbj_reports
 as restrictive for select to authenticated
 using ((select ssbj_current_user_can_view_working()) or status = 'approved');
 
-create policy "ssbj_report_versions_select_viewer_approved_only" on ssbj_report_versions
-as restrictive for select to authenticated
-using (
-  (select ssbj_current_user_can_view_working())
-  or exists (
-    select 1 from ssbj_reports r
-    where r.id = ssbj_report_versions."reportId"
-      and r.status = 'approved'
-      and r."approvedVersionId" = ssbj_report_versions.id
-  )
-);
+-- 保存版の snapshot は内部メモ・内部記録（docs/ssbj-spec.md §5）を含む。列や行の一部だけを RLS で隠せないため、
+-- 閲覧者には承認した版も含めて 1 行も見せない。閲覧者は、承認した版の開示する内容だけを Route Handler から受け取る。
+create policy "ssbj_report_versions_select_requires_working_access" on ssbj_report_versions
+as restrictive for select to authenticated using ((select ssbj_current_user_can_view_working()));
 
 create policy "ssbj_risks_opportunities_select_requires_working_access" on ssbj_risks_opportunities
 as restrictive for select to authenticated using ((select ssbj_current_user_can_view_working()));
@@ -93,7 +87,8 @@ create policy "ssbj_audit_logs_select_requires_working_access" on ssbj_audit_log
 as restrictive for select to authenticated using ((select ssbj_current_user_can_view_working()));
 
 -- §3 出力の記録: 閲覧者が記録できる（= 出力できる）のは、承認した保存版の CSV / Excel だけ
--- 20261002090000_ssbj_audit_logs.sql の関数を置き換える（引数・権限・戻り値は同じ）。見えない版・操作履歴の出力の記録は、
+-- 20261002090000_ssbj_audit_logs.sql の関数を置き換える（引数・権限・戻り値は同じ）。閲覧者が出力する承認した版の行は
+-- 閲覧者の RLS では見えないが、この関数は security definer なので版を確かめられる。未承認の版・操作履歴の出力の記録は、
 -- 版が見つからないものとして拒否する（P2031）。
 
 create or replace function record_ssbj_export(p_report_id uuid, p_format text, p_version_id uuid default null)

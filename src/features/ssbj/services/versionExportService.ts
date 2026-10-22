@@ -1,6 +1,7 @@
 // 固定版と出力履歴（CSV / Excel）を組織別 RLS のもとで読み書きするブラウザ側サービス。
 // 出力履歴は OGT 本体の system_audit_logs に書く（これまでの CSV 生成履歴と同じ場所）。SSBJ の操作履歴
 // （ssbj_audit_logs）への記録は auditLogService.recordSsbjExport が別に行う。
+// 閲覧者は保存版の行を読めない（RLS）。承認した保存版の開示する内容だけを、Route Handler から読む（getSsbjApprovedVersion）。
 
 import { createClient } from '@/lib/supabase/client';
 import type { SsbjCsvVersion } from './versionCsv';
@@ -23,6 +24,12 @@ export type SsbjVersionSummary = {
   createdByUserId: string | null;
   creatorName: string;
 };
+
+/**
+ * 承認した保存版（閲覧者向け）。snapshot は内部メモ・内部記録を除いたもの（utils/disclosedSnapshot.ts）。
+ * GET /api/ssbj/reports/[reportId]/approved-version が返す。元の版（sourceVersionId）は返さない（null）。
+ */
+export type SsbjApprovedVersion = SsbjVersionSummary & SsbjCsvVersion;
 
 export type SsbjCsvHistory = {
   id: string;
@@ -64,6 +71,19 @@ export const getSsbjCsvVersion = async (reportId: string, versionId: string): Pr
     .maybeSingle();
   if (error || !data) throw new Error('保存版が見つかりません');
   return data as SsbjCsvVersion;
+};
+
+/**
+ * 承認した保存版の開示する内容（閲覧者が読む経路。どのロールでも読める）。
+ * 承認済みでない・承認した版が無いレポートは、サーバのメッセージ（見つかりません）の例外にする。
+ */
+export const getSsbjApprovedVersion = async (reportId: string): Promise<SsbjApprovedVersion> => {
+  const response = await fetch(`/api/ssbj/reports/${encodeURIComponent(reportId)}/approved-version`);
+  const body = (await response.json().catch(() => null)) as (Partial<SsbjApprovedVersion> & { error?: string }) | null;
+  if (!response.ok || typeof body?.id !== 'string' || typeof body.versionNumber !== 'number' || !body.snapshot) {
+    throw new Error(body?.error ?? '承認した保存版の取得に失敗しました');
+  }
+  return body as SsbjApprovedVersion;
 };
 
 export const listSsbjCsvHistory = async (reportId: string): Promise<SsbjCsvHistory[]> => {

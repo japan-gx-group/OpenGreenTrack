@@ -18,6 +18,9 @@ const migration = (suffix: string): string => {
   return normalize(readFileSync(path.join(migrationsDir, name), 'utf8'));
 };
 const policies = migration('_ssbj_role_policies.sql');
+// ロールのポリシーのマイグレーションと、その後のマイグレーション（後から足した SSBJ のテーブルは、そこでポリシーを足す）。
+const policiesFrom = files.slice(files.findIndex(file => file.endsWith('_ssbj_role_policies.sql')))
+  .map(file => normalize(readFileSync(path.join(migrationsDir, file), 'utf8'))).join(' ');
 
 const EDIT = '(select ssbj_current_user_can_edit())';
 const VIEW = '(select ssbj_current_user_can_view_working())';
@@ -27,10 +30,22 @@ const workingTables = [...all.matchAll(
   /create trigger \w+ before insert or update or delete on (\w+) for each row execute function reject_ssbj_change_when_approved\(\)/g,
 )].map(match => match[1]);
 
-// そのテーブルに、利用者向けの（permissive の）書き込みのポリシーがある操作。
-const permissiveWrites = (table: string): string[] =>
-  ['insert', 'update', 'delete'].filter(command =>
-    new RegExp(`create policy "\\w+" on ${table} for ${command} to authenticated`).test(all));
+// そのテーブルに、利用者向けの（permissive の）ポリシーがある操作。
+const permissiveCommands = (table: string, commands = ['select', 'insert', 'update', 'delete']): string[] =>
+  commands.filter(command => new RegExp(`create policy "\\w+" on ${table} for ${command} to authenticated`).test(all));
+const permissiveWrites = (table: string): string[] => permissiveCommands(table, ['insert', 'update', 'delete']);
+
+// SSBJ のテーブル（どのマイグレーションで作ったものも）。
+const ssbjTables = [...new Set(
+  [...all.matchAll(/create table (?:if not exists )?(?:public\.)?(ssbj_\w+)/g)].map(match => match[1]),
+)];
+
+// ロールの RESTRICTIVE のポリシーを重ねないテーブルと、その理由。
+const WITHOUT_ROLE_POLICIES: Record<string, string> = {
+  ssbj_member_roles:
+    'ロールの割り当てそのもの。書き込みは permissive のポリシーで管理者だけに限り、一覧は承認者の候補を出すため全員に見せる'
+    + '（docs/authorization-matrix.md §2.4）',
+};
 
 describe('作業中データのテーブル（取り付け漏れの検出）', () => {
   it('作業中データのテーブルを見つけられる（承認ロックのトリガーから）', () => {
@@ -58,18 +73,48 @@ describe('作業中データのテーブル（取り付け漏れの検出）', (
   });
 });
 
+describe('SSBJ のテーブル（ロールのポリシーの付け忘れの検出）', () => {
+  it('マイグレーションの SSBJ のテーブルをすべて見つけられる', () => {
+    expect(ssbjTables).toEqual(expect.arrayContaining([
+      'ssbj_reports', 'ssbj_report_versions', 'ssbj_risks_opportunities', 'ssbj_report_time_horizons', 'ssbj_evidence',
+      'ssbj_ogt_adoptions', 'ssbj_narratives', 'ssbj_judgements', 'ssbj_audit_logs', 'ssbj_member_roles',
+    ]));
+  });
+
+  it('ポリシーを重ねないテーブルは実在し、理由を書いている', () => {
+    for (const [table, reason] of Object.entries(WITHOUT_ROLE_POLICIES)) {
+      expect(ssbjTables).toContain(table);
+      expect(reason.length).toBeGreaterThan(0);
+    }
+  });
+
+  it.each(ssbjTables.filter(table => !(table in WITHOUT_ROLE_POLICIES)))(
+    '%s: 利用者に許した操作ごとに、ロールの RESTRICTIVE のポリシーを重ねている（ロールのポリシーのマイグレーションか、その後）',
+    table => {
+      const commands = permissiveCommands(table);
+      expect(commands.length, `${table} に利用者向けのポリシーが見つかりません`).toBeGreaterThan(0);
+      for (const command of commands) {
+        expect(policiesFrom, `${table} の ${command}`).toMatch(
+          new RegExp(`create policy "\\w+" on ${table} as restrictive for ${command} to authenticated`),
+        );
+      }
+    },
+  );
+});
+
 describe('レポート・保存版・操作履歴', () => {
   it('レポートの作成・基本情報の更新は入力担当か管理者だけ', () => {
     expect(policies).toContain(`on ssbj_reports as restrictive for insert to authenticated with check (${EDIT});`);
     expect(policies).toContain(`on ssbj_reports as restrictive for update to authenticated using (${EDIT}) with check (${EDIT});`);
   });
 
-  it('閲覧者は承認済みのレポートと、その承認した保存版だけを見る', () => {
+  it('閲覧者は承認済みのレポートだけを見る', () => {
     expect(policies).toContain(`on ssbj_reports as restrictive for select to authenticated using (${VIEW} or status = 'approved');`);
-    const versions = policies.slice(policies.indexOf('create policy "ssbj_report_versions_select_viewer_approved_only"'));
-    expect(versions.slice(0, versions.indexOf(';'))).toContain(
-      `${VIEW} or exists ( select 1 from ssbj_reports r where r.id = ssbj_report_versions."reportId" and r.status = 'approved' and r."approvedVersionId" = ssbj_report_versions.id )`,
-    );
+  });
+
+  it('保存版（内部メモ・内部記録を含む）は、承認した版も含めて閲覧者に見せない', () => {
+    expect(policies).toContain(`on ssbj_report_versions as restrictive for select to authenticated using (${VIEW});`);
+    expect(policies).not.toMatch(/on ssbj_report_versions as restrictive for select to authenticated using \([^;]* or /);
   });
 
   it('操作履歴は閲覧者に見せない', () => {

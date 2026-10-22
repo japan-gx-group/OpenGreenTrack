@@ -1,6 +1,8 @@
 // SSBJ の作業中データへの書き込みが失敗したときの、利用者向けのメッセージ。
 // 承認済みのレポートは DB が変更を止める（P2051。supabase/migrations/20261002090100_ssbj_report_status.sql）。
 // SSBJ のロールが入力担当でも管理者でもないときは RLS が止める（42501。20261023100000_ssbj_role_policies.sql）。
+// ただし更新・削除はエラーにならず 0 件になるので、0 件のときに確かめて同じメッセージにする（services/memberRoleService.ts の
+// throwIfSsbjEditForbidden）。
 // どちらの場合も「保存に失敗しました」ではなく、理由と次の手順を伝える。
 
 /** 承認済みのレポートへの変更を DB が止めたときの SQLSTATE。 */
