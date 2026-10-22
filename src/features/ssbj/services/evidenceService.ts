@@ -92,6 +92,9 @@ export const updateSsbjEvidence = async (id: string, input: SsbjEvidenceInput): 
 
 export const deleteSsbjEvidence = async (id: string): Promise<void> => {
   const { data, error } = await createClient().from('ssbj_evidence').delete().eq('id', id).select('id');
+  if (error?.code === '23503') {
+    throw new Error('この根拠文書は外部算定値の根拠になっているため削除できません。先に外部算定値の根拠を付け替えてください');
+  }
   if (error) throw new Error(ssbjWriteErrorMessage(error, '根拠文書の削除に失敗しました'));
   if (!data?.length) {
     // 0 件: ロールで止められた（RESTRICTIVE のポリシーは 0 件にする）か、削除済み。

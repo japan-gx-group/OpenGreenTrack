@@ -49,6 +49,6 @@ describe('SsbjReportContentsNav', () => {
 
   it('それ以外の人には、すべての入口を出す', () => {
     rendered = render(<SsbjReportContentsNav reportId={REPORT_ID} />);
-    expect(rendered.container.querySelectorAll('a')).toHaveLength(8);
+    expect(rendered.container.querySelectorAll('a')).toHaveLength(9);
   });
 });

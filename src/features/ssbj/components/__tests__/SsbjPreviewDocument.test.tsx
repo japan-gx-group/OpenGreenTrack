@@ -3,6 +3,7 @@ import React from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { render, type RenderResult } from '@/lib/testing/render';
 import {
+  fictionalExternalEmissions,
   fictionalRisksOpportunities,
   fictionalSnapshot,
   fictionalVersion,
@@ -62,8 +63,40 @@ describe('SsbjPreviewDocument', () => {
     rendered = render(<SsbjPreviewDocument source={working()} showInternalNotes={false} />);
     expect(text()).toContain('812.345 t-CO2e');
     expect(text()).toContain('未算定');
-    expect(text()).toContain('ロケーション基準の値は含みません');
+    expect(text()).toContain('OGT の Scope 2 算定値は、ロケーション基準・マーケット基準の区別がありません（基準不明）');
     expect(text()).toContain('サプライヤー別排出量は参考値であり、Scope 3 の合計には含めていません');
+  });
+
+  it('外部算定値の項目が無い古い版は「この版には含まれていません」、採用していなければその旨を出す', () => {
+    const withoutExternal = { ...fictionalSnapshot.sections };
+    delete withoutExternal.external_emissions;
+    rendered = render(<SsbjPreviewDocument source={working({ ...fictionalSnapshot, sections: withoutExternal })} showInternalNotes={false} />);
+    expect(text()).toContain('この版には含まれていません。');
+    rendered.unmount();
+    rendered = render(
+      <SsbjPreviewDocument source={working({ ...fictionalSnapshot, sections: { ...fictionalSnapshot.sections, external_emissions: [] } })} showInternalNotes={false} />,
+    );
+    expect(text()).toContain('外部で算定した排出量は採用していません。');
+  });
+
+  it('外部算定値にロケーション基準の Scope 2 があっても、文書全体にロケーション基準の値が無いとは書かない', () => {
+    const locationBased = {
+      ...fictionalExternalEmissions[0],
+      id: '5b1f0000-1111-4000-8000-000000000502', scope: 2 as const, scope2Basis: 'location' as const, gases: ['CO2' as const], value: '300.000',
+    };
+    const snapshot = {
+      ...fictionalSnapshot,
+      sections: { ...fictionalSnapshot.sections, external_emissions: [...fictionalExternalEmissions, locationBased] },
+    };
+    rendered = render(<SsbjPreviewDocument source={working(snapshot)} showInternalNotes={false} />);
+    expect(text()).toContain('Scope 2（ロケーション基準）');
+    expect(text()).toContain('300.000');
+    expect(text()).not.toContain('ロケーション基準の値を含みません');
+    expect(text()).not.toContain('ロケーション基準の値は含みません');
+    const notes = [...rendered.container.querySelectorAll('li')].map(node => node.textContent ?? '');
+    expect(notes).toContain(
+      'OGT の Scope 2 算定値は、ロケーション基準・マーケット基準を区別していません（基準不明）。基準ごとの Scope 2 は、「外部で算定した排出量」に示したものだけです。',
+    );
   });
 
   it('GHG を採用していない（null）場合と、GHG の項目が無い古い版を区別する', () => {

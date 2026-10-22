@@ -16,7 +16,9 @@ export const formatPreviewSelection = (selection: SsbjPreviewSelection): string 
   selection.kind === 'working' ? 'working' : selection.versionId;
 
 // プレビューが描けるセクション。ここに無いセクションは、黙って落とさず「表示に未対応」として名前を出す。
-const PREVIEW_SECTIONS = new Set(['risks_opportunities', 'time_horizons', 'ghg', 'evidence', 'narratives', 'judgements']);
+const PREVIEW_SECTIONS = new Set([
+  'risks_opportunities', 'time_horizons', 'ghg', 'evidence', 'narratives', 'judgements', 'external_emissions',
+]);
 
 /** 保存版に含まれるが、プレビューがまだ描けないセクションのキー。 */
 export const unsupportedPreviewSections = (snapshot: SsbjReportSnapshotV1): string[] =>

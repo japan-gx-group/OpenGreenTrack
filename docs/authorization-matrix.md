@@ -58,6 +58,7 @@ SSBJ 開示レポートで、データを書き換えられる経路をすべて
 | 四本柱の文章 | `ssbj_narratives` insert / update / delete | ○ | × | × | ○ | R2-12 |
 | 該当性・重要性の判断 | `ssbj_judgements` insert / update / delete | ○ | × | × | ○ | R2-12 |
 | OGT の値の採用の取り消し | `ssbj_ogt_adoptions` delete | ○ | × | × | ○ | R2-12 |
+| 外部算定値 | `ssbj_external_emissions` insert / update / delete | ○ | × | × | ○ | R2-13 |
 
 - 承認済みの間は、どのロールでも作業中データを変えられない（承認ロック。[`ssbj-spec.md`](ssbj-spec.md) §13）。
 - ロールの条件は、各テーブルの既存のポリシー（自組織であること）に、`AS RESTRICTIVE` のポリシーを重ねて効かせる

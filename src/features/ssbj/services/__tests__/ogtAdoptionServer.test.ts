@@ -88,4 +88,10 @@ describe('adoptOgtCandidates（サーバ）', () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { code: 'XX000', message: 'boom' } });
     await expect(adoptOgtCandidates(params)).rejects.toThrow('OGT の値の採用に失敗しました');
   });
+
+  it('外部算定値と重なる（P2071）ときは、二重計上の理由を伝える', async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { code: 'P2071', message: 'OGT の値を採用すると、CO2 を含む外部算定値と二重に計上されます' } });
+    expect(await reasonOf(adoptOgtCandidates(params))).toBe('overlaps_external');
+    await expect(adoptOgtCandidates(params)).rejects.toThrow('二重に計上されます');
+  });
 });
