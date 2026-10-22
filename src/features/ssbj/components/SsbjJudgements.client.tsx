@@ -8,7 +8,7 @@
 // 記載しない理由・開示する説明・内部の検討理由（根拠）は「詳細」のダイアログで扱う。一覧の保存は詳細と同じ検証を通し、
 // 該当性・重要性の 2 列だけを、読込時の更新日時を条件に保存する（他の画面で保存された根拠を古い値に戻さない）。
 
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type KeyboardEvent } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, FileCheck2, Pencil } from 'lucide-react';
 import { PageHeading } from '@/components/layout/PageHeading';
@@ -79,24 +79,47 @@ interface JudgementRowProps {
   onEdit?: (entry: SsbjJudgementEntry) => void;
 }
 
+// 閉じた選択欄で ↑↓ を押したときは、値を変えずに選択肢の一覧を開く。Windows の Edge・Chrome は、閉じた選択欄の ↑↓ で
+// その場で値を変えて change を起こすため、一覧の選択がすぐ保存する作りだと、目的の値に着くまでの途中の値も保存してしまう。
+// 一覧を開けないブラウザ（showPicker が無い・使えない）では、そのままの動きにする。
+const openPickerOnArrowKey = (event: KeyboardEvent<HTMLSelectElement>) => {
+  if ((event.key !== 'ArrowDown' && event.key !== 'ArrowUp') || event.altKey) return;
+  const select = event.currentTarget;
+  if (typeof select.showPicker !== 'function') return;
+  try {
+    select.showPicker();
+    event.preventDefault();
+  } catch {
+    // 一覧を開けなければ、ブラウザの既定の動きに任せる。
+  }
+};
+
 // 1 要求の行。一覧では該当性・重要性だけを選んですぐ保存し、記載しない理由・説明・根拠は詳細の編集で扱う。
 const JudgementRow = ({ entry, risks, onQuickChange, onEdit }: JudgementRowProps) => {
   const { requirement, judgement } = entry;
   const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState('');
+  // 行のエラー。forJudgement が null（競合）なら次に選ぶまで出し、それ以外はその判断のあいだだけ出す
+  // （「詳細」から直して保存すると判断が置き換わるので、直した後に案内が残らない）。
+  const [error, setError] = useState<{ message: string; forJudgement: SsbjJudgement | null } | null>(null);
   const status = ssbjJudgementStatus(judgement);
   const reasons = ssbjJudgementReviewReasons(judgement);
   const canQuickEdit = requirement !== null && onQuickChange !== undefined;
   const label = `${judgement.requirementId}`;
+  const shownError = error && (error.forJudgement === null || error.forJudgement === judgement) ? error.message : '';
+  const errorId = `ssbj-judgement-error-${judgement.requirementId}`;
 
   const change = async (next: SsbjJudgementQuickChange) => {
-    if (!onQuickChange) return;
+    // 保存中の選択は受け付けない（選択欄は保存後の値に戻る）。選択欄を無効にするとフォーカスが外れるので、無効にはしない。
+    if (!onQuickChange || isSaving) return;
     setIsSaving(true);
-    setError('');
+    setError(null);
     try {
       await onQuickChange(entry, next);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '保存に失敗しました');
+      setError({
+        message: caught instanceof Error ? caught.message : '保存に失敗しました',
+        forJudgement: caught instanceof SsbjEditConflictError ? null : judgement,
+      });
     } finally {
       setIsSaving(false);
     }
@@ -124,9 +147,12 @@ const JudgementRow = ({ entry, risks, onQuickChange, onEdit }: JudgementRowProps
         {canQuickEdit ? (
           <select
             aria-label={`${label} の該当性`}
+            aria-describedby={shownError ? errorId : undefined}
+            aria-invalid={shownError ? true : undefined}
+            aria-busy={isSaving}
             className="gt-field gt-field-select"
             value={judgement.applicability}
-            disabled={isSaving}
+            onKeyDown={openPickerOnArrowKey}
             onChange={event => void change({ applicability: event.target.value as SsbjApplicability })}
           >
             {SSBJ_APPLICABILITIES.map(value => <option key={value} value={value}>{SSBJ_APPLICABILITY_LABELS[value]}</option>)}
@@ -137,15 +163,19 @@ const JudgementRow = ({ entry, risks, onQuickChange, onEdit }: JudgementRowProps
         {canQuickEdit ? (
           <select
             aria-label={`${label} の重要性`}
+            aria-describedby={shownError ? errorId : undefined}
+            aria-invalid={shownError ? true : undefined}
+            aria-busy={isSaving}
             className="gt-field gt-field-select"
             value={judgement.materiality}
-            disabled={isSaving}
+            onKeyDown={openPickerOnArrowKey}
             onChange={event => void change({ materiality: event.target.value as SsbjMateriality })}
           >
             {SSBJ_MATERIALITIES.map(value => <option key={value} value={value}>{SSBJ_MATERIALITY_LABELS[value]}</option>)}
           </select>
         ) : SSBJ_MATERIALITY_LABELS[judgement.materiality]}
-        {error && <span role="alert" className="mt-1 block text-xs text-danger">{error}</span>}
+        {isSaving && <span role="status" className="mt-1 block text-xs text-text-muted">保存中...</span>}
+        {shownError && <span id={errorId} role="alert" className="mt-1 block text-xs text-danger">{shownError}</span>}
       </TableCell>
       <TableCell className="whitespace-normal">
         {SSBJ_OMISSION_REASON_LABELS[judgement.omissionReason]}

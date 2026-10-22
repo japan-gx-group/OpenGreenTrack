@@ -183,6 +183,65 @@ describe('SsbjJudgements', () => {
     expect(rowOf('REQ-CLM-027').querySelector<HTMLSelectElement>('select[aria-label="REQ-CLM-027 の重要性"]')!.value).toBe('not_material');
   });
 
+  it('案内どおり「詳細」から直して保存すると、行の案内は消える', async () => {
+    rendered = render(<SsbjJudgements reportId={report.id} />);
+    await settle();
+    const materiality = () => rowOf('REQ-CLM-027').querySelector<HTMLSelectElement>('select[aria-label="REQ-CLM-027 の重要性"]')!;
+    await act(async () => { setSelectValue(materiality(), 'material'); });
+    await settle();
+    expect(rowOf('REQ-CLM-027').querySelector('[role="alert"]')?.textContent).toContain('「詳細」から直してください');
+    expect(materiality().getAttribute('aria-describedby')).toBe('ssbj-judgement-error-REQ-CLM-027');
+    click(buttonIn(rowOf('REQ-CLM-027'), '詳細'));
+    await flush();
+    setSelectValue(selectLabeled('記載しない理由'), 'none');
+    setSelectValue(selectLabeled('重要性'), 'material');
+    await act(async () => { click(buttonIn(dialog(), '変更を保存')); });
+    await settle();
+    expect(saveSsbjJudgement).toHaveBeenCalledTimes(1);
+    expect(materiality().value).toBe('material');
+    expect(rowOf('REQ-CLM-027').querySelector('[role="alert"]')).toBeNull();
+    expect(materiality().hasAttribute('aria-describedby')).toBe(false);
+  });
+
+  it('保存中も選択欄は無効にせず（フォーカスを外さない）、保存が終わるまで次の選択は受け付けない', async () => {
+    let finish: () => void = () => {};
+    vi.mocked(saveSsbjJudgementQuickChange).mockImplementationOnce((_report, _savedAt, judgement) =>
+      new Promise(resolve => { finish = () => resolve({ ...judgement, updatedAt: SAVED_AT }); }));
+    rendered = render(<SsbjJudgements reportId={report.id} />);
+    await settle();
+    const applicability = () => rowOf('REQ-GEN-002').querySelector<HTMLSelectElement>('select[aria-label="REQ-GEN-002 の該当性"]')!;
+    await act(async () => { setSelectValue(applicability(), 'applicable'); });
+    expect(applicability().disabled).toBe(false);
+    expect(applicability().getAttribute('aria-busy')).toBe('true');
+    expect(rowOf('REQ-GEN-002').querySelector('[role="status"]')?.textContent).toBe('保存中...');
+    await act(async () => { setSelectValue(applicability(), 'not_applicable'); });
+    expect(saveSsbjJudgementQuickChange).toHaveBeenCalledTimes(1);
+    await act(async () => { finish(); });
+    await settle();
+    expect(applicability().value).toBe('applicable');
+    expect(rowOf('REQ-GEN-002').querySelector('[role="status"]')).toBeNull();
+  });
+
+  it('閉じた選択欄で ↑↓ を押すと、値を変えずに選択肢の一覧を開く（途中の値を保存しない）', async () => {
+    const showPicker = vi.fn();
+    Object.defineProperty(window.HTMLSelectElement.prototype, 'showPicker', { value: showPicker, configurable: true });
+    try {
+      rendered = render(<SsbjJudgements reportId={report.id} />);
+      await settle();
+      const select = rowOf('REQ-GEN-002').querySelector<HTMLSelectElement>('select[aria-label="REQ-GEN-002 の該当性"]')!;
+      const down = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true });
+      act(() => { select.dispatchEvent(down); });
+      expect(showPicker).toHaveBeenCalledTimes(1);
+      expect(down.defaultPrevented).toBe(true);
+      const altDown = new KeyboardEvent('keydown', { key: 'ArrowDown', altKey: true, bubbles: true, cancelable: true });
+      act(() => { select.dispatchEvent(altDown); });
+      expect(showPicker).toHaveBeenCalledTimes(1);
+      expect(saveSsbjJudgementQuickChange).not.toHaveBeenCalled();
+    } finally {
+      delete (window.HTMLSelectElement.prototype as { showPicker?: unknown }).showPicker;
+    }
+  });
+
   it('一覧で選んだ結果は、詳細を開くとそのまま出て、詳細で保存した結果は一覧に出る（同じ保存結果）', async () => {
     rendered = render(<SsbjJudgements reportId={report.id} />);
     await settle();
