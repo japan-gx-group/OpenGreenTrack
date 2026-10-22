@@ -15,19 +15,27 @@ import {
 vi.mock('../../services/reportService', async importOriginal => ({
   ...(await importOriginal<typeof import('../../services/reportService')>()), getSsbjReport: vi.fn(),
 }));
-vi.mock('../../services/judgementService', () => ({ listSsbjJudgements: vi.fn(), saveSsbjJudgement: vi.fn() }));
+vi.mock('../../services/judgementService', () => ({
+  listSsbjJudgements: vi.fn(), saveSsbjJudgement: vi.fn(), saveSsbjJudgementQuickChange: vi.fn(),
+}));
 vi.mock('../../services/riskOpportunityService', async importOriginal => ({
   ...(await importOriginal<typeof import('../../services/riskOpportunityService')>()), listSsbjRisksOpportunities: vi.fn(),
 }));
 
-import { listSsbjJudgements, saveSsbjJudgement } from '../../services/judgementService';
+import { listSsbjJudgements, saveSsbjJudgement, saveSsbjJudgementQuickChange } from '../../services/judgementService';
 import { getSsbjReport } from '../../services/reportService';
 import { listSsbjRisksOpportunities } from '../../services/riskOpportunityService';
 import { SSBJ_REQUIREMENTS } from '../../utils/requirementMaster';
+import { SsbjEditConflictError } from '../../utils/writeError';
 import { SsbjJudgements } from '../SsbjJudgements.client';
 
 const report = { ...fictionalReportBasicInfo, fiscalYearLabel: '2024年度',
   periodStart: '2024-04-01', periodEnd: '2025-03-31', draftRevision: 1, basicInfoRevision: 0, review: FICTIONAL_DRAFT_REVIEW };
+// 読み込んだ行の更新日時（一覧から保存するときの競合検知の条件）。保存のたびに進める。
+const LOADED_AT = '2025-06-01T00:00:00.000000+00:00';
+const SAVED_AT = '2025-06-02T00:00:00.000000+00:00';
+const JUDGEMENTS = fictionalJudgements.map(judgement => ({ ...judgement, updatedAt: LOADED_AT }));
+const RISKS = fictionalRisksOpportunities.map(item => ({ ...item, updatedAt: LOADED_AT }));
 let rendered: RenderResult | null = null;
 const flush = async () => { await act(async () => { await Promise.resolve(); }); };
 const settle = async () => { for (let i = 0; i < 4; i += 1) await flush(); };
@@ -74,9 +82,10 @@ const selectLabeled = (label: string): HTMLSelectElement => {
 
 beforeEach(() => {
   vi.mocked(getSsbjReport).mockResolvedValue(report);
-  vi.mocked(listSsbjJudgements).mockResolvedValue(fictionalJudgements);
-  vi.mocked(listSsbjRisksOpportunities).mockResolvedValue(fictionalRisksOpportunities);
-  vi.mocked(saveSsbjJudgement).mockImplementation(async (_report, judgement) => judgement);
+  vi.mocked(listSsbjJudgements).mockResolvedValue(JUDGEMENTS);
+  vi.mocked(listSsbjRisksOpportunities).mockResolvedValue(RISKS);
+  vi.mocked(saveSsbjJudgement).mockImplementation(async (_report, judgement) => ({ ...judgement, updatedAt: SAVED_AT }));
+  vi.mocked(saveSsbjJudgementQuickChange).mockImplementation(async (_report, _savedAt, judgement) => ({ ...judgement, updatedAt: SAVED_AT }));
 });
 afterEach(() => { rendered?.unmount(); rendered = null; vi.clearAllMocks(); });
 
@@ -111,7 +120,7 @@ describe('SsbjJudgements', () => {
 
   it('リスク・機会で関連付けたマスターの項目が答える要求に、そのリスク・機会を出す', async () => {
     vi.mocked(listSsbjRisksOpportunities).mockResolvedValue([
-      { ...fictionalRisksOpportunities[0], linkTargets: ['strategy', 'strategy.business_model_impact'] },
+      { ...RISKS[0], linkTargets: ['strategy', 'strategy.business_model_impact'] },
     ]);
     rendered = render(<SsbjJudgements reportId={report.id} />);
     await settle();
@@ -130,8 +139,12 @@ describe('SsbjJudgements', () => {
     await settle();
     await act(async () => { setSelectValue(materiality(), 'material'); });
     await settle();
-    expect(saveSsbjJudgement).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(saveSsbjJudgement).mock.calls[1][1]).toEqual({
+    expect(saveSsbjJudgementQuickChange).toHaveBeenCalledTimes(2);
+    expect(saveSsbjJudgement).not.toHaveBeenCalled();
+    // 行が無い要求は作る（null）。2 回目は 1 回目に作った行の更新日時を条件にする。
+    expect(vi.mocked(saveSsbjJudgementQuickChange).mock.calls[0][1]).toBeNull();
+    expect(vi.mocked(saveSsbjJudgementQuickChange).mock.calls[1][1]).toBe(SAVED_AT);
+    expect(vi.mocked(saveSsbjJudgementQuickChange).mock.calls[1][2]).toMatchObject({
       requirementId: 'REQ-GEN-002', applicability: 'applicable', materiality: 'material', omissionReason: 'none',
       explanation: { disclosure: { state: 'unanswered' }, internalNote: null },
     });
@@ -141,9 +154,22 @@ describe('SsbjJudgements', () => {
 
     await act(async () => { setSelectValue(rowOf('REQ-CLM-020').querySelector<HTMLSelectElement>('select[aria-label="REQ-CLM-020 の重要性"]')!, 'unconfirmed'); });
     await settle();
-    expect(vi.mocked(saveSsbjJudgement).mock.calls[2][1]).toEqual({
+    expect(vi.mocked(saveSsbjJudgementQuickChange).mock.calls[2][1]).toBe(LOADED_AT);
+    expect(vi.mocked(saveSsbjJudgementQuickChange).mock.calls[2][2]).toMatchObject({
       ...fictionalJudgements.find(judgement => judgement.requirementId === 'REQ-CLM-020')!, materiality: 'unconfirmed',
     });
+  });
+
+  it('一覧から保存しようとして、読込後に他の画面で保存されていたら、上書きせずに理由を出して最新を読み直す', async () => {
+    vi.mocked(saveSsbjJudgementQuickChange).mockRejectedValueOnce(new SsbjEditConflictError());
+    rendered = render(<SsbjJudgements reportId={report.id} />);
+    await settle();
+    expect(listSsbjJudgements).toHaveBeenCalledTimes(1);
+    await act(async () => { setSelectValue(rowOf('REQ-CLM-020').querySelector<HTMLSelectElement>('select[aria-label="REQ-CLM-020 の重要性"]')!, 'unconfirmed'); });
+    await settle();
+    expect(rowOf('REQ-CLM-020').querySelector('[role="alert"]')?.textContent).toContain('他の画面で更新されました');
+    expect(listSsbjJudgements).toHaveBeenCalledTimes(2);
+    expect(rowOf('REQ-CLM-020').querySelector<HTMLSelectElement>('select[aria-label="REQ-CLM-020 の重要性"]')!.value).toBe('material');
   });
 
   it('一覧の選択でも詳細と同じ検証を通し、通らなければ保存せずに理由を出す', async () => {
@@ -152,7 +178,7 @@ describe('SsbjJudgements', () => {
     // REQ-CLM-027 は「重要性がない」を理由にしているので、重要性を「重要性あり」にはできない。
     await act(async () => { setSelectValue(rowOf('REQ-CLM-027').querySelector<HTMLSelectElement>('select[aria-label="REQ-CLM-027 の重要性"]')!, 'material'); });
     await settle();
-    expect(saveSsbjJudgement).not.toHaveBeenCalled();
+    expect(saveSsbjJudgementQuickChange).not.toHaveBeenCalled();
     expect(rowOf('REQ-CLM-027').querySelector('[role="alert"]')?.textContent).toContain('「詳細」から直してください');
     expect(rowOf('REQ-CLM-027').querySelector<HTMLSelectElement>('select[aria-label="REQ-CLM-027 の重要性"]')!.value).toBe('not_material');
   });
@@ -168,7 +194,8 @@ describe('SsbjJudgements', () => {
     setTextareaValue(dialog().querySelector<HTMLTextAreaElement>('textarea:not([aria-label])')!, '該当する体制が無い');
     await act(async () => { click(buttonIn(dialog(), '変更を保存')); });
     await settle();
-    expect(vi.mocked(saveSsbjJudgement).mock.calls[1][1]).toEqual({
+    expect(saveSsbjJudgementQuickChange).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(saveSsbjJudgement).mock.calls[0][1]).toEqual({
       requirementId: 'REQ-GEN-002', applicability: 'not_applicable', materiality: 'unconfirmed', omissionReason: 'none',
       explanation: { disclosure: { state: 'unanswered' }, internalNote: '該当する体制が無い' },
     });

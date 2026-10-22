@@ -5,7 +5,8 @@
 // （行の無い要求はすべて「未確認」）。リスク・機会の識別（T07）とは別の概念として、別の画面で持つ。
 // 変更は作業中の内容で、保存版にはレポート詳細の「保存版を作成」で残す（docs/ssbj-spec.md §8）。
 // 一覧では該当性・重要性を選んで続けて保存でき（詳細の内容は変えない）、未判断・要確認・判断済みで絞り込める。
-// 記載しない理由・開示する説明・内部の検討理由（根拠）は「詳細」のダイアログで扱う。一覧の保存も詳細と同じ検証・保存を通す。
+// 記載しない理由・開示する説明・内部の検討理由（根拠）は「詳細」のダイアログで扱う。一覧の保存は詳細と同じ検証を通し、
+// 該当性・重要性の 2 列だけを、読込時の更新日時を条件に保存する（他の画面で保存された根拠を古い値に戻さない）。
 
 import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
@@ -21,7 +22,7 @@ import { useSsbjJudgementForm } from '../hooks/useSsbjJudgementForm';
 import { useSsbjJudgements } from '../hooks/useSsbjJudgements';
 import { useSsbjReport } from '../hooks/useSsbjReport';
 import { useSsbjRisksOpportunities } from '../hooks/useSsbjRisksOpportunities';
-import { saveSsbjJudgement } from '../services/judgementService';
+import { saveSsbjJudgement, saveSsbjJudgementQuickChange } from '../services/judgementService';
 import {
   SSBJ_APPLICABILITIES,
   SSBJ_MATERIALITIES,
@@ -54,6 +55,7 @@ import {
 } from '../utils/judgement';
 import { formatParagraphReference } from '../utils/requirementMaster';
 import { isSsbjReportLocked } from '../utils/reportStatus';
+import { SsbjEditConflictError } from '../utils/writeError';
 import { SsbjEditorLayout } from './SsbjEditorLayout.client';
 import { SsbjJudgementDialog } from './SsbjJudgementDialog.client';
 import { SsbjLockedNotice } from './SsbjLockedNotice';
@@ -208,7 +210,7 @@ const FILTER_LABELS: Record<StatusFilter, string> = {
 
 export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
   const { report, isLoading: reportLoading, errorMessage: reportError, isNotFound } = useSsbjReport(reportId);
-  const { judgements, isLoading: judgementsLoading, errorMessage: judgementsError, replace } =
+  const { judgements, isLoading: judgementsLoading, errorMessage: judgementsError, replace, reload } =
     useSsbjJudgements(report?.id ?? null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [filter, setFilter] = useState<StatusFilter>('all');
@@ -248,13 +250,20 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
     void form.submit(event).then(saved => { if (saved) setDialogOpen(false); });
   };
 
-  // 一覧での選択: 保存済みの判断に重ね、詳細の編集と同じ検証・保存を通す（記載しない理由・説明・根拠は変えない）。
+  // 一覧での選択: 保存済みの判断に重ねて詳細の編集と同じ検証を通し、該当性・重要性の 2 列だけを保存する
+  // （記載しない理由・説明・根拠は送らない）。読込後に他の画面で保存されていれば競合にして、最新を読み直す。
   const quickChange = async (entry: SsbjJudgementEntry, change: SsbjJudgementQuickChange) => {
     if (!report) return;
     const next = applySsbjJudgementQuickChange(entry.judgement, change);
     const errors = validateSsbjJudgementInput(next);
     if (errors.length > 0) throw new Error(`${errors.join('。')}（「詳細」から直してください）`);
-    replace(await saveSsbjJudgement(report, next));
+    const saved = judgements.find(judgement => judgement.requirementId === entry.judgement.requirementId);
+    try {
+      replace(await saveSsbjJudgementQuickChange(report, saved?.updatedAt ?? null, next));
+    } catch (error) {
+      if (error instanceof SsbjEditConflictError) reload();
+      throw error;
+    }
   };
 
   // 保存して、表示中の一覧で次の未判断・要確認の要求を開く（次が無ければ閉じる）。

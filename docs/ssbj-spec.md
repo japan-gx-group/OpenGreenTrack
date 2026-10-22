@@ -773,14 +773,18 @@ T14 の確認事項と、確かめている場所:
 
 | 対象 | 内容 |
 |---|---|
-| ロジック | `utils/judgement.ts`（`ssbjJudgementStatus`・`ssbjJudgementReviewReasons`・`applySsbjJudgementQuickChange`・`ssbjRisksByRequirement`） |
+| ロジック | `utils/judgement.ts`（`ssbjJudgementStatus`・`ssbjJudgementReviewReasons`・`applySsbjJudgementQuickChange`・`ssbjRisksByRequirement`）、`services/judgementService.ts`（`saveSsbjJudgementQuickChange`） |
 | 画面 | `SsbjJudgements.client.tsx`（行ごとの該当性・重要性の選択、状態と件数、絞り込み、関連するリスク・機会）、`SsbjJudgementDialog.client.tsx`（「保存して次の未判断・要確認へ」） |
 
 決めたこと:
 
 - **一覧で選べるのは該当性と重要性だけ。** 記載しない理由・開示する説明・内部の検討理由（根拠）は「詳細」のダイアログで扱う。一覧の選択は保存済みの判断に重ね、
-  ほかの欄は変えずに、詳細と同じ検証（`validateSsbjJudgementInput`）・保存（`saveSsbjJudgement`）を通す。検証に通らなければ保存せず、行に理由を出す。
-  一覧の操作と詳細の編集で、保存される行が同じになる（どちらも 1 要求 1 行を丸ごと保存する）。
+  詳細と同じ検証（`validateSsbjJudgementInput`）を通す。検証に通らなければ保存せず、行に理由を出す。
+- **一覧からは該当性・重要性の 2 列だけを、読込時の行の `updatedAt` を条件に保存する**（`saveSsbjJudgementQuickChange`）。一覧は画面を開いたときの値を持っているので、
+  全列を送ると、その後に他の画面で保存された根拠（記載しない理由・説明・内部の検討理由）を、根拠が見えないまま 1 操作で古い値に戻してしまうため。
+  読込後に他の画面で保存されていれば 0 件更新になるので、保存せずに競合として理由を出し、一覧を読み直す（§8 と同じ）。行がまだ無ければ作り、
+  その間に他の画面が先に作っていれば（23505）同じく競合にする。詳細のダイアログは、これまでどおり 1 要求 1 行を丸ごと保存する
+  （以前からある性質で、ダイアログでは根拠が見えている。競合検知を足すのは別の課題）。
 - **状態は 3 つに分ける。** 未判断（何も記録していない）、要確認（該当性が未確認・該当なのに重要性が未確認・根拠が未入力・記載しない旨の説明が未入力のどれか）、判断済み。
   根拠は内部の検討理由か入力済みの開示する説明。**一覧で該当性・重要性を選んだだけでは、根拠を書くまで要確認のまま**にする（一覧の選択で根拠を省いたことにしない）。
   これまでの「判断が済んでいない」（`isSsbjJudgementPending`）は、プレビューの件数にだけ使う（意味は変えていない）。

@@ -177,7 +177,8 @@ test('4. OGT の値をレポートに採用する', async () => {
 test('5. 該当性・重要性・記載しない理由を記録する', async () => {
   await page.goto(reportPath('/judgements'));
   const row = page.getByTestId('ssbj-judgement-row').filter({ hasText: 'REQ-CLM-020' });
-  await row.getByRole('button', { name: '編集' }).click();
+  // 一覧では該当性・重要性だけを選べる。記載しない理由・説明・根拠は「詳細」のダイアログで記録する。
+  await row.getByRole('button', { name: '詳細', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel('該当性').selectOption('applicable');
   await dialog.getByLabel('重要性', { exact: true }).selectOption('material');
