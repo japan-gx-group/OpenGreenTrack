@@ -451,7 +451,7 @@ SSBJ の各テーブルのトリガー（`ssbj_audit_row_change`）と、状態�
 | :--- | :--- | :--- | :--- | :--- |
 | `id` | ID | BIGINT | Primary Key（identity） | 記録の順 |
 | `organizationId` | 組織ID | UUID | Foreign Key | 削除時: CASCADE |
-| `reportId` | レポートID | UUID | Foreign Key, NULL（ロールの記録だけ） | 削除時: CASCADE（デモデータの入れ直し・テストの後片付け）。SSBJ のロールの割り当ての記録（`targetType = member_role`）だけは空（レポートに属さないため。`20261010110000_ssbj_member_roles.sql`） |
+| `reportId` | レポートID | UUID | Foreign Key, NULL（ロールの記録だけ） | 削除時: CASCADE（デモデータの入れ直し・テストの後片付け）。SSBJ のロールの割り当ての記録（`targetType = member_role`）だけは空（レポートに属さないため。`20261020100000_ssbj_member_roles.sql`） |
 | `actorUserId` | 操作した人 | UUID | NULL | auth.uid()、service_role の処理は RPC が渡した操作者 |
 | `action` | 操作 | VARCHAR(30) | NOT NULL, CHECK | `create` / `update` / `delete` / `status_change` / `version_create` / `version_restore` / `export` |
 | `targetType` / `targetId` | 対象の種類 / 識別子 | VARCHAR(30) / TEXT | NOT NULL / NULL | 例: `narrative` / 項目 ID |
@@ -462,7 +462,7 @@ SSBJ の各テーブルのトリガー（`ssbj_audit_row_change`）と、状態�
 - RLS は自組織の select だけ。authenticated には select だけを GRANT し、update はトリガーで全ロール拒否する。
 - 版数・監査列だけが変わった更新は記録しない。復元中の行ごとの記録は止め、復元として 1 件記録する。
 
-### 3.20 SSBJ のロール (`ssbj_member_roles`) — 利用者ごとの SSBJ のロール（`supabase/migrations/20261010110000_ssbj_member_roles.sql`）
+### 3.20 SSBJ のロール (`ssbj_member_roles`) — 利用者ごとの SSBJ のロール（`supabase/migrations/20261020100000_ssbj_member_roles.sql`）
 SSBJ の中だけで使うロールの割り当て。権限の規則の正本は [`authorization-matrix.md`](authorization-matrix.md)。OGT 本体の `profiles.role` は変えず、`'admin'` だけを読む。
 
 | 物理名 | 論理名 | 型 | 制約 | 説明 |

@@ -774,7 +774,7 @@ SSBJ の中だけで使うロール（入力担当・承認担当・閲覧者）
 
 | 対象 | 内容 |
 |---|---|
-| DB | `20261010110000_ssbj_member_roles.sql`（`ssbj_member_roles`、判定の関数 `ssbj_user_role` ほか、ロールの記録のため `ssbj_audit_logs."reportId"` を空にできるようにした）、`20261023090000_ssbj_member_roles_audit_actor.sql`（利用者の削除に伴う解除の操作者を空にする） |
+| DB | `20261020100000_ssbj_member_roles.sql`（`ssbj_member_roles`、判定の関数 `ssbj_user_role` ほか、ロールの記録のため `ssbj_audit_logs."reportId"` を空にできるようにした）、`20261023090000_ssbj_member_roles_audit_actor.sql`（利用者の削除に伴う解除の操作者を空にする） |
 | 画面 | `/ssbj/roles`（`SsbjMemberRoles.client.tsx`）。一覧画面から「SSBJ の権限」で入る |
 | コード | `types.ts` の `SSBJ_MEMBER_ROLES`・`SsbjEffectiveRole`・`SSBJ_ROLE_LABELS`、`utils/memberRole.ts`、`services/memberRoleService.ts`、`hooks/useSsbjMemberRoles.ts`・`useSsbjMyRole.ts` |
 | テスト | `scripts/db/__tests__/ssbjMemberRolesPolicy.test.ts`、純関数・サービス・画面の単体テスト |
