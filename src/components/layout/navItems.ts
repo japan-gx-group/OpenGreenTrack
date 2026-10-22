@@ -58,6 +58,8 @@ const EXTRA_PAGE_TITLES: { prefix: string; label: string }[] = [
   { prefix: '/settings/account', label: 'アカウント設定' },
   { prefix: '/settings', label: '設定' },
   { prefix: '/locations/', label: '拠点詳細' },
+  // SSBJ の権限（/ssbj/roles）はレポート詳細（/ssbj/<id>）より先に見る。
+  { prefix: '/ssbj/roles', label: 'SSBJ の権限' },
   { prefix: '/ssbj/', label: 'SSBJレポート詳細' },
 ];
 

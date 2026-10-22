@@ -50,6 +50,8 @@ erDiagram
     ssbj_reports ||--o{ ssbj_judgements : "該当性・重要性の判断"
     ssbj_reports ||--o{ ssbj_audit_logs : "操作履歴"
     ssbj_reports ||--o{ ssbj_risk_candidate_decisions : "業種の候補への判断"
+    organizations ||--o{ ssbj_member_roles : "SSBJのロール"
+    profiles ||--o| ssbj_member_roles : "割り当て"
 ```
 
 ---
@@ -451,7 +453,7 @@ SSBJ の各テーブルのトリガー（`ssbj_audit_row_change`）と、状態�
 | :--- | :--- | :--- | :--- | :--- |
 | `id` | ID | BIGINT | Primary Key（identity） | 記録の順 |
 | `organizationId` | 組織ID | UUID | Foreign Key | 削除時: CASCADE |
-| `reportId` | レポートID | UUID | Foreign Key | 削除時: CASCADE（デモデータの入れ直し・テストの後片付け） |
+| `reportId` | レポートID | UUID | Foreign Key, NULL（ロールの記録だけ） | 削除時: CASCADE（デモデータの入れ直し・テストの後片付け）。SSBJ のロールの割り当ての記録（`targetType = member_role`）だけは空（レポートに属さないため。`20261020100000_ssbj_member_roles.sql`） |
 | `actorUserId` | 操作した人 | UUID | NULL | auth.uid()、service_role の処理は RPC が渡した操作者 |
 | `action` | 操作 | VARCHAR(30) | NOT NULL, CHECK | `create` / `update` / `delete` / `status_change` / `version_create` / `version_restore` / `export` |
 | `targetType` / `targetId` | 対象の種類 / 識別子 | VARCHAR(30) / TEXT | NOT NULL / NULL | 例: `narrative` / 項目 ID |
@@ -482,6 +484,23 @@ SSBJ の各テーブルのトリガー（`ssbj_audit_row_change`）と、状態�
 | `riskOpportunityId` | 登録したリスク・機会 | UUID | 外部キーにしない（同じレポートかは RLS で検証） | 採用したときに登録したもの。保存版の復元はリスク・機会を全部消して同じ ID で入れ直すので、外部キー（SET NULL）にすると関連付けが切れる。残っているかは ID で存在を確かめて判定する |
 | `createdByUserId` / `updatedByUserId` | 登録・更新操作者ID | UUID | NULL | `set_row_actor` トリガ |
 | `createdAt` / `updatedAt` | 登録・更新日時 | TIMESTAMPTZ | | |
+
+### 3.21 SSBJ のロール (`ssbj_member_roles`) — 利用者ごとの SSBJ のロール（`supabase/migrations/20261020100000_ssbj_member_roles.sql`）
+SSBJ の中だけで使うロールの割り当て。権限の規則の正本は [`authorization-matrix.md`](authorization-matrix.md)。OGT 本体の `profiles.role` は変えず、`'admin'` だけを読む。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `organizationId` | 組織ID | UUID | Primary Key（`userId` と組）, Foreign Key | 削除時: CASCADE |
+| `userId` | 利用者ID | UUID | Primary Key（`organizationId` と組）, Foreign Key（`profiles`） | 削除時: CASCADE |
+| `role` | SSBJ のロール | VARCHAR(20) | NOT NULL, CHECK(`editor` / `approver` / `viewer`) | 入力担当 / 承認担当 / 閲覧者。行が無い利用者は入力担当。OGT の管理者は割り当てに関係なく管理者 |
+| `createdByUserId` / `updatedByUserId` | 作成者 / 更新者 | UUID | NULL | `set_row_actor` |
+| `createdAt` / `updatedAt` | 作成日時 / 更新日時 | TIMESTAMPTZ | NOT NULL | |
+
+- RLS は自組織の select（全員）と、管理者だけの insert / update / delete。割り当てられるのは同じ組織の利用者だけ。authenticated に GRANT する列は insert が `organizationId`・`userId`・`role`、update が `role` だけ。
+- 判定の関数: `ssbj_user_role(利用者, 組織)`・`ssbj_user_can_approve`（service_role 限定）、`ssbj_current_user_role()`・`ssbj_current_user_can_edit()`・`ssbj_current_user_can_view_working()`・`ssbj_current_user_is_admin()`（authenticated。RLS と画面の出し分けに使う）。
+- 割り当て・変更・解除はトリガー（`ssbj_audit_member_role_change`）が `ssbj_audit_logs` に記録する（`reportId` は空）。組織の削除に伴う連鎖削除では記録しない。
+  利用者の削除（退会・メンバーの削除）に伴う解除は、操作者を空（画面では「システム」）にし、`details.reason = 'member_deleted'` を残す。
+  管理クライアントの削除ではログイン中の利用者がいないため、行に残っている以前の更新者を操作者にしない（`20261023090000_ssbj_member_roles_audit_actor.sql`）。
 
 ---
 

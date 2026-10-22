@@ -891,3 +891,22 @@ T14 の確認事項と、確かめている場所:
 - **定義には版（`r2-trial-3`）を持たせる。** レビューを受けて文型を見直すたびに上げた（`r2-trial-1` → `r2-trial-2` → `r2-trial-3`）。選択肢の ID・文例を変えたら版を上げる。以前の版の選択は今の選択肢として読まず、「以前の版の選択肢で選んだ内容がある」とだけ出す（選び直すと置き換わる）。
 - **項目 ID は要求項目マスター（暫定版）の ID を使う。** マスターの ID が見直されたら、`narrativeTemplateChoice.ts` の `itemId` を合わせて直す（保存済みの選択は文章の行と一緒に項目 ID で持つ）。
 - 選択肢と文型はチームが作った試行版で、外部の監修は受けていない（`ssbj-r1-scope.md` §8）。
+
+### SSBJ のロール（R2-10）
+
+SSBJ の中だけで使うロール（入力担当・承認担当・閲覧者）を DB で持ち、判定できるようにした。ロールで何ができるか・切り替えの方針は
+[`authorization-matrix.md`](authorization-matrix.md) を正とし、ここでは繰り返さない。各テーブル・API への適用は R2-11・R2-12 で行う。
+
+| 対象 | 内容 |
+|---|---|
+| DB | `20261020100000_ssbj_member_roles.sql`（`ssbj_member_roles`、判定の関数 `ssbj_user_role` ほか、ロールの記録のため `ssbj_audit_logs."reportId"` を空にできるようにした）、`20261023090000_ssbj_member_roles_audit_actor.sql`（利用者の削除に伴う解除の操作者を空にする） |
+| 画面 | `/ssbj/roles`（`SsbjMemberRoles.client.tsx`）。一覧画面から「SSBJ の権限」で入る |
+| コード | `types.ts` の `SSBJ_MEMBER_ROLES`・`SsbjEffectiveRole`・`SSBJ_ROLE_LABELS`、`utils/memberRole.ts`、`services/memberRoleService.ts`、`hooks/useSsbjMemberRoles.ts`・`useSsbjMyRole.ts` |
+| テスト | `scripts/db/__tests__/ssbjMemberRolesPolicy.test.ts`、純関数・サービス・画面の単体テスト |
+| デモデータ | `supabase/seeds/demo/ssbj_demo.sql` の末尾。組織 A に承認担当（確認 三郎 `member3-a@example.com`。このファイルで追加）と閲覧者（報告 次郎）を割り当てる。算定 花子は割り当て無し（入力担当） |
+
+決めたこと:
+
+- **ロールの記録は操作履歴（`ssbj_audit_logs`）に残し、`reportId` は空にする。** ロールはレポートに属さないため。空にできるのはロールの記録だけ（CHECK 制約）で、レポートの操作履歴の画面には出ない。SSBJ の権限の画面に新しい順に出す。
+- **画面からの割り当ては「更新して、無ければ作る」。** 割り当ての無い利用者を入力担当に戻すときも行を残し（`editor`）、削除はしない（行の有無で既定かどうかを区別して表示する）。
+- **承認担当の利用者はデモ用に 1 人足した。** 組織 A の 3 人だけでは、管理者・入力担当・承認担当・閲覧者をそろえられないため。SSBJ のロールを試すための利用者なので、`demo.sql` ではなく `ssbj_demo.sql` で作る。

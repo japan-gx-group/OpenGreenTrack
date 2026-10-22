@@ -23,7 +23,7 @@
 
 | 種類 | 場所 | 返却 | 削除 |
 |---|---|---|---|
-| 組織に属するテーブル（OGT 本体 19・SSBJ 10） | `scripts/ops/orgDataTables.ts` の一覧 | 書き出す | 消す |
+| 組織に属するテーブル（OGT 本体 19・SSBJ 11） | `scripts/ops/orgDataTables.ts` の一覧 | 書き出す | 消す |
 | 組織のユーザー | `auth.users`（`profiles` がその組織を指すユーザー） | 書き出さない（名前・メールアドレス・ロールは `profiles` で返す） | 消す |
 | Storage のファイル | `upload-quarantine`（IDEA 取込の一時ファイル。取込の後に消える）・`import-files`。パスの先頭のフォルダが組織 ID | ファイルの一覧だけを書き出す | 先に手で消す（§7） |
 | 全組織で共通のデータ | 公式の排出係数など（`organizationId` が null の行） | 対象外 | 対象外 |
