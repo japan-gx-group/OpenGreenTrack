@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   getCurrentYearMonth,
+  nextYearMonth,
   toMonthlyPeriodLabel,
   toPeriodDates,
   validateTargetMonth,
@@ -78,6 +79,21 @@ describe('manualEntryTargetMonth', () => {
     expect(validateTargetMonth('2030-02', '2026-07', { allowedFutureMonth: '2030-01' }).error).toBe(
       '未来の対象年月は登録できません。当月以前を選択してください。',
     );
+  });
+
+  it('翌月を返し、年またぎも文字列のまま組み立てる', () => {
+    expect(nextYearMonth('2026-07')).toBe('2026-08');
+    expect(nextYearMonth('2026-12')).toBe('2027-01');
+    // 2桁年も Date を経由しないので別の年にならない。
+    expect(nextYearMonth('0099-12')).toBe('0100-01');
+  });
+
+  it('不正な年月・桁あふれする年の翌月はnullを返す', () => {
+    expect(nextYearMonth('2026-13')).toBeNull();
+    expect(nextYearMonth('2026/07')).toBeNull();
+    expect(nextYearMonth('')).toBeNull();
+    // 10000-01 は YYYY-MM の前提（辞書順比較・input[type=month]）が崩れるため送らない。
+    expect(nextYearMonth('9999-12')).toBeNull();
   });
 
   it('当月以前はエラーにしない', () => {

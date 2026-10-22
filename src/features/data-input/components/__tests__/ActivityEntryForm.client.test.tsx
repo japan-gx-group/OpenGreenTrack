@@ -444,6 +444,75 @@ describe('ActivityEntryForm', () => {
     expect(modal(container)).toBeNull();
     expect(amountInput(container).value).toBe('');
     expect(categorySelect(container).value).toBe('energy:electricity');
+    // 対象年月は翌月へ自動で送る（同一拠点の連続入力を「数量を打って保存」の繰り返しにする）。
+    expect(monthInput(container).value).toBe('2024-12');
+  });
+
+  it('当月で保存したときは対象年月を未来月へ送らない', async () => {
+    const { container, onSave } = renderForm();
+    await flush();
+
+    // 既定の対象年月は当月（2025-01）。
+    expect(monthInput(container).value).toBe('2025-01');
+    setInputValue(amountInput(container), '100');
+    openPreview(container);
+    await saveFromPreview(container);
+
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(monthInput(container).value).toBe('2025-01');
+  });
+
+  // 翌年度が未登録のまま年度末の月を保存したとき、「算定期間外」の月へ進めて係数の無い入力を続けさせない。
+  describe('年度末の保存後の対象年月', () => {
+    // 1月始まりの会計年度。年度末（2024-12）が当月（2025-01）以前になり、係数の有効期間にも収まる。
+    const CAL2024: FiscalYearOption = {
+      id: 'cal2024',
+      label: '2024年（1月始まり）',
+      year: '2024',
+      startDate: '2024-01-01',
+      endDate: '2024-12-31',
+    };
+    const CAL2025: FiscalYearOption = {
+      id: 'cal2025',
+      label: '2025年（1月始まり）',
+      year: '2025',
+      startDate: '2025-01-01',
+      endDate: '2025-12-31',
+    };
+
+    const saveYearEnd = async (container: HTMLElement) => {
+      setSelectValue(monthYearSelect(container), 'cal2024');
+      setSelectValue(monthInput(container), '2024-12');
+      // 年度が変わると係数を取り直すため、取得完了（プレビューの有効化）を待つ。
+      await flush();
+      setInputValue(amountInput(container), '100');
+      openPreview(container);
+      await saveFromPreview(container);
+    };
+
+    it('翌年度が未登録なら対象年月を送らず年度末の月に留まる', async () => {
+      Object.assign(fiscalYearMock, { fiscalYears: [CAL2024] });
+      const { container, onSave } = renderForm();
+      await flush();
+
+      await saveYearEnd(container);
+
+      expect(onSave).toHaveBeenCalledTimes(1);
+      expect(monthInput(container).value).toBe('2024-12');
+      expect(monthYearSelect(container).value).toBe('cal2024');
+    });
+
+    it('翌年度が登録済みなら翌年度の最初の月へ送る', async () => {
+      Object.assign(fiscalYearMock, { fiscalYears: [CAL2025, CAL2024] });
+      const { container, onSave } = renderForm();
+      await flush();
+
+      await saveYearEnd(container);
+
+      expect(onSave).toHaveBeenCalledTimes(1);
+      expect(monthInput(container).value).toBe('2025-01');
+      expect(monthYearSelect(container).value).toBe('cal2025');
+    });
   });
 
   it('会計年度マスタが未確定の間は係数を取得せず、確定後に1回だけ取得する', async () => {
@@ -1319,7 +1388,48 @@ describe('ActivityEntryForm', () => {
     expect(warning?.textContent).not.toContain('既存のレコードを開く');
   });
 
-  it('新規: 保存直後は同じ条件のまま履歴に加わっても警告せず、条件を変えると通常どおり警告する', async () => {
+  it('新規: 翌月へ送れない保存の直後は同じ条件のまま履歴に加わっても警告せず、条件を変えると通常どおり警告する', async () => {
+    const existingDec = existingElectricityNov({
+      id: 'rec-dec',
+      periodStart: '2024-12-01',
+      periodEnd: '2024-12-31',
+    });
+    const { container, onSave, rerender } = renderForm({
+      historyRecords: [existingDec],
+      onOpenDuplicateRecord: vi.fn(),
+    });
+    await flush();
+    // 当月（2025-01）で保存する。未来月へは送らないので、拠点・カテゴリ・対象年月がそのまま残る。
+    expect(monthInput(container).value).toBe('2025-01');
+    setInputValue(amountInput(container), '10000');
+    expect(duplicateWarning(container)).toBeNull();
+
+    openPreview(container);
+    await saveFromPreview(container);
+    expect(onSave).toHaveBeenCalledTimes(1);
+
+    // 親（DataInput）は保存したレコードを履歴の先頭に加える。拠点・カテゴリ・対象年月は保持されたままだが、
+    // 今保存した分を「既に登録済み」とは知らせない（保存成功の通知と並んで警告が出ないようにする）。
+    rerender({
+      historyRecords: [
+        existingElectricityNov({ id: 'rec-saved', periodStart: '2025-01-01', periodEnd: '2025-01-31' }),
+        existingDec,
+      ],
+    });
+    expect(amountInput(container).value).toBe('');
+    expect(monthInput(container).value).toBe('2025-01');
+    expect(duplicateWarning(container)).toBeNull();
+
+    // 条件を変えれば通常どおり警告する。
+    setSelectValue(monthInput(container), '2024-12');
+    expect(duplicateWarning(container)?.textContent).toContain('2024年12月 の活動量は既に登録済みです');
+
+    // 一度条件を変えたあとに保存時の条件へ戻した場合も警告する（抑止は保存直後だけ）。
+    setSelectValue(monthInput(container), '2025-01');
+    expect(duplicateWarning(container)?.textContent).toContain('2025年1月 の活動量は既に登録済みです');
+  });
+
+  it('新規: 保存後に翌月へ送った先が登録済みなら、その月の警告を出す', async () => {
     const existingDec = existingElectricityNov({
       id: 'rec-dec',
       periodStart: '2024-12-01',
@@ -1338,18 +1448,223 @@ describe('ActivityEntryForm', () => {
     await saveFromPreview(container);
     expect(onSave).toHaveBeenCalledTimes(1);
 
-    // 親（DataInput）は保存したレコードを履歴の先頭に加える。拠点・カテゴリ・対象年月は保持されたままだが、
-    // 今保存した分を「既に登録済み」とは知らせない（保存成功の通知と並んで警告が出ないようにする）。
+    // 対象年月は 2024-12 へ送られる。保存した 2024-11 の分は警告せず、送り先の登録済みレコードを知らせる。
     rerender({ historyRecords: [existingElectricityNov({ id: 'rec-saved' }), existingDec] });
-    expect(amountInput(container).value).toBe('');
-    expect(duplicateWarning(container)).toBeNull();
-
-    // 条件を変えれば通常どおり警告する。
-    setSelectValue(monthInput(container), '2024-12');
+    expect(monthInput(container).value).toBe('2024-12');
     expect(duplicateWarning(container)?.textContent).toContain('2024年12月 の活動量は既に登録済みです');
+  });
 
-    // 一度条件を変えたあとに保存時の条件へ戻した場合も警告する（抑止は保存直後だけ）。
-    setSelectValue(monthInput(container), '2024-11');
-    expect(duplicateWarning(container)?.textContent).toContain('2024年11月 の活動量は既に登録済みです');
+  // ---- 複数月まとめて入力（一括入力） ----
+
+  const savedRecord = (
+    overrides: Partial<SavedManualActivityRecord> &
+      Pick<SavedManualActivityRecord, 'id' | 'periodStart'>,
+  ): SavedManualActivityRecord => ({
+    locationId: OSAKA.id,
+    locationName: OSAKA.name,
+    energyType: 'electricity',
+    amount: 500,
+    unit: 'kWh',
+    periodEnd: overrides.periodStart.replace(/-01$/, '-28'),
+    note: null,
+    createdAt: '2024-12-01T00:00:00Z',
+    emissionFactorId: null,
+    emissions: null,
+    appliedFactorName: null,
+    appliedFactorValue: null,
+    appliedFactorUnit: null,
+    scope3CategoryId: null,
+    ideaFactorId: null,
+    ideaProductName: null,
+    ...overrides,
+  });
+
+  const renderBulkForm = (props: Partial<ActivityEntryFormProps> = {}) => {
+    const onSaveBulk = vi.fn<NonNullable<ActivityEntryFormProps['onSaveBulk']>>().mockResolvedValue(undefined);
+    const rendered = renderForm({ onSaveBulk, historyRecords: [], ...props });
+    return { ...rendered, onSaveBulk };
+  };
+
+  const bulkAmountInput = (container: HTMLElement, month: string) =>
+    q<HTMLInputElement>(container, `#manual-bulk-amount-${month}`);
+
+  it('一括入力: onSaveBulk が無ければ切替を出さず、切り替えると年度の月グリッドになる', async () => {
+    const plain = renderForm();
+    await flush();
+    expect(plain.container.querySelector('#manual-entry-mode-bulk')).toBeNull();
+    plain.rerender();
+    mounted?.unmount();
+    document.body.innerHTML = '';
+
+    const { container } = renderBulkForm();
+    await flush();
+    expect(q(container, '#manual-entry-mode-bulk')).not.toBeNull();
+
+    await clickAsync(q(container, '#manual-entry-mode-bulk'));
+
+    // 対象年月の代わりに対象年度を選び、年度の 12 ヶ月がグリッドに並ぶ。
+    expect(container.querySelector('#manual-target-month')).toBeNull();
+    expect(q<HTMLSelectElement>(container, '#manual-bulk-fiscal-year').value).toBe('fy2024');
+    const grid = q(container, '[data-testid="manual-bulk-grid"]');
+    expect(grid.querySelectorAll('input[type="text"]')).toHaveLength(12);
+    // 当月（2025-01）より後の月は入力できない。
+    expect(bulkAmountInput(container, '2024-12').disabled).toBe(false);
+    expect(bulkAmountInput(container, '2025-02').disabled).toBe(true);
+    expect(grid.textContent).toContain('未来月のため入力できません');
+  });
+
+  it('一括入力: 入力した月だけを確認モーダルに並べ、月ごとの係数IDで onSaveBulk に渡す', async () => {
+    const { container, onSaveBulk } = renderBulkForm();
+    await flush();
+    await clickAsync(q(container, '#manual-entry-mode-bulk'));
+
+    setInputValue(bulkAmountInput(container, '2024-11'), '10000');
+    setInputValue(bulkAmountInput(container, '2024-12'), '20000');
+
+    await clickAsync(previewButton(container));
+    const preview = q(container, '.modal-content');
+    expect(preview.querySelector('h2')?.textContent).toBe('一括入力内容の確認');
+    const table = q(preview, '[data-testid="manual-bulk-preview-table"]');
+    expect(table.textContent).toContain('2024年11月');
+    expect(table.textContent).toContain('2024年12月');
+    // 代替値 0.00055 t-CO2/kWh × (10,000 + 20,000) kWh = 16.5 t-CO2e
+    expect(q(preview, '[data-testid="manual-bulk-preview-total"]').textContent).toBe('16.5 t-CO2e');
+
+    await clickAsync(q(container, '#manual-bulk-save-button'));
+
+    expect(onSaveBulk).toHaveBeenCalledTimes(1);
+    const items = onSaveBulk.mock.calls[0][0];
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({
+      action: 'create',
+      month: '2024-11',
+      entry: {
+        kind: 'scope12',
+        input: {
+          locationId: 'loc-1',
+          energyType: 'electricity',
+          amount: 10000,
+          unit: 'kWh',
+          periodStart: '2024-11-01',
+          periodEnd: '2024-11-30',
+          emissionFactorId: 'national',
+        },
+      },
+    });
+    expect(items[1]).toMatchObject({ action: 'create', month: '2024-12' });
+    // 保存成功後はグリッドの入力値を破棄する。
+    expect(modal(container)).toBeNull();
+    expect(bulkAmountInput(container, '2024-11').value).toBe('');
+  });
+
+  it('一括入力: 登録済みの月は値を表示してスキップし、上書きを選んだ月だけ更新として渡す', async () => {
+    const existing = savedRecord({ id: 'rec-oct', periodStart: '2024-10-01', amount: 500, note: '既存メモ' });
+    const { container, onSaveBulk } = renderBulkForm({ historyRecords: [existing] });
+    await flush();
+    await clickAsync(q(container, '#manual-entry-mode-bulk'));
+
+    // 登録済みの月は値を表示し、入力は上書きを選ぶまで無効。
+    const grid = q(container, '[data-testid="manual-bulk-grid"]');
+    expect(grid.textContent).toContain('登録済み: 500 kWh');
+    expect(bulkAmountInput(container, '2024-10').disabled).toBe(true);
+
+    await clickAsync(q(container, '#manual-bulk-overwrite-2024-10'));
+    const input = bulkAmountInput(container, '2024-10');
+    expect(input.disabled).toBe(false);
+    // 既存の活動量を初期表示する。
+    expect(input.value).toBe('500');
+    setInputValue(input, '600');
+
+    await clickAsync(previewButton(container));
+    expect(q(container, '[data-testid="manual-bulk-preview-table"]').textContent).toContain('上書き');
+    await clickAsync(q(container, '#manual-bulk-save-button'));
+
+    const items = onSaveBulk.mock.calls[0][0];
+    expect(items).toHaveLength(1);
+    // 上書きは既存レコードの更新として渡し、備考は既存の値を保持する。
+    expect(items[0]).toMatchObject({
+      action: 'overwrite',
+      recordId: 'rec-oct',
+      entry: { kind: 'scope12', input: { amount: 600, note: '既存メモ' } },
+    });
+  });
+
+  it('一括入力: 入力が無ければ確認モーダルを開かずエラーを出す', async () => {
+    const { container, onSaveBulk } = renderBulkForm();
+    await flush();
+    await clickAsync(q(container, '#manual-entry-mode-bulk'));
+
+    await clickAsync(previewButton(container));
+
+    expect(modal(container)).toBeNull();
+    expect(alertText(container)).toContain('登録する月の活動量を入力してください');
+    expect(onSaveBulk).not.toHaveBeenCalled();
+  });
+
+  it('一括入力: 全月が未来の年度は対象年度の選択肢に出さず、当月が属する年度を既定にする', async () => {
+    Object.assign(fiscalYearMock, { fiscalYears: [FY2025, FY2024, FY2023] });
+    const { container } = renderBulkForm();
+    await flush();
+    await clickAsync(q(container, '#manual-entry-mode-bulk'));
+
+    const yearSelect = q<HTMLSelectElement>(container, '#manual-bulk-fiscal-year');
+    expect([...yearSelect.options].map((option) => option.value)).toEqual(['fy2024', 'fy2023']);
+    expect(yearSelect.value).toBe('fy2024');
+  });
+
+  it('一括入力: 登録済みの月はグリッドの行で示し、代表月に対する重複の事前警告は出さない', async () => {
+    // 代表月（年度内で最初に入力できる月 = 2024-04）に既存レコードがある。
+    const existing = savedRecord({ id: 'rec-apr', periodStart: '2024-04-01' });
+    const { container } = renderBulkForm({ historyRecords: [existing] });
+    await flush();
+    await clickAsync(q(container, '#manual-entry-mode-bulk'));
+
+    expect(q(container, '[data-testid="manual-bulk-grid"]').textContent).toContain('登録済み: 500 kWh');
+    expect(container.querySelector('[data-testid="manual-duplicate-warning"]')).toBeNull();
+  });
+
+  it('一括入力: 全角数字・カンマは半角へ正規化して受け付け、数字にならない入力は理由を出して戻す', async () => {
+    const { container } = renderBulkForm();
+    await flush();
+    await clickAsync(q(container, '#manual-entry-mode-bulk'));
+
+    const input = bulkAmountInput(container, '2024-11');
+    setInputValue(input, '１２，３４５．５');
+    expect(input.value).toBe('12345.5');
+    expect(container.querySelector('[data-testid="manual-bulk-amount-rejected-2024-11"]')).toBeNull();
+
+    setInputValue(input, '12345.5a');
+    expect(input.value).toBe('12345.5');
+    expect(q(container, '[data-testid="manual-bulk-amount-rejected-2024-11"]').textContent).toBe(
+      '活動量は数字と小数点のみ入力できます。',
+    );
+
+    // IME 変換中は巻き戻さず、確定時に正規化する。
+    fireComposition(input, 'compositionstart');
+    setInputValue(input, '６７８');
+    expect(input.value).toBe('６７８');
+    fireComposition(input, 'compositionend');
+    expect(input.value).toBe('678');
+    expect(container.querySelector('[data-testid="manual-bulk-amount-rejected-2024-11"]')).toBeNull();
+  });
+
+  it('一括入力: 活動量 0 の月は実績ゼロとして確認表示を添えて保存する', async () => {
+    const { container, onSaveBulk } = renderBulkForm();
+    await flush();
+    await clickAsync(q(container, '#manual-entry-mode-bulk'));
+
+    setInputValue(bulkAmountInput(container, '2024-11'), '0');
+    await clickAsync(previewButton(container));
+
+    const table = q(container, '[data-testid="manual-bulk-preview-table"]');
+    expect(table.textContent).toContain('0 kWh');
+    expect(table.textContent).toContain('活動量 0 で保存します');
+    await clickAsync(q(container, '#manual-bulk-save-button'));
+
+    expect(onSaveBulk.mock.calls[0][0][0]).toMatchObject({
+      action: 'create',
+      month: '2024-11',
+      entry: { kind: 'scope12', input: { amount: 0 } },
+    });
   });
 });

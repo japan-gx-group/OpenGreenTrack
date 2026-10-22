@@ -74,7 +74,8 @@ export const DataInput = () => {
     refreshHistory: refreshManualHistory,
     showToast,
   });
-  // 重複事前警告の照合用に、履歴行から元レコードを取り出して両フォームへ渡す。
+  // 重複事前警告と一括入力の「登録済みの月」の照合用に、履歴行から元レコード（表示用整形を挟まない）を
+  // 取り出して両フォームへ渡す。
   const historyRecords = useMemo(
     () => history.flatMap((item) => (item.record ? [item.record] : [])),
     [history],
@@ -82,6 +83,8 @@ export const DataInput = () => {
   const entrySave = useActivityEntrySave({
     // 新しい行は先頭に入るため、追加分が見えるよう1ページ目へ戻す。
     onSaved: (record) => { prependManualHistory(record); pagination.resetPage(); },
+    // 一括保存は履歴の再取得（saveBulk 内）で反映されるため、ページだけ戻す。
+    onBulkSaved: () => pagination.resetPage(),
     runAutoCalculation: calculation.runAutoCalculation,
     refreshHistory: refreshManualHistory,
     showToast,
@@ -99,10 +102,12 @@ export const DataInput = () => {
 
         <div className="flex flex-col" style={{ gap: '14px' }}>
         {/* Scope 1・2 と Scope 3 積上げ（IDEA連携）を 1 つのフォームで入力する。
-            カテゴリに応じて排出係数の参照方式（供給事業者別 / 標準 / IDEA）をフォーム側で切り替える。 */}
+            カテゴリに応じて排出係数の参照方式（供給事業者別 / 標準 / IDEA）をフォーム側で切り替える。
+            複数月まとめて入力（一括入力）は履歴全件と照合して登録済みの月を表示する。 */}
         <ActivityEntryForm
           locations={manualEntryLocations}
           onSave={entrySave.save}
+          onSaveBulk={entrySave.saveBulk}
           historyRecords={historyRecords}
           // 事前警告の「既存のレコードを開く」から編集モーダルを開き、合算入力へ直行できるようにする。
           onOpenDuplicateRecord={editor.open}
