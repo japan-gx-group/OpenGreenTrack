@@ -91,6 +91,15 @@ const FY2025: FiscalYearOption = {
   endDate: '2026-03-31',
 };
 
+/** 前年度。対象年月プルダウンの年度切替（過年度入力）を作るために使う。 */
+const FY2023: FiscalYearOption = {
+  id: 'fy2023',
+  label: '2023年度',
+  year: '2023',
+  startDate: '2023-04-01',
+  endDate: '2024-03-31',
+};
+
 const OSAKA: ManualEntryLocationOption = { id: 'loc-1', name: '大阪支社', region: 'Kanto' };
 
 const TEPCO = '東京電力エナジーパートナー';
@@ -262,7 +271,10 @@ const q = <T extends Element = HTMLElement>(container: HTMLElement, selector: st
 };
 
 const categorySelect = (container: HTMLElement) => q<HTMLSelectElement>(container, '#manual-category-select');
-const monthInput = (container: HTMLElement) => q<HTMLInputElement>(container, '#manual-target-month');
+/** 対象年月の「月」セレクト（算定期間連動プルダウン。年度未登録時だけネイティブ month 入力になる）。 */
+const monthInput = (container: HTMLElement) => q<HTMLSelectElement>(container, '#manual-target-month');
+const monthYearSelect = (container: HTMLElement) =>
+  q<HTMLSelectElement>(container, '#manual-target-month-year');
 const amountInput = (container: HTMLElement) => q<HTMLInputElement>(container, '#manual-amount-input');
 const noteInput = (container: HTMLElement) => q<HTMLTextAreaElement>(container, '#manual-note-input');
 const previewButton = (container: HTMLElement) => q<HTMLButtonElement>(container, '#manual-preview-button');
@@ -403,7 +415,7 @@ describe('ActivityEntryForm', () => {
     expect(factorSelect.value).toBe('national');
     expect([...factorSelect.options].some((option) => option.textContent?.endsWith('・自動選択'))).toBe(true);
 
-    setInputValue(monthInput(container), '2024-11');
+    setSelectValue(monthInput(container), '2024-11');
     setInputValue(amountInput(container), '10000');
     expect(resultEmissionsText(container)).toBe('5.5 t-CO2e');
 
@@ -496,7 +508,7 @@ describe('ActivityEntryForm', () => {
     expect(factorTypeSelect.disabled).toBe(false);
     expect(providerInput.disabled).toBe(false);
 
-    setInputValue(monthInput(container), '2024-11');
+    setSelectValue(monthInput(container), '2024-11');
     chooseOption(container, 'manual-provider-select', TEPCO);
 
     expect(container.querySelector('#manual-factor-select')).toBeNull();
@@ -546,7 +558,7 @@ describe('ActivityEntryForm', () => {
     const { container, onSave } = renderForm();
     await flush();
 
-    setInputValue(monthInput(container), '2024-11');
+    setSelectValue(monthInput(container), '2024-11');
     chooseOption(container, 'manual-provider-select', TEPCO);
 
     // メニューが 1 つの事業者なので、年度違いの行でメニュー選択が出たり重複したりしない。
@@ -632,7 +644,7 @@ describe('ActivityEntryForm', () => {
     });
 
     // 対象年月を変えても（同一年度なら）復元した事業者選択は維持される。
-    setInputValue(monthInput(container), '2024-12');
+    setSelectValue(monthInput(container), '2024-12');
     expect(factorDetailText(container)).toContain(`事業者: ${TEPCO}`);
     openPreview(container);
     await saveFromPreview(container);
@@ -712,7 +724,7 @@ describe('ActivityEntryForm', () => {
     expect(factorDetailText(container)).toContain('原単位: 1.5 kg-CO2e/kg');
     expect(factorDetailText(container)).toContain('出典: AIST-IDEA Ver.X 標準版');
 
-    setInputValue(monthInput(container), '2024-11');
+    setSelectValue(monthInput(container), '2024-11');
     setInputValue(amountInput(container), '1000');
     // 1,000 kg × 1.5 kg-CO2e/kg = 1,500 kg-CO2e = 1.5 t-CO2e
     expect(resultEmissionsText(container)).toBe('1.5 t-CO2e');
@@ -822,7 +834,7 @@ describe('ActivityEntryForm', () => {
   it('numeric(15,3) に収まらない活動量は概算を出さず、入力欄の直下とプレビュー時に文言を出す', async () => {
     const { container, onSave } = renderForm();
     await flush();
-    setInputValue(monthInput(container), '2024-11');
+    setSelectValue(monthInput(container), '2024-11');
 
     setInputValue(amountInput(container), '0.0004');
     expect(q(container, '[data-testid="manual-amount-error"]').textContent).toBe(
@@ -927,7 +939,7 @@ describe('ActivityEntryForm', () => {
   it('活動量 0 は排出量 0 で概算され、プレビューの確認表示を経て保存できる', async () => {
     const { container, onSave } = renderForm();
     await flush();
-    setInputValue(monthInput(container), '2024-11');
+    setSelectValue(monthInput(container), '2024-11');
 
     // 0 より大きい値では確認表示を出さない。
     setInputValue(amountInput(container), '10000');
@@ -958,7 +970,7 @@ describe('ActivityEntryForm', () => {
     const duplicateMessage = '『大阪支社』の電気・2024年11月 の活動量は既に登録済みです。';
     const { container, onSave } = renderForm();
     await flush();
-    setInputValue(monthInput(container), '2024-11');
+    setSelectValue(monthInput(container), '2024-11');
     setInputValue(amountInput(container), '10000');
     onSave.mockRejectedValueOnce(new Error(duplicateMessage));
 
@@ -1132,6 +1144,80 @@ describe('ActivityEntryForm', () => {
     expect(container.querySelector('[data-testid="manual-scope3-method-notice"]')).toBeNull();
   });
 
+  // ---- 対象年月の算定期間連動プルダウン ----
+
+  it('対象年月: 選択中の算定期間の12ヶ月を「2024年11月」表記で出し、未来月は選べない', async () => {
+    const { container } = renderForm();
+    await flush();
+
+    expect(monthYearSelect(container).value).toBe('fy2024');
+    const options = [...monthInput(container).options];
+    expect(options.map((option) => option.value)).toEqual([
+      '2024-04', '2024-05', '2024-06', '2024-07', '2024-08', '2024-09',
+      '2024-10', '2024-11', '2024-12', '2025-01', '2025-02', '2025-03',
+    ]);
+    expect(options[7].textContent).toBe('2024年11月');
+    // 当月（2025-01）までは選べ、未来月（2025-02 以降）は見せたうえで選べない。
+    expect(options.filter((option) => option.disabled).map((option) => option.value)).toEqual([
+      '2025-02', '2025-03',
+    ]);
+    expect(monthInput(container).value).toBe('2025-01');
+  });
+
+  it('対象年月: 年度を切替えると同じ月を保ったまま年度だけ差し替える（未来年度は選択肢に出さない）', async () => {
+    Object.assign(fiscalYearMock, { fiscalYears: [FY2025, FY2024, FY2023] });
+    const { container } = renderForm();
+    await flush();
+
+    // FY2025（2025-04〜2026-03）は全月が未来で選べないため年度の選択肢にも出さない。
+    expect([...monthYearSelect(container).options].map((option) => option.value)).toEqual([
+      'fy2024', 'fy2023',
+    ]);
+
+    setSelectValue(monthYearSelect(container), 'fy2023');
+    // 当月 2025-01 の「1月」を保ったまま 2023 年度の 2024-01 へ。
+    expect(monthInput(container).value).toBe('2024-01');
+    expect(monthYearSelect(container).value).toBe('fy2023');
+
+    // 2023 年度で 6 月（2023-06）を選んでから 2024 年度へ戻すと 2024-06 になる。
+    setSelectValue(monthInput(container), '2023-06');
+    setSelectValue(monthYearSelect(container), 'fy2024');
+    expect(monthInput(container).value).toBe('2024-06');
+  });
+
+  it('編集: どの算定期間にも属さない年月の記録は「算定期間外」の選択肢として表示を保つ', async () => {
+    const { container } = renderForm({
+      mode: 'edit',
+      initialValues: editScope12({ targetMonth: '2019-05' }),
+      onCancel: vi.fn(),
+    });
+    await flush();
+
+    expect(monthYearSelect(container).value).toBe('out-of-range');
+    const options = [...monthInput(container).options];
+    expect(options).toHaveLength(1);
+    expect(options[0].value).toBe('2019-05');
+    expect(options[0].textContent).toBe('2019年5月（算定期間外）');
+
+    // 実在の年度へ切替えると、その年度で選べる月に乗り換えられる（期間外へは戻れない）。
+    setSelectValue(monthYearSelect(container), 'fy2024');
+    expect(monthInput(container).value).toBe('2024-05');
+    expect([...monthYearSelect(container).options].every((option) => option.value !== 'out-of-range')).toBe(
+      true,
+    );
+  });
+
+  it('年度マスタが空の組織はネイティブの月入力へフォールバックする', async () => {
+    Object.assign(fiscalYearMock, { fiscalYears: [], isLoading: false });
+    const { container } = renderForm();
+    await flush();
+
+    const input = q<HTMLInputElement>(container, '#manual-target-month');
+    expect(input.tagName).toBe('INPUT');
+    expect(input.type).toBe('month');
+    expect(container.querySelector('#manual-target-month-year')).toBeNull();
+  });
+
   it('拠点が無い場合は案内を出し、係数・活動量のセクションを出さずプレビューも無効にする', async () => {
     const { container } = renderForm({ locations: [] });
     await flush();
@@ -1184,7 +1270,7 @@ describe('ActivityEntryForm', () => {
     // 既定の対象月（2025-01）は重複していないため警告なし。
     expect(duplicateWarning(container)).toBeNull();
 
-    setInputValue(monthInput(container), '2024-11');
+    setSelectValue(monthInput(container), '2024-11');
     const warning = duplicateWarning(container);
     expect(warning?.textContent).toContain('『大阪支社』の電気・2024年11月 の活動量は既に登録済みです');
     expect(warning?.textContent).toContain('活動量を合算してください');
@@ -1194,7 +1280,7 @@ describe('ActivityEntryForm', () => {
     click(findButton(container, '既存のレコードを開く'));
     expect(onOpenDuplicateRecord).toHaveBeenCalledWith(existing);
 
-    setInputValue(monthInput(container), '2024-12');
+    setSelectValue(monthInput(container), '2024-12');
     expect(duplicateWarning(container)).toBeNull();
   });
 
@@ -1203,7 +1289,7 @@ describe('ActivityEntryForm', () => {
     await flush();
 
     setSelectValue(categorySelect(container), 'energy:city_gas');
-    setInputValue(monthInput(container), '2024-11');
+    setSelectValue(monthInput(container), '2024-11');
 
     expect(duplicateWarning(container)).toBeNull();
   });
@@ -1226,7 +1312,7 @@ describe('ActivityEntryForm', () => {
     // 開いた直後（条件未変更）は自分自身と一致するが警告しない。
     expect(duplicateWarning(container)).toBeNull();
 
-    setInputValue(monthInput(container), '2024-12');
+    setSelectValue(monthInput(container), '2024-12');
     const warning = duplicateWarning(container);
     expect(warning?.textContent).toContain('2024年12月 の活動量は既に登録済みです');
     // 編集モーダルからは onOpenDuplicateRecord を渡さないため、乗り換え導線は出ない。
@@ -1244,7 +1330,7 @@ describe('ActivityEntryForm', () => {
       onOpenDuplicateRecord: vi.fn(),
     });
     await flush();
-    setInputValue(monthInput(container), '2024-11');
+    setSelectValue(monthInput(container), '2024-11');
     setInputValue(amountInput(container), '10000');
     expect(duplicateWarning(container)).toBeNull();
 
@@ -1259,11 +1345,11 @@ describe('ActivityEntryForm', () => {
     expect(duplicateWarning(container)).toBeNull();
 
     // 条件を変えれば通常どおり警告する。
-    setInputValue(monthInput(container), '2024-12');
+    setSelectValue(monthInput(container), '2024-12');
     expect(duplicateWarning(container)?.textContent).toContain('2024年12月 の活動量は既に登録済みです');
 
     // 一度条件を変えたあとに保存時の条件へ戻した場合も警告する（抑止は保存直後だけ）。
-    setInputValue(monthInput(container), '2024-11');
+    setSelectValue(monthInput(container), '2024-11');
     expect(duplicateWarning(container)?.textContent).toContain('2024年11月 の活動量は既に登録済みです');
   });
 });
