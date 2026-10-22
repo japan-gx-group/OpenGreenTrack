@@ -25,6 +25,8 @@ const input = (choices: Record<string, string>, texts: Record<string, string> = 
 });
 
 const oversightBody = findSsbjNarrativeChoiceTemplate('governance.oversight_body')!;
+const oversightInformation = findSsbjNarrativeChoiceTemplate('governance.oversight_information')!;
+const businessImpact = findSsbjNarrativeChoiceTemplate('strategy.business_model_impact')!;
 const riskProcess = findSsbjNarrativeChoiceTemplate('risk_management.risk_process')!;
 
 describe('テンプレートの定義', () => {
@@ -36,28 +38,70 @@ describe('テンプレートの定義', () => {
     expect([...sections].sort()).toEqual([...SSBJ_SECTION_IDS].sort());
   });
 
-  it('文型の {欄 ID} はすべて定義された欄で、欄はすべて文型に使われている', () => {
+  it('文型・選択肢の文の {欄 ID} はすべて定義された欄で、欄はすべてどこかで使われている', () => {
     for (const template of SSBJ_NARRATIVE_CHOICE_TEMPLATES) {
-      const used = [...template.pattern.matchAll(/\{([a-z_]+)\}/g)].map(match => match[1]);
+      const texts = [template.pattern, ...template.slots.flatMap(slot => (slot.kind === 'choice' ? slot.options.map(option => option.text) : []))];
+      const used = texts.flatMap(text => [...text.matchAll(/\{([a-z_]+)\}/g)].map(match => match[1]));
       expect(new Set(used)).toEqual(new Set(template.slots.map(slot => slot.id)));
     }
+  });
+
+  it('文型の固定の部分に、会社によって違う事実を書かない（レビューで指摘された言い切り）', () => {
+    const patterns = SSBJ_NARRATIVE_CHOICE_TEMPLATES.map(template => template.pattern).join('\n');
+    for (const phrase of ['集中している', '評価・優先順位付けしている', '前期からプロセスを', 'サステナビリティ関連', '報告している']) {
+      expect(patterns).not.toContain(phrase);
+    }
+  });
+
+  it('事実の有無を選ぶ欄は、否定・未特定・初年度も選べる', () => {
+    const optionIds = (template: typeof riskProcess, slotId: string) => {
+      const slot = template.slots.find(candidate => candidate.id === slotId);
+      return slot?.kind === 'choice' ? slot.options.map(option => option.id) : [];
+    };
+    expect(optionIds(businessImpact, 'concentration')).toEqual(expect.arrayContaining(['spread', 'unidentified']));
+    expect(optionIds(riskProcess, 'assessment')).toContain('not_prioritized');
+    expect(optionIds(riskProcess, 'change')).toContain('first_year');
+    expect(optionIds(oversightInformation, 'reporting')).toContain('not_reported');
+    expect(optionIds(oversightBody, 'scope')).toContain('climate');
   });
 });
 
 describe('buildSsbjNarrativeDraft', () => {
   it('選んだ値と補足入力から下書きを作る', () => {
-    expect(buildSsbjNarrativeDraft(oversightBody, input({ body: 'board' })))
+    expect(buildSsbjNarrativeDraft(oversightBody, input({ scope: 'sustainability', body: 'board' })))
       .toBe('サステナビリティ関連（気候関連を含む）のリスク及び機会は、取締役会が監督している。');
-    expect(buildSsbjNarrativeDraft(oversightBody, input({ body: 'other' }, { body: '経営会議' })))
-      .toBe('サステナビリティ関連（気候関連を含む）のリスク及び機会は、経営会議が監督している。');
+    expect(buildSsbjNarrativeDraft(oversightBody, input({ scope: 'climate', body: 'other' }, { body: '経営会議' })))
+      .toBe('気候関連のリスク及び機会は、経営会議が監督している。');
+  });
+
+  it('選択肢の文の {欄 ID} は、その選択肢を選んだときだけ使い、使わない欄は残りに数えない', () => {
+    const reported = input({ reporting: 'reported', frequency: 'yearly', body: 'board', content: 'target_progress' }, { reporter: '管理本部長' });
+    expect(buildSsbjNarrativeDraft(oversightInformation, reported)).toBe('管理本部長が年 1 回、取締役会に目標の進捗を報告している。');
+    expect(unfilledSsbjTemplateSlots(oversightInformation, reported)).toEqual([]);
+
+    const notReported = input({ reporting: 'not_reported' });
+    expect(buildSsbjNarrativeDraft(oversightInformation, notReported)).not.toContain('報告している');
+    expect(unfilledSsbjTemplateSlots(oversightInformation, notReported)).toEqual([]);
+    expect(unfilledSsbjTemplateSlots(oversightInformation, input({}))).toEqual(['定期的な報告']);
+  });
+
+  it('補足入力の文字列にある {…} は置き換えない', () => {
+    expect(buildSsbjNarrativeDraft(oversightBody, input({ scope: 'other', body: 'board' }, { scope: '{body}' })))
+      .toBe('{body}は、取締役会が監督している。');
+  });
+
+  it('初年度の会社も、前期の有無を言い切らずに書ける', () => {
+    const draft = buildSsbjNarrativeDraft(riskProcess, input({ change: 'first_year' }));
+    expect(draft).toContain('当期が初めての開示のため');
+    expect(draft).not.toContain('前期からプロセスを');
   });
 
   it('選んでいない欄は【欄の名前】のまま残し、根拠のない値で埋めない', () => {
     const draft = buildSsbjNarrativeDraft(riskProcess, input({ frequency: 'yearly' }));
-    expect(draft.startsWith('年 1 回、【識別の方法】でリスクを識別し')).toBe(true);
-    expect(ssbjTemplatePlaceholders(draft)).toEqual(['【識別の方法】', '【評価の基準】', '【シナリオ分析】', '【前期からの変更】']);
+    expect(draft.startsWith('年 1 回、【識別の方法】でリスクを識別している。')).toBe(true);
+    expect(ssbjTemplatePlaceholders(draft)).toEqual(['【識別の方法】', '【評価・優先順位付け】', '【シナリオ分析】', '【前期からの変更】']);
     expect(unfilledSsbjTemplateSlots(riskProcess, input({ frequency: 'yearly' })))
-      .toEqual(['識別の方法', '評価の基準', 'シナリオ分析', '前期からの変更']);
+      .toEqual(['識別の方法', '評価・優先順位付け', 'シナリオ分析', '前期からの変更']);
   });
 
   it('「その他」を選んで何も入力していなければ【欄の名前】、空白だけの補足も入力していない扱い', () => {
@@ -106,7 +150,7 @@ describe('validateSsbjNarrativeTemplateInput', () => {
   });
 
   it('以前の版の選択は、今の選択肢として検証せずに残す', () => {
-    expect(validateSsbjNarrativeTemplateInput('governance.oversight_body', { version: 'r2-trial-0', choices: { body: 'old' }, texts: {} }))
+    expect(validateSsbjNarrativeTemplateInput('governance.oversight_body', { version: 'r2-trial-1', choices: { body: 'old' }, texts: {} }))
       .toEqual([]);
   });
 });
@@ -120,8 +164,10 @@ describe('parseSsbjNarrativeTemplateInput と describeSsbjNarrativeTemplateInput
   });
 
   it('選んだ欄だけを「欄の名前: 値」で出し、以前の版の選択は出さない', () => {
-    expect(describeSsbjNarrativeTemplateInput('governance.oversight_body', input({ body: 'board' })))
-      .toEqual([{ label: '監督する機関・責任者', value: '取締役会' }]);
+    expect(describeSsbjNarrativeTemplateInput('governance.oversight_body', input({ body: 'board_committee' })))
+      .toEqual([{ label: '監督する機関・責任者', value: '取締役会の下に設けた委員会' }]);
+    expect(describeSsbjNarrativeTemplateInput('governance.oversight_body', input({ body: 'other' }, { body: '経営会議' })))
+      .toEqual([{ label: '監督する機関・責任者', value: '経営会議' }]);
     expect(describeSsbjNarrativeTemplateInput('governance.oversight_body', { version: 'old', choices: { body: 'board' }, texts: {} }))
       .toEqual([]);
     expect(describeSsbjNarrativeTemplateInput('governance.oversight_body', null)).toEqual([]);

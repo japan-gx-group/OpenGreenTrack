@@ -6,6 +6,7 @@
 // 選択肢から下書きを作って本文に入れられる（SsbjNarrativeTemplateChoices）。入力中の内容は onDraftChange で親に渡す
 // （2 画面エディタのプレビューにその場で反映するため。保存はしない）。
 // 入力済み以外の状態では本文を保存しないので、入力した本文が消える保存は、確認のダイアログで止める（取り消せば編集に戻る）。
+// 選択式テンプレートの下書きを一度も編集しないまま入力済みで保存するときも、確認のダイアログで止める。
 
 import { useEffect, useId, useState } from 'react';
 import { FileText, ListChecks, Pencil } from 'lucide-react';
@@ -205,6 +206,28 @@ export const SsbjNarrativeItemCard = ({ entry, onSave, readOnly = false, onDraft
             </Button>
             <Button type="submit" disabled={form.isSaving}>{form.isSaving ? '保存中...' : '保存'}</Button>
           </div>
+          <Dialog open={form.isConfirmingUneditedDraft} onOpenChange={open => { if (!open) form.cancelUneditedDraft(); }}>
+            <DialogContent data-testid="ssbj-narrative-unedited-draft-dialog">
+              <DialogHeader>
+                <DialogTitle>選択肢から作った下書きのままです</DialogTitle>
+                <DialogDescription asChild>
+                  <div className="flex flex-col gap-2">
+                    <p className="m-0">
+                      下書きは、選んだ内容を並べただけの出発点です。開示する文章として、自社の事実（体制・時期・数値など）に合っているかを確かめ、
+                      必要に応じて書き足してから保存してください。
+                    </p>
+                    <p className="m-0">確かめたうえでこの文のままでよければ、「このまま保存」を押してください。</p>
+                  </div>
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={form.cancelUneditedDraft}>編集に戻る</Button>
+                <Button type="button" onClick={() => void form.confirmUneditedDraft().then(finishIfSaved)}>
+                  このまま保存
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
           <Dialog open={form.isConfirmingDiscard} onOpenChange={open => { if (!open) form.cancelDiscard(); }}>
             <DialogContent data-testid="ssbj-narrative-discard-dialog">
               <DialogHeader>

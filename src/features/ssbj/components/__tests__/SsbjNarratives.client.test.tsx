@@ -253,7 +253,7 @@ describe('SsbjNarratives（穴埋めテンプレート・2 画面エディタ・
     const choiceSelects = (card: HTMLElement) => Array.from(choicesOf(card)!.querySelectorAll('select'));
     const bodyOf = (card: HTMLElement) => card.querySelector<HTMLTextAreaElement>('textarea[aria-label="開示する文章"]')!;
     const riskProcessDraft =
-      '年 1 回、各部門へのヒアリングでリスクを識別し、発生可能性と影響の大きさで評価・優先順位付けしている。' +
+      '年 1 回、各部門へのヒアリングでリスクを識別している。識別したリスクは、発生可能性と影響の大きさで評価し、優先順位を付けている。' +
       'シナリオ分析は用いていない。前期からプロセスを変更していない。';
 
     beforeEach(() => {
@@ -282,8 +282,8 @@ describe('SsbjNarratives（穴埋めテンプレート・2 画面エディタ・
         'risk_management.risk_process',
         { disclosure: { state: 'answered', value: `${riskProcessDraft}リスク管理委員会が結果を確認している。` }, internalNote: null },
         {
-          version: 'r2-trial-1',
-          choices: { frequency: 'yearly', method: 'hearing', criteria: 'likelihood_and_impact', scenario: 'not_used', change: 'unchanged' },
+          version: 'r2-trial-2',
+          choices: { frequency: 'yearly', method: 'hearing', assessment: 'likelihood_and_impact', scenario: 'not_used', change: 'unchanged' },
           texts: {},
         },
       );
@@ -291,6 +291,37 @@ describe('SsbjNarratives（穴埋めテンプレート・2 画面エディタ・
       expect(saved.querySelector('form')).toBeNull();
       expect(saved.textContent).toContain('リスク管理委員会が結果を確認している。');
       expect(saved.querySelector('[data-testid="ssbj-template-chosen"]')?.textContent).toContain('識別の頻度: 年 1 回');
+    });
+
+    it('下書きを一度も編集しないまま入力済みで保存しようとすると、確認してからでないと保存しない', async () => {
+      rendered = render(<SsbjNarratives reportId={report.id} />);
+      await settle();
+      const card = cardOf('リスクの識別・評価・管理のプロセス');
+      click(buttonIn(card, '編集'));
+      click(buttonIn(card, '選択肢から下書きを作る'));
+      const values = ['yearly', 'hearing', 'likelihood_and_impact', 'not_used', 'unchanged'];
+      choiceSelects(card).forEach((select, index) => setSelectValue(select, values[index]));
+      click(buttonIn(card, '下書きを本文に入れる'));
+      await act(async () => { click(buttonIn(card, '保存')); });
+      await settle();
+      expect(saveSsbjNarrative).not.toHaveBeenCalled();
+      const confirm = document.querySelector<HTMLElement>('[data-testid="ssbj-narrative-unedited-draft-dialog"]')!;
+      expect(confirm.textContent).toContain('選択肢から作った下書きのままです');
+
+      // 「編集に戻る」では保存しない。確かめて「このまま保存」を押したときだけ保存する。
+      click(buttonIn(confirm, '編集に戻る'));
+      await settle();
+      expect(saveSsbjNarrative).not.toHaveBeenCalled();
+      await act(async () => { click(buttonIn(card, '保存')); });
+      await settle();
+      await act(async () => {
+        click(buttonIn(document.querySelector<HTMLElement>('[data-testid="ssbj-narrative-unedited-draft-dialog"]')!, 'このまま保存'));
+      });
+      await settle();
+      expect(saveSsbjNarrative).toHaveBeenCalledWith(
+        expect.anything(), 'risk_management.risk_process',
+        { disclosure: { state: 'answered', value: riskProcessDraft }, internalNote: null }, expect.anything(),
+      );
     });
 
     it('選んでいない欄は【 】のまま入り、置き換えるまで入力済みで保存できない', async () => {
@@ -315,7 +346,8 @@ describe('SsbjNarratives（穴埋めテンプレート・2 画面エディタ・
       const card = cardOf('監督する機関・責任者');
       click(buttonIn(card, '編集'));
       click(buttonIn(card, '選択肢から下書きを作る'));
-      setSelectValue(choiceSelects(card)[0], 'board');
+      setSelectValue(choiceSelects(card)[0], 'sustainability');
+      setSelectValue(choiceSelects(card)[1], 'board');
       click(buttonIn(card, '下書きを本文の後ろに追加'));
       expect(bodyOf(card).value).toBe(
         '当社では、取締役会が気候関連のリスク及び機会を監督している。\n\n' +
@@ -328,7 +360,7 @@ describe('SsbjNarratives（穴埋めテンプレート・2 画面エディタ・
         ...fictionalNarratives.filter(narrative => narrative.itemId !== 'governance.oversight_body'),
         {
           ...fictionalNarratives.find(narrative => narrative.itemId === 'governance.oversight_body')!,
-          templateInput: { version: 'r2-trial-1', choices: { body: 'other' }, texts: { body: '経営会議' } },
+          templateInput: { version: 'r2-trial-2', choices: { body: 'other' }, texts: { body: '経営会議' } },
         },
       ]);
       rendered = render(<SsbjNarratives reportId={report.id} />);
@@ -337,7 +369,7 @@ describe('SsbjNarratives（穴埋めテンプレート・2 画面エディタ・
       expect(card.querySelector('[data-testid="ssbj-template-chosen"]')?.textContent).toContain('監督する機関・責任者: 経営会議');
       expect(card.textContent).toContain('記載例（架空の会社）');
       click(buttonIn(card, '編集'));
-      expect(choiceSelects(card)[0].value).toBe('other');
+      expect(choiceSelects(card)[1].value).toBe('other');
       expect(choicesOf(card)?.querySelector<HTMLInputElement>('input')?.value).toBe('経営会議');
       expect(buttonIn(card, 'テンプレートを入れる')).toBeDefined();
     });

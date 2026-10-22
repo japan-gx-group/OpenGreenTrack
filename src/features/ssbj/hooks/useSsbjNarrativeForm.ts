@@ -3,6 +3,8 @@
 // 四本柱・補足の文章（T05）の 1 項目の編集フォームの状態・検証・送信。正規化と検証は utils/narrative.ts に一本化している。
 // 入力済み以外の状態では本文を保存しないため、入力した本文が消える保存は、利用者が確認するまで止める。
 // 選択式テンプレートの選択（templateInput）は本文と別に持ち、下書きを本文に入れても本文の代わりにはしない。
+// 下書きを入れたまま一度も編集せずに「入力済み」で保存するときは、利用者が確認するまで止める
+// （下書きは出発点で、最後は利用者が本文を自社の事実に合わせて編集して保存する。docs/ssbj-spec.md §13）。
 
 import { useState, type FormEvent } from 'react';
 import type { SsbjDisclosableText, SsbjFieldState, SsbjItemId, SsbjNarrativeTemplateInput } from '../types';
@@ -52,6 +54,12 @@ export interface SsbjNarrativeFormController {
   confirmDiscard: () => Promise<boolean>;
   /** 保存をやめて編集に戻る（入力した本文はそのまま残す）。 */
   cancelDiscard: () => void;
+  /** 選択式テンプレートの下書きを、編集しないまま「入力済み」で保存しようとして、確認を待っているとき true。 */
+  isConfirmingUneditedDraft: boolean;
+  /** 下書きのままであることを確認して保存する。保存できたら true。 */
+  confirmUneditedDraft: () => Promise<boolean>;
+  /** 保存をやめて編集に戻る。 */
+  cancelUneditedDraft: () => void;
 }
 
 export function useSsbjNarrativeForm(
@@ -62,11 +70,16 @@ export function useSsbjNarrativeForm(
   const [errors, setErrors] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isConfirmingDiscard, setIsConfirmingDiscard] = useState<boolean>(false);
+  // 下書きを入れた直後の本文（編集すると一致しなくなる）。下書きを入れていなければ null。
+  const [insertedDraftText, setInsertedDraftText] = useState<string | null>(null);
+  const [isConfirmingUneditedDraft, setIsConfirmingUneditedDraft] = useState<boolean>(false);
 
   const reset = (text: SsbjDisclosableText, templateInput: SsbjNarrativeTemplateInput | null = null) => {
     setValues(toSsbjNarrativeFormValues(text, templateInput));
     setErrors([]);
     setIsConfirmingDiscard(false);
+    setInsertedDraftText(null);
+    setIsConfirmingUneditedDraft(false);
   };
 
   const save = async (input: SsbjDisclosableText): Promise<boolean> => {
@@ -98,7 +111,17 @@ export function useSsbjNarrativeForm(
       setIsConfirmingDiscard(true);
       return false;
     }
+    if (values.state === 'answered' && insertedDraftText !== null && values.text === insertedDraftText) {
+      setIsConfirmingUneditedDraft(true);
+      return false;
+    }
     return save(input);
+  };
+
+  const confirmUneditedDraft = async (): Promise<boolean> => {
+    setIsConfirmingUneditedDraft(false);
+    if (isSaving) return false;
+    return save(normalizeSsbjNarrativeInput(values));
   };
 
   const confirmDiscard = async (): Promise<boolean> => {
@@ -114,10 +137,12 @@ export function useSsbjNarrativeForm(
     setInternalNote: internalNote => setValues(prev => ({ ...prev, internalNote })),
     applyTemplate: template => setValues(prev => ({ ...prev, state: 'answered', text: template })),
     setTemplateInput: templateInput => setValues(prev => ({ ...prev, templateInput })),
-    insertDraft: draft => setValues(prev => {
-      const current = prev.state === 'answered' ? prev.text.trimEnd() : '';
-      return { ...prev, state: 'answered', text: current === '' ? draft : `${current}\n\n${draft}` };
-    }),
+    insertDraft: draft => {
+      const current = values.state === 'answered' ? values.text.trimEnd() : '';
+      const text = current === '' ? draft : `${current}\n\n${draft}`;
+      setValues(prev => ({ ...prev, state: 'answered', text }));
+      setInsertedDraftText(text);
+    },
     errors,
     isSaving,
     reset,
@@ -125,5 +150,8 @@ export function useSsbjNarrativeForm(
     isConfirmingDiscard,
     confirmDiscard,
     cancelDiscard: () => setIsConfirmingDiscard(false),
+    isConfirmingUneditedDraft,
+    confirmUneditedDraft,
+    cancelUneditedDraft: () => setIsConfirmingUneditedDraft(false),
   };
 }
