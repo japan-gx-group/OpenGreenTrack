@@ -20,6 +20,8 @@ interface LocationTableProps {
   isBusy: boolean;
   /** 初回取得が終わるまでは空状態を出さない */
   hasFetchedOnce: boolean;
+  hasError: boolean;
+  onRetry: () => void;
   /**
    * 行メニュー（⋮）から編集/削除モーダルを開くと、メニュー項目はモーダル表示と同じコミットで
    * アンマウントされ、その時点で activeElement は body に落ちている。閉じたあとの復帰先を
@@ -36,6 +38,8 @@ export const LocationTable = ({
   totalCount,
   isBusy,
   hasFetchedOnce,
+  hasError,
+  onRetry,
   menuTriggerRef,
   onResetFilters,
   onEdit,
@@ -54,7 +58,12 @@ export const LocationTable = ({
       )}
 
       {/* 初回取得が終わるまでは空状態を出さない。 */}
-      {!hasFetchedOnce ? null : totalCount === 0 ? (
+      {!hasFetchedOnce ? null : hasError ? (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <p className="font-bold text-text-muted text-lg">拠点を取得できませんでした</p>
+          <button type="button" className="gt-btn mt-4" onClick={onRetry}>再試行</button>
+        </div>
+      ) : totalCount === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <Building2 size={48} className="text-text-muted mb-3 opacity-50" />
           <p className="font-bold text-text-muted text-lg">条件に合致する拠点が見つかりません</p>

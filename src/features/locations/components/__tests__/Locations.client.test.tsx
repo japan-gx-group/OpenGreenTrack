@@ -145,3 +145,27 @@ describe('Locations 削除確認モーダル', () => {
     unmount();
   });
 });
+
+describe('Locations 一覧取得エラー', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    document.body.innerHTML = '';
+  });
+
+  it('取得に失敗した場合は空状態ではなく再試行手段を表示する', async () => {
+    vi.mocked(getLocations)
+      .mockRejectedValueOnce(new Error('network error'))
+      .mockResolvedValueOnce([TOKYO]);
+    const rendered = render(<Locations />);
+    await flushPromises();
+
+    expect(rendered.container.textContent).toContain('拠点を取得できませんでした');
+    expect(findButton(rendered.container, '再試行')).toBeTruthy();
+    expect(rendered.container.textContent).not.toContain('条件に合致する拠点が見つかりません');
+    click(findButton(rendered.container, '再試行'));
+    await flushPromises();
+    expect(getLocations).toHaveBeenCalledTimes(2);
+    expect(rendered.container.textContent).toContain('東京本社');
+    rendered.unmount();
+  });
+});
