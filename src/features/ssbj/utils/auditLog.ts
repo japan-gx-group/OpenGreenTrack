@@ -60,7 +60,7 @@ const COLUMN_LABELS: Record<string, string> = {
   shortTermState: '短期の状態', shortTerm: '短期', mediumTermState: '中期の状態', mediumTerm: '中期',
   longTermState: '長期の状態', longTerm: '長期', planningHorizonRelationState: '計画期間との関係の状態',
   planningHorizonRelation: '計画期間との関係',
-  itemId: '項目', documentTitle: '資料名', documentVersion: '版', internalLocation: '保管先',
+  templateInput: '選択式テンプレートの選択', itemId: '項目', documentTitle: '資料名', documentVersion: '版', internalLocation: '保管先',
   referencePosition: '参照位置', ownerDepartment: '主管部署',
   fileName: 'ファイル名', fileSha256: 'SHA-256', fileStorageVersionId: '保管先での版 ID', fileStoredBy: '保存担当',
   fileRecordedAt: 'ファイルの記録日時',

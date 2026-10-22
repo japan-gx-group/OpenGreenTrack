@@ -44,6 +44,8 @@ interface SsbjJudgementDialogProps {
   form: SsbjJudgementFormController;
   /** 送信（成功したら呼び出し側がダイアログを閉じる）。 */
   onSubmit: (event: FormEvent) => void;
+  /** 保存して、一覧で次の未判断・要確認の要求を開く（次が無ければ閉じる）。無ければボタンを出さない。 */
+  onSubmitAndNext?: () => void;
 }
 
 const SelectField = <T extends string>({
@@ -77,7 +79,7 @@ const SelectField = <T extends string>({
   </div>
 );
 
-export const SsbjJudgementDialog = ({ open, onOpenChange, form, onSubmit }: SsbjJudgementDialogProps) => {
+export const SsbjJudgementDialog = ({ open, onOpenChange, form, onSubmit, onSubmitAndNext }: SsbjJudgementDialogProps) => {
   const id = useId();
   const requirement = form.requirementId ? findSsbjRequirement(form.requirementId) : undefined;
   const { values } = form;
@@ -186,6 +188,11 @@ export const SsbjJudgementDialog = ({ open, onOpenChange, form, onSubmit }: Ssbj
             <Button type="button" variant="outline" disabled={form.isSaving} onClick={() => onOpenChange(false)}>
               キャンセル
             </Button>
+            {onSubmitAndNext && (
+              <Button type="button" variant="outline" disabled={form.isSaving} onClick={onSubmitAndNext}>
+                保存して次の未判断・要確認へ
+              </Button>
+            )}
             <Button type="submit" disabled={form.isSaving}>{form.isSaving ? '保存中...' : '変更を保存'}</Button>
           </DialogFooter>
         </form>

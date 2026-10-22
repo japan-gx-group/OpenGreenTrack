@@ -99,3 +99,31 @@ describe('保存版との連携', () => {
     expect(body).toContain(`'internalNote', n."internalNote"`);
   });
 });
+
+describe('選択式テンプレートの選択（templateInput）', () => {
+  const templateFile = readdirSync(migrationsDir).find(name => name.endsWith('_ssbj_narrative_template_input.sql'));
+  const templateBody = (() => {
+    if (!templateFile) throw new Error('ssbj_narrative_template_input のマイグレーションが見つかりません');
+    return readFileSync(path.join(migrationsDir, templateFile), 'utf8')
+      .split(/\r?\n/)
+      .filter(line => !line.trimStart().startsWith('--'))
+      .join(' ')
+      .replace(/\s+/g, ' ');
+  })();
+
+  it('null を許す jsonb の列で、object だけを受け付ける（既存の行は null のまま）', () => {
+    expect(templateBody).toContain('alter table ssbj_narratives add column "templateInput" jsonb;');
+    expect(templateBody).toContain(`"templateInput" is null or jsonb_typeof("templateInput") = 'object'`);
+  });
+
+  it('利用者は作成時・更新時に指定でき、anon には付与しない', () => {
+    expect(templateBody).toContain('grant insert ("templateInput") on ssbj_narratives to authenticated;');
+    expect(templateBody).toContain('grant update ("templateInput") on ssbj_narratives to authenticated;');
+    expect(templateBody).not.toMatch(/\banon\b/);
+  });
+
+  it('保存版のセクション関数は変えない（選択は保存版に含めない）', () => {
+    expect(templateBody).not.toContain('ssbj_snapshot_section__narratives');
+    expect(body).not.toContain('templateInput');
+  });
+});
