@@ -37,6 +37,8 @@ const BY_SECTION: { [K in keyof SsbjSnapshotSections]: (section: SsbjSnapshotSec
     internal: items.flatMap(item => [
       item.documentTitle,
       ...[item.documentVersion, item.internalLocation, item.referencePosition, item.ownerDepartment].flatMap(present),
+      // 記録日時はプレビューと CSV で書き方が違う（画面用の書式 / ISO 形式）ため、ここには入れない。
+      ...[item.fileName, item.fileSha256, item.fileStorageVersionId, item.fileStoredBy].flatMap(present),
     ]),
   }),
   ghg: ghg => ({

@@ -49,7 +49,7 @@ import type { SsbjExternalEmission } from '../../types';
 
 const report = {
   ...fictionalReportBasicInfo, fiscalYearLabel: '2024年度', periodStart: '2024-04-01', periodEnd: '2025-03-31',
-  draftRevision: 1, review: FICTIONAL_DRAFT_REVIEW,
+  draftRevision: 1, basicInfoRevision: 0, review: FICTIONAL_DRAFT_REVIEW,
 };
 const [stored] = fictionalExternalEmissions;
 // 画面の一覧の行は、保存版にだけある資料名・確認者の名前を持たない。

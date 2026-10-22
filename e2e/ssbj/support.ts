@@ -20,7 +20,7 @@ type DemoUser = { email: string; password: string };
 
 /** デモシード（supabase/seeds/demo/demo.sql）の組織 A（架空精密工業）の管理者。 */
 export const ORG_A_USER: DemoUser = { email: 'org-a@example.com', password: 'password123' };
-/** 組織 A の入力担当者（OGT の role = logger）。承認者に指定されていなければ承認・差戻しができないことの確認に使う。 */
+/** 組織 A の入力担当者（OGT の role = logger。SSBJ のロールは割り当て無しで入力担当）。承認・差戻しができないことの確認に使う。 */
 export const ORG_A_LOGGER: DemoUser = { email: 'member-a@example.com', password: 'password123' };
 /** 組織 A の 3 人目の利用者（報告 次郎。OGT の role = viewer）。SSBJ のロールは閲覧者（ssbj_demo.sql）。 */
 export const ORG_A_VIEWER: DemoUser = { email: 'member2-a@example.com', password: 'password123' };

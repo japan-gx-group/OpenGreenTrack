@@ -153,10 +153,16 @@ export const ssbjVersionToCsvRows = (version: SsbjCsvVersion, generatedAt: strin
         ['保管先', item.internalLocation],
         ['参照位置', item.referencePosition],
         ['主管部署', item.ownerDepartment],
+        // ファイルの照合用の記録は、記録を足す前の保存版ではキーが無い（undefined）ため、null と同じく未入力にする。
+        ['ファイル名', item.fileName],
+        ['SHA-256', item.fileSha256],
+        ['保管先での版ID', item.fileStorageVersionId],
+        ['保存担当', item.fileStoredBy],
+        ['ファイルの記録日時', item.fileRecordedAt],
       ] as const) {
         rows.push([
           '根拠文書', item.itemId, name,
-          value === null ? '未入力' : '入力済み',
+          value == null ? '未入力' : '入力済み',
           '', '', value ?? '', `根拠ID: ${item.id}`,
         ]);
       }
