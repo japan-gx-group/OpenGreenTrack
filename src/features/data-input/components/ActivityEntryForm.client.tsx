@@ -89,13 +89,13 @@ import {
 import {
   MIN_TARGET_MONTH,
   getCurrentYearMonth,
-  nextYearMonth,
   toPeriodDates,
   validateTargetMonth,
 } from '../services/manualEntryTargetMonth';
 import {
   OUT_OF_RANGE_YEAR_VALUE,
   buildTargetMonthDropdown,
+  nextTargetMonthAfterSave,
   targetMonthForYearSwitch,
 } from '../services/targetMonthSelection';
 import { computeEstimatedScope3Emissions } from '../services/scope3InlineCalculation';
@@ -569,18 +569,19 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
         onCancel?.();
       } else {
         // 続けて別の月・別製品を入力しやすいよう、拠点・カテゴリ・係数/製品の選択は保持する。
-        // 翌月へ送れないとき（当月）は対象年月も含めて条件がそのまま残るので、今保存したレコードが
-        // 履歴に加わっても条件を変えるまで重複警告は出さない。
+        // 翌月へ送れないとき（当月・算定期間の末月）は対象年月も含めて条件がそのまま残るので、
+        // 今保存したレコードが履歴に加わっても条件を変えるまで重複警告は出さない。
         duplicate.markSaved();
         setAmount('');
         // 戻す先も空にする（保存前の活動量が次の入力で復活しないように）。
         lastValidAmountRef.current = '';
         setNote('');
         // 対象年月は翌月へ自動で送り、同一拠点の連続入力を「数量を打って保存」の繰り返しにする
-        // （当月まで。未来月には送らない）。係数の上書き選択も保持する（同じ温対法年度内では
-        // 候補が変わらず、年度をまたいで候補に無くなった場合は自動選択へ安全側で戻る）。
-        const next = nextYearMonth(targetMonth);
-        if (next !== null && next <= maxTargetMonth) {
+        // （当月まで。未来月と、年度マスタに登録済みの算定期間に属さない月には送らない）。
+        // 係数の上書き選択も保持する（同じ温対法年度内では候補が変わらず、年度をまたいで
+        // 候補に無くなった場合は自動選択へ安全側で戻る）。
+        const next = nextTargetMonthAfterSave({ targetMonth, maxTargetMonth, fiscalYears });
+        if (next !== null) {
           setTargetMonth(next);
         }
       }

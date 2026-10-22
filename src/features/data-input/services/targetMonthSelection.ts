@@ -7,12 +7,18 @@
 // 既存レコードがどの算定期間にも属さない場合（年度マスタ登録前の保存データの編集）は、
 // その年月だけを「算定期間外」の選択肢として残し、表示・保存を壊さない。
 
-export interface TargetMonthFiscalYear {
+import { nextYearMonth } from './manualEntryTargetMonth';
+
+/** 会計年度の期間（開始日・終了日）。FiscalYearOption / FiscalYearRange のどちらも渡せる最小の構造。 */
+export interface FiscalYearPeriod {
+  startDate: string;
+  endDate: string;
+}
+
+export interface TargetMonthFiscalYear extends FiscalYearPeriod {
   id: string;
   /** 年度セレクタの表示名（fiscal_years.label。例: 「2025年度」）。 */
   label: string;
-  startDate: string;
-  endDate: string;
 }
 
 export interface TargetMonthOption {
@@ -87,8 +93,43 @@ interface SelectableArgs {
 const isSelectableMonth = (yearMonth: string, args: SelectableArgs): boolean =>
   yearMonth <= args.maxTargetMonth || yearMonth === args.allowedFutureMonth;
 
-const containsMonth = (fiscalYear: TargetMonthFiscalYear, yearMonth: string): boolean =>
+const containsMonth = (fiscalYear: FiscalYearPeriod, yearMonth: string): boolean =>
   fiscalYear.startDate.slice(0, 7) <= yearMonth && yearMonth <= fiscalYear.endDate.slice(0, 7);
+
+/**
+ * 選べる月（当月以前。編集中の未来月は例外）を 1 つ以上持つ会計年度だけを残す（並びは保つ）。
+ * 全月が未来の年度は、単月入力の年度セレクタにも一括入力の対象年度セレクタにも出さない。
+ */
+export const listSelectableFiscalYears = <T extends FiscalYearPeriod>(
+  fiscalYears: T[],
+  args: SelectableArgs,
+): T[] =>
+  fiscalYears.filter((fiscalYear) =>
+    listYearMonthsInRange(fiscalYear.startDate, fiscalYear.endDate).some((month) =>
+      isSelectableMonth(month, args),
+    ),
+  );
+
+/**
+ * 保存後に対象年月を送る先（翌月）。同一拠点の連続入力を「数量を打って保存」の繰り返しにするために使う。
+ * 当月より後へは送らない。年度マスタに算定期間が登録されている組織では、どの算定期間にも属さない月へも
+ * 送らない（翌年度が未登録のまま年度末の月を保存したとき、「算定期間外」の月へ進めて係数の無い入力を
+ * 続けさせないため。その場合は現在の月に留まる）。年度マスタが空の組織は当月まで送る。送れないときは null。
+ */
+export const nextTargetMonthAfterSave = (args: {
+  targetMonth: string;
+  maxTargetMonth: string;
+  fiscalYears: FiscalYearPeriod[];
+}): string | null => {
+  const next = nextYearMonth(args.targetMonth);
+  if (next === null || next > args.maxTargetMonth) {
+    return null;
+  }
+  if (args.fiscalYears.length > 0 && !args.fiscalYears.some((fiscalYear) => containsMonth(fiscalYear, next))) {
+    return null;
+  }
+  return next;
+};
 
 /**
  * 対象年月プルダウン（年度＋月）の選択肢を組み立てる。
@@ -103,13 +144,9 @@ export const buildTargetMonthDropdown = (args: {
 }): TargetMonthDropdownModel => {
   const { fiscalYears, targetMonth } = args;
 
-  const yearOptions: TargetMonthYearOption[] = fiscalYears
-    .filter((fiscalYear) =>
-      listYearMonthsInRange(fiscalYear.startDate, fiscalYear.endDate).some((month) =>
-        isSelectableMonth(month, args),
-      ),
-    )
-    .map((fiscalYear) => ({ value: fiscalYear.id, label: fiscalYear.label }));
+  const yearOptions: TargetMonthYearOption[] = listSelectableFiscalYears(fiscalYears, args).map(
+    (fiscalYear) => ({ value: fiscalYear.id, label: fiscalYear.label }),
+  );
 
   const selectedFiscalYear =
     fiscalYears.find(

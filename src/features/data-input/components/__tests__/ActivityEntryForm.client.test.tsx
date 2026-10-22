@@ -462,6 +462,59 @@ describe('ActivityEntryForm', () => {
     expect(monthInput(container).value).toBe('2025-01');
   });
 
+  // 翌年度が未登録のまま年度末の月を保存したとき、「算定期間外」の月へ進めて係数の無い入力を続けさせない。
+  describe('年度末の保存後の対象年月', () => {
+    // 1月始まりの会計年度。年度末（2024-12）が当月（2025-01）以前になり、係数の有効期間にも収まる。
+    const CAL2024: FiscalYearOption = {
+      id: 'cal2024',
+      label: '2024年（1月始まり）',
+      year: '2024',
+      startDate: '2024-01-01',
+      endDate: '2024-12-31',
+    };
+    const CAL2025: FiscalYearOption = {
+      id: 'cal2025',
+      label: '2025年（1月始まり）',
+      year: '2025',
+      startDate: '2025-01-01',
+      endDate: '2025-12-31',
+    };
+
+    const saveYearEnd = async (container: HTMLElement) => {
+      setSelectValue(monthYearSelect(container), 'cal2024');
+      setSelectValue(monthInput(container), '2024-12');
+      // 年度が変わると係数を取り直すため、取得完了（プレビューの有効化）を待つ。
+      await flush();
+      setInputValue(amountInput(container), '100');
+      openPreview(container);
+      await saveFromPreview(container);
+    };
+
+    it('翌年度が未登録なら対象年月を送らず年度末の月に留まる', async () => {
+      Object.assign(fiscalYearMock, { fiscalYears: [CAL2024] });
+      const { container, onSave } = renderForm();
+      await flush();
+
+      await saveYearEnd(container);
+
+      expect(onSave).toHaveBeenCalledTimes(1);
+      expect(monthInput(container).value).toBe('2024-12');
+      expect(monthYearSelect(container).value).toBe('cal2024');
+    });
+
+    it('翌年度が登録済みなら翌年度の最初の月へ送る', async () => {
+      Object.assign(fiscalYearMock, { fiscalYears: [CAL2025, CAL2024] });
+      const { container, onSave } = renderForm();
+      await flush();
+
+      await saveYearEnd(container);
+
+      expect(onSave).toHaveBeenCalledTimes(1);
+      expect(monthInput(container).value).toBe('2025-01');
+      expect(monthYearSelect(container).value).toBe('cal2025');
+    });
+  });
+
   it('会計年度マスタが未確定の間は係数を取得せず、確定後に1回だけ取得する', async () => {
     Object.assign(fiscalYearMock, { fiscalYears: [], isLoading: true });
     const { container, rerender } = renderForm();
@@ -1374,6 +1427,31 @@ describe('ActivityEntryForm', () => {
     // 一度条件を変えたあとに保存時の条件へ戻した場合も警告する（抑止は保存直後だけ）。
     setSelectValue(monthInput(container), '2025-01');
     expect(duplicateWarning(container)?.textContent).toContain('2025年1月 の活動量は既に登録済みです');
+  });
+
+  it('新規: 保存後に翌月へ送った先が登録済みなら、その月の警告を出す', async () => {
+    const existingDec = existingElectricityNov({
+      id: 'rec-dec',
+      periodStart: '2024-12-01',
+      periodEnd: '2024-12-31',
+    });
+    const { container, onSave, rerender } = renderForm({
+      historyRecords: [existingDec],
+      onOpenDuplicateRecord: vi.fn(),
+    });
+    await flush();
+    setSelectValue(monthInput(container), '2024-11');
+    setInputValue(amountInput(container), '10000');
+    expect(duplicateWarning(container)).toBeNull();
+
+    openPreview(container);
+    await saveFromPreview(container);
+    expect(onSave).toHaveBeenCalledTimes(1);
+
+    // 対象年月は 2024-12 へ送られる。保存した 2024-11 の分は警告せず、送り先の登録済みレコードを知らせる。
+    rerender({ historyRecords: [existingElectricityNov({ id: 'rec-saved' }), existingDec] });
+    expect(monthInput(container).value).toBe('2024-12');
+    expect(duplicateWarning(container)?.textContent).toContain('2024年12月 の活動量は既に登録済みです');
   });
 
   // ---- 複数月まとめて入力（一括入力） ----

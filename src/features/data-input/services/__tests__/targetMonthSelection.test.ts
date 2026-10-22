@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   OUT_OF_RANGE_YEAR_VALUE,
   buildTargetMonthDropdown,
+  listSelectableFiscalYears,
   listYearMonthsInRange,
+  nextTargetMonthAfterSave,
   targetMonthForYearSwitch,
   toYearMonthLabel,
 } from '../targetMonthSelection';
@@ -128,5 +130,49 @@ describe('targetMonthForYearSwitch', () => {
         maxTargetMonth: '2025-01',
       }),
     ).toBeNull();
+  });
+});
+
+describe('listSelectableFiscalYears', () => {
+  it('選べる月を 1 つ以上持つ年度だけを並びのまま残す（全月が未来の年度は落とす）', () => {
+    expect(listSelectableFiscalYears([FY2025, FY2024, FY2023], { maxTargetMonth: '2025-01' })).toEqual([
+      FY2024,
+      FY2023,
+    ]);
+  });
+
+  it('編集中の未来月（allowedFutureMonth）を含む年度は残す', () => {
+    expect(
+      listSelectableFiscalYears([FY2025, FY2024], { maxTargetMonth: '2025-01', allowedFutureMonth: '2025-06' }),
+    ).toEqual([FY2025, FY2024]);
+  });
+});
+
+describe('nextTargetMonthAfterSave', () => {
+  it('翌月が算定期間内なら送る（年度をまたいでも翌年度が登録済みなら送る）', () => {
+    expect(
+      nextTargetMonthAfterSave({ targetMonth: '2024-11', maxTargetMonth: '2025-01', fiscalYears: [FY2024] }),
+    ).toBe('2024-12');
+    expect(
+      nextTargetMonthAfterSave({ targetMonth: '2024-03', maxTargetMonth: '2025-01', fiscalYears: [FY2024, FY2023] }),
+    ).toBe('2024-04');
+  });
+
+  it('当月で保存したときは未来月へ送らない', () => {
+    expect(
+      nextTargetMonthAfterSave({ targetMonth: '2025-01', maxTargetMonth: '2025-01', fiscalYears: [FY2024] }),
+    ).toBeNull();
+  });
+
+  it('翌月がどの算定期間にも属さなければ送らない（翌年度が未登録のまま年度末を保存したとき）', () => {
+    expect(
+      nextTargetMonthAfterSave({ targetMonth: '2024-03', maxTargetMonth: '2025-01', fiscalYears: [FY2023] }),
+    ).toBeNull();
+  });
+
+  it('年度マスタが空の組織は当月まで送る', () => {
+    expect(nextTargetMonthAfterSave({ targetMonth: '2024-12', maxTargetMonth: '2025-01', fiscalYears: [] })).toBe(
+      '2025-01',
+    );
   });
 });
