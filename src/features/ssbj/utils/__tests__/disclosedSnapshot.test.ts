@@ -109,14 +109,14 @@ describe('toSsbjDisclosedSnapshot', () => {
       sections: {
         ...fictionalSnapshot.sections,
         narratives: [{ ...fictionalSnapshot.sections.narratives![0], reviewerNote: '内部の確認メモ' }],
-        external_emissions: [{ value: '1', internalNote: '内部の確認メモ' }],
+        future_section: [{ value: '1', internalNote: '内部の確認メモ' }],
       },
     } as unknown as SsbjReportSnapshotV1;
     const result = toSsbjDisclosedSnapshot(snapshot);
     expect(JSON.stringify(result.snapshot)).not.toContain('内部の確認メモ');
-    expect(result.snapshot.sections).not.toHaveProperty('external_emissions');
+    expect(result.snapshot.sections).not.toHaveProperty('future_section');
     expect(result.unclassifiedPaths).toEqual([
-      'extra', 'report.approverMemo', 'sections.external_emissions', 'sections.narratives[].reviewerNote',
+      'extra', 'report.approverMemo', 'sections.future_section', 'sections.narratives[].reviewerNote',
     ]);
   });
 });

@@ -329,8 +329,8 @@ export const SSBJ_REQUIREMENTS: readonly SsbjRequirement[] = [
     summary: 'ロケーション基準によるスコープ 2 の排出量',
     references: [{ standard: 'CLM', paragraphs: '53' }],
     priority: 'core',
-    inputTarget: { kind: 'notice' },
-    guide: 'OGT はロケーション基準とマーケット基準を区別していないため、R1 ではこの値を出さない。出力には、スコープ 2 の基準が不明であることと、係数の種類ごとの内訳を注記する。',
+    inputTarget: { kind: 'external_emissions' },
+    guide: 'OGT はロケーション基準とマーケット基準を区別していない。ロケーション基準の値は「外部で算定した排出量」に、スコープ 2（ロケーション基準）として登録する。OGT の値の出力には、基準が不明であることと、係数の種類ごとの内訳を注記する。',
   },
   {
     id: 'REQ-CLM-019',
@@ -338,8 +338,8 @@ export const SSBJ_REQUIREMENTS: readonly SsbjRequirement[] = [
     summary: '契約証書の情報、またはマーケット基準によるスコープ 2 の排出量',
     references: [{ standard: 'CLM', paragraphs: '54' }],
     priority: 'basic',
-    inputTarget: { kind: 'notice' },
-    guide: 'OGT はマーケット基準の値と契約証書の情報を持たないため、R1 では扱わない（出力に注記する）。',
+    inputTarget: { kind: 'external_emissions' },
+    guide: 'OGT はマーケット基準の値と契約証書の情報を持たない。マーケット基準の値は「外部で算定した排出量」に、スコープ 2（マーケット基準）として登録する。契約証書の情報は扱わない（出力に注記する）。',
   },
   {
     id: 'REQ-CLM-020',
@@ -383,8 +383,8 @@ export const SSBJ_REQUIREMENTS: readonly SsbjRequirement[] = [
     summary: '7 種類の温室効果ガスの CO2 相当への集約と、地球温暖化係数',
     references: [{ standard: 'CLM', paragraphs: '65〜68' }],
     priority: 'core',
-    inputTarget: { kind: 'notice' },
-    guide: 'OGT の公式係数は実質 CO2 のみで、CH4・N2O・フロン類などは含まない。出力にこの制約を注記する。',
+    inputTarget: { kind: 'external_emissions' },
+    guide: 'OGT の公式係数は実質 CO2 のみで、CH4・N2O・フロン類などは含まない（出力にこの制約を注記する）。CO2 以外のガスの排出量は「外部で算定した排出量」に、対象ガスを選んで登録する。',
   },
   {
     id: 'REQ-CLM-025',

@@ -43,6 +43,7 @@ import {
   createSsbjExternalEmission, deleteSsbjExternalEmission, listSsbjExternalEmissions,
 } from '../../services/externalEmissionService';
 import { getMySsbjRole } from '../../services/memberRoleService';
+import { listSsbjMembers } from '../../services/memberService';
 import { getSsbjReport } from '../../services/reportService';
 import { SsbjExternalEmissions } from '../SsbjExternalEmissions.client';
 import type { SsbjExternalEmission } from '../../types';
@@ -131,6 +132,16 @@ describe('SsbjExternalEmissions', () => {
       }),
     );
     expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain('OGT の採用値に含まれています');
+  });
+
+  it('保存されている確認者が今の選択肢に無ければ（退会など）、空にして選び直してもらう', async () => {
+    vi.mocked(listSsbjMembers).mockResolvedValueOnce([{ id: '5b1f0000-0000-4000-8000-0000000000aa', name: '別の 人', role: 'logger' }]);
+    const { container } = await open();
+    await act(async () => { click(button('編集', container.querySelector<HTMLElement>('[data-testid="ssbj-external-emission"]')!)); });
+    expect(document.querySelector<HTMLSelectElement>('#external-confirmed-by')!.value).toBe('');
+    expect(document.querySelector<HTMLSelectElement>('#external-evidence')!.value).toBe(emission.evidenceId);
+    await act(async () => { click(button('保存する')); });
+    expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain('確認者を選んでください');
   });
 
   it('削除が 0 件で止められたら、一覧から外さず、開き直しを案内する', async () => {

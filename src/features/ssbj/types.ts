@@ -92,6 +92,7 @@ export type SsbjRequirementInputTarget =
   | { kind: 'risks_opportunities' }
   | { kind: 'time_horizons' }
   | { kind: 'ghg' }
+  | { kind: 'external_emissions' }
   | { kind: 'notice' };
 
 /** 要求項目マスターの 1 行（基準が求めること 1 つ）。 */

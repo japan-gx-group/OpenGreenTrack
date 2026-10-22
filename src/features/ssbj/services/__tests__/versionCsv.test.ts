@@ -279,8 +279,11 @@ describe('ssbjVersionToCsvRows（内部記録を出さない出力。閲覧者�
     const disclosed = new Set(rows.map(row => row[4]));
     expect(fictionalDisclosedTexts.filter(text => !disclosed.has(text))).toEqual([]);
     const header = full().findIndex(row => row[0] === '章');
+    // 内部記録だけの行: 根拠文書の参照文以外、時間軸の定義の内部メモ、外部算定値の出典の詳細。
+    const externalDetails = new Set(['算定した者', '算定方法', '根拠文書', '確認者', '確認日時', '内部メモ']);
     const expected = full()
-      .filter(row => !(row[0] === '根拠文書' && row[2] !== '開示用参照文') && !(row[0] === '時間軸の定義' && row[2] === '内部メモ'))
+      .filter(row => !(row[0] === '根拠文書' && row[2] !== '開示用参照文') && !(row[0] === '時間軸の定義' && row[2] === '内部メモ')
+        && !(row[0] === 'GHG排出量（外部算定値）' && externalDetails.has(row[2])))
       .map((row, index) => (index >= header ? row.filter((_, column) => column !== 6) : row));
     expect(rows).toEqual(expected);
   });

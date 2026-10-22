@@ -67,6 +67,18 @@ describe('SsbjPreviewDocument', () => {
     expect(text()).toContain('サプライヤー別排出量は参考値であり、Scope 3 の合計には含めていません');
   });
 
+  it('外部算定値の項目が無い古い版は「この版には含まれていません」、採用していなければその旨を出す', () => {
+    const withoutExternal = { ...fictionalSnapshot.sections };
+    delete withoutExternal.external_emissions;
+    rendered = render(<SsbjPreviewDocument source={working({ ...fictionalSnapshot, sections: withoutExternal })} showInternalNotes={false} />);
+    expect(text()).toContain('この版には含まれていません。');
+    rendered.unmount();
+    rendered = render(
+      <SsbjPreviewDocument source={working({ ...fictionalSnapshot, sections: { ...fictionalSnapshot.sections, external_emissions: [] } })} showInternalNotes={false} />,
+    );
+    expect(text()).toContain('外部で算定した排出量は採用していません。');
+  });
+
   it('外部算定値にロケーション基準の Scope 2 があっても、文書全体にロケーション基準の値が無いとは書かない', () => {
     const locationBased = {
       ...fictionalExternalEmissions[0],

@@ -55,6 +55,18 @@ export const SsbjExternalEmissions = ({ reportId }: { reportId: string }) => {
 
   const readOnly = report ? isSsbjReadOnly(report.review, myRole.role) : true;
   const evidenceTitle = (id: string): string | null => evidence.items.find(item => item.id === id)?.documentTitle ?? null;
+
+  // 保存されている根拠文書・確認者が今の選択肢に無ければ（根拠文書の削除・利用者の退会など）、空にして選び直してもらう。
+  // 選択欄には出ないのに値だけ残り、保存すると分かりにくいエラー（権限の拒否など）になるため。
+  const openEdit = (item: SsbjExternalEmission) => {
+    form.open(item);
+    if (evidence.items.length > 0 && !evidence.items.some(evidenceItem => evidenceItem.id === item.evidenceId)) {
+      form.setField('evidenceId', '');
+    }
+    if (members.length > 0 && !members.some(member => member.id === item.confirmedByUserId)) {
+      form.setField('confirmedByUserId', '');
+    }
+  };
   // 右側のプレビューに、入力中の一覧を重ねて出す（資料名・確認者の名前は今の値で補う）。
   const previewItems: SsbjExternalEmissionSnapshot[] = list.items.map(item => ({
     ...item, evidenceTitle: evidenceTitle(item.evidenceId), confirmedByName: memberName(members, item.confirmedByUserId),
@@ -135,7 +147,7 @@ export const SsbjExternalEmissions = ({ reportId }: { reportId: string }) => {
                         </div>
                         {!readOnly && (
                           <div className="flex gap-2">
-                            <Button type="button" variant="outline" size="sm" onClick={() => form.open(item)}><Pencil size={14} />編集</Button>
+                            <Button type="button" variant="outline" size="sm" onClick={() => openEdit(item)}><Pencil size={14} />編集</Button>
                             <Button type="button" variant="outline" size="sm" onClick={() => { setDeleteError(''); setDeleting(item); }}><Trash2 size={14} />削除</Button>
                           </div>
                         )}

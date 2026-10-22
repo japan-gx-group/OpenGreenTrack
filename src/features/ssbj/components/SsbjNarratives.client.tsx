@@ -39,6 +39,7 @@ const OTHER_TARGETS: Record<Exclude<SsbjRequirement['inputTarget']['kind'], 'nar
   risks_opportunities: { label: 'リスク・機会', path: 'risks' },
   time_horizons: { label: 'リスク・機会（時間軸の定義）', path: 'risks' },
   ghg: { label: 'GHG排出量の候補値', path: 'ghg' },
+  external_emissions: { label: '外部で算定した排出量', path: 'external' },
   notice: { label: 'プレビュー・出力の注記（入力は不要）', path: null },
 };
 

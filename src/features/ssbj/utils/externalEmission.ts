@@ -141,8 +141,11 @@ export const validateExternalEmissionInput = (input: SsbjExternalEmissionInput):
   return errors;
 };
 
-/** 保存版の外部算定値の形を確かめる（不正なら出力・表示しない）。 */
-export const isValidExternalEmissionSnapshot = (item: unknown): item is SsbjExternalEmissionSnapshot => {
+/**
+ * 保存版の外部算定値の、開示する項目（区分・対象ガス・排出量・期間）の形を確かめる。
+ * 閲覧者に返す保存版は内部記録を除いてある（utils/disclosedSnapshot.ts）ので、出典の詳細は確かめない。
+ */
+export const isValidExternalEmissionDisclosure = (item: unknown): boolean => {
   if (typeof item !== 'object' || item === null) return false;
   const value = item as Partial<SsbjExternalEmissionSnapshot>;
   return (
@@ -156,7 +159,15 @@ export const isValidExternalEmissionSnapshot = (item: unknown): item is SsbjExte
     value.gases.every(gas => (SSBJ_GHG_GASES as readonly string[]).includes(gas)) &&
     isDecimalString(value.value) &&
     value.unit === OGT_EMISSION_UNIT &&
-    typeof value.period?.startDate === 'string' && typeof value.period?.endDate === 'string' &&
+    typeof value.period?.startDate === 'string' && typeof value.period?.endDate === 'string'
+  );
+};
+
+/** 保存版の外部算定値の形を確かめる（不正なら出力・表示しない）。 */
+export const isValidExternalEmissionSnapshot = (item: unknown): item is SsbjExternalEmissionSnapshot => {
+  if (!isValidExternalEmissionDisclosure(item)) return false;
+  const value = item as Partial<SsbjExternalEmissionSnapshot>;
+  return (
     typeof value.calculatedBy === 'string' && typeof value.calculationMethod === 'string' &&
     typeof value.evidenceId === 'string' && typeof value.confirmedByUserId === 'string' &&
     typeof value.confirmedAt === 'string'

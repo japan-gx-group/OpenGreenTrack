@@ -74,6 +74,14 @@ export const SSBJ_SNAPSHOT_FIELD_CLASSIFICATION: {
       disclosed: ['requirementId', 'applicability', 'materiality', 'omissionReason', 'explanation.disclosure'],
       internal: ['explanation.internalNote'],
     },
+    // 開示するのは区分・対象ガス・排出量・期間。出典の詳細（算定した者・方法・根拠文書・確認者）と内部メモは内部記録。
+    external_emissions: {
+      disclosed: ['id', 'scope', 'scope3CategoryId', 'scope2Basis', 'gases', 'value', 'unit', 'period'],
+      internal: [
+        'calculatedBy', 'calculationMethod', 'evidenceId', 'evidenceTitle', 'confirmedByUserId', 'confirmedByName',
+        'confirmedAt', 'internalNote',
+      ],
+    },
   },
 };
 

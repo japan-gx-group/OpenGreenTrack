@@ -13,7 +13,9 @@ export const SsbjPreviewExternalEmissions = ({ items, showInternalNotes }: {
   items: SsbjExternalEmissionSnapshot[] | undefined;
   showInternalNotes: boolean;
 }) => {
-  if (items === undefined || items.length === 0) {
+  // 外部算定値の項目を足す前の保存版にはキーが無い（ほかのセクションと同じく「この版には含まれていません」と出す）。
+  if (items === undefined) return <p className="m-0 text-sm text-text-muted">この版には含まれていません。</p>;
+  if (items.length === 0) {
     return <p className="m-0 text-sm text-text-muted">外部で算定した排出量は採用していません。</p>;
   }
   return (
