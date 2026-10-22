@@ -31,6 +31,14 @@ interface SearchableSelectProps {
   disableClientFilter?: boolean;
   /** 候補が0件のときの表示文言（例: 検索中の案内）。省略時は既定の文言。 */
   emptyMessage?: string;
+  /**
+   * 検索キーワードが残ったまま、候補が選択されずにリストが閉じたときの通知
+   * （枠外クリック・Escape）。破棄されたキーワードを渡す。
+   * 「選んだつもりで未選択のまま離脱した」ことを親が警告表示で伝える用途。
+   * onQueryChange('') でのキーワード破棄通知の後に発火する（親が onQueryChange で
+   * 警告を消し、こちらで出し直す順序を前提にできる）。
+   */
+  onSearchAbandoned?: (query: string) => void;
 }
 
 /**
@@ -49,6 +57,7 @@ export const SearchableSelect = ({
   onQueryChange,
   disableClientFilter = false,
   emptyMessage,
+  onSearchAbandoned,
 }: SearchableSelectProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -80,11 +89,14 @@ export const SearchableSelect = ({
         setIsOpen(false);
         setQuery('');
         onQueryChange?.('');
+        if (query !== '') {
+          onSearchAbandoned?.(query);
+        }
       }
     };
     document.addEventListener('pointerdown', handlePointerDown);
     return () => document.removeEventListener('pointerdown', handlePointerDown);
-  }, [isOpen, onQueryChange]);
+  }, [isOpen, query, onQueryChange, onSearchAbandoned]);
 
   // ハイライト行を可視範囲に保つ
   useEffect(() => {
@@ -100,6 +112,12 @@ export const SearchableSelect = ({
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    // IME 変換中のキー操作は「変換の確定・取り消し・候補移動」であって、このリストへの
+    // 操作ではないため無視する。特に変換確定の Enter をそのまま通すと、入力のたびに
+    // highlightIndex が 0 へ戻る仕様とあわさって、常に最上部の候補が意図せず確定されてしまう。
+    // isComposing に加えて keyCode 229 も見るのは、変換確定直後の keydown を
+    // isComposing=false・keyCode=229 で届けるブラウザがあるため。
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     if (event.key === 'ArrowDown') {
       event.preventDefault();
       setIsOpen(true);
@@ -115,6 +133,9 @@ export const SearchableSelect = ({
     } else if (event.key === 'Escape') {
       setIsOpen(false);
       updateQuery('');
+      if (isOpen && query !== '') {
+        onSearchAbandoned?.(query);
+      }
     }
   };
 
