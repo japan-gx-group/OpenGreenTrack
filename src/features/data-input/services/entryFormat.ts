@@ -8,7 +8,7 @@ import {
   type IdeaProduct,
   type IdeaProductDetail,
 } from '@/features/factors/services/ideaProductSearch';
-import type { ManualEntryPeriodDates } from './manualEntryTargetMonth';
+import { toMonthlyPeriodLabel, type ManualEntryPeriodDates } from './manualEntryTargetMonth';
 import {
   FACTOR_SOURCE_MODE_LABELS,
   entryCategoryLabel,
@@ -205,7 +205,12 @@ export const buildPreviewRows = (args: {
   const rows: PreviewRow[] = [
     { label: '拠点名', value: args.locationName ?? '—' },
     { label: 'カテゴリ', value: entryCategoryLabel(args.category) },
-    { label: '対象期間', value: `${args.period.start} ～ ${args.period.end}` },
+    {
+      label: '対象期間',
+      value:
+        toMonthlyPeriodLabel(args.period.start, args.period.end) ??
+        `${args.period.start} ～ ${args.period.end}`,
+    },
     {
       label: '活動量',
       value: `${args.amount.toLocaleString()} ${args.unit}`,

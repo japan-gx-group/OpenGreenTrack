@@ -108,9 +108,17 @@ const toIdeaFactorEmbedRow = (
   return ideaFactors;
 };
 
+// 入力履歴で表示する算定結果（排出量＋適用係数スナップショット）。未算定の行には存在しない。
+interface EmissionResultSummary {
+  emissions: number;
+  appliedFactorName: string | null;
+  appliedFactorValue: number | null;
+  appliedFactorUnit: string | null;
+}
+
 const toSavedManualActivityRecord = (
   row: ActivityRecordRow,
-  emissions: number | null = null,
+  emissionResult: EmissionResultSummary | null = null,
 ): SavedManualActivityRecord => {
   const location = toLocationOptionRow(row.locations);
   const ideaFactor = toIdeaFactorEmbedRow(row.idea_factors);
@@ -127,7 +135,10 @@ const toSavedManualActivityRecord = (
     note: row.note,
     createdAt: row.createdAt,
     emissionFactorId: row.emissionFactorId,
-    emissions,
+    emissions: emissionResult?.emissions ?? null,
+    appliedFactorName: emissionResult?.appliedFactorName ?? null,
+    appliedFactorValue: emissionResult?.appliedFactorValue ?? null,
+    appliedFactorUnit: emissionResult?.appliedFactorUnit ?? null,
     scope3CategoryId: row.scope3CategoryId ?? null,
     ideaFactorId: row.ideaFactorId ?? null,
     ideaProductName: ideaFactor?.productName ?? null,
@@ -214,33 +225,44 @@ export const addManualActivityRecord = async (
   return toSavedManualActivityRecord(data as ActivityRecordRow);
 };
 
-// 活動量レコードIDごとの算定済み排出量（t-CO2e）を引く。
+// 活動量レコードIDごとの算定済み排出量（t-CO2e）と適用係数スナップショットを引く。
 // emission_results は activityRecordId に一意制約があるため1レコード=最大1行。
 // 未算定（行が無い）のレコードはマップに現れず、呼び出し側で null 扱いにする。
 // ID リストは分割して問い合わせる（数百件を .in() に並べると URL が 414 URI Too Long になり、
 // 入力履歴が丸ごと「取得に失敗」になる。拠点詳細の getEmissionResults と同じ対策）。
-const getEmissionsByRecordId = async (
+const getEmissionResultsByRecordId = async (
   supabase: SupabaseClient,
   recordIds: string[],
-): Promise<Map<string, number>> => {
-  const map = new Map<string, number>();
+): Promise<Map<string, EmissionResultSummary>> => {
+  const map = new Map<string, EmissionResultSummary>();
   if (recordIds.length === 0) {
     return map;
   }
 
   for (const idsChunk of chunk(recordIds, IN_CHUNK_SIZE)) {
-    const rows = await fetchAllRows<{ activityRecordId: string; emissions: string | number }>(
+    const rows = await fetchAllRows<{
+      activityRecordId: string;
+      emissions: string | number;
+      appliedFactorName: string | null;
+      appliedFactorValue: string | number | null;
+      appliedFactorUnit: string | null;
+    }>(
       (from, to) =>
         supabase
           .from('emission_results')
-          .select('activityRecordId, emissions')
+          .select('activityRecordId, emissions, appliedFactorName, appliedFactorValue, appliedFactorUnit')
           .in('activityRecordId', idsChunk)
           .order('id', { ascending: true })
           .range(from, to),
       '排出量の取得に失敗しました',
     );
     for (const row of rows) {
-      map.set(row.activityRecordId, Number(row.emissions));
+      map.set(row.activityRecordId, {
+        emissions: Number(row.emissions),
+        appliedFactorName: row.appliedFactorName,
+        appliedFactorValue: row.appliedFactorValue === null ? null : Number(row.appliedFactorValue),
+        appliedFactorUnit: row.appliedFactorUnit,
+      });
     }
   }
   return map;
@@ -267,13 +289,13 @@ export const getActivityHistoryRecords = async (): Promise<SavedManualActivityRe
         .range(from, to),
     '入力履歴の取得に失敗しました',
   );
-  const emissionsByRecordId = await getEmissionsByRecordId(
+  const emissionResultsByRecordId = await getEmissionResultsByRecordId(
     supabase,
     rows.map((row) => row.id),
   );
 
   return rows.map((row) =>
-    toSavedManualActivityRecord(row, emissionsByRecordId.get(row.id) ?? null),
+    toSavedManualActivityRecord(row, emissionResultsByRecordId.get(row.id) ?? null),
   );
 };
 

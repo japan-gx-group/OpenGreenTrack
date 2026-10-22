@@ -44,7 +44,7 @@ node scripts/official-factors/generate.ts
 
 | ファイル | 内容 | 由来 |
 |---|---|---|
-| `denki.txt` | 電気事業者別排出係数（R8.1.9公表・R8.6.4更新） | 公表PDFを `pdftotext -layout` で抽出した生テキスト。`parse.ts` がパースする |
+| `denki.txt` | 電気事業者別排出係数（R8.1.9公表・R8.8.3更新） | 公表PDFを `pdftotext -layout` で抽出した生テキスト。`parse.ts` がパースする |
 | `gas.tsv` | ガス事業者別排出係数（R8.6.30公表） | 公表PDFから手書き転記（件数が少なくレビュー可能にするため） |
 | `heat.tsv` | 熱供給事業者別排出係数（R8.6.30公表） | 同上 |
 | `fuels.tsv` | 燃料の排出係数（算定省令別表） | 「算定方法・排出係数一覧」p.23 から手書き転記。先頭列 `key` は行の安定キー（後述） |
@@ -104,6 +104,63 @@ node scripts/official-factors/generate.ts
 スキップするため、再投入しても `updatedAt` が動くのは実際に値が変わった行だけ。
 既存行の訂正もこの手順で行う（マイグレーションに `update` を書かない: R12）。
 
+## 原典改版の追従（rev 更新）
+
+公表資料は公表後も改版される（ファイル名の rev 番号が上がる。例: R6年度実績の電気は R8.1.9 公表後、
+R8.2.25・R8.6.4・R8.7.23・R8.8.3 に一部追加・更新。7月下旬〜8月上旬は、1月公表時に係数が確定して
+いなかった事業者へ実績値が反映されるため変更が大きい）。改版では**係数値の変更だけでなく、事業者の
+追加・削除・メニュー構成の変更（残差メニューの改名を含む）**が起きる（R8.8.3 版では177社でメニュー構成が
+変わり、東京電力EPの残差は メニューM(残差)→メニューL(残差) になった）。年度更新のタイミングに加えて、
+夏の更新後にも公表ページ（calc.html）の rev を確認すること。
+
+手順は「値・出典・名称の訂正」と同じ（`data/<年度>/` を最新 rev で差し替え → 再生成 → 再投入）だが、
+次の2点を必ず行う:
+
+1. その年度の `source.json` の `documents`（`denki` など）を新しい版の表記に更新する。**出典表記の変更が
+   「最新版に存在しない行」の検出キー**になっている（生成 SQL は upsert 後に、旧版の出典表記のまま
+   残った行を後始末する）。出典表記を変えずにデータだけ差し替えると後始末が働かない
+2. `source.json` の `checks` を新しい版の値で更新する（残差メニュー名の変更があればそこで検出される）
+
+生成 SQL（年度ごとの `official_emission_factors_<年度>.sql`）が upsert の後に自動で行う後始末
+（その年度の行だけが対象。冪等。詳細は `generate.ts` のコメント）:
+
+- **残差メニューの読み替え**: 改名された旧残差行への明示選択（`activity_records."emissionFactorId"`）を、
+  同一事業者・同一係数種別・同一年度の現行残差行へ付け替える（残差メニューは事業者ごとに高々1つ。
+  生成時に検証する）。`emission_results` は過去の算定の記録なので付け替えない
+- **消滅行のアーカイブ**: 最新版に存在しない事業者別係数行を `archived` にする。ただし
+  `activity_records` から参照中の行は `active` のまま残す（`archived` にすると算定時の明示選択フィルタ
+  から外れ、黙って代替値に落ちるため。残差以外は新旧メニューの対応を機械的に決められない）
+
+再投入後は次の2つを確認する:
+
+```sql
+-- (1) 最新版に存在しないのに参照が残っていて active のまま残った行（個別対処が必要）。
+--     <現行出典> はその年度の source.json の documents にある現行の出典表記（denki / gas / heat）
+select ef.id, ef.name, ef."applicableYear", ef."factorValue", count(ar.id) as refs
+from emission_factors ef
+join activity_records ar on ar."emissionFactorId" = ef.id
+where ef."organizationId" is null
+  and ef.source = 'utility'
+  and ef.status = 'active'
+  and ef."sourceDocumentName" <> '<現行出典>'
+group by ef.id, ef.name, ef."applicableYear", ef."factorValue";
+
+-- (2) 算定時の係数と現在の明示選択・係数値が食い違う算定済みレコード（再算定の対象。
+--     読み替えで付け替えたレコードと、改版で値が変わった係数で算定済みのレコードが出る。
+--     appliedFactorValue が null の行はスナップショット列追加前の算定なので、値の異同は個別に確認する）
+select a.id, a."organizationId", a."periodStart", f.name as current_factor,
+       r."appliedFactorValue", f."factorValue" as current_value
+from activity_records a
+join emission_results r on r."activityRecordId" = a.id
+join emission_factors f on f.id = a."emissionFactorId"
+where a."isCalculated"
+  and (r."emissionFactorId" is distinct from a."emissionFactorId"
+    or r."appliedFactorValue" is distinct from f."factorValue");
+```
+
+(2) の再算定は「年度更新の手順」6 と同じ（対象レコードを `isCalculated = false` に戻して算定を実行する。
+戻したら必ず算定まで実行すること）。
+
 ### 行の ID（安定キー）
 
 ID は「安定キー + 年度」から md5 で決定的に導出する。安定キーには名称・値・出典を含めないため、
@@ -116,8 +173,10 @@ ID は「安定キー + 年度」から md5 で決定的に導出する。安定
 | 燃料・Scope3 原単位 | `energyType:key`（`fuels.tsv` / `scope3.tsv` の先頭列） | `fuel_kerosene:kerosene` |
 
 安定キーの構成要素（登録番号・メニュー名・`energyType`・TSV の `key`）を変えると**別の行（新しい ID）**になり、
-元の行は `active` のまま残る。その場合は元の行を `status='archived'` にする冪等な文を seed に出力する
-（「年度更新の手順」5 と同じ要領）。`fuels.tsv` / `scope3.tsv` に行を追加するときは、小文字英数字と `_` だけの
+元の行は `active` のまま残る。原典改版でメニュー名が変わった場合の後始末は自動化されている
+（「原典改版の追従」。出典表記の変更が検出キー）。出典表記が変わらない変更（転記ミスの修正で
+安定キーを変えた場合など）はこの仕組みでは拾えないため、元の行を `status='archived'` にする冪等な文を
+seed に出力する（「年度更新の手順」5 と同じ要領）。`fuels.tsv` / `scope3.tsv` に行を追加するときは、小文字英数字と `_` だけの
 一意な `key` を付ける（一度公開した `key` は変更しない）。
 
 ## 未公表年度の扱い（暫定適用）
