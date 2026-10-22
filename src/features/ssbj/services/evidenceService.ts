@@ -13,11 +13,18 @@ type SsbjEvidenceRow = {
   internalLocation: string | null;
   referencePosition: string | null;
   ownerDepartment: string | null;
+  fileName: string | null;
+  fileSha256: string | null;
+  fileStorageVersionId: string | null;
+  fileStoredBy: string | null;
+  fileRecordedAt: string | null;
   disclosureState: string;
   disclosureText: string | null;
 };
 
-const SELECT_COLUMNS = 'id, itemId, documentTitle, documentVersion, internalLocation, referencePosition, ownerDepartment, disclosureState, disclosureText';
+const SELECT_COLUMNS =
+  'id, itemId, documentTitle, documentVersion, internalLocation, referencePosition, ownerDepartment, ' +
+  'fileName, fileSha256, fileStorageVersionId, fileStoredBy, fileRecordedAt, disclosureState, disclosureText';
 
 const toEvidence = (row: SsbjEvidenceRow): SsbjEvidence => ({
   id: row.id,
@@ -27,6 +34,11 @@ const toEvidence = (row: SsbjEvidenceRow): SsbjEvidence => ({
   internalLocation: row.internalLocation,
   referencePosition: row.referencePosition,
   ownerDepartment: row.ownerDepartment,
+  fileName: row.fileName,
+  fileSha256: row.fileSha256,
+  fileStorageVersionId: row.fileStorageVersionId,
+  fileStoredBy: row.fileStoredBy,
+  fileRecordedAt: row.fileRecordedAt,
   disclosure: toFieldValue<string>(row.disclosureState, row.disclosureText),
 });
 
@@ -39,6 +51,10 @@ const toColumns = (input: SsbjEvidenceInput) => {
     internalLocation: input.internalLocation,
     referencePosition: input.referencePosition,
     ownerDepartment: input.ownerDepartment,
+    fileName: input.fileName,
+    fileSha256: input.fileSha256,
+    fileStorageVersionId: input.fileStorageVersionId,
+    fileStoredBy: input.fileStoredBy,
     disclosureState: disclosure.state,
     disclosureText: disclosure.value,
   };
@@ -48,7 +64,7 @@ export const listSsbjEvidence = async (reportId: string): Promise<SsbjEvidence[]
   const { data, error } = await createClient().from('ssbj_evidence').select(SELECT_COLUMNS)
     .eq('reportId', reportId).order('itemId').order('createdAt').order('id');
   if (error) throw new Error('根拠文書の取得に失敗しました');
-  return ((data ?? []) as SsbjEvidenceRow[]).map(toEvidence);
+  return ((data ?? []) as unknown as SsbjEvidenceRow[]).map(toEvidence);
 };
 
 export const createSsbjEvidence = async (
@@ -58,7 +74,7 @@ export const createSsbjEvidence = async (
     .insert({ ...toColumns(input), organizationId: report.organizationId, reportId: report.id })
     .select(SELECT_COLUMNS).single();
   if (error || !data) throw new Error(ssbjWriteErrorMessage(error, '根拠文書の登録に失敗しました'));
-  return toEvidence(data as SsbjEvidenceRow);
+  return toEvidence(data as unknown as SsbjEvidenceRow);
 };
 
 export const updateSsbjEvidence = async (id: string, input: SsbjEvidenceInput): Promise<SsbjEvidence> => {
@@ -66,7 +82,7 @@ export const updateSsbjEvidence = async (id: string, input: SsbjEvidenceInput): 
     .update(toColumns(input)).eq('id', id).select(SELECT_COLUMNS).maybeSingle();
   if (error) throw new Error(ssbjWriteErrorMessage(error, '根拠文書の更新に失敗しました'));
   if (!data) throw new Error('根拠文書が見つかりません。画面を開き直してください');
-  return toEvidence(data as SsbjEvidenceRow);
+  return toEvidence(data as unknown as SsbjEvidenceRow);
 };
 
 export const deleteSsbjEvidence = async (id: string): Promise<void> => {

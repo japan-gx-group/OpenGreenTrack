@@ -21,6 +21,9 @@ const Row = ({ label, value, muted }: { label: string; value: string; muted: boo
 
 const NOT_INCLUDED = 'この版には含まれていません。';
 
+// リスクの種類を追加する前に保存した版には riskType のキーが無いため、未入力として扱う（CSV と同じ）。
+const UNANSWERED_RISK_TYPE = { state: 'unanswered' } as const;
+
 export const SsbjPreviewRisks = ({
   items,
   showInternalNotes,
@@ -42,8 +45,8 @@ export const SsbjPreviewRisks = ({
             {item.kind === 'risk' && (
               <Row
                 label="リスクの種類"
-                value={formatFieldValue(item.riskType, value => SSBJ_RISK_TYPE_LABELS[value])}
-                muted={!isAnswered(item.riskType)}
+                value={formatFieldValue(item.riskType ?? UNANSWERED_RISK_TYPE, value => SSBJ_RISK_TYPE_LABELS[value])}
+                muted={!isAnswered(item.riskType ?? UNANSWERED_RISK_TYPE)}
               />
             )}
             <Row

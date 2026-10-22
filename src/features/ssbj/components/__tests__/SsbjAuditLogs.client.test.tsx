@@ -37,7 +37,7 @@ import { buildSsbjWorkbook, downloadSsbjWorkbook } from '../../services/versionX
 import { SsbjAuditLogs } from '../SsbjAuditLogs.client';
 
 const report = { ...fictionalReportBasicInfo, fiscalYearLabel: '2024年度', periodStart: '2024-04-01',
-  periodEnd: '2025-03-31', draftRevision: 1, review: FICTIONAL_DRAFT_REVIEW };
+  periodEnd: '2025-03-31', draftRevision: 1, basicInfoRevision: 0, review: FICTIONAL_DRAFT_REVIEW };
 const logs: SsbjAuditLog[] = [
   { id: 3, reportId: report.id, actorUserId: 'user-1', action: 'status_change', targetType: 'report', targetId: report.id,
     changedColumns: null, details: { operation: 'approve', from: 'in_review', to: 'approved', versionNumber: 2 },
