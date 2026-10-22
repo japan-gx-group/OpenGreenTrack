@@ -205,6 +205,7 @@ _All documentation is written in Japanese._
 | ドキュメント | 内容 |
 |---|---|
 | [`AGENTS.md`](AGENTS.md) | **開発規約の正本**（AIエージェント・人間共通。必読） |
+| [`docs/agent-harness.md`](docs/agent-harness.md) | AI エージェント用ハーネス（Claude Code / Codex のツール実行を機械的に検査する安全装置） |
 | [`docs/architecture.md`](docs/architecture.md) | Next.js + Supabase のアーキテクチャ |
 | [`docs/coverage-and-limitations.md`](docs/coverage-and-limitations.md) | 算定の対応範囲と限界（対象ガス・Scope 2 の方式・Scope 3・検証されている範囲） |
 | [`docs/directory-structure.md`](docs/directory-structure.md) | ディレクトリ構成規約 |

@@ -1,0 +1,38 @@
+# Dependabot — 依存と GitHub Actions の更新 PR を自動で作る（AI エージェント用ハーネスの層 5）。
+#
+# - npm: 週 1 回、minor / patch をまとめた PR を作る（major は個別。AGENTS.md §1「最新安定版」の方針に沿う）
+# - github-actions: ci.yml で SHA 固定している Action の更新 PR を作る（SHA 固定を保ったまま更新される）
+# セキュリティアップデート（既知の脆弱性に対する PR）はリポジトリ設定の
+# 「Dependabot security updates」を有効にすると、このファイルとは別に作られる。
+# 更新 PR も通常の PR と同じく CI（Dependency Review を含む）とレビューを通す。
+
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    # package.json の範囲指定（^x.y.z）の下限を新しい版に上げる更新の仕方。
+    # プレリリース版（-beta 等）は Dependabot の既定で更新対象にならない（AGENTS.md §1 の方針と一致）
+    versioning-strategy: increase
+    labels:
+      - dependencies
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - ci

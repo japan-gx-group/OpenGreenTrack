@@ -75,3 +75,6 @@ bun.lockb
 /backup/
 /backup_*.sql
 /opengreentrack_*.sql
+
+# AI エージェント用ハーネスの監査ログ（ローカルで拒否した操作の記録。docs/agent-harness.md）
+/.agent-harness-audit.jsonl

@@ -1,0 +1,109 @@
+# OpenGreenTrack: Codex の実行ポリシー（コマンドの前方一致ルール）。
+#
+# decision:
+#   forbidden … 承認を求めず即拒否
+#   prompt    … 必ず人間の承認を求める（サンドボックス内で実行できる場合でも）
+#   allow     … このファイルでは使わない（allow はサンドボックスの外で承認なしに実行する指定になるため）
+#
+# 前方一致なので、引数の位置が変わる指定（`git push origin --force` 等）はここでは捕まらない。
+# 実際の判定は PreToolUse フック（scripts/agent-harness/hook.sh → hook.ts → policy.ts）が担い、
+# このファイルはフックが信頼されていない・無効化されたときの二重化として「代表的な形」だけを持つ。
+# 複数のルールに一致した場合は forbidden > prompt > allow の順で厳しい方が勝つ。
+# pattern の要素に書く配列は「その位置の語の選択肢」。`npx supabase …` と `supabase …` は先頭の語数が違うので別の行に書く。
+#
+# 検証:
+#   codex execpolicy check --pretty --rules .codex/rules/opengreentrack.rules -- git push --force origin x
+
+# --- 即拒否 -------------------------------------------------------------------------------
+
+prefix_rule(
+    pattern = ["git", "push", "--force"],
+    decision = "forbidden",
+    justification = "force push は禁止（AGENTS.md R11）。履歴は新しいコミットで直す",
+    match = ["git push --force origin feat/x"],
+    not_match = ["git push origin feat/x"],
+)
+prefix_rule(pattern = ["git", "push", "-f"], decision = "forbidden", justification = "force push は禁止（AGENTS.md R11）")
+prefix_rule(pattern = ["git", "push", "--force-with-lease"], decision = "forbidden", justification = "force push は禁止（AGENTS.md R11）")
+prefix_rule(pattern = ["git", "push", "origin", "main"], decision = "forbidden", justification = "main への直接 push は禁止。PR を作る")
+prefix_rule(pattern = ["git", "push", "origin", "HEAD:main"], decision = "forbidden", justification = "main への直接 push は禁止。PR を作る")
+prefix_rule(pattern = ["git", "push", ["--all", "--mirror"]], decision = "forbidden", justification = "main を含む全ブランチの push は禁止。PR を作る")
+prefix_rule(pattern = ["git", "reset", "--hard"], decision = "forbidden", justification = "作業ツリーの破棄は禁止。個別に git restore <path>")
+prefix_rule(pattern = ["git", "clean", ["-f", "-fd", "-fdx", "-xdf", "-df", "-ffdx", "-d", "--force"]], decision = "forbidden", justification = "作業ツリーの破棄は禁止")
+prefix_rule(pattern = ["git", "checkout", "--", "."], decision = "forbidden", justification = "作業ツリーの破棄は禁止")
+prefix_rule(pattern = ["git", "restore", "."], decision = "forbidden", justification = "作業ツリーの破棄は禁止")
+prefix_rule(pattern = ["git", "branch", "-D"], decision = "forbidden", justification = "ブランチの強制削除は禁止（-d なら可）")
+prefix_rule(pattern = ["git", "commit", ["--no-verify", "-n"]], decision = "forbidden", justification = "git フックの迂回は禁止（AGENTS.md R11）")
+prefix_rule(pattern = ["git", "filter-branch"], decision = "forbidden", justification = "履歴の書き換えは禁止")
+prefix_rule(pattern = ["git", "filter-repo"], decision = "forbidden", justification = "履歴の書き換えは禁止")
+prefix_rule(pattern = ["git", "remote", "set-url"], decision = "forbidden", justification = "リモートの付け替えは禁止")
+prefix_rule(pattern = ["git", "config", "--global"], decision = "forbidden", justification = "マシン全体の git 設定は変更しない")
+prefix_rule(pattern = ["npx", "lefthook", "uninstall"], decision = "forbidden", justification = "lefthook の無効化は禁止（AGENTS.md R11）")
+prefix_rule(pattern = ["lefthook", "uninstall"], decision = "forbidden", justification = "lefthook の無効化は禁止（AGENTS.md R11）")
+
+prefix_rule(
+    pattern = ["gh", "pr", "merge"],
+    decision = "forbidden",
+    justification = "PR のマージはメンテナが GitHub 上で行う（AGENTS.md R11）",
+    match = ["gh pr merge 12 --squash"],
+    not_match = ["gh pr view 12"],
+)
+prefix_rule(pattern = ["gh", "pr", "close"], decision = "forbidden", justification = "PR を閉じる操作は人間が行う")
+prefix_rule(pattern = ["gh", "repo", ["delete", "edit", "archive", "rename", "set-default"]], decision = "forbidden", justification = "リポジトリ設定の変更は人間が行う")
+prefix_rule(pattern = ["gh", ["ruleset", "secret", "variable", "ssh-key", "gpg-key", "codespace"]], decision = "forbidden", justification = "リポジトリ設定・認証情報の操作は人間が行う")
+prefix_rule(pattern = ["gh", "alias", ["set", "delete", "import"]], decision = "forbidden", justification = "gh の別名定義（禁止コマンドを別名で呼べる）は人間が行う")
+prefix_rule(pattern = ["gh", "auth", ["token", "logout", "refresh", "login"]], decision = "forbidden", justification = "認証トークンの表示・変更は禁止")
+prefix_rule(pattern = ["gh", "run", ["cancel", "delete"]], decision = "forbidden", justification = "CI の実行の取り消し・削除は人間が行う")
+prefix_rule(pattern = ["gh", "workflow", ["run", "disable", "enable"]], decision = "forbidden", justification = "ワークフローの操作は人間が行う")
+prefix_rule(pattern = ["gh", "release", ["delete", "create"]], decision = "forbidden", justification = "リリースの操作は人間が行う")
+
+prefix_rule(
+    pattern = ["npx", "supabase", "db", "push"],
+    decision = "forbidden",
+    justification = "リモート Supabase への適用は人間が supabase/README.md の手順で行う",
+    match = ["npx supabase db push --include-seed"],
+    not_match = ["npx supabase db reset"],
+)
+prefix_rule(pattern = ["supabase", "db", "push"], decision = "forbidden", justification = "リモート Supabase への適用は人間が行う")
+prefix_rule(pattern = ["npx", "supabase@latest", "db", "push"], decision = "forbidden", justification = "リモート Supabase への適用は人間が行う")
+prefix_rule(pattern = ["npx", "supabase", "db", "pull"], decision = "forbidden", justification = "マイグレーションは手で書く（db pull は使わない）")
+prefix_rule(pattern = ["supabase", "db", "pull"], decision = "forbidden", justification = "マイグレーションは手で書く（db pull は使わない）")
+prefix_rule(pattern = ["npx", "supabase", ["link", "unlink", "login", "logout", "secrets", "branches", "projects", "functions", "orgs", "domains"]], decision = "forbidden", justification = "リモート Supabase の操作は人間が行う")
+prefix_rule(pattern = ["supabase", ["link", "unlink", "login", "logout", "secrets", "branches", "projects", "functions", "orgs", "domains"]], decision = "forbidden", justification = "リモート Supabase の操作は人間が行う")
+prefix_rule(pattern = ["npx", "supabase", "migration", ["repair", "squash"]], decision = "forbidden", justification = "リモートのマイグレーション履歴の操作は人間が行う（AGENTS.md R9）")
+prefix_rule(pattern = ["supabase", "migration", ["repair", "squash"]], decision = "forbidden", justification = "リモートのマイグレーション履歴の操作は人間が行う（AGENTS.md R9）")
+
+prefix_rule(pattern = ["npm", ["publish", "unpublish", "deprecate", "login", "adduser", "token", "owner"]], decision = "forbidden", justification = "npm レジストリ・認証の操作は禁止")
+prefix_rule(pattern = ["npm", ["install", "i", "add"], "-g"], decision = "forbidden", justification = "グローバルインストールは禁止（npx で都度実行）")
+prefix_rule(pattern = ["npm", "pkg", "set"], decision = "forbidden", justification = "npm pkg set による package.json の書き換えは禁止（依存の追加を検出できない）")
+prefix_rule(pattern = [["pnpm", "yarn", "bun"]], decision = "forbidden", justification = "このリポジトリは npm 専用（package-lock.json が正）")
+
+prefix_rule(pattern = [["sudo", "doas", "su"]], decision = "forbidden", justification = "root 権限は不要。必要に見えたら人間に相談する")
+prefix_rule(pattern = ["chmod", "-R"], decision = "forbidden", justification = "再帰的な権限変更は禁止")
+prefix_rule(pattern = ["chown"], decision = "forbidden", justification = "所有者変更は禁止")
+prefix_rule(pattern = [["crontab", "launchctl", "ssh-keygen", "ssh-add", "ssh-copy-id", "osascript", "shred"]], decision = "forbidden", justification = "ホスト OS の設定変更・鍵操作は禁止")
+prefix_rule(pattern = ["security", ["find-generic-password", "find-internet-password"]], decision = "forbidden", justification = "キーチェーンの読み出しは禁止")
+prefix_rule(pattern = [["printenv"]], decision = "forbidden", justification = "環境変数の一覧表示は禁止（秘密情報が混ざる）")
+prefix_rule(pattern = [["scp", "sftp", "nc", "ncat", "netcat", "telnet", "socat", "rsync"]], decision = "forbidden", justification = "ファイル転送・生ソケット通信は禁止")
+prefix_rule(pattern = ["docker", "system", "prune"], decision = "forbidden", justification = "Docker の一括削除は禁止")
+prefix_rule(pattern = ["docker", "volume", ["rm", "prune"]], decision = "forbidden", justification = "ローカル Supabase の DB ボリュームを失う操作は禁止")
+prefix_rule(pattern = ["rm", ["-rf", "-fr", "-r", "-R"], ["/", "~", ".", "*", ".git", "src", "supabase"]], decision = "forbidden", justification = "致命的な再帰削除は禁止")
+
+# --- 必ず承認を求める --------------------------------------------------------------------------
+
+prefix_rule(pattern = ["git", "push"], decision = "prompt", justification = "push 先と内容を人間が確認する", match = ["git push -u origin feat/x"])
+prefix_rule(pattern = ["npm", ["install", "i", "add", "uninstall", "update"]], decision = "prompt", justification = "依存の変更は人間が確認する（新規追加は AGENTS.md §1 で禁止）")
+prefix_rule(pattern = ["npx", "shadcn"], decision = "prompt", justification = "UI 部品の追加（AGENTS.md R14）は人間が確認する")
+prefix_rule(pattern = ["gh", "pr", ["create", "edit", "comment", "review", "ready"]], decision = "prompt", justification = "公開リポジトリへの書き込みは人間が確認する")
+prefix_rule(pattern = ["gh", "issue", ["create", "comment", "close", "edit"]], decision = "prompt", justification = "公開リポジトリへの書き込みは人間が確認する")
+prefix_rule(pattern = ["gh", "api"], decision = "prompt", justification = "GitHub API の直接呼び出しは人間が確認する")
+prefix_rule(pattern = ["npx", "supabase"], decision = "prompt", justification = "Supabase CLI の操作は人間が確認する（ローカルの db reset を含む）")
+prefix_rule(pattern = ["supabase"], decision = "prompt", justification = "Supabase CLI の操作は人間が確認する")
+prefix_rule(pattern = ["npm", "run", ["db:reset", "db:reset:demo", "db:seed:demo", "db:seed:production"]], decision = "prompt", justification = "DB の作り直し・seed 投入は人間が確認する")
+prefix_rule(pattern = [["psql", "pg_dump", "pg_restore"]], decision = "prompt", justification = "DB への直接接続は人間が確認する")
+prefix_rule(pattern = ["docker"], decision = "prompt", justification = "コンテナ操作は人間が確認する")
+prefix_rule(pattern = [["curl", "wget"]], decision = "prompt", justification = "外部通信は人間が確認する")
+prefix_rule(pattern = ["node", ["-e", "--eval", "-p", "--print"]], decision = "prompt", justification = "インラインコードの実行は人間が確認する（検査を迂回しうるため）")
+prefix_rule(pattern = [["python", "python3"], "-c"], decision = "prompt", justification = "インラインコードの実行は人間が確認する")
+prefix_rule(pattern = [["bash", "sh", "zsh"], "-c"], decision = "prompt", justification = "入れ子のシェル実行は人間が確認する")
+prefix_rule(pattern = ["npx", "playwright"], decision = "prompt", justification = "E2E は活動量データの作成・削除を伴うため人間が確認する")

@@ -8,19 +8,25 @@
 ```
 .
 ├── AGENTS.md                     # AIエージェント向けの構成ルール（ガードレール・正本）
-├── CLAUDE.md                     # 「規約は AGENTS.md を参照」と書くだけの薄いファイル
+├── CLAUDE.md                     # 「規約は AGENTS.md を参照」と書き、@AGENTS.md で取り込む薄いファイル
+├── .claude/                      # Claude Code のプロジェクト設定（permissions / hooks）。AI エージェント用ハーネスの一部
+├── .codex/                       # Codex のプロジェクト設定（sandbox / hooks / rules）。同上
 ├── .env.example                  # 環境変数の雛形（コミットする。実値は書かない）
 ├── .github/
+│   ├── CODEOWNERS                # ハーネス・CI・マイグレーション等の変更にメンテナのレビューを必須にする
+│   ├── dependabot.yml            # 依存・Actions の更新 PR
 │   ├── ISSUE_TEMPLATE/           # issueテンプレート
-│   └── workflows/                # CI（lint / test / build / check:migrations）
+│   └── workflows/                # CI（secret-scan / lint / test / build / typecheck / harness / dependency-review）
 ├── docs/                         # 設計・規約ドキュメント（Markdown）
 │   ├── architecture.md
+│   ├── agent-harness.md          # AI エージェント用ハーネスの設計・運用
 │   ├── directory-structure.md    # ← このファイル
 │   └── （機能仕様・DB設計等）
 ├── e2e/                          # Playwright の E2E スモークテスト
 ├── public/                       # 静的ファイル（favicon等）
-├── scripts/                      # 開発用スクリプト（seed 投入・マイグレーション検査・公式係数の生成）
-│   ├── db/                       # seed.ts / check-migrations.ts（テストは __tests__/、SQLフィクスチャは __fixtures__/）
+├── scripts/                      # 開発用スクリプト（seed 投入・マイグレーション検査・公式係数の生成・ハーネス）
+│   ├── agent-harness/            # AI エージェント用ハーネス（policy.ts = ルール / guard.ts = 判定 / hook.ts = 入口 / selfcheck.ts）
+│   ├── db/                       # seed.ts / check-migrations.ts / check-migration-immutability.ts（テストは __tests__/、SQLフィクスチャは __fixtures__/）
 │   └── official-factors/         # 公式排出係数 seed の生成元データと generate.ts
 ├── supabase/                     # Supabase migrations / seeds / config
 │   ├── migrations/               # SQLマイグレーション（DDL のみ。データ禁止）

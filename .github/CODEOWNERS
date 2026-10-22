@@ -1,0 +1,36 @@
+# CODEOWNERS — 変更にメンテナのレビューを必須にする経路
+#
+# ruleset「main protection」で「Require review from Code Owners」を有効にすると、
+# ここに挙げたパスを含む PR はメンテナの承認が無いとマージできなくなる。
+# AI エージェント用ハーネス（docs/agent-harness.md）の層 5。
+#   - ハーネスの設定・CI・git フック・秘密情報スキャンの設定は、「検出を消す変更」が最も危険なため必須
+#   - マイグレーション・RLS・セキュリティ関連・Supabase クライアントは、誤りが全導入先の本番 DB に波及するため必須
+#   - 依存の追加（package.json / package-lock.json）はサプライチェーンの入口のため必須
+# メンテナを追加するときは GitHub アカウント名を空白区切りで足す。
+
+# --- AI エージェント用ハーネス ---
+/.claude/                 @jgx-KenjiYoshioka
+/.codex/                  @jgx-KenjiYoshioka
+/scripts/agent-harness/   @jgx-KenjiYoshioka
+/scripts/db/              @jgx-KenjiYoshioka
+/AGENTS.md                @jgx-KenjiYoshioka
+/CLAUDE.md                @jgx-KenjiYoshioka
+/docs/agent-harness.md    @jgx-KenjiYoshioka
+
+# --- CI・git フック・秘密情報スキャン・除外設定 ---
+/.github/                 @jgx-KenjiYoshioka
+/lefthook.yml             @jgx-KenjiYoshioka
+/.gitleaks.toml           @jgx-KenjiYoshioka
+/.gitignore               @jgx-KenjiYoshioka
+
+# --- DB スキーマ・RLS・セキュリティ ---
+/supabase/migrations/     @jgx-KenjiYoshioka
+/supabase/config.toml     @jgx-KenjiYoshioka
+/src/lib/security/        @jgx-KenjiYoshioka
+/src/lib/supabase/        @jgx-KenjiYoshioka
+/src/proxy.ts             @jgx-KenjiYoshioka
+/next.config.ts           @jgx-KenjiYoshioka
+
+# --- 依存（サプライチェーンの入口） ---
+/package.json             @jgx-KenjiYoshioka
+/package-lock.json        @jgx-KenjiYoshioka

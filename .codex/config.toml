@@ -1,0 +1,57 @@
+# OpenGreenTrack の Codex（ChatGPT の Codex / Codex CLI）用プロジェクト設定。
+#
+# Codex は「信頼済み（trusted）」にしたプロジェクトでだけ、このファイルと .codex/rules/ を読む。
+# フック（[hooks]）は初回起動時に `/hooks` で内容を確認して信頼する必要がある（コマンドのハッシュが変わるたびに再確認）。
+# 判定ロジックは scripts/agent-harness/（Claude Code の .claude/settings.json と共通）。仕組みは docs/agent-harness.md。
+# hook.sh は node（24 以上）の有無を確かめてから hook.ts を呼び、node が無い・壊れている環境では PreToolUse を拒否する（fail-closed）。
+#
+# ここに書けないもの（Codex がプロジェクト設定では無視する）: model_provider / notify / profiles / otel など。
+# モデルや推論強度は各自の ~/.codex/config.toml で選ぶ。
+
+# 承認とサンドボックス:
+#   workspace-write … 作業ツリー内の編集と通常コマンドはサンドボックス内で承認なしに実行。
+#                     .git / .codex / .agents は書き込み不可。ネットワークは遮断
+#   on-request      … サンドボックスの外に出る操作（ネットワーク・ワークスペース外への書き込み）は都度承認
+# danger-full-access / approval_policy = "never" はこのリポジトリでは使わない（CI の selfcheck が検査する）。
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
+# AGENTS.md（約 28 KB）が既定の上限 32 KiB に近く、`next dev` が末尾に追記するブロックで超えうるため上限を上げる。
+# 超えると末尾（§4 作業の進め方・§5 チェックリスト）が切り捨てられたまま気付けない。
+project_doc_max_bytes = 65536
+
+[sandbox_workspace_write]
+# 既定どおりネットワークは遮断する。npm install / gh / git push は承認を経てサンドボックスの外で実行される
+network_access = false
+
+# --- ライフサイクルフック（Claude Code と同じ hook.sh → hook.ts を呼ぶ。入出力の仕様は hook.ts 冒頭） ---------------
+
+[[hooks.SessionStart]]
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = 'sh "$(git rev-parse --show-toplevel)/scripts/agent-harness/hook.sh"'
+timeout = 20
+statusMessage = "OpenGreenTrack ハーネスの案内を読み込み中"
+
+[[hooks.PreToolUse]]
+matcher = "^(Bash|apply_patch|Edit|Write)$"
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = 'sh "$(git rev-parse --show-toplevel)/scripts/agent-harness/hook.sh"'
+timeout = 20
+statusMessage = "OpenGreenTrack ハーネスで検査中"
+
+[[hooks.PostToolUse]]
+matcher = "^(apply_patch|Edit|Write)$"
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = 'sh "$(git rev-parse --show-toplevel)/scripts/agent-harness/hook.sh"'
+timeout = 60
+statusMessage = "書き込み後の検査中（マイグレーション / 依存）"
+
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = 'sh "$(git rev-parse --show-toplevel)/scripts/agent-harness/hook.sh"'
+timeout = 60
+statusMessage = "作業ツリーの最終確認中（秘密情報 / マイグレーション / 依存）"

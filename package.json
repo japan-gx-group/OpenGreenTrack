@@ -29,6 +29,8 @@
     "db:seed:demo": "node scripts/db/seed.ts demo",
     "db:seed:production": "node scripts/db/seed.ts production",
     "check:migrations": "node scripts/db/check-migrations.ts",
+    "check:migration-immutability": "node scripts/db/check-migration-immutability.ts",
+    "check:harness": "node scripts/agent-harness/selfcheck.ts",
     "prepare": "lefthook install || true"
   },
   "dependencies": {

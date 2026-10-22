@@ -3,6 +3,13 @@
 #   check-migrations: supabase/migrations/*.sql をステージしたときだけ、migration に DML（データ）が
 #   入っていないかを検査する（AGENTS.md R12。CI でも同じスクリプトが走る）。検査対象はステージ分に限らず
 #   ディレクトリ全体。ファイルを書き換えないので stage_fixed は付けない。
+#   check-migration-immutability: 同じく migration をステージしたときだけ、既存ファイルの編集・削除・改名が
+#   無いか（AGENTS.md R9）と、新規ファイルの名前を検査する（--staged。CI では base との差分で同じ検査が走る）。
+# pre-push: main への直接 push をローカルで早めに拒否する（ruleset でも拒否されるが、push 前に気付ける）。
+#   あわせて、push しようとしているブランチ全体で既存マイグレーションが変わっていないかを検査する。
+#   use_stdin: git が pre-push に渡す「<local ref> <local sha> <remote ref> <remote sha>」の行を
+#   スクリプトに流すために必要。
+# AI エージェント用ハーネス（docs/agent-harness.md）の層 3。
 pre-commit:
   parallel: true
   commands:
@@ -13,3 +20,12 @@ pre-commit:
     check-migrations:
       glob: "supabase/migrations/*.sql"
       run: node scripts/db/check-migrations.ts
+    check-migration-immutability:
+      glob: "supabase/migrations/*.sql"
+      run: node scripts/db/check-migration-immutability.ts --staged
+
+pre-push:
+  commands:
+    protect-main:
+      use_stdin: true
+      run: node scripts/agent-harness/pre-push.ts

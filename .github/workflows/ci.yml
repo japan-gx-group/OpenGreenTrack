@@ -6,7 +6,8 @@ on:
   pull_request:
 
 # CI は検査だけを行い、リポジトリへ書き戻さないため GITHUB_TOKEN は読み取り専用に絞る（最小権限）。
-# 実行内容: シークレット走査 / check:migrations / lint / test / build / typecheck。
+# 実行内容: シークレット走査 / check:migrations / lint / test / build / typecheck /
+#           マイグレーション不変性 + AI エージェント用ハーネスの自己診断 / 依存の脆弱性レビュー（PR のみ）。
 permissions:
   contents: read
 
@@ -95,3 +96,58 @@ jobs:
       # build の後に置くのは、Next が生成する .next/types の型（ルート型など）が揃った状態で検査するため。
       - name: Run Type Check
         run: npm run typecheck
+
+  # AI エージェント用ハーネス（docs/agent-harness.md）の自己診断と、既存マイグレーションの不変性（AGENTS.md R9）。
+  # ハーネスの設定ファイルが消された・弱められた PR と、既存マイグレーションを書き換えた PR をここで赤くする。
+  # 依存ライブラリ不要（Node 24 が TypeScript を直接実行する）なので npm ci は行わず、数秒で終わる。
+  harness:
+    name: Harness Guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # 比較基準（PR の base / push 前のコミット）との差分を取るため履歴全体を取得する
+          fetch-depth: 0
+
+      - name: Set up Node.js (LTS)
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+
+      # PR では base ブランチの先端、main への push では push 前のコミットを基準にする。
+      # 基準が取れない（初回 push など、全桁 0）場合は引数なしで実行し、スクリプト側が origin/main を基準にする。
+      - name: Check migrations are immutable
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${BASE_SHA}" || "${BASE_SHA}" =~ ^0+$ ]]; then
+            node scripts/db/check-migration-immutability.ts
+          else
+            node scripts/db/check-migration-immutability.ts --base "${BASE_SHA}"
+          fi
+
+      - name: Verify agent harness wiring and behaviour
+        run: node scripts/agent-harness/selfcheck.ts
+
+  # PR で追加・更新された依存に既知の脆弱性が無いかを検査する（GitHub の Dependency graph を使う）。
+  # 「すでに入っている依存の新しい脆弱性」は Dependabot（.github/dependabot.yml）が別途 PR を作る。
+  dependency-review:
+    name: Dependency Review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          # PR へのコメント投稿には pull-requests: write が要るため行わない（結果はジョブのサマリに出る）
+          comment-summary-in-pr: never

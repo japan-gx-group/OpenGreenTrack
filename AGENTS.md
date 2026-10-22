@@ -273,6 +273,23 @@ src/
 - [ ] 明示的な指示なく既存のコードコメントや JSDoc を削除していないか
 - [ ] CIテストやレビューのステータスを無視して強制マージを行おうとしていないか
 
+## 6. AI エージェント用ハーネス（機械的な安全装置）
+
+このリポジトリでは、Claude Code / Codex のツール実行の直前に **ハーネス**（[`docs/agent-harness.md`](docs/agent-harness.md)）が動き、
+規約のうち取り返しがつかないものを機械的に止めます。止められたときは **迂回せず**、拒否メッセージの「代わりにどうするか」に従うか、人間に相談してください。
+
+- 止まる操作の例: main への直接 push / force push / `gh pr merge` と PR の承認 / リモート Supabase への `db push` `link` `secrets` `--linked` /
+  既存マイグレーションの編集・削除（R9）/ `.env*` と認証情報の読み書き（R7）/ `npm install <pkg>` `npm pkg set`（§1）/ ハーネス設定の書き換え。
+  `bash -c` `xargs` `if` に包む、`git -C` `gh -R` を挟む、`npx supabase@latest` のように書き方を変える、はどれも同じ判定になります
+- 承認が要る操作の例: `git push` / `gh pr create` / `npm install`（引数なし）/ `npx supabase` / `docker` / `curl` / `node -e` `node -p`
+- 作業を終える前に、作業ツリーの差分に秘密情報が無いこと・既存マイグレーションが変わっていないこと・package.json に依存が増えていないことが自動で確認されます
+- ハーネス自身（`.claude/` `.codex/` `scripts/agent-harness/` `.github/workflows/` `lefthook*.yml` `.lefthook/` `.git/` `.gitleaks.toml` `.gitignore` `AGENTS.md` `CLAUDE.md`）の変更は人間が PR で行います。
+  人間が意図して任せる場合だけ `OPENGREENTRACK_HARNESS_UNLOCK=1` を付けてセッションを起動します（エージェントが自分で付けることはできません）
+- ハーネスは「最初の網」で、`npm run <script>` / `node x.js` / `bash x.sh` の中身までは見ません。止められた操作をスクリプトや別名に逃がすのも禁止です（CODEOWNERS と CI が最終的に止めます）
+- 拒否の記録（`.agent-harness-audit.jsonl`）にはルール ID だけが残り、コマンドの文字列は残りません。理由はその場で返されます
+- 対応環境は macOS / Linux / WSL（Node 24 以上）。設定はリポジトリルートで起動したセッションにだけ効きます
+- 動作確認: `npm run check:harness`（配線と実動作）/ `npm run test`（判定ロジック）
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 # This is NOT the Next.js you know

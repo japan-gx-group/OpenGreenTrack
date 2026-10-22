@@ -143,9 +143,20 @@ npm run check:migrations  # マイグレーションを触った場合
 | `lint` | `*.ts` / `*.tsx` をステージしたとき | ステージしたファイルに `eslint --fix`（修正結果は自動で再ステージ） |
 | `check-migrations` | `supabase/migrations/*.sql` をステージしたとき | マイグレーションに DML が混入していないか検査（`AGENTS.md` R12） |
 
-`build` と `test` の失敗はフックでは検出できないため、**push 前に上記5つを自分で流してください**。強制力の本丸は CI 側（シークレット走査 / check:migrations / lint / test / build / typecheck）です。
+`build` と `test` の失敗はフックでは検出できないため、**push 前に上記5つを自分で流してください**。強制力の本丸は CI 側（シークレット走査 / check:migrations / lint / test / build / typecheck / マイグレーション不変性 / ハーネス自己診断 / 依存レビュー）です。
 
 あわせて [`AGENTS.md`](AGENTS.md) 末尾の「してはいけないことチェックリスト」も確認してください。
+
+## AI エージェント（Claude Code / Codex）で作業する場合
+
+このリポジトリには、AI エージェントのツール実行を機械的に検査する**ハーネス**が入っています（[`docs/agent-harness.md`](docs/agent-harness.md)）。
+main への直接 push、`gh pr merge`、リモート Supabase への `db push`、既存マイグレーションの編集、`.env*` の読み書き、新しいライブラリの追加などは
+エージェントが実行しようとしても拒否され、理由と代替策が返ります。
+
+- Claude Code はリポジトリルートで起動し、フォルダを「信頼」してください（`.claude/settings.json` の hooks が有効になります）
+- Codex はプロジェクトを trusted にし、`/hooks` でフックを確認して信頼してください
+- 止められた操作を迂回しないでください。必要だと思う場合は Issue / PR コメントで相談してください
+- ハーネス自身（`.claude/` `.codex/` `scripts/agent-harness/` `.github/workflows/` など）の変更はメンテナのレビューが必須です
 
 ---
 

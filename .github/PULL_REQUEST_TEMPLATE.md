@@ -31,4 +31,5 @@ Closes #
 - [ ] `.env.local` などの秘密情報をコミットしていない
 - [ ] 既存の SQL マイグレーションを直接編集・削除していない（新規ファイルで対応した）
 - [ ] マイグレーションにデータ（insert / update / delete 等）を入れていない（データは `supabase/seeds/production` または `supabase/seeds/demo` に置き、`npm run check:migrations` が通る）
+- [ ] AI エージェント用ハーネス（`.claude/` `.codex/` `scripts/agent-harness/` `.github/workflows/` `lefthook.yml` `.gitleaks.toml`）を変更した場合、検出を弱める変更ではないことを説明し、`npm run check:harness` が通る
 - [ ] [`AGENTS.md`](../AGENTS.md) のルールに従っている
