@@ -39,6 +39,7 @@ describe('ssbjAuditTargetLabel', () => {
 describe('ssbjAuditDetail', () => {
   it('更新は変わった項目を画面の言葉で並べる', () => {
     expect(ssbjAuditDetail(log({ changedColumns: ['disclosureText', 'internalNote'] }), nameOf)).toBe('開示する内容、内部メモ');
+    expect(ssbjAuditDetail(log({ changedColumns: ['templateInput'] }), nameOf)).toBe('選択式テンプレートの選択');
   });
 
   it('状態の変更は操作・前後の状態・承認者・承認した版・コメントを出す', () => {
