@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { fictionalRisksOpportunities } from '../../__fixtures__/fictionalReport';
-import type { SsbjRiskOpportunity } from '../../types';
+import type { SsbjLinkTarget, SsbjRiskOpportunity } from '../../types';
 import {
   EMPTY_SSBJ_RISK_OPPORTUNITY_FORM_VALUES,
   formatLinkTarget,
   normalizeSsbjRiskOpportunityInput,
   sortLinkTargets,
-  toLinkTarget,
   toSsbjRiskOpportunityFormValues,
   validateSsbjRiskOpportunityInput,
   type SsbjRiskOpportunityFormValues,
@@ -96,21 +95,22 @@ describe('validateSsbjRiskOpportunityInput', () => {
     expect(errors).toEqual(['名称は200文字以内で入力してください']);
   });
 
-  it('架空データはすべて検証を通る', () => {
+  it('架空データはすべて検証を通る（マスターに無い以前の関連先は、保存済みとして渡せば残せる）', () => {
     for (const item of fictionalRisksOpportunities) {
-      expect(validateSsbjRiskOpportunityInput(inputOf(item))).toEqual([]);
+      expect(validateSsbjRiskOpportunityInput(inputOf(item), item.linkTargets)).toEqual([]);
     }
+  });
+
+  it('要求項目マスターに無い項目を新しく関連付けることはできない（章とマスターの項目はよい）', () => {
+    const [first] = fictionalRisksOpportunities;
+    const withTargets = (linkTargets: SsbjLinkTarget[]) => ({ ...inputOf(first), linkTargets });
+    expect(validateSsbjRiskOpportunityInput(withTargets(['strategy', 'strategy.business_model_impact']))).toEqual([]);
+    expect(validateSsbjRiskOpportunityInput(withTargets(['strategy.climate_resilience'])).join(''))
+      .toContain('要求項目マスターに無い項目は関連付けられません（strategy.climate_resilience）');
   });
 });
 
 describe('関連先', () => {
-  it('識別子が空なら章、あれば項目 ID、形式違いは null', () => {
-    expect(toLinkTarget('strategy', '')).toBe('strategy');
-    expect(toLinkTarget('strategy', ' climate_resilience ')).toBe('strategy.climate_resilience');
-    expect(toLinkTarget('strategy', 'Climate')).toBeNull();
-    expect(toLinkTarget('strategy', 'a.b')).toBeNull();
-  });
-
   it('章は章名、項目は章名と ID で表示する', () => {
     expect(formatLinkTarget('strategy')).toBe('戦略');
     expect(formatLinkTarget('strategy.climate_resilience')).toBe('戦略：strategy.climate_resilience');

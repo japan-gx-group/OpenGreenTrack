@@ -1,8 +1,8 @@
 'use client';
 
 // リスク・機会の入力欄（登録・編集ダイアログで共用）。状態と検証は useSsbjRiskOpportunityForm が持つ。
-// 章・項目への関連付けは、章を選び、項目まで決まっていれば項目の識別子を入れて追加する。
-// 項目の一覧（要求項目マスター・文章画面）ができるまでは、識別子の形式だけを検証する。
+// 章・項目への関連付けは、章を選び、項目まで決まっていれば要求項目マスターの項目から選んで追加する。
+// マスターに無い任意の識別子は入力させない（以前に入れたものは、マスターに無いと出したうえで残せる）。
 
 import { useId, useState } from 'react';
 import { X } from 'lucide-react';
@@ -22,15 +22,17 @@ import {
   SSBJ_TIME_HORIZONS,
   SSBJ_TIME_HORIZON_LABELS,
   type SsbjFieldState,
+  type SsbjLinkTarget,
   type SsbjRiskOpportunityKind,
   type SsbjSectionId,
 } from '../types';
 import { SSBJ_FIELD_STATE_LABELS } from '../utils/fieldValue';
+import { ssbjNarrativeItemsOfSection } from '../utils/requirementMaster';
 import {
   SSBJ_RISK_TEXT_MAX_LENGTH,
   SSBJ_RISK_TITLE_MAX_LENGTH,
-  formatLinkTarget,
-  toLinkTarget,
+  formatLinkTargetWithLabel,
+  isKnownLinkTarget,
   type SsbjRiskTypeChoice,
   type SsbjTimeHorizonChoice,
 } from '../utils/riskOpportunity';
@@ -41,18 +43,17 @@ const NON_ANSWERED_STATES = SSBJ_FIELD_STATES.filter(
 
 const LinkEditor = ({ form, idPrefix }: { form: SsbjRiskOpportunityFormController; idPrefix: string }) => {
   const [section, setSection] = useState<SsbjSectionId>('governance');
-  const [itemSlug, setItemSlug] = useState<string>('');
-  const [linkError, setLinkError] = useState<string>('');
+  // 章全体なら章 ID、項目なら要求項目マスターの項目 ID。任意の識別子は入力させない。
+  const [target, setTarget] = useState<SsbjLinkTarget>('governance');
+
+  const changeSection = (next: SsbjSectionId) => {
+    setSection(next);
+    setTarget(next);
+  };
 
   const add = () => {
-    const target = toLinkTarget(section, itemSlug);
-    if (!target) {
-      setLinkError('項目の識別子は英小文字・数字・アンダースコア（_）で入力してください');
-      return;
-    }
     form.addLinkTarget(target);
-    setItemSlug('');
-    setLinkError('');
+    setTarget(section);
   };
 
   return (
@@ -62,18 +63,22 @@ const LinkEditor = ({ form, idPrefix }: { form: SsbjRiskOpportunityFormControlle
         <p className="m-0 text-xs text-text-muted">まだ関連付けていません。</p>
       ) : (
         <ul className="m-0 flex list-none flex-wrap gap-2 p-0">
-          {form.values.linkTargets.map(target => (
+          {form.values.linkTargets.map(linked => (
             <li
-              key={target}
-              className="inline-flex items-center gap-1 rounded-full border border-border px-3 py-1 text-xs"
+              key={linked}
+              className={
+                isKnownLinkTarget(linked)
+                  ? 'inline-flex items-center gap-1 rounded-full border border-border px-3 py-1 text-xs'
+                  : 'inline-flex items-center gap-1 rounded-full border border-warning px-3 py-1 text-xs text-warning'
+              }
             >
-              {formatLinkTarget(target)}
+              {formatLinkTargetWithLabel(linked)}
               <button
                 type="button"
-                aria-label={`${formatLinkTarget(target)} の関連付けを外す`}
+                aria-label={`${formatLinkTargetWithLabel(linked)} の関連付けを外す`}
                 className="inline-flex text-text-muted hover:text-danger"
                 disabled={form.isSaving}
-                onClick={() => form.removeLinkTarget(target)}
+                onClick={() => form.removeLinkTarget(linked)}
               >
                 <X size={12} />
               </button>
@@ -92,7 +97,7 @@ const LinkEditor = ({ form, idPrefix }: { form: SsbjRiskOpportunityFormControlle
             className="gt-field gt-field-select"
             value={section}
             disabled={form.isSaving}
-            onChange={event => setSection(event.target.value as SsbjSectionId)}
+            onChange={event => changeSection(event.target.value as SsbjSectionId)}
           >
             {SSBJ_SECTION_IDS.map(id => (
               <option key={id} value={id}>
@@ -103,25 +108,28 @@ const LinkEditor = ({ form, idPrefix }: { form: SsbjRiskOpportunityFormControlle
         </div>
         <div className="flex min-w-48 flex-1 flex-col gap-1">
           <Label htmlFor={`${idPrefix}-link-item`} className="text-xs">
-            項目の識別子（任意。空なら章に関連付け）
+            項目（要求項目マスターから選ぶ）
           </Label>
-          <div className="flex items-center gap-1">
-            <span className="text-xs text-text-muted">{section}.</span>
-            <Input
-              id={`${idPrefix}-link-item`}
-              name="linkItem"
-              placeholder="例: climate_resilience"
-              value={itemSlug}
-              disabled={form.isSaving}
-              onChange={event => setItemSlug(event.target.value)}
-            />
-          </div>
+          <select
+            id={`${idPrefix}-link-item`}
+            name="linkItem"
+            className="gt-field gt-field-select"
+            value={target}
+            disabled={form.isSaving}
+            onChange={event => setTarget(event.target.value as SsbjLinkTarget)}
+          >
+            <option value={section}>章全体（項目を決めない）</option>
+            {ssbjNarrativeItemsOfSection(section).map(item => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
+            ))}
+          </select>
         </div>
         <Button type="button" variant="outline" size="sm" disabled={form.isSaving} onClick={add}>
           関連付けを追加
         </Button>
       </div>
-      {linkError && <p className="m-0 text-xs text-danger">{linkError}</p>}
     </fieldset>
   );
 };
