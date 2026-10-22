@@ -43,6 +43,8 @@ export const ssbjMemberRoleLogText = (log: SsbjMemberRoleLog, memberLabel: strin
     case 'update':
       return `${memberLabel} を${label(log.previousRole)}から${label(log.role)}に変えた`;
     case 'delete':
-      return `${memberLabel} の割り当て（${label(log.previousRole)}）を外した（入力担当に戻る）`;
+      return log.memberDeleted
+        ? `${memberLabel} の割り当て（${label(log.previousRole)}）が、利用者の削除に伴い外れた`
+        : `${memberLabel} の割り当て（${label(log.previousRole)}）を外した（入力担当に戻る）`;
   }
 };

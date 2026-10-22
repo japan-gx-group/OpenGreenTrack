@@ -52,7 +52,7 @@ describe('できることの判定', () => {
 describe('ssbjMemberRoleLogText', () => {
   const log = (overrides: Partial<SsbjMemberRoleLog>): SsbjMemberRoleLog => ({
     id: 1, actorUserId: 'admin', action: 'create', userId: 'user-1', role: 'approver', previousRole: null,
-    createdAt: '2026-10-13T00:00:00.000Z', ...overrides,
+    memberDeleted: false, createdAt: '2026-10-13T00:00:00.000Z', ...overrides,
   });
 
   it('割り当て・変更・解除を文にする（解除すると入力担当に戻ることも伝える）', () => {
@@ -61,5 +61,10 @@ describe('ssbjMemberRoleLogText', () => {
       .toBe('確認 三郎 を承認担当から閲覧者に変えた');
     expect(ssbjMemberRoleLogText(log({ action: 'delete', role: null, previousRole: 'viewer' }), '確認 三郎'))
       .toBe('確認 三郎 の割り当て（閲覧者）を外した（入力担当に戻る）');
+  });
+
+  it('利用者の削除に伴う解除は、手動の解除と分けて書く（入力担当に戻ったとは書かない）', () => {
+    expect(ssbjMemberRoleLogText(log({ action: 'delete', actorUserId: null, role: null, previousRole: 'viewer', memberDeleted: true }), '不明な利用者'))
+      .toBe('不明な利用者 の割り当て（閲覧者）が、利用者の削除に伴い外れた');
   });
 });

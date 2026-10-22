@@ -88,8 +88,15 @@ describe('toSsbjMemberRoleLog', () => {
   it('記録を変更の内容にする', () => {
     expect(toSsbjMemberRoleLog(row)).toEqual({
       id: 3, actorUserId: 'admin', action: 'update', userId: 'u1', role: 'viewer', previousRole: 'approver',
-      createdAt: '2026-10-13T00:00:00Z',
+      memberDeleted: false, createdAt: '2026-10-13T00:00:00Z',
     });
+  });
+
+  it('利用者の削除に伴う解除（操作者は空・details.reason = member_deleted）を見分ける', () => {
+    const log = toSsbjMemberRoleLog({
+      ...row, actorUserId: null, action: 'delete', details: { previousRole: 'viewer', reason: 'member_deleted' },
+    });
+    expect(log).toMatchObject({ actorUserId: null, action: 'delete', role: null, previousRole: 'viewer', memberDeleted: true });
   });
 
   it('操作・対象が不正な記録は補正せず例外にする', () => {
