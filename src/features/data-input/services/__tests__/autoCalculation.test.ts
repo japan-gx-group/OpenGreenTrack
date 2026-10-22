@@ -39,6 +39,13 @@ describe('requestCalculationBatch', () => {
         totalEmissionsDelta: 1.5,
         unresolved: [{ reason: 'UNIT_MISMATCH' }, { reason: 'unknown-reason' }, {}],
         warnings: [{ reason: 'EXPLICIT_FACTOR_REMAPPED' }, { reason: 'EXPLICIT_FACTOR_FALLBACK' }],
+        scope2BasisUnresolved: [
+          // 両基準とも同じ理由で欠けたレコードは 1 件と数える
+          { activityRecordId: 'act-1', basis: 'location_based', reason: 'STANDARD_FACTOR_NOT_FOUND' },
+          { activityRecordId: 'act-1', basis: 'market_based', reason: 'STANDARD_FACTOR_NOT_FOUND' },
+          { activityRecordId: 'act-2', basis: 'market_based', reason: 'UNIT_MISMATCH' },
+          { activityRecordId: 'act-3', basis: 'location_based', reason: 'unknown-reason' },
+        ],
       }),
     );
 
@@ -56,7 +63,16 @@ describe('requestCalculationBatch', () => {
       totalEmissionsDelta: 1.5,
       unresolvedReasons: ['UNIT_MISMATCH', 'FACTOR_NOT_FOUND', 'FACTOR_NOT_FOUND'],
       factorWarningCount: 2,
+      scope2BasisUnresolvedReasons: ['STANDARD_FACTOR_NOT_FOUND', 'UNIT_MISMATCH', 'STANDARD_FACTOR_NOT_FOUND'],
     });
+  });
+
+  it('基準別の未解決が無い（旧 API 応答で項目自体が無い）場合は空にする', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { processedCount: 1, totalEmissionsDelta: 1 }));
+
+    const result = await requestCalculationBatch('org-1', 'fy-1', fetchMock as unknown as typeof fetch);
+
+    expect(result).toMatchObject({ kind: 'completed', scope2BasisUnresolvedReasons: [] });
   });
 
   it('429 は失敗ではなく持ち越しとして Retry-After を返す', async () => {
@@ -96,6 +112,7 @@ describe('accumulateBatchResult', () => {
       totalEmissionsDelta: 0.5,
       unresolvedReasons: ['FACTOR_NOT_FOUND'],
       factorWarningCount: 2,
+      scope2BasisUnresolvedReasons: ['STANDARD_FACTOR_NOT_FOUND', 'STANDARD_FACTOR_NOT_FOUND'],
     });
     accumulateBatchResult(run, 'fy-2', { kind: 'rateLimited', message: '', retryAfterSeconds: 30 });
     accumulateBatchResult(run, 'fy-3', { kind: 'rateLimited', message: '', retryAfterSeconds: 60 });
@@ -105,6 +122,7 @@ describe('accumulateBatchResult', () => {
     expect(run.totalEmissionsDelta).toBe(0.5);
     expect(run.unresolvedCountByReason.get('FACTOR_NOT_FOUND')).toBe(1);
     expect(run.factorWarningCount).toBe(2);
+    expect(run.scope2BasisUnresolvedCountByReason.get('STANDARD_FACTOR_NOT_FOUND')).toBe(2);
     expect(run.deferredFiscalYearIds).toEqual(['fy-2', 'fy-3']);
     // 複数年度が持ち越しになったら、いちばん長い Retry-After を守る。
     expect(run.retryAfterSeconds).toBe(60);
@@ -149,6 +167,21 @@ describe('buildCalculationMessages', () => {
     expect(messages[2]).toMatch(/^1件は選択した排出係数を適用できなかったため、別の係数で算定しました/);
     expect(messages[3]).toContain('算定年度が未登録');
     expect(messages[4]).toContain('サーバー内部エラーが発生しました');
+  });
+
+  it('Scope 2 基準別の未解決は理由別に件数と、再計算で解消するかを伝える', () => {
+    const run = createEmptyRunResult();
+    run.processedCount = 1;
+    run.scope2BasisUnresolvedCountByReason.set('STANDARD_FACTOR_NOT_FOUND', 2);
+    run.scope2BasisUnresolvedCountByReason.set('UNIT_MISMATCH', 1);
+
+    const messages = buildCalculationMessages(run, { uncoveredCount: 0 });
+
+    expect(messages).toHaveLength(3);
+    expect(messages[1]).toMatch(/^2件は対象年度に全国の代替値（公式の標準係数）が無いため/);
+    expect(messages[1]).toContain('再計算しても解消せず');
+    expect(messages[1]).toContain('「未算定」のまま');
+    expect(messages[2]).toMatch(/^1件は活動量の単位を排出係数の単位に換算できないため/);
   });
 
   it('係数の警告が無ければその文言は出さない', () => {

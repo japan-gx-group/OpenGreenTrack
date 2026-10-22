@@ -15,7 +15,8 @@ supabase/
 │   └── 20260831000003_storage.sql
 ├── seeds/
 │   ├── production/
-│   │   └── official_emission_factors.sql   # 公式排出係数マスタ（本番でも投入する）
+│   │   ├── official_emission_factors_<年度>.sql  # 公式排出係数マスタ（年度ごと。本番でも投入する）
+│   │   └── official_emission_factors_cleanup.sql # 以前の版の翌年度コピー行の後始末
 │   └── demo/
 │       └── demo.sql                        # デモ・テスト用データ（本番投入禁止）
 └── README.md                        # このファイル
@@ -110,10 +111,10 @@ npx supabase migration new add_xxx_column   # migrations/<timestamp>_add_xxx_col
 
 ## 公式排出係数を更新・訂正する
 
-`seeds/production/official_emission_factors.sql` は手で編集しません。`scripts/official-factors/data/` の元データを直し、`generate.ts` で再生成します（データソース・年度更新の手順は [`scripts/official-factors/README.md`](../scripts/official-factors/README.md)）。
+`seeds/production/official_emission_factors_*.sql` は手で編集しません。`scripts/official-factors/data/<年度>/` の元データを直し、`generate.ts` で再生成します（データソース・年度更新の手順は [`scripts/official-factors/README.md`](../scripts/official-factors/README.md)）。
 
 ```bash
-node scripts/official-factors/generate.ts   # seeds/production/official_emission_factors.sql を上書き生成
+node scripts/official-factors/generate.ts   # seeds/production/official_emission_factors_<年度>.sql と _cleanup.sql を上書き生成
 npm run db:seed:production                  # 稼働中のローカル DB に再投入（npx supabase db reset でも可）
 ```
 

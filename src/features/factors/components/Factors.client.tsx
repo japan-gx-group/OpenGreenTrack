@@ -6,6 +6,7 @@ import { Pagination } from '@/components/ui/Pagination.client';
 import { CsvImportErrorPanel } from '@/components/ui/CsvImportErrorPanel.client';
 import { Toast } from '@/components/ui/Toast.client';
 import { downloadCsv } from '@/lib/files/csv';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useFiscalYear } from '@/hooks/useFiscalYear';
 import { usePagination } from '@/hooks/usePagination';
 import { useToast } from '@/hooks/useToast';
@@ -17,6 +18,9 @@ import { useFactorDatabase } from '../hooks/useFactorDatabase';
 import { useFactorDelete } from '../hooks/useFactorDelete';
 import { useFactorFilters } from '../hooks/useFactorFilters';
 import { useFactorForm } from '../hooks/useFactorForm';
+import { useFactorRecalculation } from '../hooks/useFactorRecalculation';
+import { useFactorRevisions } from '../hooks/useFactorRevisions';
+import { useIdeaVersionHistory } from '../hooks/useIdeaVersionHistory';
 import { FactorCsvImportConfirm } from './FactorCsvImportConfirm.client';
 import { FactorDeleteDialog } from './FactorDeleteDialog.client';
 import { FactorDetailModal } from './FactorDetailModal';
@@ -28,11 +32,14 @@ import { FactorSourcesCard } from './FactorSourcesCard.client';
 import { FactorTable } from './FactorTable.client';
 import { FactorToolbar } from './FactorToolbar.client';
 import { IdeaDatabaseCard } from './IdeaDatabaseCard.client';
+import { IdeaVersionsCard } from './IdeaVersionsCard.client';
 
 const PAGE_SIZE_OPTIONS = [5, 10, 20, 50] as const;
 
 export const Factors = () => {
-  const { fiscalYear } = useFiscalYear();
+  const { fiscalYear, fiscalYears } = useFiscalYear();
+  // profile は係数変更後の再算定（/api/calculations）に渡す organizationId の取得に使う。
+  const { profile } = useCurrentUser();
   const { toast, showToast } = useToast();
   const { database, setDatabase, isLoading, loadFailed } = useFactorDatabase(showToast);
   const filters = useFactorFilters(database, fiscalYear);
@@ -45,6 +52,10 @@ export const Factors = () => {
     pagination.resetPage();
   };
 
+  const recalculation = useFactorRecalculation({
+    organizationId: profile?.organizationId ?? null,
+    showToast,
+  });
   const form = useFactorForm({
     activeGroup: filters.activeGroup,
     availableYears: filters.availableYears,
@@ -52,15 +63,18 @@ export const Factors = () => {
     setDatabase,
     showToast,
     onSaved: handleChangeGroup,
+    onRecalculationRequested: recalculation.recalculate,
   });
   const factorDelete = useFactorDelete(setDatabase, showToast);
+  const ideaVersions = useIdeaVersionHistory(showToast);
   const csvImport = useFactorCsvImport(database, setDatabase, showToast);
 
   // 一覧の「クエリを実行中...」オーバーレイは、取得中だけでなく保存・CSV取込の書き込み中にも出す。
-  const isBusy = isLoading || form.isSaving || csvImport.isImporting;
+  const isBusy = isLoading || form.isSaving || csvImport.isImporting || recalculation.isRecalculating;
 
   // 行クリックで開く出典・算定式の詳細
   const [detailFactor, setDetailFactor] = useState<EmissionFactor | null>(null);
+  const detailRevisions = useFactorRevisions(detailFactor);
 
   const handleResetFilters = () => {
     filters.resetFilters();
@@ -158,7 +172,12 @@ export const Factors = () => {
 
         {/* IDEAデータベース（BYOライセンス取込。設計書 §5.2） */}
         <div style={{ marginTop: '14px' }}>
-          <IdeaDatabaseCard />
+          <IdeaDatabaseCard onImportsChanged={() => void ideaVersions.reload()} />
+        </div>
+
+        {/* IDEA の版と算定年度（年度ごとに使う版の割り当てと取込履歴。設計書 §3.6-5） */}
+        <div style={{ marginTop: '14px' }}>
+          <IdeaVersionsCard versions={ideaVersions} fiscalYears={fiscalYears} />
         </div>
 
         {/* Bottom Details (Sources & Logs) */}
@@ -171,7 +190,12 @@ export const Factors = () => {
       <FactorFormModal form={form} availableYears={filters.availableYears} />
 
       {detailFactor && (
-        <FactorDetailModal factor={detailFactor} onClose={() => setDetailFactor(null)} />
+        <FactorDetailModal
+          factor={detailFactor}
+          onClose={() => setDetailFactor(null)}
+          revisions={detailRevisions.revisions}
+          revisionsLoadFailed={detailRevisions.loadFailed}
+        />
       )}
 
       <FactorCsvImportConfirm csvImport={csvImport} database={database} />

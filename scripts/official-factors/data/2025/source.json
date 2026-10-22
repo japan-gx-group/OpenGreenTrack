@@ -1,0 +1,40 @@
+{
+  "documents": {
+    "denki": "電気事業者別排出係数（特定排出者の温室効果ガス排出量算定用）－R6年度実績－ R8.1.9 環境省・経済産業省公表（R8.8.3一部追加・更新）",
+    "gas": "ガス事業者別排出係数（特定排出者の温室効果ガス排出量算定用）－R7年度供給実績－ R8.6.30 環境省・経済産業省公表",
+    "heat": "熱供給事業者別排出係数（特定排出者の温室効果ガス排出量算定用）－R6年度供給実績－ R8.6.30 環境省・経済産業省公表",
+    "fuels": "温対法 算定・報告・公表制度「算定方法・排出係数一覧」（参考1）燃料の使用に関する排出係数（算定省令別表第1×別表2×44/12）",
+    "scope3": "サプライチェーンを通じた組織の温室効果ガス排出等の算定のための排出原単位データベース Ver.3.6（2026年4月 環境省公表）"
+  },
+  "scope3DatabaseVersion": "Ver.3.6",
+  "cityGasSubstituteValue": 2.05,
+  "heatSubstituteValue": 0.0532,
+  "checks": {
+    "electricityRetailerCountAtLeast": 400,
+    "electricityRetailerRowsAtLeast": 1000,
+    "gridOperatorCount": 10,
+    "gasProviderCountAtLeast": 30,
+    "heatProviderCountAtLeast": 15,
+    "fuelCount": 35,
+    "scope3CountAtLeast": 40,
+    "electricitySubstituteValue": 0.000416,
+    "electricityRetailers": [
+      { "providerNumber": "A0002", "menuName": null, "factorType": "basic", "value": 0.000422, "label": "A0002 イーレックスの基礎係数" },
+      { "providerNumber": "A0269", "menuName": "メニューL(残差)", "factorType": "adjusted", "value": 0.000452, "label": "A0269 東京電力EP メニューL(残差) の調整後係数（R8.7.23・R8.8.3 の一部追加・更新でメニューM(残差)から改名）" },
+      { "providerNumber": "A0009", "menuName": "メニューD", "factorType": "basic", "value": 0.0004, "label": "A0009 エネット メニューD の基礎係数（R8.7.23 更新で実績値が反映された例。1月公表時は 0.000349）" },
+      { "providerNumber": "A0034", "menuName": "（参考）事業者全体", "factorType": "basic", "value": 0.000464, "label": "A0034 泉佐野電力 （参考）事業者全体 の基礎係数（「参考値」でない表記ゆれ。parse.ts の対応の固定）" }
+    ],
+    "gridOperators": [
+      { "nameIncludes": "沖縄", "factorType": "basic", "value": 0.000707, "label": "沖縄電力の係数" }
+    ],
+    "gasProviders": [
+      { "providerNumber": "K0052", "factorType": "basic", "value": 2.91, "label": "K0052 第一ガスの係数" }
+    ],
+    "heatProviders": [
+      { "providerNumber": "032", "factorType": "basic", "value": 0.0584, "label": "032 ハウステンボス熱供給の係数" }
+    ],
+    "fuels": [
+      { "name": "灯油", "value": 2.5 }
+    ]
+  }
+}

@@ -11,7 +11,7 @@
 // 係数フォーム・CSV 取込・保存直前の変換（factorService の toMutationRow）はこの表から Scope を
 // 決め、算定エンジンは食い違う係数のレコードを未算定（FACTOR_SCOPE_MISMATCH）に留める。
 //
-// 値の出所は公式係数 seed（supabase/seeds/production/official_emission_factors.sql）の scope 列。
+// 値の出所は公式係数 seed（supabase/seeds/production/official_emission_factors_<年度>.sql）の scope 列。
 // 公式係数が無い種別は GHG プロトコルの区分に従う:
 //   - 車両（vehicle）: 自社保有車の燃料のため Scope1
 //   - 水道（water）: 上水道の購入のため Scope3 カテゴリ1（購入した製品・サービス）

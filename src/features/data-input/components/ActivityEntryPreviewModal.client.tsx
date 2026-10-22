@@ -12,8 +12,8 @@ import type { PreviewRow } from '../services/entryFormat';
 export interface ActivityEntryPreviewModalProps {
   mode: EntryMode;
   rows: PreviewRow[];
-  /** 表の直下に出す注意（例: 保存されていた係数が適用できない）。null なら非表示 */
-  caution: string | null;
+  /** 表の直下に出す注意（例: 活動量 0 の確認・保存されていた係数が適用できない）。空なら非表示 */
+  cautions: string[];
   isSaving: boolean;
   onClose: () => void;
   onSave: () => void;
@@ -22,7 +22,7 @@ export interface ActivityEntryPreviewModalProps {
 export const ActivityEntryPreviewModal = ({
   mode,
   rows,
-  caution,
+  cautions,
   isSaving,
   onClose,
   onSave,
@@ -93,7 +93,11 @@ export const ActivityEntryPreviewModal = ({
             ))}
           </div>
 
-          {caution && <p className="text-sm text-warning">{caution}</p>}
+          {cautions.map((caution) => (
+            <p key={caution} className="text-sm text-warning">
+              {caution}
+            </p>
+          ))}
         </div>
 
         <div className="modal-footer">

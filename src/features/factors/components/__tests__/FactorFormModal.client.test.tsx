@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { keyDown, render } from '@/lib/testing/render';
+import { click, keyDown, render } from '@/lib/testing/render';
 import type { FactorFormController } from '../../hooks/useFactorForm';
 import { FactorFormModal } from '../FactorFormModal.client';
 
@@ -30,6 +30,9 @@ const controller = (overrides: Partial<FactorFormController> = {}): FactorFormCo
   openEdit: () => {},
   close: () => {},
   submit: async () => {},
+  recalculationPrompt: null,
+  confirmRecalculation: async () => {},
+  cancelRecalculation: () => {},
   ...overrides,
 });
 
@@ -72,6 +75,39 @@ describe('FactorFormModal', () => {
 
     keyDown(document, 'Escape');
     expect(close).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+  it('係数値を変えた保存の前に、算定済みの件数と再算定するかの選択肢を出す', () => {
+    const confirmRecalculation = vi.fn(async () => {});
+    const cancelRecalculation = vi.fn();
+    const { container, unmount } = render(
+      <FactorFormModal
+        form={controller({
+          editingFactorId: 'f1',
+          recalculationPrompt: { calculatedCount: 12 },
+          confirmRecalculation,
+          cancelRecalculation,
+        })}
+        availableYears={[2026]}
+      />,
+    );
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'この係数で算定済みのデータが 12 件あります',
+    );
+    // 確認中は通常の「更新」ボタンを出さない（確認を飛ばして保存できないようにする）
+    expect(container.querySelector('button[type="submit"]')).toBeNull();
+
+    const buttonByText = (text: string) =>
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+        button.textContent?.includes(text),
+      )!;
+    click(buttonByText('保存して再算定する'));
+    expect(confirmRecalculation).toHaveBeenLastCalledWith(true);
+    click(buttonByText('保存のみ'));
+    expect(confirmRecalculation).toHaveBeenLastCalledWith(false);
+    click(buttonByText('戻る'));
+    expect(cancelRecalculation).toHaveBeenCalledTimes(1);
     unmount();
   });
 });

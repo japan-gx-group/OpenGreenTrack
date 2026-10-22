@@ -330,6 +330,8 @@ describe('computeScope3Emissions', () => {
       results: [],
       unresolved: [],
       warnings: [],
+      scope2BasisResults: [],
+      scope2BasisUnresolved: [],
     });
   });
 });

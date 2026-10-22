@@ -93,7 +93,14 @@ export const computeScope3Emissions = (
   const importById = new Map(ideaImports.map((m) => [m.id, m] as const));
   const recordById = new Map(records.map((r) => [r.id, r] as const));
 
-  const outcome: CalculationOutcome = { results: [], unresolved: [], warnings: [] };
+  // Scope3積上げに Scope 2 の基準別は無いため、常に空のまま返す。
+  const outcome: CalculationOutcome = {
+    results: [],
+    unresolved: [],
+    warnings: [],
+    scope2BasisResults: [],
+    scope2BasisUnresolved: [],
+  };
   const markMissing = (record: ActivityRecordRow): void => {
     outcome.unresolved.push({
       activityRecordId: record.id,

@@ -62,4 +62,60 @@ describe('FactorDetailModal', () => {
 
     unmount();
   });
+  it('カスタム係数では値の変更履歴を新しい順に「変更前 → 変更後」で表示する', () => {
+    const { container, unmount } = render(
+      <FactorDetailModal
+        factor={factor({ isCustom: true, source: '自社設定' })}
+        onClose={() => {}}
+        revisions={[
+          {
+            id: 'r2',
+            previousFactorValue: 0.0004,
+            previousUnit: 't-CO2/kWh',
+            newFactorValue: 0.00038,
+            newUnit: 't-CO2/kWh',
+            changedAt: '2026-10-19T03:00:00Z',
+          },
+          {
+            id: 'r1',
+            previousFactorValue: 0.00045,
+            previousUnit: 't-CO2/kWh',
+            newFactorValue: 0.0004,
+            newUnit: 't-CO2/kWh',
+            changedAt: '2026-06-01T03:00:00Z',
+          },
+        ]}
+      />,
+    );
+
+    const items = Array.from(container.querySelectorAll('li')).map((item) => item.textContent);
+    expect(items).toEqual([
+      '2026/10/19 0.000400 t-CO2/kWh → 0.000380 t-CO2/kWh',
+      '2026/06/01 0.000450 t-CO2/kWh → 0.000400 t-CO2/kWh',
+    ]);
+    unmount();
+  });
+
+  it('カスタム係数で履歴が無ければその旨を、取得中・失敗はそれぞれの表示を出す', () => {
+    const custom = factor({ isCustom: true, source: '自社設定' });
+    const empty = render(<FactorDetailModal factor={custom} onClose={() => {}} revisions={[]} />);
+    expect(valueOf(empty.container, '値の変更履歴')).toBe('値の変更はありません');
+    empty.unmount();
+
+    const loading = render(<FactorDetailModal factor={custom} onClose={() => {}} revisions={null} />);
+    expect(valueOf(loading.container, '値の変更履歴')).toBe('読み込み中…');
+    loading.unmount();
+
+    const failed = render(
+      <FactorDetailModal factor={custom} onClose={() => {}} revisions={null} revisionsLoadFailed />,
+    );
+    expect(valueOf(failed.container, '値の変更履歴')).toBe('変更履歴の取得に失敗しました');
+    failed.unmount();
+  });
+
+  it('公式係数には値の変更履歴の欄を出さない', () => {
+    const { container, unmount } = render(<FactorDetailModal factor={factor()} onClose={() => {}} />);
+    expect(valueOf(container, '値の変更履歴')).toBeNull();
+    unmount();
+  });
 });

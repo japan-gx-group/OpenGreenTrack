@@ -116,15 +116,19 @@ Route Handler（API）:
 |---|---|---|
 | `/api/calculations` | `src/app/api/calculations/route.ts` | 排出量の再計算実行 |
 | `/api/calculations/provisional-recalculation` | `src/app/api/calculations/provisional-recalculation/route.ts` | 暫定適用のまま残った算定済みデータの検出（GET）と再算定対象への差し戻し（POST） |
+| `/api/calculations/factor-recalculation` | `src/app/api/calculations/factor-recalculation/route.ts` | カスタム係数の値を変えたあと、その係数で算定済みのデータを再算定対象へ差し戻し |
 | `/api/dashboard-aggregates/refresh` | `src/app/api/dashboard-aggregates/refresh/route.ts` | ダッシュボード集計（dashboard_aggregates）の再計算 |
 | `/api/idea-imports/upload-url` | `src/app/api/idea-imports/upload-url/route.ts` | IDEA データベース（Excel）の署名付きアップロード URL 発行（Supabase Storage へ直接アップロードするため） |
 | `/api/idea-imports` | `src/app/api/idea-imports/route.ts` | IDEA データベース（Excel）の取込開始（Storage 上のパスを受け取る） |
 | `/api/idea-imports/[id]` | `src/app/api/idea-imports/[id]/route.ts` | IDEA 取込の削除 |
+| `/api/idea-imports/fiscal-year-assignment` | `src/app/api/idea-imports/fiscal-year-assignment/route.ts` | 会計年度への IDEA の版の割り当て・解除 |
+| `/api/idea-imports/recovery` | `src/app/api/idea-imports/recovery/route.ts` | 取込中のまま止まった IDEA 取込の回収（失敗に戻す） |
 | `/api/ssbj/reports/[reportId]/versions` | `src/app/api/ssbj/reports/[reportId]/versions/route.ts` | SSBJ レポートの保存版（固定スナップショット）の作成 |
 | `/api/ssbj/reports/[reportId]/ogt-adoption` | `src/app/api/ssbj/reports/[reportId]/ogt-adoption/route.ts` | SSBJ レポートへの OGT の候補値の採用 |
 | `/api/ssbj/reports/[reportId]/preview` | `src/app/api/ssbj/reports/[reportId]/preview/route.ts` | SSBJ レポートの作業中の内容を保存版と同じ形で返す（プレビュー用） |
 | `/api/ssbj/reports/[reportId]/status` | `src/app/api/ssbj/reports/[reportId]/status/route.ts` | SSBJ レポートの状態の変更（レビュー依頼・取り下げ・承認・差戻し） |
 | `/api/ssbj/reports/[reportId]/versions/[versionId]/restore` | `src/app/api/ssbj/reports/[reportId]/versions/[versionId]/restore/route.ts` | SSBJ レポートの作業中の内容を保存版の内容に戻す |
+| `/api/ssbj/reports/[reportId]/approved-version` | `src/app/api/ssbj/reports/[reportId]/approved-version/route.ts` | SSBJ レポートの承認した保存版を、内部メモ・内部記録を除いて返す（閲覧者用） |
 | `/api/account/delete` | `src/app/api/account/delete/route.ts` | アカウント削除 |
 | `/api/health` | `src/app/api/health/route.ts` | ヘルスチェック（DB接続確認・readiness probe） |
 | `/api/csp-report` | `src/app/api/csp-report/route.ts` | CSP違反レポートの受信（本体は `src/lib/security/cspReport.ts`） |

@@ -33,14 +33,18 @@ export const IDEA_FACTOR_INSERT_CHUNK_SIZE = 500;
 
 /**
  * IDEA インポート RPC が使うカスタム SQLSTATE（apiRateLimit.ts の HEAVY_API_SQLSTATE と
- * 同じ方式。正本は supabase/migrations/20260831000002_rpc.sql の complete_idea_import /
- * delete_idea_import — 変更時は両方を揃えること）。
+ * 同じ方式。正本は supabase/migrations/20261019120000_idea_fiscal_year_imports.sql の
+ * complete_idea_import / delete_idea_import / assign_idea_import_to_fiscal_year — 変更時は両方を揃えること）。
  */
 export const IDEA_IMPORT_SQLSTATE = {
   /** 対象インポートが存在しない・組織不一致・状態不正 */
   importInvalid: 'P2031',
   /** emission_results から参照されているため削除不可（§3.6-4） */
   importReferenced: 'P2032',
+  /** 会計年度に割り当て中のため削除不可（先に割り当てを外す。§3.6-5） */
+  importAssigned: 'P2033',
+  /** 会計年度が存在しない・組織不一致（assign_idea_import_to_fiscal_year） */
+  fiscalYearInvalid: 'P2034',
 } as const;
 
 /**

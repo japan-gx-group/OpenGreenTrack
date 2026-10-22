@@ -41,6 +41,13 @@ export const DELETE = async (
       if (error.code === IDEA_IMPORT_SQLSTATE.importInvalid) {
         return NextResponse.json({ error: '対象のインポートが見つかりません' }, { status: 404 });
       }
+      if (error.code === IDEA_IMPORT_SQLSTATE.importAssigned) {
+        // §3.6-5: 会計年度に割り当て中の版は、割り当てを外してから削除する
+        return NextResponse.json(
+          { error: '算定年度に割り当てられているため削除できません。先に「年度ごとの版」で割り当てを外してください' },
+          { status: 409 },
+        );
+      }
       if (error.code === IDEA_IMPORT_SQLSTATE.importReferenced) {
         // §3.6-4: 算定結果が参照している間は削除不可（isActive=false での運用無効化は可能）
         return NextResponse.json(

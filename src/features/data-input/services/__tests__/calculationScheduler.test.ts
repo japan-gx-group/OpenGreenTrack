@@ -10,6 +10,7 @@ const completed = (processedCount = 1): CalculationBatchRequestResult => ({
   totalEmissionsDelta: processedCount,
   unresolvedReasons: [],
   factorWarningCount: 0,
+  scope2BasisUnresolvedReasons: [],
 });
 const rateLimited = (retryAfterSeconds: number): CalculationBatchRequestResult => ({
   kind: 'rateLimited',

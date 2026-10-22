@@ -77,7 +77,7 @@ OpenGreenTrackは、機密性の高い企業の活動量データを取り扱う
    - 個人情報やデータの改ざん、あるいは重要な設定変更操作を完全に記録するための `system_audit_logs` (システム操作ログ) テーブルを別途設置。
 
 4. **算定結果の書き込み経路の一本化**
-   - 算定結果テーブル（`emission_results` / `calculation_batches` / `dashboard_aggregates`）は `authenticated` には **SELECT のみ**。INSERT / UPDATE / DELETE の GRANT とポリシーを持たない（`supabase/migrations/20260831000001_rls.sql` §3・§4.2）。
+   - 算定結果テーブル（`emission_results` / `calculation_batches` / `dashboard_aggregates` / `scope2_basis_results`）は `authenticated` には **SELECT のみ**。INSERT / UPDATE / DELETE の GRANT とポリシーを持たない（`supabase/migrations/20260831000001_rls.sql` §3・§4.2、`20261006000000_scope2_dual_basis.sql` §3）。
    - 書き込みは service_role 限定の RPC（`run_calculation_commit` / `create_calculation_batch_with_rate_limit` / `refresh_dashboard_aggregates`）だけを通る。組織スコープの RLS だけでは、PostgREST を直接叩いて算定エンジン・レート制限・監査ログを迂回した報告値の書き換えを防げないため。
    - 活動量・拠点の削除に伴う結果行の後始末は on delete cascade と security definer トリガーが行うため、この権限剥奪の影響を受けない。
 
@@ -152,7 +152,7 @@ OpenGreenTrackは、機密性の高い企業の活動量データを取り扱う
 
 ### 3.4 排出係数マスタ (`emission_factors`)
 GHG排出量の計算に用いる原単位係数。公式係数（`organizationId` が null・`isCustom=false`。全組織共通の読み取り専用）の
-初期データは `supabase/seeds/production/official_emission_factors.sql`（`scripts/official-factors/generate.ts` が生成）で
+初期データは `supabase/seeds/production/official_emission_factors_<年度>.sql`（`scripts/official-factors/generate.ts` が生成）で
 投入する。マイグレーション（`supabase/migrations/`）は DDL 専用でデータを含めない（`AGENTS.md` R12）。
 
 | 物理名 | 論理名 | 型 | 制約 | 説明 |
@@ -276,7 +276,66 @@ Route Handler + service_role 限定）。詳細な確定 DDL は `idea-scope3-sp
   （EXECUTE は service_role 限定）へ切り出し、`run_calculation_commit` のほか方式切替・direct 値
   upsert（`POST /api/dashboard-aggregates/refresh`）からも実行する（`calculation-logic.md §4`）。
 
-### 3.11 SSBJ レポート (`ssbj_reports`) — SSBJ 開示レポート試行版（`supabase/migrations/20260927170328_ssbj_reports.sql`）
+### 3.11 Scope 2 基準別算定結果 (`scope2_basis_results`)（`supabase/migrations/20261006000000_scope2_dual_basis.sql`）
+
+GHG プロトコルのロケーション基準／マーケット基準それぞれの算定明細。1 活動量レコード × 1 基準 = 1 行。
+既存の `emission_results`（温対法区分に基づく単一値の明細）とは独立に保存する（`calculation-logic.md §4`）。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | 結果ID | UUID | Primary Key | |
+| `organizationId` | 組織ID | UUID | Foreign Key | RLS の組織判定用に非正規化（削除時: CASCADE） |
+| `activityRecordId` | 活動量レコードID | UUID | FK → `emission_results("activityRecordId")`, UNIQUE(activityRecordId, basis) | 単一値の明細と同じライフサイクル（編集トリガー・削除の cascade が emission_results 経由で届く） |
+| `basis` | 算定基準 | ENUM | NOT NULL | Scope2Basis ('location_based' / 'market_based') |
+| `evidence` | 根拠種別 | ENUM | NOT NULL, CHECK(基準との整合) | Scope2BasisEvidence ('grid_average' / 'contract_menu' / 'grid_fallback') |
+| `emissionFactorId` | 適用係数ID | UUID | Foreign Key | 削除時: SetNull |
+| `emissions` | 排出量 | NUMERIC(15,6) | NOT NULL | 1g 粒度（`emission_results.emissions` と同じ） |
+| `appliedFactorValue` 他 | 適用係数スナップショット | NUMERIC / VARCHAR | NULL | `emission_results` の `appliedFactor*` と同じ監査用スナップショット |
+
+- `dashboard_aggregates` に基準別の年度合計列を追加:
+  `scope2LocationBasedTotal` / `scope2MarketBasedTotal` / `scope2MarketContractTotal`（いずれも NUMERIC(15,3)・NULL 可）。
+  **NULL = 未算定**（期間内の全 Scope 2 明細に基準別行が揃ったときだけ `refresh_dashboard_aggregates` が値を入れる。
+  単一値 `scope2Total` の 0 既定とは意味が違う）。
+- 書き込み経路は算定結果テーブルと同じく一本化（`authenticated` は SELECT のみ。
+  書き込みは service_role 限定の `run_calculation_commit` 内の入れ替えだけ。§4 の 4 参照）。
+
+### 3.12 排出係数の変更履歴 (`emission_factor_revisions`)（`supabase/migrations/20261019000000_emission_factor_revisions.sql`）
+
+組織の排出係数（カスタム係数）の係数値・単位の変更履歴。`emission_factors` の行は上書き更新のため変更前の値が残らず、
+算定済みの結果の `appliedFactor*` だけでは「いつ・誰が・どの値からどの値に変えたか」を追えないため記録する。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | 履歴ID | UUID | Primary Key | |
+| `organizationId` | 組織ID | UUID | Foreign Key | RLS の組織判定用（削除時: CASCADE） |
+| `emissionFactorId` | 係数ID | UUID | Foreign Key | 削除時: SetNull（係数を削除しても履歴は残す） |
+| `factorName` / `energyType` / `applicableYear` | 係数のスナップショット | VARCHAR / ENUM / INTEGER | NOT NULL | 変更時点の係数名・種別・適用年度 |
+| `previousFactorValue` / `previousUnit` | 変更前の値・単位 | NUMERIC(12,6) / VARCHAR | NOT NULL | |
+| `newFactorValue` / `newUnit` | 変更後の値・単位 | NUMERIC(12,6) / VARCHAR | NOT NULL | |
+| `changedByUserId` | 変更者 | UUID | NULL 可 | `auth.uid()`。service_role など利用者を持たない更新では NULL |
+| `changedAt` | 変更日時 | TIMESTAMPTZ | NOT NULL | |
+
+- 記録はトリガー `record_emission_factor_revision`（security definer）だけが行う。組織の係数（`organizationId` が非 NULL）の
+  `factorValue` / `unit` が実際に変わった更新で発火する（係数管理画面の編集・係数 CSV 取込のどちらでも記録される）。
+  公式係数の改訂は seed の再投入で行い、ここには記録しない。
+- `authenticated` は SELECT のみ（自組織限定）。履歴を利用者が書き換えられないようにする。
+
+### 3.13 会計年度ごとの IDEA の版 (`idea_fiscal_year_imports`)（`supabase/migrations/20261019120000_idea_fiscal_year_imports.sql`）
+
+会計年度に割り当てた IDEA の版。1 会計年度 = 1 行で、割り当ての無い年度は行を持たない（組織で有効な版 `idea_imports."isActive"` を使う）。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `fiscalYearId` | 会計年度ID | UUID | Primary Key, FK → `fiscal_years` | 削除時: CASCADE |
+| `organizationId` | 組織ID | UUID | Foreign Key | RLS の組織判定用（削除時: CASCADE） |
+| `importId` | 版（取込）ID | UUID | FK → `idea_imports` | 削除時: RESTRICT（割り当て中の版は削除できない） |
+| `assignedByUserId` | 割り当てた利用者 | UUID | NULL 可 | |
+| `assignedAt` | 割り当て日時 | TIMESTAMPTZ | NOT NULL | |
+
+- 書き込みは service_role 限定の RPC `assign_idea_import_to_fiscal_year` だけ（割り当てと同時に、その年度の未算定の積上げ明細を割り当てた版へ付け替えるため）。`authenticated` は SELECT のみ（自組織限定。IDEA のライセンスは法人単位）。
+- 取込完了の `complete_idea_import` は、版を割り当てた年度の明細を新しい版への付け替え・孤児化の対象から除く。`delete_idea_import` は割り当て中の版を P2033 で拒否する。
+
+### 3.14 SSBJ レポート (`ssbj_reports`) — SSBJ 開示レポート試行版（`supabase/migrations/20260927170328_ssbj_reports.sql`）
 SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず結び付き、後続の SSBJ 機能（文章・リスク・OGT 採用値・保存版）は
 この行の `id` から組織・年度を辿る。データ契約・保存境界は [`ssbj-spec.md`](ssbj-spec.md) を正とする。
 
@@ -311,7 +370,7 @@ SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず
   `draftRevision`・`basicInfoRevision` も GRANT に含めず、トリガーだけが進める。
 - 年度を参照するため、年度削除の可否判定（`src/features/settings/services/fiscalYears.ts` の `REFERENCING_TABLES`）の対象に含める。
 
-### 3.12 SSBJ 保存版 (`ssbj_report_versions`) — SSBJ レポートの固定スナップショット（`supabase/migrations/20260927180425_ssbj_report_versions.sql`）
+### 3.15 SSBJ 保存版 (`ssbj_report_versions`) — SSBJ レポートの固定スナップショット（`supabase/migrations/20260927180425_ssbj_report_versions.sql`）
 利用者の手動保存で作る、書き換え不可の保存版。保存版のプレビュー・履歴・CSV はここから読み、OGT の最新値を再取得しない
 （[`ssbj-spec.md`](ssbj-spec.md) §8）。
 
@@ -328,11 +387,11 @@ SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず
 | `createdByUserId` | 保存者ID | UUID | NULL | Route Handler が `getCurrentProfile()` で確定した値を RPC に渡す |
 | `createdAt` | 保存日時 | TIMESTAMPTZ | NOT NULL | |
 
-- 書き込みは RPC `create_ssbj_report_version`（EXECUTE は service_role 限定）だけ。`authenticated` には select のみ（自組織。SSBJ の閲覧者は不可。3.20）。
+- 書き込みは RPC `create_ssbj_report_version`（EXECUTE は service_role 限定）だけ。`authenticated` には select のみ（自組織。SSBJ の閲覧者は不可。3.24）。
 - UPDATE はトリガー `reject_ssbj_report_versions_update` で全ロール（service_role を含む）拒否する。
 - スナップショットの組み立ては `ssbj_build_report_snapshot`（`20260929182558_ssbj_report_preview.sql`）に一本化し、版生成 RPC とプレビュー（`preview_ssbj_report`。保存はしない）が同じ関数を使う。
 
-### 3.13 SSBJ リスク・機会 (`ssbj_risks_opportunities`) — SSBJ レポートのリスク・機会（`supabase/migrations/20260928001521_ssbj_risks_opportunities.sql`）
+### 3.16 SSBJ リスク・機会 (`ssbj_risks_opportunities`) — SSBJ レポートのリスク・機会（`supabase/migrations/20260928001521_ssbj_risks_opportunities.sql`）
 1 つのレポートに複数登録する作業中データ。変更のたびに `ssbj_reports.draftRevision` を進め、保存版には
 `ssbj_snapshot_section__risks_opportunities` で取り込む（[`ssbj-spec.md`](ssbj-spec.md) §10）。
 
@@ -346,7 +405,7 @@ SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず
 | `riskTypeState` / `riskType` | リスクの種類の状態 / 種類 | `ssbj_field_state` / VARCHAR(20) | NOT NULL DEFAULT 'unanswered' / CHECK(`physical` / `transition`。`answered` のときだけ非 NULL。区分が機会なら NULL) | 気候関連開示基準 第19項(2)。`20260928151241_ssbj_risk_type_and_time_horizons.sql` で追加 |
 | `descriptionState` / `descriptionText` | 説明（開示）の状態 / 本文 | `ssbj_field_state` / TEXT | CHECK(`answered` のときだけ本文が非 NULL・空白のみ不可) | |
 | `internalNote` | 内部メモ | TEXT | NULL | 開示しない |
-| `timeHorizonState` / `timeHorizon` | 時間軸の状態 / 区分 | `ssbj_field_state` / VARCHAR(20) | CHECK(`short_term` / `medium_term` / `long_term`。`answered` のときだけ非 NULL) | 各区分が指す期間は 3.14 の定義 |
+| `timeHorizonState` / `timeHorizon` | 時間軸の状態 / 区分 | `ssbj_field_state` / VARCHAR(20) | CHECK(`short_term` / `medium_term` / `long_term`。`answered` のときだけ非 NULL) | 各区分が指す期間は 3.17 の定義 |
 | `linkTargets` | 関連する章・項目 | TEXT[] | NOT NULL, DEFAULT '{}', CHECK(各要素が章 ID または項目 ID の形式・NULL 要素不可) | |
 | `createdByUserId` / `updatedByUserId` | 登録・更新操作者ID | UUID | NULL | `set_row_actor` トリガ |
 | `createdAt` / `updatedAt` | 作成・更新日時 | TIMESTAMPTZ | NOT NULL | `updatedAt` は `set_updated_at` トリガ |
@@ -354,7 +413,7 @@ SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず
 - RLS は select / insert / update / delete を自組織に限定し、insert / update の with check で `reportId` が自組織のレポートであることを `exists` で検証する。
 - `authenticated` への insert / update は列指定の GRANT。update は内容の列だけで、レポート・組織は作成後に付け替えられない。
 
-### 3.14 SSBJ 時間軸の定義 (`ssbj_report_time_horizons`) — レポートとしての「短期」「中期」「長期」の定義（`supabase/migrations/20260928151241_ssbj_risk_type_and_time_horizons.sql`）
+### 3.17 SSBJ 時間軸の定義 (`ssbj_report_time_horizons`) — レポートとしての「短期」「中期」「長期」の定義（`supabase/migrations/20260928151241_ssbj_risk_type_and_time_horizons.sql`）
 レポートごとに 1 行の作業中データ（気候関連開示基準 第19項(4)(5)）。変更のたびに `ssbj_reports.draftRevision` を進め、
 保存版には `ssbj_snapshot_section__time_horizons` で取り込む（行が無いレポートはすべて未入力として取り込む）。
 
@@ -371,7 +430,7 @@ SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず
 | `createdAt` / `updatedAt` | 作成・更新日時 | TIMESTAMPTZ | NOT NULL | `updatedAt` は `set_updated_at` トリガ |
 
 - RLS・GRANT の考え方は 3.13 と同じ（自組織に限定、レポートの組織帰属を `exists` で検証、レポート・組織は作成後に変えない）。
-### 3.15 SSBJ 根拠文書 (`ssbj_evidence`) — 項目ごとの参照情報（`supabase/migrations/20260929150000_ssbj_evidence.sql`、ファイルの記録は `20261011090000_ssbj_evidence_file_hash.sql`）
+### 3.18 SSBJ 根拠文書 (`ssbj_evidence`) — 項目ごとの参照情報（`supabase/migrations/20260929150000_ssbj_evidence.sql`、ファイルの記録は `20261011090000_ssbj_evidence_file_hash.sql`）
 
 1 つの項目に複数の資料を登録できる作業中データ。`itemId` は共通の項目ID形式で検証する。項目マスターはまだ無いため、現時点では形式以外の存在検証をしない。
 
@@ -390,7 +449,7 @@ SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず
 
 RLSは自組織に限定し、レポートの組織帰属も検証する。変更ごとに `draftRevision` を進め、`ssbj_snapshot_section__evidence` が固定版へ取り込む（ファイルの記録も含む）。
 
-### 3.16 SSBJ OGT 採用値 (`ssbj_ogt_adoptions`) — レポートに明示採用した OGT の値（`supabase/migrations/20260929180243_ssbj_ogt_adoptions.sql`）
+### 3.19 SSBJ OGT 採用値 (`ssbj_ogt_adoptions`) — レポートに明示採用した OGT の値（`supabase/migrations/20260929180243_ssbj_ogt_adoptions.sql`）
 レポートごとに 1 行の作業中データ。採用し直すと行を置き換える。変更のたびに `ssbj_reports.draftRevision` を進め、
 保存版には `ssbj_snapshot_section__ghg` で取り込む（採用していないレポートは null）。
 
@@ -409,7 +468,7 @@ RLSは自組織に限定し、レポートの組織帰属も検証する。変�
   候補値を取り直してから呼ぶ。クライアントが送った数値を OGT 由来として保存する経路を作らないため。
 - `adopt_ssbj_ogt_values` は組織の一致（P2041）と、候補値・参考値の年度がレポートの年度と一致すること（P2042）を検証する。
 
-### 3.17 SSBJ 四本柱の文章 (`ssbj_narratives`) — 要求項目マスターの項目ごとの文章（`supabase/migrations/20261001003809_ssbj_narratives.sql`）
+### 3.20 SSBJ 四本柱の文章 (`ssbj_narratives`) — 要求項目マスターの項目ごとの文章（`supabase/migrations/20261001003809_ssbj_narratives.sql`）
 レポートと項目 ID の組ごとに 1 行の作業中データ。変更のたびに `ssbj_reports.draftRevision` を進め、
 保存版には `ssbj_snapshot_section__narratives` で取り込む（行の無い項目は含めず、表示側で未入力とする）。
 
@@ -427,7 +486,7 @@ RLSは自組織に限定し、レポートの組織帰属も検証する。変�
 
 - RLS・GRANT の考え方は 3.13 と同じ（自組織に限定、レポートの組織帰属を `exists` で検証）。update の列 GRANT は文章の列だけで、レポート・組織・項目は作成後に変えない。
 
-### 3.18 SSBJ 該当性・重要性の判断 (`ssbj_judgements`) — 要求ごとの該当性・重要性・記載しない理由（`supabase/migrations/20261001005308_ssbj_judgements.sql`）
+### 3.21 SSBJ 該当性・重要性の判断 (`ssbj_judgements`) — 要求ごとの該当性・重要性・記載しない理由（`supabase/migrations/20261001005308_ssbj_judgements.sql`）
 レポートと要求 ID の組ごとに 1 行の作業中データ。ソフトは判断を自動で決めない（既定はすべて未確認）。変更のたびに
 `ssbj_reports.draftRevision` を進め、保存版には `ssbj_snapshot_section__judgements` で取り込む（行の無い要求は含めず、表示側で未確認とする）。
 
@@ -448,7 +507,7 @@ RLSは自組織に限定し、レポートの組織帰属も検証する。変�
 - RLS・GRANT の考え方は 3.13 と同じ。update の列 GRANT は判断の列だけで、レポート・組織・要求は作成後に変えない。
 - 区分は enum ではなく CHECK 制約にする（区分を見直すとき、enum は値の削除・改名ができないため）。
 
-### 3.19 SSBJ 操作履歴 (`ssbj_audit_logs`) — 誰が・いつ・何をしたか（`supabase/migrations/20261002090000_ssbj_audit_logs.sql`）
+### 3.22 SSBJ 操作履歴 (`ssbj_audit_logs`) — 誰が・いつ・何をしたか（`supabase/migrations/20261002090000_ssbj_audit_logs.sql`）
 SSBJ の各テーブルのトリガー（`ssbj_audit_row_change`）と、状態の変更・復元の RPC、出力の記録の関数（`record_ssbj_export`）だけが書く。書き換えない。
 
 | 物理名 | 論理名 | 型 | 制約 | 説明 |
@@ -466,7 +525,7 @@ SSBJ の各テーブルのトリガー（`ssbj_audit_row_change`）と、状態�
 - RLS は自組織の select だけ。authenticated には select だけを GRANT し、update はトリガーで全ロール拒否する。
 - 版数・監査列だけが変わった更新は記録しない。復元中の行ごとの記録は止め、復元として 1 件記録する。
 
-### 3.20 SSBJ 業種の候補への判断 (`ssbj_risk_candidate_decisions`) — 業種から出したリスク・機会の候補の採用・除外（`supabase/migrations/20261018130000_ssbj_risk_candidate_decisions.sql`）
+### 3.23 SSBJ 業種の候補への判断 (`ssbj_risk_candidate_decisions`) — 業種から出したリスク・機会の候補の採用・除外（`supabase/migrations/20261018130000_ssbj_risk_candidate_decisions.sql`）
 レポートと候補 ID の組ごとに 1 行の作業用の記録。候補（`src/features/ssbj/utils/industryCandidates.ts`）を検討の出発点にしたかどうかの記録で、該当性・重要性の判断ではない。
 保存版には含めず、`draftRevision` も進めない。承認済みの間は変更を拒否し（`reject_ssbj_change_when_approved`）、操作履歴に記録する（対象の種類 `risk_candidate`）。
 「採用して登録」は `adopt_ssbj_risk_candidate`（security invoker。authenticated）で、リスク・機会の登録と採用の記録を 1 つのトランザクションで保存する。
@@ -487,7 +546,7 @@ SSBJ の各テーブルのトリガー（`ssbj_audit_row_change`）と、状態�
 | `createdByUserId` / `updatedByUserId` | 登録・更新操作者ID | UUID | NULL | `set_row_actor` トリガ |
 | `createdAt` / `updatedAt` | 登録・更新日時 | TIMESTAMPTZ | | |
 
-### 3.21 SSBJ のロール (`ssbj_member_roles`) — 利用者ごとの SSBJ のロール（`supabase/migrations/20261020100000_ssbj_member_roles.sql`）
+### 3.24 SSBJ のロール (`ssbj_member_roles`) — 利用者ごとの SSBJ のロール（`supabase/migrations/20261020100000_ssbj_member_roles.sql`）
 SSBJ の中だけで使うロールの割り当て。権限の規則の正本は [`authorization-matrix.md`](authorization-matrix.md)。OGT 本体の `profiles.role` は変えず、`'admin'` だけを読む。
 
 | 物理名 | 論理名 | 型 | 制約 | 説明 |
@@ -503,12 +562,12 @@ SSBJ の中だけで使うロールの割り当て。権限の規則の正本は
 - 割り当て・変更・解除はトリガー（`ssbj_audit_member_role_change`）が `ssbj_audit_logs` に記録する（`reportId` は空）。組織の削除に伴う連鎖削除では記録しない。
   利用者の削除（退会・メンバーの削除）に伴う解除は、操作者を空（画面では「システム」）にし、`details.reason = 'member_deleted'` を残す。
   管理クライアントの削除ではログイン中の利用者がいないため、行に残っている以前の更新者を操作者にしない（`20261023090000_ssbj_member_roles_audit_actor.sql`）。
-- **SSBJ の各テーブルへの適用**（`20261023100000_ssbj_role_policies.sql`）: 3.11〜3.19 の各テーブルの RLS に、`AS RESTRICTIVE` のポリシーを重ねる。
+- **SSBJ の各テーブルへの適用**（`20261023100000_ssbj_role_policies.sql`）: 3.14〜3.23 の各テーブルの RLS に、`AS RESTRICTIVE` のポリシーを重ねる。
   作業中データの書き込み（`ssbj_reports` の作成・更新を含む）は入力担当か管理者だけ。作業中データ・操作履歴の select は閲覧者以外。
   閲覧者が select できるのは、承認済みの `ssbj_reports` だけ。`ssbj_report_versions` は内部メモ・内部記録を含むので見せず、
   承認した版の開示する内容は Route Handler が返す（[`authorization-matrix.md`](authorization-matrix.md) §2.3）。
 
-### 3.22 SSBJ 外部算定値 (`ssbj_external_emissions`) — 外部で算定した排出量（`supabase/migrations/20261023110000_ssbj_external_emissions.sql`）
+### 3.25 SSBJ 外部算定値 (`ssbj_external_emissions`) — 外部で算定した排出量（`supabase/migrations/20261023110000_ssbj_external_emissions.sql`）
 OGT で算定できない排出量（CO2 以外のガス、対応していない排出源、子会社から届いた値など）を、出典と確認者を付けてレポートに採用する作業中データ。
 変更のたびに `ssbj_reports.draftRevision` を進め、保存版には `ssbj_snapshot_section__external_emissions` で取り込む。
 

@@ -3,7 +3,7 @@
 // カスタム係数の作成・編集モーダル。状態と保存処理は useFactorForm が持ち、ここは入力欄を描画する。
 // Escape・dialog セマンティクス・フォーカス管理は共通シェルの FactorModal に任せる。
 
-import { Database } from 'lucide-react';
+import { AlertCircle, Database } from 'lucide-react';
 import type { FactorFormController } from '../hooks/useFactorForm';
 import { scopeLabelForEnergyLabel, type EmissionFactor } from '../services/factorService';
 import { FactorModal } from './FactorModal';
@@ -152,14 +152,39 @@ export const FactorFormModal = ({ form, availableYears }: FactorFormModalProps) 
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 mt-6">
-          <button type="button" className="gt-btn" onClick={form.close}>
-            キャンセル
-          </button>
-          <button type="submit" className="gt-btn-primary">
-            {form.editingFactorId ? '更新' : '保存'}
-          </button>
-        </div>
+        {form.recalculationPrompt ? (
+          // 係数値・単位を変えた保存の前の確認。算定済みの結果は算定時の値のまま残るため、
+          // 再算定しないと同じ年度に変更前と変更後の値の結果が混在する。
+          <div className="mt-6 flex-col gap-3">
+            <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning-soft px-4 py-3 text-sm">
+              <AlertCircle size={18} className="text-warning shrink-0 mt-0.5" aria-hidden="true" />
+              <p role="alert" className="text-text-main">
+                この係数で算定済みのデータが {form.recalculationPrompt.calculatedCount} 件あります。
+                算定済みの結果は変更前の値のままです。変更後の値で再算定しますか？
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 flex-wrap">
+              <button type="button" className="gt-btn" onClick={form.cancelRecalculation}>
+                戻る
+              </button>
+              <button type="button" className="gt-btn" onClick={() => void form.confirmRecalculation(false)}>
+                保存のみ（算定済みの結果は変えない）
+              </button>
+              <button type="button" className="gt-btn-primary" onClick={() => void form.confirmRecalculation(true)}>
+                保存して再算定する
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex justify-end gap-2 mt-6">
+            <button type="button" className="gt-btn" onClick={form.close}>
+              キャンセル
+            </button>
+            <button type="submit" className="gt-btn-primary" disabled={form.isSaving}>
+              {form.editingFactorId ? '更新' : '保存'}
+            </button>
+          </div>
+        )}
       </form>
     </FactorModal>
   );

@@ -140,7 +140,132 @@ export const startIdeaImport = async (
   return { importId: body.importId };
 };
 
-/** インポートの削除。算定結果から参照されている場合はサーバが 409 で拒否する（§3.6-4）。 */
+/**
+ * 取込中のまま止まった取込の回収を依頼する（10 分以上更新の無い processing 行を failed に戻す）。
+ * 取込の裏の処理が中断されると processing のまま残り、画面は取込中の間ほかの取込操作を受け付けないため、
+ * 取込中の表示を出している間に呼ぶ。失敗しても取込状況の表示は続けるため throw しない（次の呼び出しで再試行する）。
+ */
+export const requestStaleIdeaImportRecovery = async (fetchImpl: typeof fetch = fetch): Promise<void> => {
+  try {
+    await fetchImpl('/api/idea-imports/recovery', { method: 'POST' });
+  } catch {
+    // 通信に失敗しても、取込中のポーリングは続き、次の呼び出しで再試行される。
+  }
+};
+
+/** 会計年度に割り当てた版（idea_fiscal_year_imports）。割り当ての無い年度は行を持たない */
+export interface IdeaFiscalYearAssignment {
+  fiscalYearId: string;
+  importId: string;
+}
+
+/** 取込履歴（取込が完了した版）と年度への割り当て、版ごとの算定結果からの参照件数 */
+export interface IdeaImportHistory {
+  /** 取込が完了した版（新しい順） */
+  imports: IdeaImportRecord[];
+  assignments: IdeaFiscalYearAssignment[];
+  /** 版ごとに、その版の係数で算定済みの結果（emission_results）の件数。0 の版は算定で使われていない */
+  referenceCountByImportId: Record<string, number>;
+}
+
+/**
+ * 取込履歴と年度への割り当てを取得する（係数管理画面の「年度ごとの版」カード）。組織スコープは RLS が担保する。
+ * 版は組織あたり数件のため、参照件数は版ごとの件数クエリ（head）で数える。
+ */
+export const fetchIdeaImportHistory = async (): Promise<IdeaImportHistory> => {
+  const supabase = createClient();
+  const [importsResult, assignmentsResult] = await Promise.all([
+    supabase
+      .from('idea_imports')
+      .select(IDEA_IMPORT_SELECT)
+      .eq('status', 'completed')
+      .order('createdAt', { ascending: false }),
+    supabase.from('idea_fiscal_year_imports').select('fiscalYearId, importId'),
+  ]);
+  if (importsResult.error || assignmentsResult.error) {
+    throw new Error('IDEAデータベースの取込履歴の取得に失敗しました');
+  }
+  const imports = (importsResult.data ?? []) as unknown as IdeaImportRecord[];
+
+  const counts = await Promise.all(
+    imports.map(async (record) => {
+      const { count, error } = await supabase
+        .from('emission_results')
+        .select('id, idea_factors!inner(importId)', { count: 'exact', head: true })
+        .eq('idea_factors.importId', record.id);
+      if (error) {
+        throw new Error('IDEAデータベースの取込履歴の取得に失敗しました');
+      }
+      return [record.id, count ?? 0] as const;
+    }),
+  );
+
+  return {
+    imports,
+    assignments: (assignmentsResult.data ?? []) as IdeaFiscalYearAssignment[],
+    referenceCountByImportId: Object.fromEntries(counts),
+  };
+};
+
+/** 会計年度に割り当てた版（版の表記つき）。割り当てが無ければ null（その年度は有効な版を使う）。 */
+export const fetchIdeaImportForFiscalYear = async (
+  fiscalYearId: string,
+): Promise<{ importId: string; version: string } | null> => {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('idea_fiscal_year_imports')
+    .select('importId, idea_imports(version)')
+    .eq('fiscalYearId', fiscalYearId)
+    .maybeSingle();
+  if (error) {
+    throw new Error('この年度に割り当てた IDEA の版の取得に失敗しました');
+  }
+  if (!data) {
+    return null;
+  }
+  const row = data as unknown as {
+    importId: string;
+    idea_imports: { version: string } | { version: string }[] | null;
+  };
+  const importMeta = Array.isArray(row.idea_imports) ? (row.idea_imports[0] ?? null) : row.idea_imports;
+  return { importId: row.importId, version: importMeta?.version ?? '' };
+};
+
+/** 会計年度への版の割り当ての結果（付け替えた件数と、製品の再選択が必要になった件数） */
+export interface IdeaFiscalYearAssignmentResult {
+  /** 付け替え先の版（割り当てを外して有効な版も無いときは null） */
+  importId: string | null;
+  remappedCount: number;
+  unmappedCount: number;
+}
+
+/**
+ * 会計年度に版を割り当てる（importId = null で外す）。あわせてその年度の未算定の活動量が
+ * 割り当てた版（外したときは有効な版）へ付け替わる（§3.6-5）。
+ */
+export const assignIdeaImportToFiscalYear = async (
+  fiscalYearId: string,
+  importId: string | null,
+): Promise<IdeaFiscalYearAssignmentResult> => {
+  const response = await fetch('/api/idea-imports/fiscal-year-assignment', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fiscalYearId, importId }),
+  });
+  const body = (await response.json().catch(() => null)) as
+    | (Partial<IdeaFiscalYearAssignmentResult> & { error?: string })
+    | null;
+  if (!response.ok || !body) {
+    throw new Error(body?.error ?? '年度への版の割り当てに失敗しました');
+  }
+  return {
+    importId: body.importId ?? null,
+    remappedCount: body.remappedCount ?? 0,
+    unmappedCount: body.unmappedCount ?? 0,
+  };
+};
+
+/** インポートの削除。算定結果から参照されている場合と、会計年度に割り当て中の場合はサーバが 409 で拒否する（§3.6-4・5）。 */
 export const deleteIdeaImport = async (importId: string): Promise<void> => {
   const response = await fetch(`/api/idea-imports/${encodeURIComponent(importId)}`, {
     method: 'DELETE',

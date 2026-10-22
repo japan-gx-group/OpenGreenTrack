@@ -150,6 +150,68 @@ export interface EmissionResultInsert {
   appliedFactorName?: string | null;
 }
 
+// --- Scope 2 基準別算定（GHG プロトコルのロケーション基準／マーケット基準） ---
+
+/** GHG プロトコル Scope 2 ガイダンスの 2 基準（DB enum "Scope2Basis" と同値） */
+export const SCOPE2_BASES = ['location_based', 'market_based'] as const;
+export type Scope2Basis = typeof SCOPE2_BASES[number];
+
+/**
+ * 基準別の値の算定根拠の種別（DB enum "Scope2BasisEvidence" と同値）。
+ * - grid_average: 全国代替値（系統平均の代替）。ロケーション基準で使う
+ * - contract_menu: 明示選択された供給事業者のメニュー別係数（契約根拠）。マーケット基準で使う
+ * - grid_fallback: 契約情報が無く全国代替値で補完。マーケット基準で使う
+ *   （日本には残差ミックスの公表が無いため、GHG プロトコルの階層の最下位＝系統平均へ落とす）
+ */
+export type Scope2BasisEvidence = 'grid_average' | 'contract_menu' | 'grid_fallback';
+
+/** scope2_basis_results への挿入内容（純粋コアが生成する基準別の算定結果） */
+export interface Scope2BasisResultInsert {
+  activityRecordId: string;
+  basis: Scope2Basis;
+  evidence: Scope2BasisEvidence;
+  emissionFactorId: string | null;
+  /** 排出量 t-CO2e（numeric(15,6)、小数6桁に丸め済み） */
+  emissions: number;
+  /** 適用係数のスナップショット（emission_results の appliedFactor* と同じ理由で保持） */
+  appliedFactorValue: number | null;
+  appliedFactorUnit: string | null;
+  appliedFactorName: string | null;
+}
+
+/**
+ * 基準別の値が算定できなかった理由（単一値の UnresolvedReason とは別。単一値は算定できている）。
+ * - STANDARD_FACTOR_NOT_FOUND: 対象年度（暫定適用を含む）に公式の標準係数（全国代替値）が無い。
+ *   ロケーション基準と、契約根拠の無いマーケット基準の補完の両方がこれで欠ける
+ * - UNIT_MISMATCH: 活動量の単位を、適用する係数の単位に換算できない
+ */
+export type Scope2BasisUnresolvedReason = 'STANDARD_FACTOR_NOT_FOUND' | 'UNIT_MISMATCH';
+
+/**
+ * 基準別の値が算定できなかった理由のユーザー向け文言（データ入力画面の算定サマリで件数と一緒に出す）。
+ * 欠けたレコードがある年度は Scope 分析画面の基準別合計が「未算定」のままになるが、
+ * 原因（レコードごとの理由）を利用者が知る手段はこの通知しかないため、再計算で解消するかまで伝える。
+ */
+export const SCOPE2_BASIS_UNRESOLVED_REASON_MESSAGES: Record<Scope2BasisUnresolvedReason, string> = {
+  STANDARD_FACTOR_NOT_FOUND:
+    '対象年度に全国の代替値（公式の標準係数）が無いため、Scope 2 の基準別（ロケーション基準・マーケット基準）の値を算定できませんでした（排出量そのものは算定済みです）。代替値が登録されるまでは再計算しても解消せず、この年度の基準別合計は Scope 分析画面で「未算定」のままになります。',
+  UNIT_MISMATCH:
+    '活動量の単位を排出係数の単位に換算できないため、Scope 2 の基準別（ロケーション基準・マーケット基準）の値を算定できませんでした（排出量そのものは算定済みです）。この年度の基準別合計は Scope 分析画面で「未算定」のままになります。',
+};
+
+/**
+ * 基準別の値が算定できなかったレコードの情報。
+ * 単一値の算定（emission_results）は成立していても、代替値係数が対象年度に無い等で
+ * 基準別だけ欠けることがある。欠けたレコードがある年度は集計側で基準別合計を出さない
+ * （refresh_dashboard_aggregates の件数突き合わせ）。
+ */
+export interface Scope2BasisUnresolved {
+  activityRecordId: string;
+  basis: Scope2Basis;
+  reason: Scope2BasisUnresolvedReason;
+  detail: string;
+}
+
 // --- IDEA 係数（Scope3積上げ算定）の最小型 ---
 
 /**
@@ -242,4 +304,8 @@ export interface CalculationOutcome {
   unresolved: UnresolvedRecord[];
   /** 算定はできたが指定どおりの係数を使わなかったレコード */
   warnings: CalculationWarning[];
+  /** Scope 2 レコードの基準別算定結果（単一値とは独立。Scope 1/3 レコードでは空） */
+  scope2BasisResults: Scope2BasisResultInsert[];
+  /** 単一値は算定できたが基準別の値が算定できなかったレコード */
+  scope2BasisUnresolved: Scope2BasisUnresolved[];
 }

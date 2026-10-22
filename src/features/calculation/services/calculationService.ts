@@ -24,19 +24,27 @@ import {
 } from '@/lib/security/apiRateLimit';
 import { IN_CHUNK_SIZE, chunk, fetchAllRows } from '@/lib/supabaseRows';
 import { REGION_LABELS, type Region } from '@/types/region';
-import { computeEmissions, roundEmissions } from '../engine/computeEmissions';
+import {
+  computeEmissions,
+  resolveScope2BasisForRecord,
+  roundEmissions,
+} from '../engine/computeEmissions';
+import { SCOPE_BY_ENERGY_TYPE } from '../engine/energyTypeScope';
 import {
   applicableYearsForFiscalYear,
   withProvisionalYears,
 } from '../engine/resolveEmissionFactor';
 import { computeScope3Emissions } from './scope3Calculation';
 import { logger } from '@/lib/logging/logger';
+import { SCOPE2_BASES } from '../types';
 import type {
   ActivityRecordRow,
   CalculationWarning,
   EmissionFactorRow,
   IdeaFactorRow,
   IdeaImportRow,
+  Scope2BasisResultInsert,
+  Scope2BasisUnresolved,
   UnresolvedRecord,
 } from '../types';
 
@@ -56,9 +64,16 @@ export interface CalculationBatchSummary {
   unresolved: UnresolvedRecord[];
   /** 算定はできたが、明示選択した係数どおりには算定できなかったレコード（読み替え・フォールバック） */
   warnings: CalculationWarning[];
+  /** 単一値は算定できた（または算定済みの）Scope 2 レコードのうち、基準別の値が算定できなかったもの */
+  scope2BasisUnresolved: Scope2BasisUnresolved[];
   /** エラー時のメッセージ */
   errorMessage?: string;
 }
+
+// Scope 2 に属するエネルギー種別。基準別の後追い算定（算定済みレコードへの付与）の取得条件に使う。
+const SCOPE2_ENERGY_TYPES = Object.entries(SCOPE_BY_ENERGY_TYPE)
+  .filter(([, scope]) => scope === 'scope2')
+  .map(([energyType]) => energyType);
 
 /** supabase-js が numeric を文字列で返す場合に備えて number へ正規化する */
 const toNumber = (value: unknown): number => Number(value);
@@ -170,7 +185,7 @@ export const runCalculationBatch = async (
     // ラウンドトリップを減らす。
     // 活動量と係数は PostgREST の max_rows(1000) で黙って切り詰められると誤算定・未算定を招くため、
     // fetchAllRows でページングして全行取得する（公式係数の投入で係数は年間約3,000行になる）。
-    const [activityRows, scope3ActivityRows, factorRows, locationResult] = await Promise.all([
+    const [activityRows, scope3ActivityRows, factorRows, locationResult, calculatedScope2Rows] = await Promise.all([
       // 未算定の活動量。年度帰属は periodStart 基準で一意（またぎレコードも二重計上なし。RPC 側の集計も同基準）。
       // Scope3積上げレコードの混入を防ぐため energyType で明示分離する（§4.3-1。
       // activity_records.energyType は NOT NULL のため .neq で既存行が脱落することはない）。
@@ -227,6 +242,24 @@ export const runCalculationBatch = async (
         .from('locations')
         .select('id,region')
         .eq('organizationId', organizationId),
+      // Scope 2 基準別の後追い対象: 算定済みの Scope 2 活動量レコード。
+      // 基準別算定の導入前に算定された既存データは isCalculated=true のままで通常の算定対象に
+      // 入らないため、基準別行が欠けているものだけこの経路で基準別を付与する
+      // （単一値 emission_results には触れず、値を変えない）。
+      fetchAllRows<ActivityRecordRow>(
+        (from, to) =>
+          supabase
+            .from('activity_records')
+            .select(activitySelect)
+            .eq('organizationId', organizationId)
+            .eq('isCalculated', true)
+            .in('energyType', SCOPE2_ENERGY_TYPES)
+            .gte('periodStart', fiscalYear.startDate)
+            .lte('periodStart', fiscalYear.endDate)
+            .order('id', { ascending: true })
+            .range(from, to),
+        '算定済みの Scope 2 活動量の取得に失敗しました',
+      ),
     ]);
 
     if (locationResult.error) {
@@ -299,7 +332,7 @@ export const runCalculationBatch = async (
     }
 
     // 4. 純粋コアで算定（年度・地域名を注入）
-    const { results, unresolved, warnings } = computeEmissions(records, factors, {
+    const { results, unresolved, warnings, scope2BasisResults, scope2BasisUnresolved } = computeEmissions(records, factors, {
       resolveContext: (record) => ({
         applicableYear,
         regionName: locationRegionName.get(record.locationId) ?? null,
@@ -319,6 +352,57 @@ export const runCalculationBatch = async (
     const allUnresolved = [...unresolved, ...scope3Outcome.unresolved];
     const allWarnings = [...warnings, ...scope3Outcome.warnings];
 
+    // 4''. 算定済みレコードへの Scope 2 基準別の後追い付与。
+    //      既に両基準の行が揃っているレコードは対象外にする（毎バッチの再計算と無駄な delete/insert を避ける）。
+    const calculatedScope2Records: ActivityRecordRow[] = calculatedScope2Rows.map((row) => ({
+      ...row,
+      amount: toNumber(row.amount),
+    }));
+    const basisRowCountByRecordId = new Map<string, number>();
+    (
+      await Promise.all(
+        chunk(
+          calculatedScope2Records.map((record) => record.id),
+          IN_CHUNK_SIZE,
+        ).map(async (ids) => {
+          const { data, error } = await supabase
+            .from('scope2_basis_results')
+            .select('activityRecordId')
+            .in('activityRecordId', ids);
+          if (error) {
+            failWithSafeMessage('Scope 2 基準別算定結果の取得に失敗しました', error);
+          }
+          return (data ?? []) as { activityRecordId: string }[];
+        }),
+      )
+    )
+      .flat()
+      .forEach((row) => {
+        basisRowCountByRecordId.set(
+          row.activityRecordId,
+          (basisRowCountByRecordId.get(row.activityRecordId) ?? 0) + 1,
+        );
+      });
+    const backfillRecords = calculatedScope2Records.filter(
+      (record) => (basisRowCountByRecordId.get(record.id) ?? 0) < SCOPE2_BASES.length,
+    );
+
+    // 新規算定（computeEmissions 内）と同じ純関数・同じコンテキストで解決するため、
+    // 後追いと新規で基準別の規則がずれない。
+    const backfillBasisResults: Scope2BasisResultInsert[] = [];
+    const backfillBasisUnresolved: Scope2BasisUnresolved[] = [];
+    for (const record of backfillRecords) {
+      const basisOutcome = resolveScope2BasisForRecord(record, factors, {
+        applicableYear,
+        regionName: locationRegionName.get(record.locationId) ?? null,
+      });
+      backfillBasisResults.push(...basisOutcome.results);
+      backfillBasisUnresolved.push(...basisOutcome.unresolved);
+    }
+
+    const allScope2BasisResults = [...scope2BasisResults, ...backfillBasisResults];
+    const allScope2BasisUnresolved = [...scope2BasisUnresolved, ...backfillBasisUnresolved];
+
     // 5. 算定結果の確定（RPC・単一トランザクション）。処理件数・排出量合計は RPC の戻り値を
     //    単一情報源とし、TS 側で再集計しない（集計ドリフト防止）。
     const { data: commitSummary, error: commitError } = await supabase.rpc('run_calculation_commit', {
@@ -326,6 +410,7 @@ export const runCalculationBatch = async (
       p_organization_id: organizationId,
       p_fiscal_year_id: fiscalYearId,
       p_results: allResults,
+      p_scope2_basis_results: allScope2BasisResults,
     });
     if (commitError) {
       // 実行が長引いて先にバッチが滞留として回収された場合。結果は何も書かれていないので、
@@ -351,6 +436,7 @@ export const runCalculationBatch = async (
       totalEmissionsDelta: roundEmissions(toNumber(summary.totalEmissionsDelta ?? 0)),
       unresolved: allUnresolved,
       warnings: allWarnings,
+      scope2BasisUnresolved: allScope2BasisUnresolved,
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -373,6 +459,7 @@ export const runCalculationBatch = async (
       totalEmissionsDelta: 0,
       unresolved: [],
       warnings: [],
+      scope2BasisUnresolved: [],
       errorMessage,
     };
   }

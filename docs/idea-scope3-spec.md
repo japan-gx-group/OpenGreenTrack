@@ -207,9 +207,14 @@ alter table emission_results alter column emissions type numeric(15, 6);
 ### 3.6 版更新（再インポート）と削除のポリシー
 
 1. 再インポート時: 新規インポートは `isActive=false` で作成し、**取込が完了した時点で**旧インポートの `isActive=false` 化と新インポートの `isActive=true` 化を単一トランザクションで行う（順序と理由は §4.1-3）。取込前に旧を無効化してはならない（失敗時に active が1件も無くなり、既存の算定・検索が止まる）。
-2. 取込完了処理内で、**未算定（`isCalculated=false`）の活動量レコードを `ideaCode` 一致で新版係数へ一括再マッピング**する（`UNIQUE(importId, ideaCode)` により対応は一意）。新版に同一コードが無いレコードは `ideaFactorId=null` にし、取込結果画面に「再選択が必要な明細 n 件」として警告表示する。
+2. 取込完了処理内で、**未算定（`isCalculated=false`）の活動量レコードを `ideaCode` 一致で新版係数へ一括再マッピング**する（`UNIQUE(importId, ideaCode)` により対応は一意）。新版に同一コードが無いレコードは `ideaFactorId=null` にし、取込結果画面に「再選択が必要な明細 n 件」として警告表示する。**版を割り当てた会計年度（5.）の明細は再マッピング・孤児化の対象外**（その年度の版のまま）。
 3. 算定済みレコード・`emission_results` は旧版参照＋スナップショットのまま**変更しない**（適用時点の値を監査用に保持）。
-4. インポートの明示削除は、**`emission_results` から参照されている間は不可**（`isActive=false` で運用上は無効化できる）。完全削除は組織削除、または「参照している算定結果ごと削除される」ことを明示した強制削除操作に限る。
+4. インポートの明示削除は、**`emission_results` から参照されている間は不可**（`isActive=false` で運用上は無効化できる）。**会計年度に割り当て中の版も削除不可**（先に割り当てを外す）。完全削除は組織削除、または「参照している算定結果ごと削除される」ことを明示した強制削除操作に限る。
+5. **会計年度ごとの版**（`idea_fiscal_year_imports`。`supabase/migrations/20261019120000_idea_fiscal_year_imports.sql`）: 1 つの会計年度に 1 つの版を割り当てられる。年度の途中での版の切り替えは扱わない。割り当てていない年度は有効な版（`isActive`）を使う。
+   - 製品の検索・選択（§4.2）は、活動量の期間（`periodStart`）が属する会計年度に割り当てた版、無ければ有効な版から行う。選択中の製品がその版の製品でないとき（対象年月を別の年度へ変えた・割り当て前に算定した明細を編集した等）は、データ入力画面で選び直しを促す（選び直さなければ選択中の製品の版で算定する）
+   - 割り当て（`POST /api/idea-imports/fiscal-year-assignment` → RPC `assign_idea_import_to_fiscal_year`）は、同じトランザクションでその年度の未算定の明細を割り当てた版へ `ideaCode` 一致で付け替え、一致しないものは `ideaFactorId=null`（再選択が必要）にして件数を返す。割り当てを外したときは有効な版へ付け替える。算定済みの明細は変えない（3.）
+   - 算定（§4.3）は明細の `ideaFactorId` の係数をそのまま使う（版の解決はしない）ため、年度ごとの版は上記の検索・付け替えで担保する。レポートの出典は、その期間の算定結果が実際に参照した版を表示する（変更なし）
+   - 旧版を残し続けることは SuMPO のライセンス上問題ないことを確認済み
 
 ## 4. インポーター設計
 
@@ -239,7 +244,7 @@ alter table emission_results alter column emissions type numeric(15, 6);
 - パース本体は**純関数**の逐次パーサー `createIdeaParser(gwpModel)`（シートごとに `beginSheet(name)` → 行を順に渡す → `finish()` で `{ meta, rows, errors, skippedRows }`）として `src/features/factors/services/ideaImport.ts` に置く。一括読込済みの Workbook から流す `parseIdeaWorkbook(workbook, gwpModel)` も同じパーサーを使うため、ダミー構造の xlsx フィクスチャによるユニットテストは一括読込のまま維持する。
 - xlsx 読み取りは Route Handler（Node ランタイム）+ `exceljs` の **ストリーミング読取**（`stream.xlsx.WorkbookReader`。`src/features/factors/services/ideaImportReader.ts`）。ワークブック全体をメモリ展開せず、対象シート（バージョン情報・指定 GWP モデルの列を持つ `LCIA結果_*`）の行だけを逐次パーサーへ流す。ヘッダー行（3〜5 行目）で列位置を確定してから 6 行目以降を処理するため、行へのランダムアクセスは要らない。
   - exceljs 4.4 の WorkbookReader は ZIP 末尾の小さなエントリ（`xl/workbook.xml` 等）を取りこぼすことがあるため、入力は中央ディレクトリ直前に詰め物エントリを足したストリーム（`xlsxStreamSource.ts`）で渡す（詳細は同ファイルのコメント）。
-- **ファイルの受け渡し**: ブラウザは API にファイル本体を送らず、`POST /api/idea-imports/upload-url` が発行する署名付き URL で Supabase Storage の `upload-quarantine` バケット（自組織フォルダ配下 `${organizationId}/idea-imports/<uuid>.xlsx`）へ直接アップロードし、パスだけを `POST /api/idea-imports` に渡す。サーバはパスが自組織向けに発行した形であることを検証してから Storage の `info()` でサイズを確認し（上限超過は取得しない。バケットの `file_size_limit` は `on conflict do nothing` で作られるため頼らない）、取得した実バイト列を検証（拡張子・ZIP マジックナンバー）して取込に回す。`upload-url` は組織あたり 10 分に 10 回までのレート制限と、進行中の取込がある場合の 409 を持つ（数十MBを上げてから失敗させない）。滞留した processing 行の回収は進行中チェックより先に行う（逆だと中断された取込の行が 409 を出し続けて回収に到達できない）。完了・失敗・入力不備のいずれでも quarantine から削除する。アップロード後に取込 API が呼ばれなかった取り残し（タブを閉じた等）は、次回の `upload-url` 発行時に自組織フォルダ内の 24 時間超のファイルを削除する（`removeStaleIdeaUploadFiles`。スケジューラ不要）。バケットにはブラウザからの直接 select / delete ポリシーを置かない（`20260831000003_storage.sql` の方針）。分割・再開アップロード（TUS）は新規依存（tus-js-client）が要るため採用せず、上限 50MB 以内の通常アップロードで足りるとした。
+- **ファイルの受け渡し**: ブラウザは API にファイル本体を送らず、`POST /api/idea-imports/upload-url` が発行する署名付き URL で Supabase Storage の `upload-quarantine` バケット（自組織フォルダ配下 `${organizationId}/idea-imports/<uuid>.xlsx`）へ直接アップロードし、パスだけを `POST /api/idea-imports` に渡す。サーバはパスが自組織向けに発行した形であることを検証してから Storage の `info()` でサイズを確認し（上限超過は取得しない。バケットの `file_size_limit` は `on conflict do nothing` で作られるため頼らない）、取得した実バイト列を検証（拡張子・ZIP マジックナンバー）して取込に回す。`upload-url` は組織あたり 10 分に 10 回までのレート制限と、進行中の取込がある場合の 409 を持つ（数十MBを上げてから失敗させない）。滞留した processing 行の回収は進行中チェックより先に行う（逆だと中断された取込の行が 409 を出し続けて回収に到達できない）。回収（`recoverStaleIdeaImports`: 10 分以上更新の無い processing 行を failed に戻す）は取込の開始操作に加え、係数管理画面の IDEA データベースカードが取込中の表示を出している間も `POST /api/idea-imports/recovery` で依頼する（表示を見つけた時点で 1 回、以後 1 分ごと）。取込の裏の処理がサーバーの再起動や実行時間の上限で中断されると processing のまま残り、画面は取込中の間ほかの取込操作を受け付けないため、この依頼が無いと取込中の表示から抜け出せない。取込 API は実行時間の上限（`maxDuration = 300` 秒）を指定する。完了・失敗・入力不備のいずれでも quarantine から削除する。アップロード後に取込 API が呼ばれなかった取り残し（タブを閉じた等）は、次回の `upload-url` 発行時に自組織フォルダ内の 24 時間超のファイルを削除する（`removeStaleIdeaUploadFiles`。スケジューラ不要）。バケットにはブラウザからの直接 select / delete ポリシーを置かない（`20260831000003_storage.sql` の方針）。分割・再開アップロード（TUS）は新規依存（tus-js-client）が要るため採用せず、上限 50MB 以内の通常アップロードで足りるとした。
 - **デプロイ前提**: API のリクエストボディは JSON 数百バイトのため、リクエストボディ制限のあるホスティング（Vercel の 4.5MB 等）でも動く。メモリは実ファイル相当（10,300 行 × 約 300 列・17MB）のダミーで **ヒープのピーク約 78MB（RSS 約 400MB）** を実測（`scripts/measure-idea-import.ts`。旧経路の一括読込は同条件で約 1.3GB）。Node プロセスに 512MB 程度あれば足りる（README / setup-guide 2-F）。
 - バリデーション（すべて満たさない場合は取込全体を failed とし、行単位エラーは行番号付きで収集する。活動量CSVの取込ポリシーに整合）:
   1. `バージョン情報` シートから version / releaseDate を取得できること
@@ -252,7 +257,7 @@ alter table emission_results alter column emissions type numeric(15, 6);
 
 ### 4.2 製品検索 API
 
-- `GET /api/idea-factors?query=鋼&country=JPN&limit=50`（または supabase クライアント直の org スコープ SELECT）。検索対象は **active インポートのみ**。
+- `GET /api/idea-factors?query=鋼&country=JPN&limit=50`（または supabase クライアント直の org スコープ SELECT）。検索対象は **活動量の期間が属する会計年度に割り当てた版、無ければ active インポートのみ**（§3.6-5）。
 - 既定は `country=JPN` を優先表示し、無い製品は GLO を提示。`SearchableSelect` を流用したインクリメンタル検索（サーバーサイド `ilike`、debounce、上限50件）。**全行をクライアントにロードしない。**
 
 ### 4.3 算定エンジンへの接続（コード契約）
@@ -394,7 +399,7 @@ scope3Total = Σ カテゴリ別採用値
 
 | 画面 | 変更 |
 |---|---|
-| 係数管理（`/factors`） | 「IDEAデータベース」カード新設: バージョン・取込日・製品数・引用表記の表示、インポート実行、削除（参照有りは不可 — §3.6）。未取込時は SuMPO 契約の案内文とリンクを表示 |
+| 係数管理（`/factors`） | 「IDEAデータベース」カード新設: バージョン・取込日・製品数・引用表記の表示、インポート実行、削除（参照有りは不可 — §3.6）。未取込時は SuMPO 契約の案内文とリンクを表示。「IDEAの版と算定年度」カード: 会計年度ごとに使う版の選択（割り当て・解除。付け替えた件数と再選択が必要な件数を通知）と、取込履歴（版・GWPモデル・取込日・製品数・割り当て年度・算定での使用件数）。有効な版でなく、割り当ても算定結果からの参照も無い版はここから削除できる（§3.6-5） |
 | データ入力（`/data-input`） | Scope3 積上げ入力: カテゴリ（1〜15）選択 → IDEA 製品検索選択 → 活動量入力（単位は製品から自動設定）→ 期間・拠点。インライン概算表示は既存パターンを踏襲 |
 | Scope分析（`/scope-analysis`） | カテゴリごとに算定方法バッジ（直接入力 / 積上げ）と方法切替（切替時に §5.1 の再集計を実行）。積上げカテゴリはドリルダウンで製品別内訳を表示。**direct 方式の値の編集導線（`scope3_category_emissions` の upsert UI）もここに置く**（実装済み。積上げを採用中のカテゴリでも直接入力値は「未採用」として保持・編集できる） |
 | レポート | Scope3 の算定方法欄に方式と IDEA 引用表記（GWPモデル名を含む）を自動記載 |

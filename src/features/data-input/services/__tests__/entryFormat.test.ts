@@ -216,7 +216,7 @@ describe('buildPreviewRows', () => {
       '備考',
     ]);
     expect(rows[1].value).toBe('電気');
-    expect(rows[2].value).toBe('2024-11-01 ～ 2024-11-30');
+    expect(rows[2].value).toBe('2024年11月');
     expect(rows[3]).toEqual({ label: '活動量', value: '10,000 kWh', note: undefined });
     expect(rows[5]).toEqual({
       label: '適用係数',

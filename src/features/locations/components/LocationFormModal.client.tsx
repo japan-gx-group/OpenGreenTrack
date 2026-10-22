@@ -29,8 +29,9 @@ export const LocationFormModal = ({ form, returnFocusRef }: LocationFormModalPro
   <Modal isOpen={form.isModalOpen} onClose={form.close} title={form.editingLocationId ? '拠点情報の編集' : '新規拠点の追加'} size="lg" returnFocusRef={returnFocusRef}>
     <form onSubmit={form.submit} className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-semibold text-text-muted">拠点名称 <span className="text-danger">*</span></label>
+        <label className="text-xs font-semibold text-text-muted" htmlFor="location-form-name">拠点名称 <span className="text-danger">*</span></label>
         <input
+          id="location-form-name"
           type="text"
           className="gt-field"
           placeholder="例: 横浜スマートセンター"
@@ -43,8 +44,9 @@ export const LocationFormModal = ({ form, returnFocusRef }: LocationFormModalPro
 
       <div className="flex gap-4">
         <div className="flex flex-col gap-1 flex-1">
-          <label className="text-xs font-semibold text-text-muted">地域区分</label>
+          <label className="text-xs font-semibold text-text-muted" htmlFor="location-form-region">地域区分</label>
           <select
+            id="location-form-region"
             className="gt-field"
             value={form.values.region}
             onChange={e => form.setValues(prev => ({ ...prev, region: e.target.value as Region }))}
@@ -55,8 +57,9 @@ export const LocationFormModal = ({ form, returnFocusRef }: LocationFormModalPro
           </select>
         </div>
         <div className="flex flex-col gap-1 flex-1">
-          <label className="text-xs font-semibold text-text-muted">拠点種別</label>
+          <label className="text-xs font-semibold text-text-muted" htmlFor="location-form-type">拠点種別</label>
           <select
+            id="location-form-type"
             className="gt-field"
             value={form.values.type}
             onChange={e => form.setValues(prev => ({ ...prev, type: e.target.value as LocationType }))}
@@ -70,8 +73,9 @@ export const LocationFormModal = ({ form, returnFocusRef }: LocationFormModalPro
 
       <div className="flex gap-4">
         <div className="flex flex-col gap-1 flex-1">
-          <label className="text-xs font-semibold text-text-muted">管理責任者名</label>
+          <label className="text-xs font-semibold text-text-muted" htmlFor="location-form-person">管理責任者名</label>
           <input
+            id="location-form-person"
             type="text"
             className="gt-field"
             placeholder="例: 斉藤 大介"
@@ -81,8 +85,9 @@ export const LocationFormModal = ({ form, returnFocusRef }: LocationFormModalPro
           />
         </div>
         <div className="flex flex-col gap-1 flex-1">
-          <label className="text-xs font-semibold text-text-muted">稼働状況</label>
+          <label className="text-xs font-semibold text-text-muted" htmlFor="location-form-status">稼働状況</label>
           <select
+            id="location-form-status"
             className="gt-field"
             value={form.values.status}
             onChange={e => form.setValues(prev => ({ ...prev, status: e.target.value as LocationStatus }))}

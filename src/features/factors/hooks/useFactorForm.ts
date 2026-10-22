@@ -2,6 +2,9 @@
 
 // カスタム係数の作成・編集モーダルの状態と保存処理。
 // 標準係数は画面から編集できない（openEdit で弾く）。
+// 編集で係数値・単位を変えたとき、その係数で算定済みのデータがあれば保存前に件数を示し、
+// 再算定するかを選ばせる（算定済みの結果は算定時の値のまま残り、年度内で新旧の値が混在するため）。
+// 再算定の実行は呼び出し側（onRecalculationRequested）が担う。
 
 import { useState, type Dispatch, type FormEvent, type SetStateAction } from 'react';
 import type { ShowToast } from '@/hooks/useToast';
@@ -12,6 +15,7 @@ import {
   updateEmissionFactor,
   type EmissionFactor,
 } from '../services/factorService';
+import { countCalculatedRecordsForFactor, hasCalculationInputChanged } from '../services/factorRecalculation';
 import { factorGroupOf, type FactorGroup } from '../utils/factorGroups';
 import { defaultUnitForEnergy, defaultFactorForEnergy } from '../utils/unitOptions';
 
@@ -34,6 +38,14 @@ export interface UseFactorFormParams {
   showToast: ShowToast;
   /** 保存後に呼ぶ。保存した係数の群を渡すので、別タブへ消えないよう呼び出し側でタブを移す */
   onSaved: (savedGroup: FactorGroup) => void;
+  /** 「保存して再算定する」を選んで保存したあとに呼ぶ。その係数で算定済みのデータを算定し直す */
+  onRecalculationRequested: (savedFactor: EmissionFactor) => void | Promise<void>;
+}
+
+/** 係数値・単位を変えた保存の前に出す確認（その係数で算定済みのデータがあるとき）。 */
+export interface FactorRecalculationPrompt {
+  /** この係数で算定済みのデータ件数 */
+  calculatedCount: number;
 }
 
 export interface FactorFormController {
@@ -48,6 +60,12 @@ export interface FactorFormController {
   openEdit: (factor: EmissionFactor) => void;
   close: () => void;
   submit: (event: FormEvent) => Promise<void>;
+  /** 保存前の再算定の確認。出していないときは null */
+  recalculationPrompt: FactorRecalculationPrompt | null;
+  /** 確認に答えて保存する。recalculate = true なら保存後に再算定する */
+  confirmRecalculation: (recalculate: boolean) => Promise<void>;
+  /** 確認を閉じてフォームの編集に戻る（保存しない） */
+  cancelRecalculation: () => void;
 }
 
 export function useFactorForm({
@@ -57,10 +75,14 @@ export function useFactorForm({
   setDatabase,
   showToast,
   onSaved,
+  onRecalculationRequested,
 }: UseFactorFormParams): FactorFormController {
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [editingFactorId, setEditingFactorId] = useState<string | null>(null);
+  // 編集を開いた時点の係数（係数値・単位が変わったかの判定に使う）
+  const [editingOriginal, setEditingOriginal] = useState<EmissionFactor | null>(null);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [recalculationPrompt, setRecalculationPrompt] = useState<FactorRecalculationPrompt | null>(null);
   // 地域/電力会社・初期ステータスの入力欄は廃止した: カスタム係数は常に regionName='全国'・
   // status='有効' で保存する（事業者別の区別は公式係数の providerName 列が担う）。
   const [factorForm, setFactorForm] = useState<FactorFormValues>({
@@ -94,6 +116,8 @@ export function useFactorForm({
       isCustom: true
     });
     setEditingFactorId(null);
+    setEditingOriginal(null);
+    setRecalculationPrompt(null);
   };
 
   const openCreate = () => {
@@ -113,6 +137,8 @@ export function useFactorForm({
     // 食い違う係数を開いたとき、保存すれば正しい Scope に直る）。
     setFactorForm({ ...toFactorFormValues(factor), scope: scopeLabelForEnergyLabel(factor.energyType) });
     setEditingFactorId(factor.id);
+    setEditingOriginal(factor);
+    setRecalculationPrompt(null);
     setIsModalOpen(true);
   };
 
@@ -121,13 +147,8 @@ export function useFactorForm({
     resetFactorForm();
   };
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!factorForm.name.trim()) {
-      showToast('係数名を入力してください', 'error');
-      return;
-    }
-
+  const save = async (recalculate: boolean) => {
+    let saved: EmissionFactor | null = null;
     setIsSaving(true);
     try {
       const recordToSave = {
@@ -150,11 +171,53 @@ export function useFactorForm({
       onSaved(savedGroup);
       showToast(`「${savedRecord.name}」を${editingFactorId ? '更新' : '追加'}しました`, 'success');
       resetFactorForm(savedGroup);
+      saved = savedRecord;
     } catch (error) {
       showToast(error instanceof Error ? error.message : '排出係数の保存に失敗しました', 'error');
     } finally {
       setIsSaving(false);
     }
+    // 再算定は保存が成功したときだけ、保存の後に行う（再算定側の失敗を保存の失敗として出さないため）。
+    if (recalculate && saved) {
+      await onRecalculationRequested(saved);
+    }
+  };
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!factorForm.name.trim()) {
+      showToast('係数名を入力してください', 'error');
+      return;
+    }
+
+    // 係数値・単位を変えた編集だけ、算定済みのデータがあるか確かめてから保存する。
+    if (editingFactorId && editingOriginal && hasCalculationInputChanged(editingOriginal, factorForm)) {
+      setIsSaving(true);
+      let calculatedCount: number;
+      try {
+        calculatedCount = await countCalculatedRecordsForFactor(editingFactorId);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'この係数で算定済みのデータの確認に失敗しました', 'error');
+        return;
+      } finally {
+        setIsSaving(false);
+      }
+      if (calculatedCount > 0) {
+        setRecalculationPrompt({ calculatedCount });
+        return;
+      }
+    }
+
+    await save(false);
+  };
+
+  const confirmRecalculation = async (recalculate: boolean) => {
+    setRecalculationPrompt(null);
+    await save(recalculate);
+  };
+
+  const cancelRecalculation = () => {
+    setRecalculationPrompt(null);
   };
 
   return {
@@ -167,5 +230,8 @@ export function useFactorForm({
     openEdit,
     close,
     submit,
+    recalculationPrompt,
+    confirmRecalculation,
+    cancelRecalculation,
   };
 }
