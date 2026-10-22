@@ -8,6 +8,8 @@ import { Scope3MethodPanel } from '../Scope3MethodPanel.client';
 // Scope3MethodPanel の直接入力値モーダルのコンポーネントテスト。
 // 排出量欄の IME 正規化（全角数字が無言で弾かれ何も入力できない）を中心に、
 // 「画面に何が出て、onSaveDirect に何が渡るか」を検証する。
+// 正規化の規則そのもの（活動量入力と共通の normalizeAmountInput）は data-input 側で検証済みなので、
+// ここでは「活動量入力と同じ扱いになっているか」を画面の振る舞いとして固定する。
 // ドリルダウン取得（getScope3CategoryDrilldown）はモーダル経路では呼ばれないためモック不要。
 
 const ITEM: Scope3MethodCategoryItem = {
@@ -19,6 +21,8 @@ const ITEM: Scope3MethodCategoryItem = {
   calculatedEmissions: 0,
   adoptedEmissions: 0,
 };
+
+const REJECTED_MESSAGE = '排出量は数字と小数点のみ入力できます。';
 
 const renderPanel = (onSaveDirect = vi.fn()) => {
   const result = render(
@@ -45,6 +49,18 @@ const openModal = (container: HTMLElement): HTMLInputElement => {
   return input!;
 };
 
+/** 「保存する」でフォームを送信する（成功時はモーダルが閉じる）。 */
+const submitModal = async (container: HTMLElement): Promise<void> => {
+  const saveButton = [...container.querySelectorAll('button')].find(
+    (button) => button.textContent?.trim() === '保存する',
+  );
+  expect(saveButton, '「保存する」ボタンが見つかりません').toBeDefined();
+  await act(async () => {
+    saveButton!.form?.requestSubmit();
+  });
+};
+
+/** IME の composition イベントを発火する（変換の開始・確定を再現する）。 */
 const fireComposition = (input: HTMLInputElement, type: 'compositionstart' | 'compositionend'): void => {
   act(() => {
     input.dispatchEvent(new CompositionEvent(type, { bubbles: true }));
@@ -70,6 +86,19 @@ describe('Scope3MethodPanel 直接入力値モーダルの排出量欄', () => {
 
     setInputValue(input, '1250.5');
 
+    expect(input.value).toBe('1250.5');
+    expect(rejectedMessage(result.container)).toBeNull();
+  });
+
+  it('IME を使わない貼り付けでもカンマ・全角混じりを正規化して受け付ける', () => {
+    const result = renderPanel();
+    mounted = result;
+    const input = openModal(result.container);
+
+    setInputValue(input, '12,345');
+    expect(input.value).toBe('12345');
+
+    setInputValue(input, '１，２５０．５');
     expect(input.value).toBe('1250.5');
     expect(rejectedMessage(result.container)).toBeNull();
   });
@@ -101,13 +130,86 @@ describe('Scope3MethodPanel 直接入力値モーダルの排出量欄', () => {
     fireComposition(input, 'compositionend');
 
     expect(input.value).toBe('125');
-    expect(rejectedMessage(result.container)?.textContent).toBe(
-      '排出量は数字と小数点のみ入力できます。',
-    );
+    expect(rejectedMessage(result.container)?.textContent).toBe(REJECTED_MESSAGE);
 
     // 数字を入れ直すと案内は消える。
     setInputValue(input, '126');
     expect(rejectedMessage(result.container)).toBeNull();
+  });
+
+  // 活動量入力と同じく NFKC 正規化は使わないので、上付き数字 10² が 102、丸数字 ① が 1 として
+  // 通ることはない。数字ではない入力として弾き、理由を表示する。
+  it('上付き数字・丸数字は数字に変換せず、直前の値に戻して理由を表示する', () => {
+    const result = renderPanel();
+    mounted = result;
+    const input = openModal(result.container);
+
+    setInputValue(input, '10');
+
+    // 通常入力（IME を使わない経路）。
+    setInputValue(input, '10²');
+    expect(input.value).toBe('10');
+    expect(rejectedMessage(result.container)?.textContent).toBe(REJECTED_MESSAGE);
+
+    // IME 変換を確定する経路。
+    fireComposition(input, 'compositionstart');
+    setInputValue(input, '①');
+    fireComposition(input, 'compositionend');
+    expect(input.value).toBe('10');
+    expect(rejectedMessage(result.container)?.textContent).toBe(REJECTED_MESSAGE);
+  });
+
+  // 戻す先を「直前に確定した値」として持ち続けると、欄を空にしてから数字以外を入れた瞬間に
+  // 古い排出量が復活し、そのまま保存できてしまう。空欄のまま理由だけ出すことを固定する。
+  it('欄を空にした後に数字以外を入れても、直前に入っていた値は復活しない', () => {
+    const result = renderPanel();
+    mounted = result;
+    const input = openModal(result.container);
+
+    setInputValue(input, '125');
+    setInputValue(input, '');
+    expect(input.value).toBe('');
+
+    // 通常入力（IME を使わない経路）。
+    setInputValue(input, 'a');
+    expect(input.value).toBe('');
+    expect(rejectedMessage(result.container)?.textContent).toBe(REJECTED_MESSAGE);
+
+    // IME 変換を確定する経路でも、変換開始時点の空欄に戻す。
+    fireComposition(input, 'compositionstart');
+    setInputValue(input, 'あ');
+    fireComposition(input, 'compositionend');
+    expect(input.value).toBe('');
+    expect(rejectedMessage(result.container)).not.toBeNull();
+  });
+
+  it('保存してモーダルを開き直した後に数字以外を入れても、保存前の値は復活しない', async () => {
+    const onSaveDirect = vi.fn().mockResolvedValue(undefined);
+    const result = renderPanel(onSaveDirect);
+    mounted = result;
+    const firstInput = openModal(result.container);
+
+    fireComposition(firstInput, 'compositionstart');
+    setInputValue(firstInput, '１２５');
+    fireComposition(firstInput, 'compositionend');
+    await submitModal(result.container);
+    expect(onSaveDirect).toHaveBeenCalledWith(1, 125, '');
+    // 保存成功でモーダルは閉じる。
+    expect(result.container.querySelector('input[inputmode="decimal"]')).toBeNull();
+
+    // 親の再取得が反映されるまで items は変わらないので、開き直すと欄は空のまま。
+    const input = openModal(result.container);
+    expect(input.value).toBe('');
+
+    setInputValue(input, 'a');
+    expect(input.value).toBe('');
+    expect(rejectedMessage(result.container)?.textContent).toBe(REJECTED_MESSAGE);
+
+    fireComposition(input, 'compositionstart');
+    setInputValue(input, 'あ');
+    fireComposition(input, 'compositionend');
+    expect(input.value).toBe('');
+    expect(rejectedMessage(result.container)).not.toBeNull();
   });
 
   it('IME 正規化で確定した値が onSaveDirect へ数値として渡る', async () => {
@@ -120,13 +222,7 @@ describe('Scope3MethodPanel 直接入力値モーダルの排出量欄', () => {
     setInputValue(input, '１２５０．５');
     fireComposition(input, 'compositionend');
 
-    const saveButton = [...result.container.querySelectorAll('button')].find(
-      (button) => button.textContent?.trim() === '保存する',
-    );
-    expect(saveButton, '「保存する」ボタンが見つかりません').toBeDefined();
-    await act(async () => {
-      saveButton!.form?.requestSubmit();
-    });
+    await submitModal(result.container);
 
     expect(onSaveDirect).toHaveBeenCalledWith(1, 1250.5, '');
   });

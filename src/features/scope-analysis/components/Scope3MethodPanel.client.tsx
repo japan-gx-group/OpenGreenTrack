@@ -59,7 +59,10 @@ export const Scope3MethodPanel: React.FC<Scope3MethodPanelProps> = ({
   // composition が壊れて「何も入力できない」状態になるため、変換中は見たまま表示し、
   // 確定（compositionend）のタイミングでまとめて正規化・判定する。
   const isComposingEditValueRef = useRef(false);
-  // 確定入力が数字にならなかったときに戻す先（直前にパターンを通過した値）。
+  // 確定入力が数字にならなかったときに戻す先（変換開始時点の表示値。パターンを通過済み）。
+  // 変換開始のたびに取り直し、モーダルを開いたときも開いた時点の値に揃える。
+  // 確定した値を持ち越すと、欄を空にしてから数字以外を入れた瞬間に古い排出量が復活し、
+  // そのまま保存できてしまう。活動量入力（ActivityEntryForm）と同じ扱い。
   const lastValidEditValueRef = useRef('');
   const [editNote, setEditNote] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
@@ -85,6 +88,7 @@ export const Scope3MethodPanel: React.FC<Scope3MethodPanelProps> = ({
     setEditingItem(item);
     const initialValue = item.directEmissions !== null ? String(item.directEmissions) : '';
     setEditValue(initialValue);
+    // 戻す先も開いた時点の値に揃える（前回開いたモーダルで確定した値を持ち越さない）。
     lastValidEditValueRef.current = initialValue;
     isComposingEditValueRef.current = false;
     setEditValueRejected(false);
@@ -98,14 +102,14 @@ export const Scope3MethodPanel: React.FC<Scope3MethodPanelProps> = ({
   };
 
   // 全角数字・カンマ付きは正規化して受け付け、それでも数字にならない入力は直前の値に戻して理由を出す。
-  const commitEditValue = (raw: string) => {
+  // 戻す先は経路ごとに呼び出し側が決める（通常入力は表示中の値、IME 確定は変換開始時点の値）。
+  const commitEditValue = (raw: string, fallback: React.SetStateAction<string>) => {
     const normalized = normalizeAmountInput(raw);
     if (DECIMAL_PATTERN.test(normalized)) {
-      lastValidEditValueRef.current = normalized;
       setEditValue(normalized);
       setEditValueRejected(false);
     } else {
-      setEditValue(lastValidEditValueRef.current);
+      setEditValue(fallback);
       setEditValueRejected(true);
     }
   };
@@ -116,12 +120,20 @@ export const Scope3MethodPanel: React.FC<Scope3MethodPanelProps> = ({
       setEditValue(event.target.value);
       return;
     }
-    commitEditValue(event.target.value);
+    // 変換を介さない入力では表示中の値がそのまま戻す先になる。ref を介さないので、
+    // 欄を空にした後に古い値が復活することはない。
+    commitEditValue(event.target.value, prev => (DECIMAL_PATTERN.test(prev) ? prev : ''));
+  };
+
+  const handleEditValueCompositionStart = () => {
+    isComposingEditValueRef.current = true;
+    // 変換開始時点の表示値は必ずパターンを通過しているので、確定が数字にならなかったときはここへ戻す。
+    lastValidEditValueRef.current = editValue;
   };
 
   const handleEditValueCompositionEnd = (event: React.CompositionEvent<HTMLInputElement>) => {
     isComposingEditValueRef.current = false;
-    commitEditValue(event.currentTarget.value);
+    commitEditValue(event.currentTarget.value, lastValidEditValueRef.current);
   };
 
   const handleSaveDirect = async (event: React.FormEvent) => {
@@ -358,9 +370,7 @@ export const Scope3MethodPanel: React.FC<Scope3MethodPanelProps> = ({
               className="gt-field"
               value={editValue}
               onChange={handleEditValueChange}
-              onCompositionStart={() => {
-                isComposingEditValueRef.current = true;
-              }}
+              onCompositionStart={handleEditValueCompositionStart}
               onCompositionEnd={handleEditValueCompositionEnd}
               placeholder="例: 1250.5"
               autoFocus
