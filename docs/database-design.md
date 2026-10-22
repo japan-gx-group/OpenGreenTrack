@@ -49,6 +49,7 @@ erDiagram
     ssbj_reports ||--o{ ssbj_narratives : "四本柱の文章"
     ssbj_reports ||--o{ ssbj_judgements : "該当性・重要性の判断"
     ssbj_reports ||--o{ ssbj_audit_logs : "操作履歴"
+    ssbj_reports ||--o{ ssbj_risk_candidate_decisions : "業種の候補への判断"
     organizations ||--o{ ssbj_member_roles : "SSBJのロール"
     profiles ||--o| ssbj_member_roles : "割り当て"
     ssbj_reports ||--o{ ssbj_external_emissions : "外部算定値"
@@ -327,7 +328,7 @@ SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず
 | `createdByUserId` | 保存者ID | UUID | NULL | Route Handler が `getCurrentProfile()` で確定した値を RPC に渡す |
 | `createdAt` | 保存日時 | TIMESTAMPTZ | NOT NULL | |
 
-- 書き込みは RPC `create_ssbj_report_version`（EXECUTE は service_role 限定）だけ。`authenticated` には select のみ（自組織）。
+- 書き込みは RPC `create_ssbj_report_version`（EXECUTE は service_role 限定）だけ。`authenticated` には select のみ（自組織。SSBJ の閲覧者は不可。3.20）。
 - UPDATE はトリガー `reject_ssbj_report_versions_update` で全ロール（service_role を含む）拒否する。
 - スナップショットの組み立ては `ssbj_build_report_snapshot`（`20260929182558_ssbj_report_preview.sql`）に一本化し、版生成 RPC とプレビュー（`preview_ssbj_report`。保存はしない）が同じ関数を使う。
 
@@ -420,6 +421,7 @@ RLSは自組織に限定し、レポートの組織帰属も検証する。変�
 | `itemId` | 項目ID | VARCHAR(100) | NOT NULL, CHECK(項目 ID の形式) | 要求項目マスター（`src/features/ssbj/utils/requirementMaster.ts`）の項目。マスターにあるかはアプリが検証する。作成後は変更不可 |
 | `disclosureState` / `disclosureText` | 開示する文章の状態 / 本文 | `ssbj_field_state` / TEXT | CHECK(`answered` のときだけ本文が非 NULL・空白のみ不可) | |
 | `internalNote` | 内部メモ | TEXT | NULL | 開示しない |
+| `templateInput` | 選択式テンプレートの選択 | JSONB | NULL, CHECK(object) | `{version, choices, texts}`。本文の代わりにしない作業用の情報で、開示せず保存版にも含めない。形と選択肢 ID はアプリが検証する（`20261018120000_ssbj_narrative_template_input.sql`） |
 | `createdByUserId` / `updatedByUserId` | 登録・更新操作者ID | UUID | NULL | `set_row_actor` トリガ |
 | `createdAt` / `updatedAt` | 作成・更新日時 | TIMESTAMPTZ | NOT NULL | `updatedAt` は `set_updated_at` トリガ |
 
@@ -464,7 +466,28 @@ SSBJ の各テーブルのトリガー（`ssbj_audit_row_change`）と、状態�
 - RLS は自組織の select だけ。authenticated には select だけを GRANT し、update はトリガーで全ロール拒否する。
 - 版数・監査列だけが変わった更新は記録しない。復元中の行ごとの記録は止め、復元として 1 件記録する。
 
-### 3.20 SSBJ のロール (`ssbj_member_roles`) — 利用者ごとの SSBJ のロール（`supabase/migrations/20261020100000_ssbj_member_roles.sql`）
+### 3.20 SSBJ 業種の候補への判断 (`ssbj_risk_candidate_decisions`) — 業種から出したリスク・機会の候補の採用・除外（`supabase/migrations/20261018130000_ssbj_risk_candidate_decisions.sql`）
+レポートと候補 ID の組ごとに 1 行の作業用の記録。候補（`src/features/ssbj/utils/industryCandidates.ts`）を検討の出発点にしたかどうかの記録で、該当性・重要性の判断ではない。
+保存版には含めず、`draftRevision` も進めない。承認済みの間は変更を拒否し（`reject_ssbj_change_when_approved`）、操作履歴に記録する（対象の種類 `risk_candidate`）。
+「採用して登録」は `adopt_ssbj_risk_candidate`（security invoker。authenticated）で、リスク・機会の登録と採用の記録を 1 つのトランザクションで保存する。
+既に採用済み（登録したリスク・機会が残っている）候補は上書きせず P2062 にする。業種はレポートの基本情報から記録する。
+登録したリスク・機会が残っている採用は、delete・update の RLS で取り消させず、上書きもさせない（関連付けを外して再採用すると重複して登録されるため。先にリスク・機会を削除する）。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | ID | UUID | Primary Key | |
+| `organizationId` | 組織ID | UUID | Foreign Key | 削除時: CASCADE |
+| `reportId` | レポートID | UUID | Foreign Key, UNIQUE(`reportId`, `candidateId`) | 削除時: CASCADE。作成後は変更不可 |
+| `candidateId` | 候補ID | VARCHAR(100) | NOT NULL, CHECK(候補 ID の形式) | 候補の一覧にあるかはアプリが検証する。作成後は変更不可 |
+| `candidateVersion` | 候補の定義の版 | VARCHAR(30) | NOT NULL | 判断したときの版 |
+| `industryCode` | 業種 | VARCHAR(10) | NULL | 判断したときのレポートの業種（SICS の産業コード） |
+| `decision` | 判断 | VARCHAR(20) | CHECK(`adopted` / `excluded`) | |
+| `reason` | 理由 | TEXT | CHECK(除外では必須。改行・タブ・全角スペースなど空白だけも不可) | 内部の記録。開示しない |
+| `riskOpportunityId` | 登録したリスク・機会 | UUID | 外部キーにしない（同じレポートかは RLS で検証） | 採用したときに登録したもの。保存版の復元はリスク・機会を全部消して同じ ID で入れ直すので、外部キー（SET NULL）にすると関連付けが切れる。残っているかは ID で存在を確かめて判定する |
+| `createdByUserId` / `updatedByUserId` | 登録・更新操作者ID | UUID | NULL | `set_row_actor` トリガ |
+| `createdAt` / `updatedAt` | 登録・更新日時 | TIMESTAMPTZ | | |
+
+### 3.21 SSBJ のロール (`ssbj_member_roles`) — 利用者ごとの SSBJ のロール（`supabase/migrations/20261020100000_ssbj_member_roles.sql`）
 SSBJ の中だけで使うロールの割り当て。権限の規則の正本は [`authorization-matrix.md`](authorization-matrix.md)。OGT 本体の `profiles.role` は変えず、`'admin'` だけを読む。
 
 | 物理名 | 論理名 | 型 | 制約 | 説明 |
@@ -482,9 +505,10 @@ SSBJ の中だけで使うロールの割り当て。権限の規則の正本は
   管理クライアントの削除ではログイン中の利用者がいないため、行に残っている以前の更新者を操作者にしない（`20261023090000_ssbj_member_roles_audit_actor.sql`）。
 - **SSBJ の各テーブルへの適用**（`20261023100000_ssbj_role_policies.sql`）: 3.11〜3.19 の各テーブルの RLS に、`AS RESTRICTIVE` のポリシーを重ねる。
   作業中データの書き込み（`ssbj_reports` の作成・更新を含む）は入力担当か管理者だけ。作業中データ・操作履歴の select は閲覧者以外。
-  閲覧者が select できるのは、承認済みの `ssbj_reports` と、その `approvedVersionId` の `ssbj_report_versions` だけ。
+  閲覧者が select できるのは、承認済みの `ssbj_reports` だけ。`ssbj_report_versions` は内部メモ・内部記録を含むので見せず、
+  承認した版の開示する内容は Route Handler が返す（[`authorization-matrix.md`](authorization-matrix.md) §2.3）。
 
-### 3.21 SSBJ 外部算定値 (`ssbj_external_emissions`) — 外部で算定した排出量（`supabase/migrations/20261023110000_ssbj_external_emissions.sql`）
+### 3.22 SSBJ 外部算定値 (`ssbj_external_emissions`) — 外部で算定した排出量（`supabase/migrations/20261023110000_ssbj_external_emissions.sql`）
 OGT で算定できない排出量（CO2 以外のガス、対応していない排出源、子会社から届いた値など）を、出典と確認者を付けてレポートに採用する作業中データ。
 変更のたびに `ssbj_reports.draftRevision` を進め、保存版には `ssbj_snapshot_section__external_emissions` で取り込む。
 

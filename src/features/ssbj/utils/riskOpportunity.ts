@@ -17,6 +17,7 @@ import {
   type SsbjTimeHorizon,
 } from '../types';
 import { isSsbjItemId, isSsbjSectionId } from './ids';
+import { findSsbjNarrativeItem } from './requirementMaster';
 
 export const SSBJ_RISK_TITLE_MAX_LENGTH = 200;
 export const SSBJ_RISK_TEXT_MAX_LENGTH = 4000;
@@ -89,15 +90,19 @@ export const formatLinkTarget = (target: SsbjLinkTarget): string => {
 };
 
 /**
- * 章と項目の識別子（任意）から関連先を作る。識別子が空なら章そのもの。
- * 形式が正しくなければ null（項目 ID は `<章ID>.<英小文字・数字・_>`。docs/ssbj-spec.md §3）。
+ * 関連先の表示（入力画面用）。項目が要求項目マスターにあれば項目名を出す（例「戦略：ビジネス・モデルとバリュー・チェーンへの影響」）。
+ * マスターに無い項目（以前に識別子を手で入れたもの）は、ID のままと分かるように出す。
  */
-export const toLinkTarget = (section: SsbjSectionId, itemSlug: string): SsbjLinkTarget | null => {
-  const slug = itemSlug.trim();
-  if (slug === '') return section;
-  const itemId = `${section}.${slug}`;
-  return isSsbjItemId(itemId) ? itemId : null;
+export const formatLinkTargetWithLabel = (target: SsbjLinkTarget): string => {
+  const sectionLabel = SSBJ_SECTION_LABELS[sectionOfLinkTarget(target)];
+  if (isSsbjSectionId(target)) return sectionLabel;
+  const item = findSsbjNarrativeItem(target);
+  return item ? `${sectionLabel}：${item.label}` : `${sectionLabel}：${target}（要求項目マスターに無い項目）`;
 };
+
+/** 関連先が章か、要求項目マスターにある項目か（マスターに無い任意の識別子は正式な項目として扱わない）。 */
+export const isKnownLinkTarget = (target: SsbjLinkTarget): boolean =>
+  isSsbjSectionId(target) || (isSsbjItemId(target) && findSsbjNarrativeItem(target) !== undefined);
 
 /**
  * 入力値を保存用に整える。説明は「入力済み」のときだけ本文を持ち、それ以外の状態では本文を捨てる
@@ -131,8 +136,15 @@ export const normalizeSsbjRiskOpportunityInput = (
   };
 };
 
-/** 正規化済みの入力を検証する。問題が無ければ空配列。複数の問題は全件返す。 */
-export const validateSsbjRiskOpportunityInput = (input: SsbjRiskOpportunityInput): string[] => {
+/**
+ * 正規化済みの入力を検証する。問題が無ければ空配列。複数の問題は全件返す。
+ * 関連する項目は要求項目マスターにあるものだけを受け付ける。ただし savedLinkTargets（編集前から保存されていた関連先）は、
+ * マスターに無くても残せる（以前に識別子を手で入れたデータを、編集しただけで失わないため。画面ではマスターに無いと出す）。
+ */
+export const validateSsbjRiskOpportunityInput = (
+  input: SsbjRiskOpportunityInput,
+  savedLinkTargets: readonly SsbjLinkTarget[] = [],
+): string[] => {
   const errors: string[] = [];
   if (!input.title) errors.push('名称を入力してください');
   if (input.title.length > SSBJ_RISK_TITLE_MAX_LENGTH) {
@@ -150,6 +162,12 @@ export const validateSsbjRiskOpportunityInput = (input: SsbjRiskOpportunityInput
   }
   if (input.linkTargets.some(target => !isSsbjSectionId(target) && !isSsbjItemId(target))) {
     errors.push('関連する章・項目の形式が正しくありません');
+  }
+  const unknownTargets = input.linkTargets.filter(
+    target => isSsbjItemId(target) && !isKnownLinkTarget(target) && !savedLinkTargets.includes(target),
+  );
+  if (unknownTargets.length > 0) {
+    errors.push(`要求項目マスターに無い項目は関連付けられません（${unknownTargets.join('、')}）。一覧から項目を選んでください`);
   }
   return errors;
 };

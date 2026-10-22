@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { fictionalVersion, fictionalVersionBeforeBasicInfoAdditions } from '../../__fixtures__/fictionalReport';
+import {
+  FICTIONAL_BATCH_ID,
+  fictionalVersion,
+  fictionalVersionBeforeBasicInfoAdditions,
+} from '../../__fixtures__/fictionalReport';
 import { fictionalDisclosedTexts, fictionalGhgValues, fictionalInternalTexts } from '../../__fixtures__/fictionalReportTexts';
 import type { SsbjReportSnapshotV1 } from '../../types';
+import { toSsbjDisclosedSnapshot } from '../../utils/disclosedSnapshot';
 import { ssbjVersionToCsvRows } from '../versionCsv';
 
 const GENERATED_AT = '2025-06-04T01:02:03.000Z';
@@ -249,5 +254,48 @@ describe('ssbjVersionToCsvRows（R1 の全体確認）', () => {
     expect(all.filter(row => row[0] === '該当性・重要性の判断' && row[2] === '該当性' && row[3] === '未確認').length)
       .toBeGreaterThan(0);
     expect(all.filter(row => row[1] === 'governance.management_role')[0]?.[3]).toBe('未入力');
+  });
+});
+
+describe('ssbjVersionToCsvRows（内部記録を出さない出力。閲覧者向け）', () => {
+  const full = () => ssbjVersionToCsvRows(fictionalVersion, GENERATED_AT);
+  const withoutInternal = () => ssbjVersionToCsvRows(fictionalVersion, GENERATED_AT, { internalRecords: false });
+
+  it('内部記録の列と内部記録だけの行を出さず、内部記録を 1 つも含めない', () => {
+    const rows = withoutInternal();
+    expect(rows).toContainEqual(['章', '対象ID', '項目', '状態', '開示内容', '単位', '注記']);
+    const cells = rows.flat();
+    expect(fictionalInternalTexts.filter(internal => cells.includes(internal))).toEqual([]);
+    expect(rows.every(row => row.length <= 7)).toBe(true);
+    // GHG の取得元・件数（内部記録の列にだけ出すもの）も出さない。
+    expect(cells.some(cell => cell.includes('取得元') || cell.includes('登録済み活動量'))).toBe(false);
+    expect(cells.some(cell => cell.includes(FICTIONAL_BATCH_ID))).toBe(false);
+    expect(rows.find(row => row[0] === '時間軸の定義' && row[2] === '内部メモ')).toBeUndefined();
+    expect(rows.filter(row => row[0] === '根拠文書').map(row => row[2])).toEqual(['開示用参照文', '開示用参照文']);
+  });
+
+  it('開示する内容はすべて出し、内部記録の列以外は内部記録を出す出力と同じ', () => {
+    const rows = withoutInternal();
+    const disclosed = new Set(rows.map(row => row[4]));
+    expect(fictionalDisclosedTexts.filter(text => !disclosed.has(text))).toEqual([]);
+    const header = full().findIndex(row => row[0] === '章');
+    // 内部記録だけの行: 根拠文書の参照文以外、時間軸の定義の内部メモ、外部算定値の出典の詳細。
+    const externalDetails = new Set(['算定した者', '算定方法', '根拠文書', '確認者', '確認日時', '内部メモ']);
+    const expected = full()
+      .filter(row => !(row[0] === '根拠文書' && row[2] !== '開示用参照文') && !(row[0] === '時間軸の定義' && row[2] === '内部メモ')
+        && !(row[0] === 'GHG排出量（外部算定値）' && externalDetails.has(row[2])))
+      .map((row, index) => (index >= header ? row.filter((_, column) => column !== 6) : row));
+    expect(rows).toEqual(expected);
+  });
+
+  it('内部記録を除いた保存版（閲覧者に返すもの）からも、同じ行を出力できる', () => {
+    const { snapshot } = toSsbjDisclosedSnapshot(fictionalVersion.snapshot);
+    expect(ssbjVersionToCsvRows({ ...fictionalVersion, snapshot }, GENERATED_AT, { internalRecords: false }))
+      .toEqual(withoutInternal());
+  });
+
+  it('内部記録を除いた保存版を、内部記録を出す形で出力しようとするとエラーにする（資料名が無い）', () => {
+    const { snapshot } = toSsbjDisclosedSnapshot(fictionalVersion.snapshot);
+    expect(() => ssbjVersionToCsvRows({ ...fictionalVersion, snapshot }, GENERATED_AT)).toThrow('根拠文書の保存内容が不正です');
   });
 });

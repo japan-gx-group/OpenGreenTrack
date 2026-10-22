@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { fictionalJudgements } from '../../__fixtures__/fictionalReport';
+import { fictionalJudgements, fictionalRisksOpportunities } from '../../__fixtures__/fictionalReport';
 import type { SsbjJudgement } from '../../types';
 import {
+  applySsbjJudgementQuickChange,
   emptySsbjJudgement,
   isSsbjJudgementPending,
   isSsbjJudgementRecorded,
   isSsbjOmissionStatementMissing,
   normalizeSsbjJudgementInput,
   ssbjJudgementEntries,
+  ssbjJudgementReviewReasons,
+  ssbjJudgementStatus,
+  ssbjRisksByRequirement,
   toSsbjJudgementFormValues,
   validateSsbjJudgementInput,
   type SsbjJudgementFormValues,
@@ -74,6 +78,8 @@ describe('判断の状態', () => {
     const base = emptySsbjJudgement('REQ-CLM-020');
     expect(isSsbjJudgementRecorded(base)).toBe(false);
     expect(isSsbjJudgementRecorded({ ...base, explanation: { ...base.explanation, internalNote: 'メモ' } })).toBe(true);
+    // 内部の検討理由を除いた保存版（キーが無い）は、内部の検討理由が無いものとして扱う。
+    expect(isSsbjJudgementRecorded({ ...base, explanation: { disclosure: base.explanation.disclosure } } as SsbjJudgement)).toBe(false);
   });
 
   it('経過措置・商業上の機密で記載しないのに説明が入力済みでなければ知らせる', () => {
@@ -100,5 +106,61 @@ describe('ssbjJudgementEntries', () => {
     const extra = emptySsbjJudgement('REQ-CLM-999');
     const entries = ssbjJudgementEntries([...fictionalJudgements, extra]);
     expect(entries.at(-1)).toEqual({ requirement: null, judgement: extra });
+  });
+});
+
+describe('判断の状態（未判断・要確認・判断済み）', () => {
+  const base = emptySsbjJudgement('REQ-GEN-002');
+  const withNote = (judgement: SsbjJudgement): SsbjJudgement => ({
+    ...judgement, explanation: { ...judgement.explanation, internalNote: '根拠' },
+  });
+
+  it('何も記録していなければ未判断', () => {
+    expect(ssbjJudgementStatus(base)).toBe('undecided');
+    expect(ssbjJudgementReviewReasons(base)).toEqual([]);
+  });
+
+  it('該当性・重要性を選んでも、根拠が無ければ要確認（一覧の選択で根拠を省いたことにしない）', () => {
+    const chosen = applySsbjJudgementQuickChange(base, { applicability: 'applicable', materiality: 'material' });
+    expect(ssbjJudgementStatus(chosen)).toBe('needs_review');
+    expect(ssbjJudgementReviewReasons(chosen)).toEqual(['根拠が未入力']);
+    expect(ssbjJudgementStatus(withNote(chosen))).toBe('decided');
+  });
+
+  it('該当なのに重要性が未確認、該当性が未確認、記載しない旨の説明が無ければ要確認', () => {
+    expect(ssbjJudgementReviewReasons(withNote({ ...base, applicability: 'applicable' }))).toEqual(['重要性が未確認']);
+    expect(ssbjJudgementReviewReasons(withNote(base))).toEqual(['該当性が未確認']);
+    expect(ssbjJudgementReviewReasons(withNote({
+      ...base, applicability: 'applicable', materiality: 'material', omissionReason: 'transition_relief',
+    }))).toEqual(['その旨の説明が未入力']);
+  });
+
+  it('非該当なら重要性の判断は要らない。根拠は開示する説明でもよい', () => {
+    expect(ssbjJudgementStatus(withNote({ ...base, applicability: 'not_applicable' }))).toBe('decided');
+    expect(ssbjJudgementStatus({
+      ...base, applicability: 'not_applicable', explanation: { disclosure: { state: 'answered', value: '説明' }, internalNote: null },
+    })).toBe('decided');
+  });
+});
+
+describe('applySsbjJudgementQuickChange', () => {
+  it('選んだ値だけを変え、記載しない理由・説明・内部の検討理由はそのまま残す', () => {
+    const saved: SsbjJudgement = {
+      requirementId: 'REQ-CLM-020', applicability: 'applicable', materiality: 'material', omissionReason: 'transition_relief',
+      explanation: { disclosure: { state: 'answered', value: '説明' }, internalNote: '根拠' },
+    };
+    expect(applySsbjJudgementQuickChange(saved, { materiality: 'unconfirmed' })).toEqual({ ...saved, materiality: 'unconfirmed' });
+    expect(applySsbjJudgementQuickChange(saved, {})).toEqual(saved);
+  });
+});
+
+describe('ssbjRisksByRequirement', () => {
+  it('関連付けたマスターの項目が答える要求ごとに引き、章全体・マスターに無い項目は含めない', () => {
+    const [risk] = fictionalRisksOpportunities;
+    const map = ssbjRisksByRequirement([
+      { ...risk, linkTargets: ['strategy', 'strategy.business_model_impact', 'strategy.climate_resilience'] },
+    ]);
+    expect([...map.keys()]).toEqual(['REQ-GEN-007', 'REQ-CLM-009']);
+    expect(map.get('REQ-CLM-009')?.map(item => item.id)).toEqual([risk.id]);
   });
 });

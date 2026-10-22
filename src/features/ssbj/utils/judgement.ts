@@ -10,8 +10,10 @@ import type {
   SsbjOmissionReason,
   SsbjRequirement,
   SsbjRequirementId,
+  SsbjRiskOpportunity,
 } from '../types';
-import { SSBJ_REQUIREMENTS, findSsbjRequirement } from './requirementMaster';
+import { isSsbjItemId } from './ids';
+import { SSBJ_REQUIREMENTS, findSsbjNarrativeItem, findSsbjRequirement } from './requirementMaster';
 
 export const SSBJ_JUDGEMENT_TEXT_MAX_LENGTH = 2000;
 
@@ -59,19 +61,89 @@ export const emptySsbjJudgement = (requirementId: SsbjRequirementId): SsbjJudgem
   explanation: { disclosure: { state: 'unanswered' }, internalNote: null },
 });
 
-/** 判断が 1 つでも記録されているか（すべて既定のままなら未判断）。 */
+/**
+ * 判断が 1 つでも記録されているか（すべて既定のままなら未判断）。
+ * 内部の検討理由を除いた保存版（閲覧者に返すもの。utils/disclosedSnapshot.ts）ではキーが無いので、null と同じに扱う。
+ */
 export const isSsbjJudgementRecorded = (judgement: SsbjJudgement): boolean =>
   judgement.applicability !== 'unconfirmed' || judgement.materiality !== 'unconfirmed' ||
   judgement.omissionReason !== 'none' || judgement.explanation.disclosure.state !== 'unanswered' ||
-  judgement.explanation.internalNote !== null;
+  (judgement.explanation.internalNote ?? null) !== null;
 
 /**
- * 判断が済んでいないか（「未確認のみ」の絞り込みと件数に使う）。該当性が未確認、または該当なのに重要性が未確認のとき。
+ * 判断が済んでいないか（プレビューの件数に使う。画面の絞り込みは ssbjJudgementStatus）。該当性が未確認、または該当なのに重要性が未確認のとき。
  * 非該当の要求は重要性を判断しなくてよい。
  */
 export const isSsbjJudgementPending = (judgement: SsbjJudgement): boolean =>
   judgement.applicability === 'unconfirmed' ||
   (judgement.applicability === 'applicable' && judgement.materiality === 'unconfirmed');
+
+/**
+ * 一覧の絞り込みに使う判断の状態。
+ * - undecided（未判断）: 何も記録していない
+ * - needs_review（要確認）: 記録はあるが、判断が済んでいない・根拠が無い・記載しない旨の説明が無い
+ * - decided（判断済み）: 該当性（該当なら重要性も）を判断し、根拠（内部の検討理由か開示する説明）がある
+ * 一覧で該当性・重要性だけを選んだ要求は、根拠を書くまで要確認にする（一覧の選択で根拠を省いたことにしない）。
+ */
+export const SSBJ_JUDGEMENT_STATUSES = ['undecided', 'needs_review', 'decided'] as const;
+export type SsbjJudgementStatus = (typeof SSBJ_JUDGEMENT_STATUSES)[number];
+
+export const SSBJ_JUDGEMENT_STATUS_LABELS: Record<SsbjJudgementStatus, string> = {
+  undecided: '未判断',
+  needs_review: '要確認',
+  decided: '判断済み',
+};
+
+/** 判断に根拠（内部の検討理由か、入力済みの開示する説明）があるか。 */
+const hasSsbjJudgementBasis = (judgement: SsbjJudgement): boolean =>
+  judgement.explanation.internalNote !== null || judgement.explanation.disclosure.state === 'answered';
+
+/** 要確認の理由（画面に並べる）。未判断・判断済みなら空配列。 */
+export const ssbjJudgementReviewReasons = (judgement: SsbjJudgement): string[] => {
+  if (!isSsbjJudgementRecorded(judgement)) return [];
+  const reasons: string[] = [];
+  if (judgement.applicability === 'unconfirmed') reasons.push('該当性が未確認');
+  if (judgement.applicability === 'applicable' && judgement.materiality === 'unconfirmed') reasons.push('重要性が未確認');
+  if (!hasSsbjJudgementBasis(judgement)) reasons.push('根拠が未入力');
+  if (isSsbjOmissionStatementMissing(judgement)) reasons.push('その旨の説明が未入力');
+  return reasons;
+};
+
+export const ssbjJudgementStatus = (judgement: SsbjJudgement): SsbjJudgementStatus => {
+  if (!isSsbjJudgementRecorded(judgement)) return 'undecided';
+  return ssbjJudgementReviewReasons(judgement).length > 0 ? 'needs_review' : 'decided';
+};
+
+/** 一覧で選べる値（該当性・重要性）。記載しない理由・説明・内部の検討理由は詳細の編集で扱う。 */
+export type SsbjJudgementQuickChange = { applicability?: SsbjApplicability; materiality?: SsbjMateriality };
+
+/**
+ * 一覧での選択を、保存済みの判断に重ねる。記載しない理由・開示する説明・内部の検討理由はそのまま残す
+ * （一覧の操作で詳細の内容を失わない。保存は詳細の編集と同じ検証・保存を通す）。
+ */
+export const applySsbjJudgementQuickChange = (
+  judgement: SsbjJudgement,
+  change: SsbjJudgementQuickChange,
+): SsbjJudgement => ({ ...judgement, ...change });
+
+/**
+ * リスク・機会の関連する項目から、要求ごとの関連するリスク・機会を引く（要求項目マスターの項目が答える要求）。
+ * 章全体への関連とマスターに無い項目は、要求を決められないので含めない。
+ */
+export const ssbjRisksByRequirement = (
+  risks: readonly SsbjRiskOpportunity[],
+): Map<SsbjRequirementId, SsbjRiskOpportunity[]> => {
+  const byRequirement = new Map<SsbjRequirementId, SsbjRiskOpportunity[]>();
+  for (const risk of risks) {
+    const requirementIds = new Set(
+      risk.linkTargets.flatMap(target => (isSsbjItemId(target) ? findSsbjNarrativeItem(target)?.requirementIds ?? [] : [])),
+    );
+    for (const requirementId of requirementIds) {
+      byRequirement.set(requirementId, [...(byRequirement.get(requirementId) ?? []), risk]);
+    }
+  }
+  return byRequirement;
+};
 
 /** 編集フォームの値。説明の本文は「入力済み」のときだけ保存する。 */
 export type SsbjJudgementFormValues = {

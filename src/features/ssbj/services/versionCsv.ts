@@ -24,7 +24,24 @@ const CSV_SECTIONS = new Set([
 
 export type SsbjCsvVersion = Pick<SsbjReportVersion, 'id' | 'reportId' | 'versionNumber' | 'snapshot'>;
 
-export const ssbjVersionToCsvRows = (version: SsbjCsvVersion, generatedAt: string): string[][] => {
+// 表の列（見出しの行と同じ順）。内部記録の列は、内部記録を出さないときに除く。
+const HEADER = ['章', '対象ID', '項目', '状態', '開示内容', '単位', '内部記録', '注記'];
+const INTERNAL_COLUMN = HEADER.indexOf('内部記録');
+
+export type SsbjCsvOptions = {
+  /**
+   * 内部記録を出すか（既定は出す）。false なら、内部記録の列と、内部記録だけの行（根拠文書の資料名・保管先など、
+   * 時間軸の定義の内部メモ）を出さない。閲覧者の出力に使う（docs/authorization-matrix.md §2.3）。
+   * 閲覧者の保存版は内部記録を除いてある（utils/disclosedSnapshot.ts）ので、その形でも出力できる。
+   */
+  internalRecords?: boolean;
+};
+
+export const ssbjVersionToCsvRows = (
+  version: SsbjCsvVersion,
+  generatedAt: string,
+  { internalRecords = true }: SsbjCsvOptions = {},
+): string[][] => {
   const { snapshot } = version;
   if (snapshot?.schemaVersion !== 1 || !snapshot.report || !snapshot.sections) {
     throw new Error('対応していない保存版の形式です');
@@ -51,8 +68,10 @@ export const ssbjVersionToCsvRows = (version: SsbjCsvVersion, generatedAt: strin
     ['位置付け', '試行版。SSBJ基準への準拠や対外提出の完了を保証しません。'],
     ['算定値の注意', 'OGTの公式係数は実質CO2のみで、他ガスは含まれません。算定済みはデータの網羅性を保証しません。'],
     [],
-    ['章', '対象ID', '項目', '状態', '開示内容', '単位', '内部記録', '注記'],
+    [...HEADER],
   ];
+  // 内部記録だけの行（内部記録を出さないときに除く）。
+  const internalOnlyRows = new Set<string[]>();
 
   const basic = (name: string, value: string | null | undefined): void => {
     rows.push(['基本情報', report.id, name, value == null ? '未入力' : '入力済み', value ?? '', '', '', '']);
@@ -129,14 +148,17 @@ export const ssbjVersionToCsvRows = (version: SsbjCsvVersion, generatedAt: strin
     definition('中期', timeHorizons.mediumTerm);
     definition('長期', timeHorizons.longTerm);
     definition('戦略上の計画期間との関係', timeHorizons.planningHorizonRelation);
-    rows.push(['時間軸の定義', report.id, '内部メモ',
-      timeHorizons.internalNote ? '入力済み' : '未入力', '', '', timeHorizons.internalNote ?? '', '']);
+    const internalNote = ['時間軸の定義', report.id, '内部メモ',
+      timeHorizons.internalNote ? '入力済み' : '未入力', '', '', timeHorizons.internalNote ?? '', ''];
+    rows.push(internalNote);
+    internalOnlyRows.add(internalNote);
   }
   const evidence = snapshot.sections.evidence;
   if (evidence !== undefined) {
     if (!Array.isArray(evidence)) throw new Error('根拠文書の保存内容が不正です');
     for (const item of evidence) {
-      if (!item.id || !item.itemId || !item.documentTitle || !item.disclosure ||
+      // 資料名は必須だが内部記録なので、内部記録を出さないとき（閲覧者の保存版には無い）は確かめない。
+      if (!item.id || !item.itemId || (internalRecords && !item.documentTitle) || !item.disclosure ||
         !['unanswered', 'unconfirmed', 'not_applicable', 'answered'].includes(item.disclosure.state) ||
         (item.disclosure.state === 'answered' && !item.disclosure.value?.trim())) {
         throw new Error('根拠文書の保存内容が不正です');
@@ -160,23 +182,28 @@ export const ssbjVersionToCsvRows = (version: SsbjCsvVersion, generatedAt: strin
         ['保存担当', item.fileStoredBy],
         ['ファイルの記録日時', item.fileRecordedAt],
       ] as const) {
-        rows.push([
+        const row = [
           '根拠文書', item.itemId, name,
           value == null ? '未入力' : '入力済み',
           '', '', value ?? '', `根拠ID: ${item.id}`,
-        ]);
+        ];
+        rows.push(row);
+        internalOnlyRows.add(row);
       }
     }
   }
   const ghg = snapshot.sections.ghg;
-  if (ghg !== undefined) rows.push(...ghgAdoptionCsvRows(report.id, ghg));
+  if (ghg !== undefined) rows.push(...ghgAdoptionCsvRows(report.id, ghg, { internalRecords }));
   const externalEmissions = snapshot.sections.external_emissions;
-  if (externalEmissions !== undefined) rows.push(...externalEmissionCsvRows(externalEmissions));
+  if (externalEmissions !== undefined) rows.push(...externalEmissionCsvRows(externalEmissions, { internalRecords }));
   const narratives = snapshot.sections.narratives;
   if (narratives !== undefined) rows.push(...narrativeCsvRows(narratives));
   const judgements = snapshot.sections.judgements;
   if (judgements !== undefined) rows.push(...judgementCsvRows(judgements));
-  return rows;
+  if (internalRecords) return rows;
+  return rows
+    .filter(row => !internalOnlyRows.has(row))
+    .map(row => (row.length === HEADER.length ? row.filter((_, index) => index !== INTERNAL_COLUMN) : row));
 };
 
 export const downloadSsbjVersionCsv = (
