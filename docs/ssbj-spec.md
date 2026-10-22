@@ -711,7 +711,7 @@ T14 の確認事項と、確かめている場所:
   作業中データの全テーブルに BEFORE トリガー、基本情報は ssbj_reports の BEFORE UPDATE トリガーで止める。保存版の作成・出力は承認済みでもできる（作業中データを変えないため）。
 - **承認者はレポートごとに指定する（レビュー依頼のときに選ぶ）。承認・差戻しは、指定された承認者か OGT の管理者だけ。**
   OGT 本体は今、ロールで権限を分けていない（`src/types/role.ts`）が、要件の「本体の管理者または承認者に限る」を満たすため、
-  SSBJ の承認・差戻しの判定にだけ、保存されている `profiles.role = 'admin'` を読む。本体の権限の仕組みは変えない。レビュー依頼・取り下げは誰でもできる。
+  SSBJ の承認・差戻しの判定にだけ、保存されている `profiles.role = 'admin'` を読む。本体の権限の仕組みは変えない。レビュー依頼・取り下げは誰でもできる（R1 の時点。R2-11 からは SSBJ のロールで決まる。[`authorization-matrix.md`](authorization-matrix.md) §2.2）。
 - **承認するときは、その時点の内容で保存版を作り、承認した版として記録する。** 承認した内容をあとから再現できるように。
   承認は、画面が見ていた `draftRevision` と一致したときだけ通す（見ていない内容を承認させない）。
 - **レビュー中は編集できる。** 承認時の版数の一致で、レビュー後の変更を承認してしまうことを防ぐ。
@@ -794,7 +794,7 @@ OGT 本体の Route Handler（算定・仮適用の再計算・集計の更新�
 
 | 対象 | 内容 |
 |---|---|
-| API | `ogt-adoption`・`versions`・`versions/[versionId]/restore`（入力担当か管理者）、`preview`（閲覧者以外）、`status`（レビュー依頼・取り下げは入力担当か管理者、承認・差戻しは承認担当か管理者）。許さなければ 403 |
+| API | `ogt-adoption`・`versions`・`versions/[versionId]/restore`・`preview`・`status`。許すロールは [`authorization-matrix.md`](authorization-matrix.md) §2.2 のとおりで、許さなければ 403 |
 | 画面 | 保存版の作成（詳細）、過去版からの新版作成・復元（保存履歴）、GHG の採用・取り消し、状態と承認の操作を、ロールで出し分ける。承認者の選択肢は、自分以外の承認担当か管理者だけ |
 | コード | `services/roleServer.ts`（`getSsbjUserRole`・`denySsbjRole`・`guardSsbjRole`）、`utils/memberRole.ts`（`ssbjRoleAllows`・`ssbjStatusActionPermission`・`ssbjForbiddenMessage`）、`utils/reportStatus.ts`（SSBJ のロールで判定）、`hooks/useSsbjMemberRoleMap.ts` |
 | テスト | 各 Route Handler の 403 / 500 の単体テスト、`roleServer`・純関数・画面の単体テスト、全体テスト `r1-requirements.e2e.ts`（承認は承認担当が行う流れにした） |
