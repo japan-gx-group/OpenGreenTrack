@@ -13,6 +13,7 @@ vi.mock('../../services/versionExportService', () => ({
   listSsbjVersions: vi.fn(),
   listSsbjCsvHistory: vi.fn(),
   getSsbjCsvVersion: vi.fn(),
+  getSsbjApprovedVersion: vi.fn(),
   recordSsbjCsvGeneration: vi.fn(),
 }));
 vi.mock('../../services/versionCsv', async importOriginal => ({
@@ -32,11 +33,14 @@ vi.mock('../../services/versionXlsx', async importOriginal => ({
 
 import { useSsbjReport } from '../../hooks/useSsbjReport';
 import {
+  getSsbjApprovedVersion,
   getSsbjCsvVersion,
   listSsbjCsvHistory,
   listSsbjVersions,
   recordSsbjCsvGeneration,
 } from '../../services/versionExportService';
+import { fictionalDisclosedTexts, fictionalInternalTexts } from '../../__fixtures__/fictionalReportTexts';
+import { toSsbjDisclosedSnapshot } from '../../utils/disclosedSnapshot';
 import { downloadSsbjVersionCsv } from '../../services/versionCsv';
 import { saveSsbjReportVersion } from '../../services/versionClient';
 import { recordSsbjExport } from '../../services/auditLogService';
@@ -220,5 +224,88 @@ describe('SsbjVersions', () => {
     await act(async () => { click(confirm); await Promise.resolve(); });
     expect(saveSsbjReportVersion).toHaveBeenCalledWith(fictionalVersion.reportId, 3, fictionalVersion.id);
     expect(container.textContent).toContain('作業中データは変更されていません');
+  });
+});
+
+describe('SsbjVersions（閲覧者）', () => {
+  const APPROVED_REVIEW: SsbjReportReview = {
+    ...FICTIONAL_DRAFT_REVIEW, status: 'approved', approverUserId: 'user-1', approvedAt: '2025-06-05T00:00:00.000Z',
+    approvedByUserId: 'user-1', approvedVersionId: fictionalVersion.id,
+  };
+  const approved = {
+    id: fictionalVersion.id, reportId: fictionalVersion.reportId, versionNumber: 1, createdAt: fictionalVersion.createdAt,
+    note: '承認時の保存版', sourceVersionId: null, createdByUserId: 'user-1', creatorName: '確認 三郎',
+    snapshot: toSsbjDisclosedSnapshot(fictionalVersion.snapshot).snapshot,
+  };
+  const renderViewer = async () => {
+    vi.mocked(getMySsbjRole).mockResolvedValueOnce('viewer');
+    vi.mocked(getSsbjApprovedVersion).mockResolvedValue(approved);
+    vi.mocked(recordSsbjExport).mockResolvedValue(undefined as never);
+    vi.mocked(recordSsbjCsvGeneration).mockResolvedValue({
+      id: 'log-1', versionId: fictionalVersion.id, versionNumber: 1, format: 'csv', createdAt: fictionalVersion.createdAt,
+    });
+    const screen = await renderScreen(APPROVED_REVIEW);
+    await act(async () => { await Promise.resolve(); });
+    return screen;
+  };
+
+  it('承認した保存版だけを API から読んで並べ、保存版の行・出力履歴・操作履歴へのリンクを読まない・出さない', async () => {
+    const { container } = await renderViewer();
+    expect(getSsbjApprovedVersion).toHaveBeenCalledWith(fictionalVersion.reportId);
+    expect(listSsbjVersions).not.toHaveBeenCalled();
+    expect(listSsbjCsvHistory).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('版 1');
+    expect(container.textContent).toContain('承認した版');
+    expect(container.textContent).toContain('作成者: 確認 三郎');
+    expect(container.textContent).not.toContain('操作履歴を見る');
+    expect(container.textContent).not.toContain('出力履歴');
+    expect(container.textContent).not.toContain('この版から新版を作成');
+    expect(container.textContent).not.toContain('この版の内容に戻す');
+  });
+
+  it('「内容を見る」は内部メモ・内部記録を除いた内容だけを出す', async () => {
+    const { container } = await renderViewer();
+    await act(async () => { click(buttonWith(container, '内容を見る')); await Promise.resolve(); });
+    expect(getSsbjCsvVersion).not.toHaveBeenCalled();
+    const text = container.textContent ?? '';
+    expect(text).toContain(`版 ${fictionalVersion.versionNumber} の保存内容`);
+    expect(fictionalDisclosedTexts.filter(value => !text.includes(value))).toEqual([]);
+    expect(fictionalInternalTexts.filter(value => text.includes(value))).toEqual([]);
+    expect(text).not.toContain('内部メモ（開示しない）');
+  });
+
+  it('CSV は内部記録の列を入れずに出し、操作履歴と出力履歴への記録は続ける', async () => {
+    const { container } = await renderViewer();
+    await act(async () => { click(buttonWith(container, 'CSVを出力')); await Promise.resolve(); });
+    await act(async () => { await Promise.resolve(); });
+    expect(recordSsbjExport).toHaveBeenCalledWith(fictionalVersion.reportId, 'csv', fictionalVersion.id);
+    expect(recordSsbjCsvGeneration).toHaveBeenCalledWith(approved, 'csv');
+    expect(downloadSsbjVersionCsv).toHaveBeenCalledOnce();
+    const [, rows] = vi.mocked(downloadSsbjVersionCsv).mock.calls[0];
+    expect(rows).toContainEqual(['章', '対象ID', '項目', '状態', '開示内容', '単位', '注記']);
+    expect(rows.flat().some(cell => cell === '内部記録')).toBe(false);
+    expect(fictionalInternalTexts.filter(value => rows.flat().includes(value))).toEqual([]);
+    expect(container.textContent).not.toContain('出力履歴');
+  });
+
+  it('Excel も内部記録の列を入れずに出す', async () => {
+    const { container } = await renderViewer();
+    await act(async () => { click(buttonWith(container, 'Excelを出力')); await Promise.resolve(); });
+    await act(async () => { await Promise.resolve(); });
+    expect(recordSsbjExport).toHaveBeenCalledWith(fictionalVersion.reportId, 'xlsx', fictionalVersion.id);
+    const [sheets] = vi.mocked(buildSsbjWorkbook).mock.calls[0];
+    expect(sheets[0].rows).toContainEqual(['章', '対象ID', '項目', '状態', '開示内容', '単位', '注記']);
+    expect(sheets[0].columnWidths).toHaveLength(7);
+    expect(downloadSsbjWorkbook).toHaveBeenCalledOnce();
+  });
+
+  it('画面を開いた後に承認した版が変わっていたら、出力せずに開き直しを促す', async () => {
+    const { container } = await renderViewer();
+    vi.mocked(getSsbjApprovedVersion).mockResolvedValue({ ...approved, id: '5b1f0000-0000-4000-8000-0000000000aa' });
+    await act(async () => { click(buttonWith(container, 'CSVを出力')); await Promise.resolve(); });
+    await act(async () => { await Promise.resolve(); });
+    expect(recordSsbjExport).not.toHaveBeenCalled();
+    expect(downloadSsbjVersionCsv).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('画面を開き直してください');
   });
 });

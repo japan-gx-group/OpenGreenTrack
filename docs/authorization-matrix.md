@@ -20,7 +20,7 @@ SSBJ 開示レポートで、データを書き換えられる経路をすべて
 | 管理者 | OGT の `profiles.role = 'admin'` | SSBJ のすべての操作。SSBJ のロールの割り当て |
 | 入力担当 | `editor` | レポートの作成と作業中データの編集、レビュー依頼・取り下げ、保存版の作成・復元、出力 |
 | 承認担当 | `approver` | 指定されたレポートの承認・差戻し、作業中データと保存版の閲覧、出力。作業中データは編集できない |
-| 閲覧者 | `viewer` | 承認済みのレポートの、承認した保存版の閲覧と出力だけ |
+| 閲覧者 | `viewer` | 承認済みのレポートの、承認した保存版の開示する内容の閲覧と出力だけ（内部メモ・内部記録は見えない） |
 
 決めたこと:
 
@@ -36,6 +36,8 @@ SSBJ 開示レポートで、データを書き換えられる経路をすべて
   入力担当が直してから依頼し直す。
 - **閲覧者は、承認済みのレポートの承認した保存版だけを見られる。** 作業中データ・未承認の保存版・操作履歴は見えない。
   承認前の内容や内部の検討の経過を、確定した開示と取り違えないため。
+- **閲覧者には、承認した保存版でも内部メモ・内部記録（[`ssbj-spec.md`](ssbj-spec.md) §5）を返さない。** 開示する内容だけを見せて出力させる。
+  内部の検討の経過・資料の保管先・ファイルの照合用の記録は開示しない内容で、閲覧者に渡すと出力から社外に出うるため（§2.3）。
 - **権限の範囲は当面「組織」単位とする。** 法人単位に広げるときは、ロールのテーブルに法人の列（空 = 組織全体）を足す形にする
   （法人の設計で合わせる）。
 
@@ -60,7 +62,8 @@ SSBJ 開示レポートで、データを書き換えられる経路をすべて
 - ロールの条件は、各テーブルの既存のポリシー（自組織であること）に、`AS RESTRICTIVE` のポリシーを重ねて効かせる
   （`20261023100000_ssbj_role_policies.sql`）。書き込みは `ssbj_current_user_can_edit()`、閲覧は `ssbj_current_user_can_view_working()`。
 - **SSBJ のテーブルを足すときは**、承認ロックのトリガーと一緒に、同じ形の RESTRICTIVE のポリシー（利用者が書ける操作ごとと select）を足し、
-  この表に行を足す。付け忘れは `scripts/db/__tests__/ssbjRolePoliciesPolicy.test.ts` が検出する。
+  この表に行を足す。付け忘れは `scripts/db/__tests__/ssbjRolePoliciesPolicy.test.ts` が検出する（マイグレーションの `ssbj_` のテーブルをすべて調べる。
+  ポリシーを重ねないテーブルは、理由と一緒にテストに書く）。
 
 ### 2.2 Route Handler（`service_role` を使う。RLS を越えるので Route Handler でロールを確かめる）
 
@@ -70,6 +73,7 @@ SSBJ 開示レポートで、データを書き換えられる経路をすべて
 | `POST /api/ssbj/reports/[reportId]/versions`（保存版の作成） | `create_ssbj_report_version` | ○ | × | × | ○ | R2-11 |
 | `POST .../versions/[versionId]/restore`（版の復元） | `restore_ssbj_report_version` | ○ | × | × | ○ | R2-11 |
 | `GET /api/ssbj/reports/[reportId]/preview`（作業中の内容のプレビュー） | `preview_ssbj_report` | ○ | ○ | × | ○ | R2-11 |
+| `GET /api/ssbj/reports/[reportId]/approved-version`（承認した保存版の開示する内容） | —（`ssbj_reports`・`ssbj_report_versions` を読む） | ○ | ○ | ○ | ○ | R2-12 |
 | `POST /api/ssbj/reports/[reportId]/status` の submit（レビュー依頼）・withdraw（取り下げ） | `change_ssbj_report_status` | ○ | × | × | ○ | R2-11 |
 | 同 approve（承認） | 同上 | × | ○（指定された承認者のとき） | × | ○ | R2-11・R2-12 |
 | 同 reopen（差戻し） | 同上 | × | ○（指定された承認者のとき） | × | ○ | R2-11・R2-12 |
@@ -85,15 +89,23 @@ SSBJ 開示レポートで、データを書き換えられる経路をすべて
 |---|---|---|---|---|---|---|
 | レポートの一覧・基本情報 | `ssbj_reports` select | ○ | ○ | 承認済みだけ | ○ | R2-12 |
 | 作業中データ | 2.1 の各テーブルの select | ○ | ○ | × | ○ | R2-12 |
-| 保存版 | `ssbj_report_versions` select | ○ | ○ | 承認した版だけ | ○ | R2-12 |
+| 保存版 | `ssbj_report_versions` select | ○ | ○ | × | ○ | R2-12 |
+| 承認した保存版の開示する内容 | `GET .../approved-version`（2.2） | ○ | ○ | ○ | ○ | R2-12 |
 | 操作履歴 | `ssbj_audit_logs` select | ○ | ○ | × | ○ | R2-12 |
-| 保存版の CSV・Excel の出力 | `record_ssbj_export`（記録）→ ブラウザで出力 | ○ | ○ | 承認した版だけ | ○ | R2-12 |
+| 保存版の CSV・Excel の出力 | `record_ssbj_export`（記録）→ ブラウザで出力 | ○ | ○ | 承認した版の開示する内容だけ | ○ | R2-12 |
 | 操作履歴の CSV・Excel の出力 | 同上 | ○ | ○ | × | ○ | R2-12 |
 | 印刷・PDF | ブラウザの印刷（記録しない） | 表示 | 表示 | 表示 | 表示 | — |
 | OGT の候補値 | `ssbj_ogt_numeric_values` ほか OGT の集計の RPC（読むだけ） | ○ | ○ | × | ○ | R2-12（画面の出し分け） |
 
 - 出力の記録は、見えるものだけを出力させる。見えない版を指定した記録は、版が見つからないものとして拒否する。
-- CSV の出力履歴は、これまでどおり OGT 本体の `system_audit_logs` にも書く（本体の扱いは変えない）。
+  閲覧者が出力できるのは承認した版の CSV・Excel だけで、内部記録の列を入れない。
+- **閲覧者に内部メモ・内部記録を返さないことは、DB と Route Handler で担保する。** 保存版の snapshot は 1 つの列に内部記録を含み、
+  RLS では一部だけを隠せない。そこで `ssbj_report_versions` の行は閲覧者に 1 行も見せず（RESTRICTIVE の select）、
+  承認した版は `approved-version` が service_role で読み、内部記録を除いてから返す（除く項目の分類は
+  `src/features/ssbj/utils/disclosedSnapshot.ts`。分類に無い項目も返さない）。画面で隠すだけでは、PostgREST を直接呼べば読めてしまうため。
+- CSV の出力履歴は、これまでどおり OGT 本体の `system_audit_logs` にも書く（本体の扱いは変えない）。保存履歴の画面の出力履歴の一覧は
+  閲覧者に出さないが、`system_audit_logs` の RLS は組織単位のまま（本体は変えない）なので、閲覧者も PostgREST から組織の出力の記録
+  （どの版をいつ出力したか）は読める。内部メモ・内部記録は含まない。
 
 ### 2.4 SSBJ のロールの割り当て（R2-10 で追加する）
 

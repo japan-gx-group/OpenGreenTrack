@@ -64,12 +64,13 @@ describe('レポート・保存版・操作履歴', () => {
     expect(policies).toContain(`on ssbj_reports as restrictive for update to authenticated using (${EDIT}) with check (${EDIT});`);
   });
 
-  it('閲覧者は承認済みのレポートと、その承認した保存版だけを見る', () => {
+  it('閲覧者は承認済みのレポートだけを見る', () => {
     expect(policies).toContain(`on ssbj_reports as restrictive for select to authenticated using (${VIEW} or status = 'approved');`);
-    const versions = policies.slice(policies.indexOf('create policy "ssbj_report_versions_select_viewer_approved_only"'));
-    expect(versions.slice(0, versions.indexOf(';'))).toContain(
-      `${VIEW} or exists ( select 1 from ssbj_reports r where r.id = ssbj_report_versions."reportId" and r.status = 'approved' and r."approvedVersionId" = ssbj_report_versions.id )`,
-    );
+  });
+
+  it('保存版（内部メモ・内部記録を含む）は、承認した版も含めて閲覧者に見せない', () => {
+    expect(policies).toContain(`on ssbj_report_versions as restrictive for select to authenticated using (${VIEW});`);
+    expect(policies).not.toMatch(/on ssbj_report_versions as restrictive for select to authenticated using \([^;]* or /);
   });
 
   it('操作履歴は閲覧者に見せない', () => {

@@ -11,7 +11,7 @@ vi.mock('../../services/previewService', () => ({
   getSsbjWorkingPreview: vi.fn(),
   getSsbjVersionPreview: vi.fn(),
 }));
-vi.mock('../../services/versionExportService', () => ({ listSsbjVersions: vi.fn() }));
+vi.mock('../../services/versionExportService', () => ({ listSsbjVersions: vi.fn(), getSsbjApprovedVersion: vi.fn() }));
 
 
 // SSBJ のロールは、既定で入力担当として操作する（編集の操作を出す）。
@@ -21,9 +21,11 @@ vi.mock('../../services/memberRoleService', async importOriginal => ({
 }));
 import { getSsbjVersionPreview, getSsbjWorkingPreview } from '../../services/previewService';
 import { getSsbjReport } from '../../services/reportService';
-import { listSsbjVersions } from '../../services/versionExportService';
+import { getSsbjApprovedVersion, listSsbjVersions } from '../../services/versionExportService';
 import { SsbjPreview } from '../SsbjPreview.client';
 import { getMySsbjRole } from '../../services/memberRoleService';
+import { fictionalDisclosedTexts, fictionalInternalTexts } from '../../__fixtures__/fictionalReportTexts';
+import { toSsbjDisclosedSnapshot } from '../../utils/disclosedSnapshot';
 
 const report = { ...fictionalReportBasicInfo, fiscalYearLabel: '2024年度',
   periodStart: '2024-04-01', periodEnd: '2025-03-31', draftRevision: 7, basicInfoRevision: 0, review: FICTIONAL_DRAFT_REVIEW };
@@ -81,19 +83,48 @@ describe('SsbjPreview', () => {
 });
 
 describe('SsbjPreview（閲覧者）', () => {
-  it('閲覧者には作業中の内容を取得せず、承認した保存版を出す（作業中の内容は選べない）', async () => {
+  beforeEach(() => {
     vi.mocked(getMySsbjRole).mockResolvedValueOnce('viewer');
     vi.mocked(getSsbjReport).mockResolvedValue({
       ...report,
       review: { ...report.review, status: 'approved', approverUserId: 'u', approvedAt: '2025-06-05T00:00:00.000Z',
         approvedByUserId: 'u', approvedVersionId: fictionalVersion.id },
     });
+    vi.mocked(getSsbjApprovedVersion).mockResolvedValue({
+      id: fictionalVersion.id, reportId: report.id, versionNumber: 1, createdAt: fictionalVersion.createdAt,
+      note: '承認時の保存版', sourceVersionId: null, createdByUserId: null, creatorName: '不明',
+      snapshot: toSsbjDisclosedSnapshot(fictionalVersion.snapshot).snapshot,
+    });
+  });
+
+  it('作業中の内容も保存版の行も読まず、承認した保存版の開示する内容を API から読んで出す', async () => {
     rendered = render(<SsbjPreview reportId={report.id} />);
     await settle();
+    expect(getSsbjApprovedVersion).toHaveBeenCalledWith(report.id);
     expect(getSsbjWorkingPreview).not.toHaveBeenCalled();
-    expect(getSsbjVersionPreview).toHaveBeenCalled();
-    expect(rendered.container.querySelector('[data-testid="ssbj-preview-source"]')?.textContent).toContain('保存版');
+    expect(getSsbjVersionPreview).not.toHaveBeenCalled();
+    expect(listSsbjVersions).not.toHaveBeenCalled();
+    expect(rendered.container.querySelector('[data-testid="ssbj-preview-source"]')?.textContent).toContain('保存版 第1版');
+    const text = rendered.container.textContent ?? '';
+    expect(fictionalDisclosedTexts.filter(value => !text.includes(value))).toEqual([]);
     const printLink = Array.from(rendered.container.querySelectorAll('a')).find(a => a.textContent?.includes('印刷'));
     expect(printLink?.getAttribute('href')).toBe(`/ssbj/${report.id}/preview/print?source=${fictionalVersion.id}`);
+  });
+
+  it('内部メモの表示の切替を出さず、内部メモ・内部記録を画面に出さない', async () => {
+    rendered = render(<SsbjPreview reportId={report.id} />);
+    await settle();
+    expect(rendered.container.querySelector('#ssbj-preview-internal')).toBeNull();
+    expect(rendered.container.textContent).not.toContain('内部メモも表示する');
+    const text = rendered.container.textContent ?? '';
+    expect(fictionalInternalTexts.filter(value => text.includes(value))).toEqual([]);
+    expect(text).not.toContain('開示しない');
+  });
+
+  it('承認した保存版を読めなければ、そのメッセージを出す', async () => {
+    vi.mocked(getSsbjApprovedVersion).mockRejectedValue(new Error('承認した保存版が見つかりません'));
+    rendered = render(<SsbjPreview reportId={report.id} />);
+    await settle();
+    expect(rendered.container.querySelector('[role="alert"]')?.textContent).toContain('承認した保存版が見つかりません');
   });
 });
