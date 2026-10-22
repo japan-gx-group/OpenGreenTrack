@@ -24,7 +24,14 @@ vi.mock('@/lib/supabase/client', () => ({
   }),
 }));
 
-import { assignSsbjMemberRole, getMySsbjRole, listSsbjMemberRoles, toSsbjMemberRoleLog } from '../memberRoleService';
+import { SSBJ_FORBIDDEN_MESSAGE } from '../../utils/writeError';
+import {
+  assignSsbjMemberRole,
+  getMySsbjRole,
+  listSsbjMemberRoles,
+  throwIfSsbjEditForbidden,
+  toSsbjMemberRoleLog,
+} from '../memberRoleService';
 
 afterEach(() => vi.clearAllMocks());
 
@@ -46,6 +53,21 @@ describe('getMySsbjRole', () => {
     await expect(getMySsbjRole()).resolves.toBeNull();
     mocks.rpc.mockResolvedValue({ data: 'logger', error: null });
     await expect(getMySsbjRole()).rejects.toThrow('SSBJ のロールが不正です');
+  });
+});
+
+describe('throwIfSsbjEditForbidden', () => {
+  it('今は編集できない（ロールが変わった）なら、権限のメッセージで例外にする', async () => {
+    mocks.rpc.mockResolvedValue({ data: false, error: null });
+    await expect(throwIfSsbjEditForbidden()).rejects.toThrow(SSBJ_FORBIDDEN_MESSAGE);
+    expect(mocks.rpc).toHaveBeenCalledWith('ssbj_current_user_can_edit');
+  });
+
+  it('編集できる・確かめられないときは何もしない（呼び出し元の案内のままにする）', async () => {
+    mocks.rpc.mockResolvedValue({ data: true, error: null });
+    await expect(throwIfSsbjEditForbidden()).resolves.toBeUndefined();
+    mocks.rpc.mockResolvedValue({ data: null, error: { message: 'boom' } });
+    await expect(throwIfSsbjEditForbidden()).resolves.toBeUndefined();
   });
 });
 

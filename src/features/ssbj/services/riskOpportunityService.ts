@@ -16,6 +16,7 @@ import {
 import { fromFieldValue, toFieldValue } from '../utils/fieldValue';
 import type { SsbjRiskOpportunityInput } from '../utils/riskOpportunity';
 import { SsbjEditConflictError, ssbjWriteErrorMessage } from '../utils/writeError';
+import { throwIfSsbjEditForbidden } from './memberRoleService';
 
 export interface SsbjRiskOpportunityRow {
   id: string;
@@ -152,6 +153,8 @@ export const updateSsbjRiskOpportunity = async (
     throw new Error(ssbjWriteErrorMessage(error, 'リスク・機会の更新に失敗しました'));
   }
   if (!data) {
+    // 0 件更新: ロールで止められた（RESTRICTIVE のポリシーは 0 件にする）なら、競合ではなく権限のメッセージにする。
+    await throwIfSsbjEditForbidden();
     // 0 件更新: 行が更新された（競合）か、削除済み・RLS で見えない。見えるかどうかで分ける。
     const { data: current, error: currentError } = await supabase
       .from('ssbj_risks_opportunities')
@@ -169,11 +172,15 @@ export const updateSsbjRiskOpportunity = async (
   return toSsbjRiskOpportunityWorkingRecord(data as unknown as SsbjRiskOpportunityWorkingRow);
 };
 
-/** 削除。 */
+/** 削除。0 件（ロールで止められた・削除済み）は成功にしない。 */
 export const deleteSsbjRiskOpportunity = async (id: string): Promise<void> => {
   const supabase = createClient();
-  const { error } = await supabase.from('ssbj_risks_opportunities').delete().eq('id', id);
+  const { data, error } = await supabase.from('ssbj_risks_opportunities').delete().eq('id', id).select('id');
   if (error) {
     throw new Error(ssbjWriteErrorMessage(error, 'リスク・機会の削除に失敗しました'));
+  }
+  if (!data?.length) {
+    await throwIfSsbjEditForbidden();
+    throw new Error('リスク・機会が見つかりません。画面を開き直してください');
   }
 };

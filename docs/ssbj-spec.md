@@ -815,7 +815,7 @@ R2-10 の SSBJ のロールを、SSBJ の各テーブル・状態の変更・閲
 |---|---|
 | DB | `20261023100000_ssbj_role_policies.sql`: 各テーブルに `AS RESTRICTIVE` のポリシー（書き込みは入力担当か管理者、作業中データ・保存版・操作履歴の閲覧は閲覧者以外、閲覧者は承認済みのレポートだけ）。`record_ssbj_export`（閲覧者は承認した版の CSV / Excel だけ）と `change_ssbj_report_status`（SSBJ のロールで判定。承認者は承認担当か管理者だけ）を置き換えた |
 | 画面 | 入力担当か管理者でなければ編集の操作を出さず、理由を出す（`SsbjRoleNotice.tsx`）。閲覧者には作業中の内容の画面の代わりに案内を出す（`SsbjWorkingAccessGuard.client.tsx`。各ページで包む）。詳細の「レポートの内容」は閲覧者にプレビューと保存履歴だけ。閲覧者のプレビュー・印刷・保存履歴は、承認した版の開示する内容を `GET /api/ssbj/reports/[reportId]/approved-version` から読む（内部メモの表示の切替・操作履歴へのリンク・出力履歴を出さず、CSV / Excel に内部記録の列を入れない）。一覧の新規作成と空の一覧の案内をロールで出し分ける |
-| コード | `utils/reportStatus.ts` の `isSsbjReadOnly`、`utils/writeError.ts`（42501 = ロールで止められた）、`components/SsbjReportContentsNav.tsx`（`workingAccess`）、`utils/disclosedSnapshot.ts`（保存版から内部メモ・内部記録を除く。項目の分類の表）、`services/approvedVersionServer.ts`・`hooks/useSsbjApprovedVersion.ts`、`services/versionCsv.ts` の `internalRecords` |
+| コード | `utils/reportStatus.ts` の `isSsbjReadOnly`、`utils/writeError.ts`（42501 = ロールで止められた）、`services/memberRoleService.ts` の `throwIfSsbjEditForbidden`（0 件の更新・削除がロールで止められたものかを確かめる）、`components/SsbjReportContentsNav.tsx`（`workingAccess`）、`utils/disclosedSnapshot.ts`（保存版から内部メモ・内部記録を除く。項目の分類の表）、`services/approvedVersionServer.ts`・`hooks/useSsbjApprovedVersion.ts`、`services/versionCsv.ts` の `internalRecords` |
 | テスト | `scripts/db/__tests__/ssbjRolePoliciesPolicy.test.ts`（すべての `ssbj_` のテーブルのポリシーの付け忘れの検出を含む）、画面の単体テスト（承認担当は読むだけ・閲覧者の入口とプレビュー・保存履歴・一覧）、`utils/__tests__/disclosedSnapshot.test.ts`（内部記録が残らないことと、分類の足し忘れの検出）、`approved-version` の Route Handler・CSV / Excel の単体テスト、全体テスト 26 手順 |
 
 決めたこと:
@@ -837,5 +837,9 @@ R2-10 の SSBJ のロールを、SSBJ の各テーブル・状態の変更・閲
   採用方式はプレビューに出すので開示する項目だが、閲覧者の CSV / Excel は内部記録の列ごと出さないので、採用方式も入らない（プレビューでは見える）。
 - **閲覧者に作業中の内容の画面を開かせない。** RLS は行を返さないだけなので、画面を出すとすべて「未入力」に見えてしまう。
 - **承認担当は作業中の内容を見られるが、編集はできない。** 直したいときは差戻し、入力担当が直してから依頼し直す。
+- **ロールで止められた更新・削除を、成功・競合・「見つかりません」と見せない。** RESTRICTIVE のポリシーの USING で止められた更新・削除は、
+  エラー（42501）にならず 0 件になる。画面を開いている間にロールが変わった利用者に正しく伝えるため、更新・削除が 0 件だったときは
+  `ssbj_current_user_can_edit()` で今も編集できるかを確かめ、できなければ権限のメッセージにする（基本情報・リスク・機会の更新、
+  リスク・機会と根拠文書の削除、根拠文書の更新、OGT の値の採用の取り消し）。作成（insert）は WITH CHECK で 42501 になるので、そのまま伝わる。
 - **状態の変更の RPC も SSBJ のロールで判定する**（Route Handler に任せない。RPC は操作者を引数で受け取るため、判定を 1 か所に置く）。
   `profiles.role` を直接読むのはやめ、`ssbj_user_role`（中で `profiles.role = 'admin'` を読む）に置き換えた。
