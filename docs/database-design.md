@@ -466,6 +466,7 @@ SSBJ の各テーブルのトリガー（`ssbj_audit_row_change`）と、状態�
 保存版には含めず、`draftRevision` も進めない。承認済みの間は変更を拒否し（`reject_ssbj_change_when_approved`）、操作履歴に記録する（対象の種類 `risk_candidate`）。
 「採用して登録」は `adopt_ssbj_risk_candidate`（security invoker。authenticated）で、リスク・機会の登録と採用の記録を 1 つのトランザクションで保存する。
 既に採用済み（登録したリスク・機会が残っている）候補は上書きせず P2062 にする。業種はレポートの基本情報から記録する。
+登録したリスク・機会が残っている採用は、delete の RLS で取り消させない（未検討に戻して再採用すると重複して登録されるため。先にリスク・機会を削除する）。
 
 | 物理名 | 論理名 | 型 | 制約 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -477,7 +478,7 @@ SSBJ の各テーブルのトリガー（`ssbj_audit_row_change`）と、状態�
 | `industryCode` | 業種 | VARCHAR(10) | NULL | 判断したときのレポートの業種（SICS の産業コード） |
 | `decision` | 判断 | VARCHAR(20) | CHECK(`adopted` / `excluded`) | |
 | `reason` | 理由 | TEXT | CHECK(除外では必須。改行・タブ・全角スペースなど空白だけも不可) | 内部の記録。開示しない |
-| `riskOpportunityId` | 登録したリスク・機会 | UUID | Foreign Key（同じレポートかは RLS で検証） | 採用したときに登録したもの。削除時: SET NULL（判断の記録は残す） |
+| `riskOpportunityId` | 登録したリスク・機会 | UUID | 外部キーにしない（同じレポートかは RLS で検証） | 採用したときに登録したもの。保存版の復元はリスク・機会を全部消して同じ ID で入れ直すので、外部キー（SET NULL）にすると関連付けが切れる。残っているかは ID で存在を確かめて判定する |
 | `createdByUserId` / `updatedByUserId` | 登録・更新操作者ID | UUID | NULL | `set_row_actor` トリガ |
 | `createdAt` / `updatedAt` | 登録・更新日時 | TIMESTAMPTZ | | |
 

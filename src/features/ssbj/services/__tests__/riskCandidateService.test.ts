@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
   insertSingle: vi.fn(),
   update: vi.fn(),
   insert: vi.fn(),
-  deleteResult: vi.fn(),
+  deleteSelect: vi.fn(),
   rpc: vi.fn(),
 }));
 
@@ -21,7 +21,7 @@ vi.mock('@/lib/supabase/client', () => ({
         mocks.insert(row);
         return { select: () => ({ single: mocks.insertSingle }) };
       },
-      delete: () => ({ eq: () => ({ eq: mocks.deleteResult }) }),
+      delete: () => ({ eq: () => ({ eq: () => ({ select: mocks.deleteSelect }) }) }),
     }),
     rpc: mocks.rpc,
   }),
@@ -87,7 +87,7 @@ describe('adoptSsbjRiskCandidate', () => {
   const riskRow = {
     id: 'risk-1', kind: 'risk', title: '炭素価格の導入', riskTypeState: 'answered', riskType: 'transition',
     descriptionState: 'unanswered', descriptionText: null, internalNote: null, timeHorizonState: 'unanswered', timeHorizon: null,
-    linkTargets: ['strategy.business_model_impact'],
+    linkTargets: ['strategy.business_model_impact'], updatedAt: '2025-06-01T00:00:00.123456+00:00',
   };
   const candidate = { candidateId: 'common.carbon_pricing', candidateVersion: 'r2-trial-1' };
 
@@ -100,7 +100,10 @@ describe('adoptSsbjRiskCandidate', () => {
       p_candidate_version: 'r2-trial-1',
       p_risk: expect.objectContaining({ kind: 'risk', title: '炭素価格の導入', riskTypeState: 'answered', riskType: 'transition' }),
     });
-    expect(result.riskOpportunity).toMatchObject({ id: 'risk-1', title: '炭素価格の導入', riskType: { state: 'answered', value: 'transition' } });
+    expect(result.riskOpportunity).toMatchObject({
+      id: 'risk-1', title: '炭素価格の導入', riskType: { state: 'answered', value: 'transition' },
+      updatedAt: '2025-06-01T00:00:00.123456+00:00',
+    });
     expect(result.decision).toEqual(row);
   });
 
@@ -119,9 +122,14 @@ describe('adoptSsbjRiskCandidate', () => {
 
 describe('deleteSsbjRiskCandidateDecision', () => {
   it('失敗したら例外にする', async () => {
-    mocks.deleteResult.mockResolvedValue({ error: null });
+    mocks.deleteSelect.mockResolvedValue({ data: [{ candidateId: 'common.carbon_pricing' }], error: null });
     await expect(deleteSsbjRiskCandidateDecision('report-1', 'common.carbon_pricing')).resolves.toBeUndefined();
-    mocks.deleteResult.mockResolvedValue({ error: { code: '42501' } });
+    mocks.deleteSelect.mockResolvedValue({ data: null, error: { code: '42501' } });
     await expect(deleteSsbjRiskCandidateDecision('report-1', 'common.carbon_pricing')).rejects.toThrow('取り消しに失敗しました');
+  });
+
+  it('登録したリスク・機会が残っていて RLS が削除させなかった（0 行）ら、先にリスク・機会を削除するよう伝える', async () => {
+    mocks.deleteSelect.mockResolvedValue({ data: [], error: null });
+    await expect(deleteSsbjRiskCandidateDecision('report-1', 'common.carbon_pricing')).rejects.toThrow('先にそのリスク・機会を削除してください');
   });
 });

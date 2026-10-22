@@ -123,10 +123,16 @@ const CandidateRow = ({
                 除外
               </Button>
             )}
-            {status !== 'undecided' && (
+            {(status === 'excluded' || status === 'adopted_removed') && (
               <Button type="button" variant="outline" size="sm" disabled={isBusy} onClick={() => void run(() => onUndo(candidate))}>
                 未検討に戻す
               </Button>
+            )}
+            {status === 'adopted' && (
+              // 登録したリスク・機会が残ったまま取り消して再採用すると、同じものが重複して登録される（DB の RLS も止める）。
+              <p className="m-0 self-center text-xs text-text-muted">
+                未検討に戻すには、先に登録したリスク・機会を一覧から削除してください。
+              </p>
             )}
           </div>
         )

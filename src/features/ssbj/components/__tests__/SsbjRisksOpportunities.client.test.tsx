@@ -229,7 +229,7 @@ describe('SsbjRisksOpportunities', () => {
   });
 
   it('マスターに無い以前の関連先は、マスターに無いと出したうえで、編集しても残せる', async () => {
-    const [first] = fictionalRisksOpportunities;
+    const [first] = ITEMS;
     vi.mocked(updateSsbjRiskOpportunity).mockResolvedValue(first);
     await renderScreen();
 
@@ -401,7 +401,7 @@ describe('SsbjRisksOpportunities（業種から出した候補）', () => {
 
   it('採用すると候補の内容で登録フォームを開き、説明・時間軸は未入力のまま。登録と採用の記録を一緒に保存する', async () => {
     vi.mocked(adoptSsbjRiskCandidate).mockImplementation(async (_reportId, candidate, input) => ({
-      riskOpportunity: { ...input, id: 'adopted-risk' },
+      riskOpportunity: { ...input, id: 'adopted-risk', updatedAt: '2025-06-01T00:00:00.000Z' },
       decision: {
         candidateId: candidate.candidateId, candidateVersion: candidate.candidateVersion, industryCode: 'RT-IG', decision: 'adopted',
         reason: null, riskOpportunityId: 'adopted-risk', updatedAt: '2025-06-01T00:00:00.000Z',
@@ -500,12 +500,29 @@ describe('SsbjRisksOpportunities（業種から出した候補）', () => {
     vi.mocked(listSsbjRiskCandidateDecisions).mockResolvedValue([
       { candidateId: 'common.carbon_pricing', candidateVersion: 'r2-trial-1', industryCode: 'RT-IG', decision: 'adopted',
         reason: null, riskOpportunityId: fictionalRisksOpportunities[0].id, updatedAt: '2025-06-01T00:00:00.000Z' },
+      // 外部キーにしていないので、登録したリスク・機会を削除しても ID は残る（存在しなければ削除済みとして出す）。
       { candidateId: 'common.energy_price', candidateVersion: 'r2-trial-1', industryCode: 'RT-IG', decision: 'adopted',
-        reason: null, riskOpportunityId: null, updatedAt: '2025-06-01T00:00:00.000Z' },
+        reason: null, riskOpportunityId: 'risk-deleted', updatedAt: '2025-06-01T00:00:00.000Z' },
     ]);
     await renderScreen();
     expect(candidateRow('common.carbon_pricing').textContent).toContain(`登録したリスク・機会: ${fictionalRisksOpportunities[0].title}`);
     expect(candidateRow('common.energy_price').textContent).toContain('登録したリスク・機会は削除済み');
+  });
+
+  it('登録したリスク・機会が残っている採用は未検討に戻せず、削除済みなら戻せる（再採用で重複して登録しないため）', async () => {
+    vi.mocked(listSsbjRiskCandidateDecisions).mockResolvedValue([
+      { candidateId: 'common.carbon_pricing', candidateVersion: 'r2-trial-1', industryCode: 'RT-IG', decision: 'adopted',
+        reason: null, riskOpportunityId: fictionalRisksOpportunities[0].id, updatedAt: '2025-06-01T00:00:00.000Z' },
+      { candidateId: 'common.energy_price', candidateVersion: 'r2-trial-1', industryCode: 'RT-IG', decision: 'adopted',
+        reason: null, riskOpportunityId: 'risk-deleted', updatedAt: '2025-06-01T00:00:00.000Z' },
+    ]);
+    await renderScreen();
+    const buttonLabels = (row: HTMLElement) => Array.from(row.querySelectorAll('button')).map(button => button.textContent);
+    expect(buttonLabels(candidateRow('common.carbon_pricing'))).not.toContain('未検討に戻す');
+    expect(buttonLabels(candidateRow('common.carbon_pricing'))).not.toContain('採用して登録');
+    expect(candidateRow('common.carbon_pricing').textContent).toContain('先に登録したリスク・機会を一覧から削除してください');
+    expect(buttonLabels(candidateRow('common.energy_price'))).toContain('未検討に戻す');
+    expect(buttonLabels(candidateRow('common.energy_price'))).toContain('採用して登録');
   });
 
   it('承認済みのレポートでは候補を出すが、採用・除外の操作は出さない', async () => {

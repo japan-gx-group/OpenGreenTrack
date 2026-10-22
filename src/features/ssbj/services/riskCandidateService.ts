@@ -7,15 +7,15 @@ import {
   SSBJ_RISK_CANDIDATE_DECISIONS,
   type SsbjRiskCandidateDecision,
   type SsbjRiskCandidateDecisionKind,
-  type SsbjRiskOpportunity,
+  type SsbjRiskOpportunityWorkingRecord,
 } from '../types';
 import type { SsbjRiskCandidateDecisionInput } from '../utils/industryCandidates';
 import type { SsbjRiskOpportunityInput } from '../utils/riskOpportunity';
 import { ssbjWriteErrorMessage } from '../utils/writeError';
 import {
-  toSsbjRiskOpportunity,
   toSsbjRiskOpportunityColumns,
-  type SsbjRiskOpportunityRow,
+  toSsbjRiskOpportunityWorkingRecord,
+  type SsbjRiskOpportunityWorkingRow,
 } from './riskOpportunityService';
 
 type SsbjRiskCandidateDecisionRow = {
@@ -97,7 +97,7 @@ export const adoptSsbjRiskCandidate = async (
   reportId: string,
   candidate: { candidateId: string; candidateVersion: string },
   input: SsbjRiskOpportunityInput,
-): Promise<{ riskOpportunity: SsbjRiskOpportunity; decision: SsbjRiskCandidateDecision }> => {
+): Promise<{ riskOpportunity: SsbjRiskOpportunityWorkingRecord; decision: SsbjRiskCandidateDecision }> => {
   const { data, error } = await createClient().rpc('adopt_ssbj_risk_candidate', {
     p_report_id: reportId,
     p_candidate_id: candidate.candidateId,
@@ -110,19 +110,28 @@ export const adoptSsbjRiskCandidate = async (
     }
     throw new Error(ssbjWriteErrorMessage(error, '候補を採用して登録できませんでした（リスク・機会も登録していません）'));
   }
-  const result = data as { riskOpportunity: SsbjRiskOpportunityRow; decision: SsbjRiskCandidateDecisionRow };
+  // 登録したリスク・機会は updatedAt 付きで返る（一覧から続けて編集するときの競合検知に使う）。
+  const result = data as { riskOpportunity: SsbjRiskOpportunityWorkingRow; decision: SsbjRiskCandidateDecisionRow };
   return {
-    riskOpportunity: toSsbjRiskOpportunity(result.riskOpportunity),
+    riskOpportunity: toSsbjRiskOpportunityWorkingRecord(result.riskOpportunity),
     decision: toSsbjRiskCandidateDecision(result.decision),
   };
 };
 
-/** 候補への判断を取り消す（未検討に戻す）。登録したリスク・機会は消さない。 */
+/**
+ * 候補への判断を取り消す（未検討に戻す）。登録したリスク・機会は消さない。
+ * 登録したリスク・機会が残っている採用は、RLS が削除させない（0 行になる。再採用で重複して登録されるのを防ぐ）ので、
+ * 削除した行数で確かめて、先にリスク・機会を削除するよう伝える。
+ */
 export const deleteSsbjRiskCandidateDecision = async (reportId: string, candidateId: string): Promise<void> => {
-  const { error } = await createClient()
+  const { data, error } = await createClient()
     .from('ssbj_risk_candidate_decisions')
     .delete()
     .eq('reportId', reportId)
-    .eq('candidateId', candidateId);
+    .eq('candidateId', candidateId)
+    .select('candidateId');
   if (error) throw new Error(ssbjWriteErrorMessage(error, '候補への判断の取り消しに失敗しました'));
+  if ((data ?? []).length === 0) {
+    throw new Error('登録したリスク・機会が残っているため、未検討に戻せません。先にそのリスク・機会を削除してください（または画面を開き直してください）');
+  }
 };

@@ -6,6 +6,7 @@
 //   - 候補 ID の形式は utils/industryCandidates.ts と同じ、レポートと候補の組ごとに 1 行、除外は理由が必須
 //   - 組織・レポート・候補は作成後に変えない（update の列 GRANT に含めない）
 //   - 「採用して登録」はリスク・機会の登録と採用の記録を 1 つの RPC で保存し、既に採用済みなら上書きせず競合にする
+//   - 登録したリスク・機会が残っている採用は取り消せない（再採用で重複して登録しない）。関連付けは外部キーにしない（復元で切れない）
 //   - 承認済みの間は変えられず、操作履歴に記録する。保存版には含めない（draftRevision を進めない）
 
 import { readdirSync, readFileSync } from 'node:fs';
@@ -53,8 +54,10 @@ describe('ssbj_risk_candidate_decisions の制約', () => {
     expect(body).not.toMatch(/btrim\(reason\)/);
   });
 
-  it('登録したリスク・機会を削除しても、判断の記録は残す', () => {
-    expect(body).toContain('"riskOpportunityId" uuid references ssbj_risks_opportunities(id) on delete set null');
+  it('登録したリスク・機会への関連付けは外部キーにしない（保存版の復元で全部消して入れ直しても、関連付けが切れない）', () => {
+    expect(body).toContain('"riskOpportunityId" uuid,');
+    expect(body).not.toMatch(/"riskOpportunityId" uuid references/);
+    expect(body).not.toContain('on delete set null');
   });
 });
 
@@ -73,6 +76,11 @@ describe('ssbj_risk_candidate_decisions の RLS と権限', () => {
     const withCheck = policyFor(command).split('with check')[1] ?? '';
     expect(withCheck).toContain('select 1 from ssbj_reports r where r.id = "reportId"');
     expect(withCheck).toContain('ro."reportId" = ssbj_risk_candidate_decisions."reportId"');
+  });
+
+  it('delete は、登録したリスク・機会が残っている採用を消させない（未検討に戻して再採用すると重複して登録されるため）', () => {
+    const using = policyFor('delete').split('using')[1] ?? '';
+    expect(using).toContain(`and not ( decision = 'adopted' and exists ( select 1 from ssbj_risks_opportunities ro where ro.id = "riskOpportunityId"`);
   });
 
   it('update は判断の列だけ（組織・レポート・候補は作成後に変えられない）', () => {
@@ -116,10 +124,22 @@ describe('採用して登録（adopt_ssbj_risk_candidate）', () => {
   });
 
   it('既に採用済み（登録したリスク・機会が残っている）なら、関連付けを上書きせずに競合にする', () => {
-    const conflict = adopt.indexOf(`if v_has_decision and v_decision.decision = 'adopted' and v_decision."riskOpportunityId" is not null then raise exception`);
+    const conflict = adopt.indexOf(
+      `if v_has_decision and v_decision.decision = 'adopted' and exists ( select 1 from ssbj_risks_opportunities ro where ro.id = v_decision."riskOpportunityId" and ro."reportId" = p_report_id ) then raise exception`,
+    );
     expect(conflict).toBeGreaterThan(0);
     expect(conflict).toBeLessThan(adopt.indexOf('insert into ssbj_risks_opportunities'));
     expect(adopt).toMatch(/exception when unique_violation then .*? errcode = 'P2062'/);
+  });
+
+  it('状態の列は jsonb の text から ssbj_field_state 型に変換して入れる（変換しないと insert が型の不一致で失敗する）', () => {
+    for (const column of ['riskTypeState', 'descriptionState', 'timeHorizonState']) {
+      expect(adopt).toContain(`(p_risk->>'${column}')::ssbj_field_state`);
+    }
+  });
+
+  it('登録したリスク・機会を updatedAt 付きで返す（一覧から続けて編集するときの競合検知に使う）', () => {
+    expect(adopt).toContain(`'updatedAt', v_risk."updatedAt"`);
   });
 
   it('業種はクライアントから受け取らず、レポートの基本情報の業種を記録する', () => {

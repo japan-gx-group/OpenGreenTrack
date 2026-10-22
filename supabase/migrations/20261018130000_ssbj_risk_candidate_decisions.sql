@@ -3,6 +3,7 @@
 -- 候補は src/features/ssbj/utils/industryCandidates.ts の定数（DB からは見えない）。候補 ID がそこにあるかはアプリが検証し、
 -- DB は形式だけを検証する。候補への判断は、候補を検討の出発点にしたかどうかの記録で、該当性・重要性の判断（ssbj_judgements）ではない。
 -- 採用した候補は、登録したリスク・機会（ssbj_risks_opportunities）につなぐ。除外は理由を必須にする（後から根拠を確かめるため）。
+-- 登録したリスク・機会が残っている間は、採用を取り消せない（取り消して再採用すると、同じリスク・機会が重複して登録されるため）。
 -- 作業用の記録で保存版には含めない（保存版セクション・draftRevision の繰り上げは付けない）。
 -- 承認済みの間は変更させず（reject_ssbj_change_when_approved）、操作履歴に記録する（ssbj_audit_row_change）。
 -- 「採用して登録」は adopt_ssbj_risk_candidate（§5）で、リスク・機会の登録と採用の記録を 1 つのトランザクションで保存する。
@@ -21,8 +22,10 @@ create table ssbj_risk_candidate_decisions (
   decision varchar(20) not null,
   -- 採用・除外の理由（内部の記録。開示しない）。
   reason text,
-  -- 採用して登録したリスク・機会。登録したものを削除したら NULL にする（判断の記録は残す）。
-  "riskOpportunityId" uuid references ssbj_risks_opportunities(id) on delete set null,
+  -- 採用して登録したリスク・機会の ID。外部キーにはしない: 保存版からの復元はリスク・機会を全部消して同じ ID で入れ直すため、
+  -- on delete set null だと復元のたびに関連付けが切れる。登録したものが残っているかは、ID で存在を確かめて判定する
+  -- （画面の ssbjCandidateStatus と adopt_ssbj_risk_candidate。削除済みなら「採用済み（削除済み）」として採用し直せる）。
+  "riskOpportunityId" uuid,
   "createdByUserId" uuid,
   "updatedByUserId" uuid,
   "createdAt" timestamptz not null default now(),
@@ -44,8 +47,6 @@ comment on table ssbj_risk_candidate_decisions is
 comment on column ssbj_risk_candidate_decisions."candidateId" is
   '候補 ID（例 common.carbon_pricing）。候補の一覧にあるかはアプリが検証する。作成後は変更不可。';
 comment on column ssbj_risk_candidate_decisions.reason is '採用・除外の理由（内部の記録。開示しない）。除外では必須。';
-
-create index ssbj_risk_candidate_decisions_risk_idx on ssbj_risk_candidate_decisions ("riskOpportunityId");
 
 -- §2 トリガー
 
@@ -119,11 +120,24 @@ with check (
   )
 );
 
+-- 採用を取り消せる（未検討に戻せる）のは、登録したリスク・機会が残っていないときだけ。残ったまま取り消して再採用すると、
+-- 同じリスク・機会が重複して登録される。条件に合わない行は削除されない（0 行）ので、アプリは削除した行数で確かめる。
+-- レポート・組織の削除の連鎖（外部キーの on delete cascade）には RLS がかからないので、この条件で止まらない。
 create policy "ssbj_risk_candidate_decisions_delete_own_organization"
 on ssbj_risk_candidate_decisions
 for delete
 to authenticated
-using ("organizationId" = (select current_user_organization_id()));
+using (
+  "organizationId" = (select current_user_organization_id())
+  and not (
+    decision = 'adopted'
+    and exists (
+      select 1 from ssbj_risks_opportunities ro
+      where ro.id = "riskOpportunityId"
+        and ro."reportId" = ssbj_risk_candidate_decisions."reportId"
+    )
+  )
+);
 
 -- §4 GRANT
 -- insert / update は列指定にする: 組織・レポート・候補は作成時にだけ指定できる。
@@ -156,7 +170,8 @@ grant update (
 -- レポートの行は承認ロックのトリガーに取らせる（lock_ssbj_report_working_rows は service_role 限定のため呼ばない）。
 -- 業種はクライアントから受け取らず、レポートの基本情報の業種を記録する。
 -- 同じ候補が既に採用されていて、登録したリスク・機会が残っていれば、関連付けを上書きせず競合（P2062）にする。
--- 採用したリスク・機会が削除済み（"riskOpportunityId" が NULL）か、除外していた候補は、採用し直せる。
+-- 採用したリスク・機会が削除済み（"riskOpportunityId" の行が無い）か、除外していた候補は、採用し直せる。
+-- 状態の列（ssbj_field_state 型）は jsonb から取り出すと text になるので、型を明示して入れる。
 
 create function adopt_ssbj_risk_candidate(
   p_report_id uuid,
@@ -185,7 +200,10 @@ begin
   where "reportId" = p_report_id and "candidateId" = p_candidate_id
   for update;
   v_has_decision := found;
-  if v_has_decision and v_decision.decision = 'adopted' and v_decision."riskOpportunityId" is not null then
+  if v_has_decision and v_decision.decision = 'adopted' and exists (
+    select 1 from ssbj_risks_opportunities ro
+    where ro.id = v_decision."riskOpportunityId" and ro."reportId" = p_report_id
+  ) then
     raise exception 'この候補は既に採用されています: %', p_candidate_id using errcode = 'P2062';
   end if;
 
@@ -198,12 +216,12 @@ begin
     p_report_id,
     p_risk->>'kind',
     p_risk->>'title',
-    p_risk->>'riskTypeState',
+    (p_risk->>'riskTypeState')::ssbj_field_state,
     p_risk->>'riskType',
-    p_risk->>'descriptionState',
+    (p_risk->>'descriptionState')::ssbj_field_state,
     p_risk->>'descriptionText',
     p_risk->>'internalNote',
-    p_risk->>'timeHorizonState',
+    (p_risk->>'timeHorizonState')::ssbj_field_state,
     p_risk->>'timeHorizon',
     coalesce(array(select jsonb_array_elements_text(p_risk->'linkTargets')), '{}')
   )
@@ -245,7 +263,9 @@ begin
       'internalNote', v_risk."internalNote",
       'timeHorizonState', v_risk."timeHorizonState",
       'timeHorizon', v_risk."timeHorizon",
-      'linkTargets', to_jsonb(v_risk."linkTargets")
+      'linkTargets', to_jsonb(v_risk."linkTargets"),
+      -- 一覧から続けて編集するときの競合検知の条件（riskOpportunityService.ts の updateSsbjRiskOpportunity）。
+      'updatedAt', v_risk."updatedAt"
     ),
     'decision', jsonb_build_object(
       'candidateId', v_decision."candidateId",

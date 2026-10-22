@@ -11,7 +11,7 @@ import {
   listSsbjRiskCandidateDecisions,
   saveSsbjRiskCandidateDecision,
 } from '../services/riskCandidateService';
-import type { SsbjRiskCandidateDecision, SsbjRiskOpportunity } from '../types';
+import type { SsbjRiskCandidateDecision, SsbjRiskOpportunityWorkingRecord } from '../types';
 import {
   SSBJ_INDUSTRY_CANDIDATE_VERSION,
   normalizeSsbjRiskCandidateDecision,
@@ -28,8 +28,8 @@ export interface SsbjRiskCandidatesState {
   /** 判断を検証して保存する。検証・保存のエラーは例外にする（呼び出し側が画面に出す）。 */
   decide: (report: { id: string; organizationId: string }, input: SsbjRiskCandidateDecisionInput) => Promise<void>;
   /** 候補を採用してリスク・機会を登録する（登録と採用の記録は一緒に保存され、片方だけ残らない）。登録したリスク・機会を返す。 */
-  adopt: (reportId: string, candidate: SsbjIndustryCandidate, input: SsbjRiskOpportunityInput) => Promise<SsbjRiskOpportunity>;
-  /** 判断を取り消して未検討に戻す。 */
+  adopt: (reportId: string, candidate: SsbjIndustryCandidate, input: SsbjRiskOpportunityInput) => Promise<SsbjRiskOpportunityWorkingRecord>;
+  /** 判断を取り消して未検討に戻す（登録したリスク・機会が残っている採用は取り消せない）。 */
   undo: (reportId: string, candidateId: string) => Promise<void>;
 }
 
