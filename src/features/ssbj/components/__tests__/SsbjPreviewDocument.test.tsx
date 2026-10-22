@@ -2,7 +2,13 @@
 import React from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { render, type RenderResult } from '@/lib/testing/render';
-import { fictionalSnapshot, fictionalVersion } from '../../__fixtures__/fictionalReport';
+import {
+  fictionalRisksOpportunities,
+  fictionalSnapshot,
+  fictionalVersion,
+  fictionalVersionBeforeBasicInfoAdditions,
+  fictionalVersionBeforeRiskType,
+} from '../../__fixtures__/fictionalReport';
 import { fictionalDisclosedTexts, fictionalGhgValues, fictionalInternalTexts } from '../../__fixtures__/fictionalReportTexts';
 import type { SsbjPreviewSource } from '../../services/previewService';
 import type { SsbjReportSnapshotV1 } from '../../types';
@@ -82,6 +88,30 @@ describe('SsbjPreviewDocument', () => {
     expect(alert?.textContent).toContain('future_section');
   });
 
+  it('任意項目を追加する前の保存版でも、キーの無い基本情報を「未入力」と出す（印刷も同じ部品で描く）', () => {
+    const legacy = fictionalVersionBeforeBasicInfoAdditions;
+    rendered = render(<SsbjPreviewDocument source={{ ...saved, snapshot: legacy.snapshot }} showInternalNotes={false} />);
+    const valueOf = (label: string) =>
+      Array.from(rendered?.container.querySelectorAll('dt') ?? []).find(item => item.textContent === label)
+        ?.nextElementSibling?.textContent;
+    for (const label of ['親会社名', '親会社との関係', '親会社の持分比率', '測定アプローチ', '業種（SICS）']) {
+      expect(valueOf(label)).toBe('未入力');
+    }
+    expect(text()).not.toContain('undefined');
+  });
+
+  it('リスクの種類を追加する前の保存版でも、落ちずにリスクの種類を「未入力」と出す（印刷も同じ部品で描く）', () => {
+    const legacy = fictionalVersionBeforeRiskType;
+    rendered = render(<SsbjPreviewDocument source={{ ...saved, snapshot: legacy.snapshot }} showInternalNotes={false} />);
+    const riskTypeValues = Array.from(rendered.container.querySelectorAll('dt'))
+      .filter(item => item.textContent === 'リスクの種類')
+      .map(item => item.nextElementSibling?.textContent);
+    const riskCount = fictionalRisksOpportunities.filter(item => item.kind === 'risk').length;
+    expect(riskCount).toBeGreaterThan(0);
+    expect(riskTypeValues).toEqual(Array(riskCount).fill('未入力'));
+    expect(text()).not.toContain('undefined');
+  });
+
   it('準拠や提出の完了を保証しない注記を必ず出す', () => {
     rendered = render(<SsbjPreviewDocument source={saved} showInternalNotes={false} />);
     expect(text()).toContain('SSBJ 基準への準拠や、対外提出の完了を保証しません');
@@ -99,6 +129,36 @@ describe('SsbjPreviewDocument（根拠文書）', () => {
     rendered = render(<SsbjPreviewDocument source={working()} showInternalNotes />);
     expect(text()).toContain('保管先（内部記録・開示しない）');
     expect(text()).toContain('社内共有フォルダ/議事録（架空）');
+  });
+
+  it('ファイルの SHA-256・保管先での版などは内部記録として、選んだときだけ出す', () => {
+    const sha256 = '592e812efee3d49cad9db811408e3e9ce2736f7da4ec7d90a21f0c262dc6a239';
+    rendered = render(<SsbjPreviewDocument source={saved} showInternalNotes={false} />);
+    expect(text()).not.toContain(sha256);
+    expect(text()).not.toContain('取締役会議事録_2024年度（架空）.pdf');
+    rendered.unmount();
+    rendered = render(<SsbjPreviewDocument source={saved} showInternalNotes />);
+    expect(text()).toContain(`SHA-256（内部記録・開示しない）${sha256}`);
+    expect(text()).toContain('保管先での版 ID（内部記録・開示しない）3.0');
+    expect(text()).toContain('保存担当（内部記録・開示しない）総務部 担当（架空）');
+    expect(text()).toContain('ファイルの記録日時（内部記録・開示しない）');
+  });
+
+  it('ファイルの記録を足す前の保存版（キーが無い）は、ファイルの記録を未入力と出す', () => {
+    const legacy = {
+      ...fictionalSnapshot,
+      sections: {
+        ...fictionalSnapshot.sections,
+        evidence: (fictionalSnapshot.sections.evidence ?? []).map(item => {
+          const copy: Record<string, unknown> = { ...item };
+          for (const key of ['fileName', 'fileSha256', 'fileStorageVersionId', 'fileStoredBy', 'fileRecordedAt']) delete copy[key];
+          return copy;
+        }),
+      },
+    } as unknown as SsbjReportSnapshotV1;
+    rendered = render(<SsbjPreviewDocument source={working(legacy)} showInternalNotes />);
+    expect(text()).toContain('SHA-256（内部記録・開示しない）未入力');
+    expect(text()).not.toContain('undefined');
   });
 });
 

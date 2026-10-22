@@ -89,14 +89,18 @@ const downloadVersionCsv = async (versionNumber: number): Promise<string[][]> =>
   return parseSsbjCsv(await readFile((await download.path())!));
 };
 
-/** 印刷ビュー（PDF と同じ内容）を、印刷ダイアログを出さずに開く。 */
-const openPrintView = async (source: string, internal: boolean): Promise<Page> => {
+/** 印刷ビュー（PDF と同じ内容）の URL を、印刷ダイアログを出さずに開く。 */
+const openPrintUrl = async (url: string): Promise<Page> => {
   const print = await context.newPage();
   await print.addInitScript(() => { window.print = () => undefined; });
-  await print.goto(reportPath(`/preview/print?source=${source}&internal=${internal ? '1' : '0'}`));
+  await print.goto(url);
   await expect(print.getByTestId('ssbj-preview-source')).toBeVisible();
   return print;
 };
+
+/** 指定の内容（作業中 / 保存版の ID）の印刷ビューを開く。印刷ビューは内部メモ・内部記録を出さない。 */
+const openPrintView = (source: string, extraQuery = ''): Promise<Page> =>
+  openPrintUrl(reportPath(`/preview/print?source=${source}${extraQuery}`));
 
 const editNarrative = async (label: string, disclosure: string, internalNote?: string) => {
   await page.goto(reportPath('/narratives'));
@@ -260,7 +264,7 @@ test('9. 保存履歴で内容を確かめ、その版の CSV に入力が欠落
   }
 });
 
-test('10. プレビュー（作業中・保存版）に入力が出て、内部記録は選んだときだけ出る', async () => {
+test('10. プレビュー（作業中・保存版）に入力が出て、内部記録は画面で選んだときだけ出る（印刷には出ない）', async () => {
   await page.goto(reportPath('/preview'));
   await expect(page.getByTestId('ssbj-preview-source')).toContainText('作業中の内容');
   const preview = page.getByRole('article');
@@ -270,10 +274,20 @@ test('10. プレビュー（作業中・保存版）に入力が出て、内部�
   await page.getByLabel('内部メモも表示する（開示しない内容）').click();
   for (const text of INTERNAL) await expect(preview).toContainText(text);
 
-  const print = await openPrintView(version1!.id, false);
+  // 画面で内部メモを表示したまま、画面の「印刷・PDFとして保存」のリンクをたどっても内部記録は出ない。
+  const printHref = await page.getByRole('link', { name: '印刷・PDFとして保存' }).getAttribute('href');
+  const linked = await openPrintUrl(printHref!);
+  await expect(linked.getByTestId('ssbj-preview-source')).toContainText('作業中の内容');
+  for (const text of DISCLOSED) await expect(linked.locator('body')).toContainText(text);
+  for (const text of INTERNAL) await expect(linked.locator('body')).not.toContainText(text);
+  await linked.close();
+
+  // URL に internal=1 を付けて直接開いても、保存版の印刷に内部記録は出ない。
+  const print = await openPrintView(version1!.id, '&internal=1');
   await expect(print.getByTestId('ssbj-preview-source')).toContainText('保存版 第1版');
   for (const text of DISCLOSED) await expect(print.locator('body')).toContainText(text);
   for (const text of INTERNAL) await expect(print.locator('body')).not.toContainText(text);
+  await expect(print.locator('body')).not.toContainText('開示しない');
   await print.close();
 });
 
@@ -336,7 +350,7 @@ test('12. 元データ（作業中の文章・OGT の値）を変えても、保
     // 保存版の中身は変わらない（DB の保存版・印刷ビュー・CSV）。
     const after = (await versionsOfReport()).find(version => version.id === version1!.id)!;
     expect(after.snapshot).toEqual(version1!.snapshot);
-    const print = await openPrintView(version1!.id, false);
+    const print = await openPrintView(version1!.id);
     await expect(print.locator('body')).toContainText(INPUT.narrative);
     await expect(print.locator('body')).not.toContainText(INPUT.narrativeChanged);
     await print.close();

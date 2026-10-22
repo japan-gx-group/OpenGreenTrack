@@ -22,6 +22,7 @@ import type { SsbjReportStatusChangeResult } from '../services/reportWorkflowCli
 import { updateSsbjReportBasicInfo } from '../services/reportService';
 import { isSsbjReportLocked } from '../utils/reportStatus';
 import { toSsbjReportFormValues } from '../utils/reportValidation';
+import { SsbjEditConflictError } from '../utils/writeError';
 import { SsbjLockedNotice } from './SsbjLockedNotice';
 import { SsbjReportBasicInfo } from './SsbjReportBasicInfo';
 import { SsbjReportContentsNav } from './SsbjReportContentsNav';
@@ -34,16 +35,27 @@ export const SsbjReportDetail = ({ reportId }: { reportId: string }) => {
   const { toast, showToast } = useToast();
   const { report, setReport, reload, isLoading, errorMessage, isNotFound } = useSsbjReport(reportId);
   const [isEditing, setIsEditing] = useState<boolean>(false);
+  // 編集を始めた時点の基本情報の版数。表示中のレポートを読み直しても、フォームの値の元になった版数で保存する
+  // （読み直した版数で保存すると、フォームに残った古い値で他の画面の変更を上書きしてしまう）。
+  const [editBaseRevision, setEditBaseRevision] = useState<number>(0);
 
   const form = useSsbjReportForm(async input => {
-    const updated = await updateSsbjReportBasicInfo(reportId, input);
-    setReport(updated);
+    try {
+      const updated = await updateSsbjReportBasicInfo(reportId, editBaseRevision, input);
+      setReport(updated);
+    } catch (error) {
+      // 他の画面で先に保存されていた: 入力中の値はフォームに残し、表示用のレポートだけ最新に読み直す
+      // （キャンセルして編集し直すと、最新の内容から編集できる）。
+      if (error instanceof SsbjEditConflictError) reload();
+      throw error;
+    }
     showToast('基本情報を保存しました', 'success');
   });
 
   const startEdit = () => {
     if (!report) return;
     form.reset(toSsbjReportFormValues(report));
+    setEditBaseRevision(report.basicInfoRevision);
     setIsEditing(true);
   };
 

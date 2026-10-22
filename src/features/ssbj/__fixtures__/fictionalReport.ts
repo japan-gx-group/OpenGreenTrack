@@ -175,7 +175,7 @@ export const fictionalRequirementLinks: { itemId: SsbjItemId; requirementIds: Ss
   { itemId: 'metrics_targets.climate_targets', requirementIds: ['REQ-CLM-003'] },
 ];
 
-/** 項目ごとの根拠文書（すべて架空）。同じ項目に複数登録でき、主管部署は任意。 */
+/** 項目ごとの根拠文書（すべて架空）。同じ項目に複数登録でき、主管部署は任意。ファイルの記録がある例と無い例を含む。 */
 export const fictionalEvidence: SsbjEvidence[] = [
   {
     id: '5b1f0000-1111-4000-8000-000000000201',
@@ -185,6 +185,11 @@ export const fictionalEvidence: SsbjEvidence[] = [
     internalLocation: '社内共有フォルダ/議事録（架空）',
     referencePosition: '第2章',
     ownerDepartment: '総務部',
+    fileName: '取締役会議事録_2024年度（架空）.pdf',
+    fileSha256: '592e812efee3d49cad9db811408e3e9ce2736f7da4ec7d90a21f0c262dc6a239',
+    fileStorageVersionId: '3.0',
+    fileStoredBy: '総務部 担当（架空）',
+    fileRecordedAt: '2025-06-01T01:00:00.000Z',
     disclosure: { state: 'answered', value: '取締役会の開催記録に基づく。' },
   },
   {
@@ -195,6 +200,11 @@ export const fictionalEvidence: SsbjEvidence[] = [
     internalLocation: null,
     referencePosition: null,
     ownerDepartment: null,
+    fileName: null,
+    fileSha256: null,
+    fileStorageVersionId: null,
+    fileStoredBy: null,
+    fileRecordedAt: null,
     disclosure: { state: 'unconfirmed' },
   },
 ];
@@ -406,4 +416,45 @@ export const fictionalVersion: SsbjReportVersion = {
   note: '初回の社内確認用',
   createdBy: FICTIONAL_USER_ID,
   createdAt: '2025-06-03T03:00:00.000Z',
+};
+
+/** 基本情報に後から追加した任意項目（親会社・持分比率・測定アプローチ・業種）。これより前の保存版にはキーが無い。 */
+export const LATER_ADDED_BASIC_INFO_KEYS = [
+  'parentCompanyName',
+  'parentRelationship',
+  'ownershipPercentage',
+  'measurementApproach',
+  'industryCode',
+] as const satisfies readonly (keyof SsbjReportBasicInfo)[];
+
+/**
+ * 任意項目を追加する前の形式で保存された版の例。report から LATER_ADDED_BASIC_INFO_KEYS のキーが欠けている
+ * （値が null なのではなく、キーそのものが無い）。保存版は作成後に書き換えないため、この形のまま読まれる。
+ */
+export const fictionalVersionBeforeBasicInfoAdditions: SsbjReportVersion = (() => {
+  const report: Record<string, unknown> = { ...fictionalSnapshot.report };
+  for (const key of LATER_ADDED_BASIC_INFO_KEYS) delete report[key];
+  return {
+    ...fictionalVersion,
+    snapshot: { ...fictionalSnapshot, report: report as SsbjReportSnapshotV1['report'] },
+  };
+})();
+
+/**
+ * リスク・機会にリスクの種類（riskType）を追加する前の形式で保存された版の例。
+ * risks_opportunities の各要素から riskType のキーが欠けている（キーそのものが無い）。
+ */
+export const fictionalVersionBeforeRiskType: SsbjReportVersion = {
+  ...fictionalVersion,
+  snapshot: {
+    ...fictionalSnapshot,
+    sections: {
+      ...fictionalSnapshot.sections,
+      risks_opportunities: fictionalRisksOpportunities.map(item => {
+        const legacy: Record<string, unknown> = { ...item };
+        delete legacy.riskType;
+        return legacy as SsbjRiskOpportunity;
+      }),
+    },
+  },
 };
