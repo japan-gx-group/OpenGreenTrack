@@ -7,6 +7,24 @@ import type { ManualEntryPeriodDates } from './manualEntryTargetMonth';
 
 /** 半角数字と小数点 1 個のみ。入力時フィルタに使う（空文字・'.'・'1.' もパターン上は通る）。 */
 export const DECIMAL_PATTERN = /^\d*(?:\.\d*)?$/;
+
+/**
+ * 活動量入力の正規化。日本語IME経由の全角数字（U+FF10〜U+FF19）・全角小数点「．」（U+FF0E）を
+ * 半角へ揃え、桁区切りのカンマ（半角「,」・全角「，」U+FF0C）を除去する。JS の `\d` は半角数字のみのため、
+ * 正規化せずに DECIMAL_PATTERN へかけると IME オンの入力がすべて弾かれてしまう。
+ * 変換するのはこの 3 種だけに限定し、NFKC 正規化は使わない（上付き数字の `10²` が `102`、
+ * 丸数字の `①` が `1` になるなど、数字ではない入力まで数字として通ってしまうため）。
+ * それ以外の文字はそのまま残し、呼び出し側が DECIMAL_PATTERN で弾いて理由を表示する。
+ */
+export const normalizeAmountInput = (value: string): string =>
+  value
+    .replace(/[\uFF10-\uFF19]/g, (digit) => String.fromCharCode(digit.charCodeAt(0) - 0xfee0))
+    .replace(/\uFF0E/g, '.')
+    .replace(/[,\uFF0C]/g, '');
+
+/** 正規化しても DECIMAL_PATTERN に合わない入力を弾いたときの案内（無言で無視しない）。 */
+export const AMOUNT_INPUT_REJECTED_MESSAGE = '活動量は数字と小数点のみ入力できます。';
+
 export const NOTE_MAX_LENGTH = 500;
 
 /**
@@ -19,20 +37,24 @@ export const AMOUNT_MAX_FRACTION_DIGITS = 3;
 
 export type AmountValidation =
   | { kind: 'valid'; value: number }
-  /** 空・数値でない・0 以下 */
+  /** 空・数値でない・負 */
   | { kind: 'invalid' }
   /** 整数部が AMOUNT_MAX_INTEGER_DIGITS を超える */
   | { kind: 'too-large' }
   /** 小数部が AMOUNT_MAX_FRACTION_DIGITS を超える */
   | { kind: 'too-precise' };
 
-/** 活動量の検証。DECIMAL_PATTERN・有限・> 0 に加え、numeric(15,3) に収まる桁数かを見る。 */
+/**
+ * 活動量の検証。DECIMAL_PATTERN・有限・0 以上に加え、numeric(15,3) に収まる桁数かを見る。
+ * 0 は許可する（休止拠点・契約のみの月など実績ゼロを「入力漏れ」と区別して記録するため。
+ * タイプミス防止はプレビューの確認表示 ZERO_AMOUNT_PREVIEW_NOTICE が受け持つ）。
+ */
 export const validateAmount = (amount: string): AmountValidation => {
   if (amount === '' || !DECIMAL_PATTERN.test(amount)) {
     return { kind: 'invalid' };
   }
   const parsed = Number(amount);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
+  if (!Number.isFinite(parsed) || parsed < 0) {
     return { kind: 'invalid' };
   }
   // 桁数は入力文字列で数える（Number は 16 桁以上で丸まり、桁あふれを検出できない）。
@@ -78,13 +100,20 @@ export interface EntryValidationInput {
 export const VALIDATION_MESSAGES = {
   location: '拠点を選択してください。',
   product: 'IDEA製品を検索して選択してください。',
-  amount: '活動量は0より大きい半角数字で入力してください。',
+  amount: '活動量は0以上の半角数字で入力してください。',
   amountTooLarge: `活動量は整数部${AMOUNT_MAX_INTEGER_DIGITS}桁以内（${(10 ** AMOUNT_MAX_INTEGER_DIGITS - 1).toLocaleString('ja-JP')} 以下）で入力してください。`,
   amountTooPrecise: `活動量は小数第${AMOUNT_MAX_FRACTION_DIGITS}位までで入力してください。`,
   note: '備考は500文字以内で入力してください。',
   /** handleSave の再ガード（validate 通過後に period / 製品詳細が無い） */
   inconsistent: '入力内容を確認してください。',
 } as const;
+
+/**
+ * 活動量 0 でプレビューを開いたときの確認表示。保存は止めず、タイプミス（入力し忘れたまま確定）だけ防ぐ。
+ * 0 は実績ゼロの記録として算定され、未入力（レコード無し）とは区別される。
+ */
+export const ZERO_AMOUNT_PREVIEW_NOTICE =
+  '活動量 0 で保存します。実績ゼロの記録として排出量 0 で算定されます。入力漏れでないかご確認ください。';
 
 /** validateAmount の結果に対応する文言。valid なら null。 */
 export const amountValidationMessage = (result: AmountValidation): string | null => {
@@ -101,7 +130,7 @@ export const amountValidationMessage = (result: AmountValidation): string | null
 };
 
 /**
- * 検証順序（最初のエラーを返す）: 拠点 → 対象年月 → （IDEA: 製品）→ 活動量（> 0・桁数）→ 備考 500 文字。
+ * 検証順序（最初のエラーを返す）: 拠点 → 対象年月 → （IDEA: 製品）→ 活動量（0 以上・桁数）→ 備考 500 文字。
  * 製品未選択の文言は参照切れなら factorMissing（SCOPE3_FACTOR_MISSING_MESSAGE）を優先する。
  */
 export const validateEntry = (

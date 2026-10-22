@@ -20,7 +20,11 @@ import {
   type CandidateFactorRow,
 } from '../../services/factorSelectionService';
 import { getScope3CategoryMethod } from '../../services/scope3Adoption';
-import type { ActivityEntryInitialValues, ManualEntryLocationOption } from '../../types';
+import type {
+  ActivityEntryInitialValues,
+  ManualEntryLocationOption,
+  SavedManualActivityRecord,
+} from '../../types';
 import { ActivityEntryForm, type ActivityEntryFormProps } from '../ActivityEntryForm.client';
 
 // 統合データ入力フォーム（ActivityEntryForm）のコンポーネントテスト。
@@ -244,6 +248,13 @@ const setTextareaValue = (textarea: HTMLTextAreaElement, value: string): void =>
   });
 };
 
+/** IME の composition イベントを発火する（変換の開始・確定を再現する）。 */
+const fireComposition = (input: HTMLInputElement, type: 'compositionstart' | 'compositionend'): void => {
+  act(() => {
+    input.dispatchEvent(new CompositionEvent(type, { bubbles: true }));
+  });
+};
+
 const q = <T extends Element = HTMLElement>(container: HTMLElement, selector: string): T => {
   const element = container.querySelector<T>(selector);
   expect(element, `要素が見つかりません: ${selector}`).not.toBeNull();
@@ -324,7 +335,9 @@ const renderForm = (props: Partial<ActivityEntryFormProps> = {}) => {
     container: result.container,
     onSave: allProps.onSave as ReturnType<typeof vi.fn<ActivityEntryFormProps['onSave']>>,
     props: allProps,
-    rerender: () => result.rerender(<ActivityEntryForm {...allProps} />),
+    /** props の一部を差し替えて再レンダリングする（親が履歴を更新したときなどを再現する）。 */
+    rerender: (overrides: Partial<ActivityEntryFormProps> = {}) =>
+      result.rerender(<ActivityEntryForm {...allProps} {...overrides} />),
   };
 };
 
@@ -832,6 +845,115 @@ describe('ActivityEntryForm', () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
+  // 日本語IMEがオンのままだと全角数字が DECIMAL_PATTERN に合わず、controlled input が
+  // 変換中の値を毎回巻き戻して「何も入力できない」状態になっていた。変換中は見たまま表示し、
+  // 確定時に全角→半角へ正規化して受け付けることを固定する。
+  describe('活動量入力の IME 対応と正規化', () => {
+    it('IME 変換中は入力をそのまま表示し、確定時に全角数字を半角へ正規化して受け付ける', async () => {
+      const { container } = renderForm();
+      await flush();
+      const input = amountInput(container);
+
+      fireComposition(input, 'compositionstart');
+      setInputValue(input, '１２３４５');
+      // 変換中に巻き戻すと composition が壊れるため、そのまま表示する。
+      expect(input.value).toBe('１２３４５');
+
+      fireComposition(input, 'compositionend');
+      expect(input.value).toBe('12345');
+      expect(container.querySelector('[data-testid="manual-amount-rejected"]')).toBeNull();
+    });
+
+    it('IME を使わない貼り付けでもカンマ・全角混じりを正規化して受け付ける', async () => {
+      const { container } = renderForm();
+      await flush();
+      setInputValue(amountInput(container), '12,345');
+      expect(amountInput(container).value).toBe('12345');
+      setInputValue(amountInput(container), '１，０００．５');
+      expect(amountInput(container).value).toBe('1000.5');
+    });
+
+    it('正規化しても数字にならない確定入力は直前の値に戻し、理由を表示する', async () => {
+      const { container } = renderForm();
+      await flush();
+      const input = amountInput(container);
+      setInputValue(input, '123');
+
+      fireComposition(input, 'compositionstart');
+      setInputValue(input, '123とうきょう');
+      fireComposition(input, 'compositionend');
+
+      expect(input.value).toBe('123');
+      expect(q(container, '[data-testid="manual-amount-rejected"]').textContent).toBe(
+        '活動量は数字と小数点のみ入力できます。',
+      );
+
+      // 数字を入力し直せば案内は消える。
+      setInputValue(input, '1234');
+      expect(input.value).toBe('1234');
+      expect(container.querySelector('[data-testid="manual-amount-rejected"]')).toBeNull();
+    });
+
+    // 保存成功で活動量を空にした直後に数字以外を入れると、戻す先が保存前の値のままだったため
+    // 古い活動量が復活し、翌月分として再保存できてしまっていた。空欄のまま理由だけ出すことを固定する。
+    it('保存成功で空になった欄に数字以外を入れても、保存前の活動量は復活しない', async () => {
+      const { container, onSave } = renderForm();
+      await flush();
+      setInputValue(amountInput(container), '100');
+      openPreview(container);
+      await saveFromPreview(container);
+      expect(onSave).toHaveBeenCalledTimes(1);
+      expect(amountInput(container).value).toBe('');
+
+      // 通常入力（IME を使わない経路）。
+      setInputValue(amountInput(container), 'a');
+      expect(amountInput(container).value).toBe('');
+      expect(q(container, '[data-testid="manual-amount-rejected"]').textContent).toBe(
+        '活動量は数字と小数点のみ入力できます。',
+      );
+
+      // IME 変換を確定する経路でも、変換開始時点の空欄に戻す。
+      const input = amountInput(container);
+      fireComposition(input, 'compositionstart');
+      setInputValue(input, 'あ');
+      fireComposition(input, 'compositionend');
+      expect(input.value).toBe('');
+      expect(q(container, '[data-testid="manual-amount-rejected"]')).not.toBeNull();
+    });
+  });
+
+  // 休止拠点・契約のみの月など、実績ゼロを「入力漏れ」と区別して記録できるようにする。
+  // タイプミス（入力し忘れたまま確定）を防ぐため、プレビューに確認表示を挟んでから保存する。
+  it('活動量 0 は排出量 0 で概算され、プレビューの確認表示を経て保存できる', async () => {
+    const { container, onSave } = renderForm();
+    await flush();
+    setInputValue(monthInput(container), '2024-11');
+
+    // 0 より大きい値では確認表示を出さない。
+    setInputValue(amountInput(container), '10000');
+    const nonZeroPreview = openPreview(container);
+    expect(nonZeroPreview.textContent).not.toContain('活動量 0 で保存します');
+    click(findButton(container, 'キャンセル'));
+
+    setInputValue(amountInput(container), '0');
+    expect(container.querySelector('[data-testid="manual-amount-error"]')).toBeNull();
+    expect(resultEmissionsText(container)).toBe('0 t-CO2e');
+
+    const preview = openPreview(container);
+    expect(previewRowText(container, '活動量')).toContain('0 kWh');
+    expect(previewRowText(container, '推定排出量')).toContain('0 t-CO2e');
+    expect(preview.textContent).toContain(
+      '活動量 0 で保存します。実績ゼロの記録として排出量 0 で算定されます。入力漏れでないかご確認ください。',
+    );
+
+    await saveFromPreview(container);
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onSave).toHaveBeenCalledWith({
+      kind: 'scope12',
+      input: expect.objectContaining({ amount: 0, unit: 'kWh' }),
+    });
+  });
+
   it('保存失敗（Error）: message をフォーム内の alert に表示し、入力は消さない', async () => {
     const duplicateMessage = '『大阪支社』の電気・2024年11月 の活動量は既に登録済みです。';
     const { container, onSave } = renderForm();
@@ -1018,5 +1140,130 @@ describe('ActivityEntryForm', () => {
     expect(container.querySelector('[data-testid="manual-factor-section"]')).toBeNull();
     expect(container.querySelector('#manual-amount-input')).toBeNull();
     expect(previewButton(container).disabled).toBe(true);
+  });
+
+  // ---- 重複の事前警告: 拠点・カテゴリ・対象年月が揃った時点で入力済みを知らせる ----
+
+  const duplicateWarning = (container: HTMLElement) =>
+    container.querySelector('[data-testid="manual-duplicate-warning"]');
+
+  /** 事前警告の照合に使う既存レコード（大阪支社・電気・2024年11月）。 */
+  const existingElectricityNov = (
+    overrides: Partial<SavedManualActivityRecord> = {},
+  ): SavedManualActivityRecord => ({
+    id: 'rec-existing',
+    locationId: OSAKA.id,
+    locationName: OSAKA.name,
+    energyType: 'electricity',
+    amount: 1000,
+    unit: 'kWh',
+    periodStart: '2024-11-01',
+    periodEnd: '2024-11-30',
+    note: null,
+    createdAt: '2024-12-01T00:00:00Z',
+    emissionFactorId: null,
+    emissions: null,
+    appliedFactorName: null,
+    appliedFactorValue: null,
+    appliedFactorUnit: null,
+    scope3CategoryId: null,
+    ideaFactorId: null,
+    ideaProductName: null,
+    ...overrides,
+  });
+
+  it('新規: 拠点・カテゴリ・対象年月が既存レコードと揃った時点で警告し、月を変えると消える', async () => {
+    const onOpenDuplicateRecord = vi.fn();
+    const existing = existingElectricityNov();
+    const { container } = renderForm({
+      historyRecords: [existing],
+      onOpenDuplicateRecord,
+    });
+    await flush();
+
+    // 既定の対象月（2025-01）は重複していないため警告なし。
+    expect(duplicateWarning(container)).toBeNull();
+
+    setInputValue(monthInput(container), '2024-11');
+    const warning = duplicateWarning(container);
+    expect(warning?.textContent).toContain('『大阪支社』の電気・2024年11月 の活動量は既に登録済みです');
+    expect(warning?.textContent).toContain('活動量を合算してください');
+    // 警告は事前の注意にとどめ、プレビュー・保存は止めない（確定判定は保存時チェック）。
+    expect(previewButton(container).disabled).toBe(false);
+
+    click(findButton(container, '既存のレコードを開く'));
+    expect(onOpenDuplicateRecord).toHaveBeenCalledWith(existing);
+
+    setInputValue(monthInput(container), '2024-12');
+    expect(duplicateWarning(container)).toBeNull();
+  });
+
+  it('新規: カテゴリが違えば同じ拠点・対象月でも警告しない', async () => {
+    const { container } = renderForm({ historyRecords: [existingElectricityNov()] });
+    await flush();
+
+    setSelectValue(categorySelect(container), 'energy:city_gas');
+    setInputValue(monthInput(container), '2024-11');
+
+    expect(duplicateWarning(container)).toBeNull();
+  });
+
+  it('編集: 自分自身は重複に数えず、対象月を他レコードと同じへ変えたときだけ警告する', async () => {
+    const self = existingElectricityNov({ id: 'rec-self' });
+    const other = existingElectricityNov({
+      id: 'rec-other',
+      periodStart: '2024-12-01',
+      periodEnd: '2024-12-31',
+    });
+    const { container } = renderForm({
+      mode: 'edit',
+      initialValues: editScope12(),
+      historyRecords: [self, other],
+      excludeRecordId: 'rec-self',
+    });
+    await flush();
+
+    // 開いた直後（条件未変更）は自分自身と一致するが警告しない。
+    expect(duplicateWarning(container)).toBeNull();
+
+    setInputValue(monthInput(container), '2024-12');
+    const warning = duplicateWarning(container);
+    expect(warning?.textContent).toContain('2024年12月 の活動量は既に登録済みです');
+    // 編集モーダルからは onOpenDuplicateRecord を渡さないため、乗り換え導線は出ない。
+    expect(warning?.textContent).not.toContain('既存のレコードを開く');
+  });
+
+  it('新規: 保存直後は同じ条件のまま履歴に加わっても警告せず、条件を変えると通常どおり警告する', async () => {
+    const existingDec = existingElectricityNov({
+      id: 'rec-dec',
+      periodStart: '2024-12-01',
+      periodEnd: '2024-12-31',
+    });
+    const { container, onSave, rerender } = renderForm({
+      historyRecords: [existingDec],
+      onOpenDuplicateRecord: vi.fn(),
+    });
+    await flush();
+    setInputValue(monthInput(container), '2024-11');
+    setInputValue(amountInput(container), '10000');
+    expect(duplicateWarning(container)).toBeNull();
+
+    openPreview(container);
+    await saveFromPreview(container);
+    expect(onSave).toHaveBeenCalledTimes(1);
+
+    // 親（DataInput）は保存したレコードを履歴の先頭に加える。拠点・カテゴリ・対象年月は保持されたままだが、
+    // 今保存した分を「既に登録済み」とは知らせない（保存成功の通知と並んで警告が出ないようにする）。
+    rerender({ historyRecords: [existingElectricityNov({ id: 'rec-saved' }), existingDec] });
+    expect(amountInput(container).value).toBe('');
+    expect(duplicateWarning(container)).toBeNull();
+
+    // 条件を変えれば通常どおり警告する。
+    setInputValue(monthInput(container), '2024-12');
+    expect(duplicateWarning(container)?.textContent).toContain('2024年12月 の活動量は既に登録済みです');
+
+    // 一度条件を変えたあとに保存時の条件へ戻した場合も警告する（抑止は保存直後だけ）。
+    setInputValue(monthInput(container), '2024-11');
+    expect(duplicateWarning(container)?.textContent).toContain('2024年11月 の活動量は既に登録済みです');
   });
 });

@@ -5,7 +5,7 @@
 // 事業者別係数は自動解決の対象外のため、ここで選択した係数を明示指定として保存する。
 // 事業者未選択のままなら従来どおり自動解決（代替値が適用される）。
 
-import React from 'react';
+import React, { useState } from 'react';
 import { SearchableSelect } from '@/components/ui/SearchableSelect.client';
 import type { FactorTypeChoice } from '../services/entryCategory';
 import type { ProviderSelection } from '../services/entryFactorSelection';
@@ -39,72 +39,100 @@ export const ProviderFactorFields = ({
   onFactorTypeChange,
   onProviderChange,
   onMenuChange,
-}: ProviderFactorFieldsProps) => (
-  <div className="flex flex-col gap-2">
-    <div className="grid grid-cols-1 gap-x-5 gap-y-4 md:grid-cols-3">
-      <EntryField htmlFor="manual-factor-type-select" label="計算方法">
-        <select
-          id="manual-factor-type-select"
-          value={selection.factorType}
-          onChange={(event) => onFactorTypeChange(event.target.value as FactorTypeChoice)}
-          disabled={isLoadingProviders}
-          className="gt-field"
-        >
-          <option value="adjusted">調整後排出係数</option>
-          <option value="basic">基礎排出係数</option>
-        </select>
-      </EntryField>
+}: ProviderFactorFieldsProps) => {
+  // 「検索語を入れたのに選択されずに閉じた」ときだけ出す揮発性の警告。
+  // 常設の説明文（未選択なら代替値）は見慣れて読まれないため、離脱の瞬間にその場限りで知らせる。
+  // 再フォーカス・再入力・候補の選択のいずれでも消える（いずれも onQueryChange を通る）。
+  // 離脱したときの事業者リストも一緒に覚え、リストが入れ替わったら警告は出さない。親はカテゴリ変更で
+  // 事業者選択を解除するだけでこの部品を再マウントしないため、検索語だけを覚えると
+  // 電気で離脱した「東京」の警告が都市ガスの欄にも残り続ける。
+  const [abandonedSearch, setAbandonedSearch] = useState<{ query: string; options: ProviderOption[] } | null>(
+    null,
+  );
+  const abandonedQuery =
+    abandonedSearch !== null && abandonedSearch.options === providerOptions ? abandonedSearch.query : null;
 
-      {/* 「未選択なら代替値」はセクション冒頭の説明文と重複するため、ラベルには載せない。 */}
-      <EntryField
-        htmlFor="manual-provider-select"
-        label="供給事業者"
-        className={menuOptions.length > 1 ? '' : 'md:col-span-2'}
-      >
-        <SearchableSelect
-          id="manual-provider-select"
-          ariaDescribedBy="manual-provider-select-help"
-          options={providerOptions}
-          value={selection.providerName}
-          onChange={onProviderChange}
-          placeholder={isLoadingProviders ? '事業者リストを取得中...' : '事業者名またはコードで検索して選択'}
-          disabled={isLoadingProviders}
-        />
-      </EntryField>
-
-      {menuOptions.length > 1 && (
-        <EntryField htmlFor="manual-menu-select" label="メニュー / 供給区域">
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-1 gap-x-5 gap-y-4 md:grid-cols-3">
+        <EntryField htmlFor="manual-factor-type-select" label="計算方法">
           <select
-            id="manual-menu-select"
-            value={providerFactor?.menuName ?? ''}
-            onChange={(event) => onMenuChange(event.target.value || null)}
+            id="manual-factor-type-select"
+            value={selection.factorType}
+            onChange={(event) => onFactorTypeChange(event.target.value as FactorTypeChoice)}
+            disabled={isLoadingProviders}
             className="gt-field"
           >
-            <option value="">選択してください</option>
-            {menuOptions.map((option) => (
-              <option key={option.id} value={option.menuName ?? ''}>
-                {option.menuName ?? '（メニューなし）'}
-              </option>
-            ))}
+            <option value="adjusted">調整後排出係数</option>
+            <option value="basic">基礎排出係数</option>
           </select>
         </EntryField>
+
+        {/* 「未選択なら代替値」はセクション冒頭の説明文と重複するため、ラベルには載せない。 */}
+        <EntryField
+          htmlFor="manual-provider-select"
+          label="供給事業者"
+          className={menuOptions.length > 1 ? '' : 'md:col-span-2'}
+        >
+          <SearchableSelect
+            id="manual-provider-select"
+            ariaDescribedBy="manual-provider-select-help"
+            options={providerOptions}
+            value={selection.providerName}
+            onChange={onProviderChange}
+            placeholder={isLoadingProviders ? '事業者リストを取得中...' : '事業者名またはコードで検索して選択'}
+            disabled={isLoadingProviders}
+            onQueryChange={() => setAbandonedSearch(null)}
+            onSearchAbandoned={(query) => {
+              // 選択済みの事業者がいれば枠外クリックでも選択は保たれるため、未選択のときだけ警告する
+              if (selection.providerName === null) {
+                setAbandonedSearch({ query, options: providerOptions });
+              }
+            }}
+          />
+        </EntryField>
+
+        {menuOptions.length > 1 && (
+          <EntryField htmlFor="manual-menu-select" label="メニュー / 供給区域">
+            <select
+              id="manual-menu-select"
+              value={providerFactor?.menuName ?? ''}
+              onChange={(event) => onMenuChange(event.target.value || null)}
+              className="gt-field"
+            >
+              <option value="">選択してください</option>
+              {menuOptions.map((option) => (
+                <option key={option.id} value={option.menuName ?? ''}>
+                  {option.menuName ?? '（メニューなし）'}
+                </option>
+              ))}
+            </select>
+          </EntryField>
+        )}
+      </div>
+
+      {/* 1列（画面幅の 1/3）に押し込めると3行に折り返して読みにくいため、セレクト行の下に全幅で置く。 */}
+      <p id="manual-provider-select-help" className="text-xs text-text-muted">
+        事業者コードは、環境省・経済産業省が公表する「温室効果ガス排出量算定・報告・公表制度」の事業者別排出係数一覧に記載された登録番号です。
+      </p>
+
+      {/* 未選択＝代替値適用は正当な仕様のため、ブロックせず「選択されずに終わった」ことだけを知らせる。 */}
+      {abandonedQuery !== null && (
+        <p role="status" aria-live="polite" className="text-sm text-warning">
+          「{abandonedQuery}」は確定されていません。事業者が未選択のため、全国の代替値で算定されます。
+        </p>
+      )}
+
+      {/* 取得失敗は警告扱いにせず代替値で入力を続けられるが、「事業者が未登録」と誤認しないよう再試行の導線を出す。 */}
+      {providerLoadFailed && (
+        <p className="text-sm text-warning">
+          事業者リストを取得できませんでした。代替値で計算するか、
+          <button type="button" onClick={onRetryProviders} className="font-medium text-primary underline">
+            再試行
+          </button>
+          してください。
+        </p>
       )}
     </div>
-
-    {/* 1列（画面幅の 1/3）に押し込めると3行に折り返して読みにくいため、セレクト行の下に全幅で置く。 */}
-    <p id="manual-provider-select-help" className="text-xs text-text-muted">
-      事業者コードは、環境省・経済産業省が公表する「温室効果ガス排出量算定・報告・公表制度」の事業者別排出係数一覧に記載された登録番号です。
-    </p>
-
-    {/* 取得失敗は警告扱いにせず代替値で入力を続けられるが、「事業者が未登録」と誤認しないよう再試行の導線を出す。 */}
-    {providerLoadFailed && (
-      <p className="text-sm text-warning">
-        事業者リストを取得できませんでした。代替値で計算するか、
-        <button type="button" onClick={onRetryProviders} className="font-medium text-primary underline">
-          再試行
-        </button>
-        してください。
-      </p>
-    )}
-  </div>
-);
+  );
+};

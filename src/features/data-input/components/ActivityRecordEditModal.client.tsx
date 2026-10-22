@@ -4,15 +4,21 @@
 // 状態と更新・削除処理は useActivityRecordEditor が持つ。
 
 import type { ActivityRecordEditor } from '../hooks/useActivityRecordEditor';
-import type { ManualEntryLocationOption } from '../types';
+import type { ManualEntryLocationOption, SavedManualActivityRecord } from '../types';
 import { ActivityEntryForm } from './ActivityEntryForm.client';
 
 interface ActivityRecordEditModalProps {
   editor: ActivityRecordEditor;
   locations: ManualEntryLocationOption[];
+  /** 対象年月などの変更が別レコードと重複するときの事前警告に使う入力履歴。 */
+  historyRecords: SavedManualActivityRecord[];
 }
 
-export const ActivityRecordEditModal = ({ editor, locations }: ActivityRecordEditModalProps) => {
+export const ActivityRecordEditModal = ({
+  editor,
+  locations,
+  historyRecords,
+}: ActivityRecordEditModalProps) => {
   if (!editor.editingRecord || !editor.initialValues) return null;
 
   return (
@@ -37,6 +43,10 @@ export const ActivityRecordEditModal = ({ editor, locations }: ActivityRecordEdi
           onCancel={editor.close}
           onDelete={editor.deleteRecord}
           isDeleting={editor.isDeleting}
+          historyRecords={historyRecords}
+          // 編集中のレコード自身は重複に数えない。モーダル内から別レコードへ乗り換えると
+          // 編集中の内容が黙って消えるため「既存のレコードを開く」導線は出さない。
+          excludeRecordId={editor.editingRecord.id}
         />
       </div>
     </div>

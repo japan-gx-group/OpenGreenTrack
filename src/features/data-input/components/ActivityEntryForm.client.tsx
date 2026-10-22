@@ -12,7 +12,7 @@
 // の normalizeIdeaFactor と同一の scope3InlineCalculation）で行い、保存後の算定と同じ値を表示する。
 // 構造・バリデーション・未来月ガードは両経路で共有する。
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ClipboardList, Trash2, X } from 'lucide-react';
 import { Card } from '@/components/ui/card';
@@ -24,7 +24,13 @@ import {
   type ActivityEntryInitialValues,
   type ActivityEntryInput,
   type ManualEntryLocationOption,
+  type SavedManualActivityRecord,
 } from '../types';
+import {
+  buildDuplicateActivityRecordMessage,
+  formatDuplicatePeriodLabel,
+} from '../services/activityRecordDuplicates';
+import { useDuplicateWarning } from '../hooks/useDuplicateWarning';
 import { useIdeaProductSelection } from '../hooks/useIdeaProductSelection';
 import { useKeyedLoader } from '../hooks/useKeyedLoader';
 import { useScope12FactorSelection } from '../hooks/useScope12FactorSelection';
@@ -49,12 +55,15 @@ import {
   factorSourceRowText,
 } from '../services/entryFormat';
 import {
+  AMOUNT_INPUT_REJECTED_MESSAGE,
   DECIMAL_PATTERN,
   NOTE_MAX_LENGTH,
   SAVE_FAILURE_MESSAGES,
   VALIDATION_MESSAGES,
+  ZERO_AMOUNT_PREVIEW_NOTICE,
   amountValidationMessage,
   buildActivityEntryInput,
+  normalizeAmountInput,
   validateAmount,
   validateEntry,
 } from '../services/entrySubmission';
@@ -94,7 +103,19 @@ export interface ActivityEntryFormProps {
   onDelete?: () => Promise<void>;
   /** 削除処理中フラグ（ボタンの二重押下防止）。 */
   isDeleting?: boolean;
+  /**
+   * 読み込み済みの入力履歴（組織の全レコード）。拠点・カテゴリ・対象年月が揃った時点の
+   * 重複事前警告の照合に使う。未指定なら事前警告は出さない（保存時チェックは従来どおり）。
+   */
+  historyRecords?: SavedManualActivityRecord[];
+  /** edit のとき編集中レコード自身を重複に数えないための除外 id。 */
+  excludeRecordId?: string;
+  /** 事前警告から重複レコードの編集を開く操作。指定時のみ「既存のレコードを開く」を表示する（新規入力用）。 */
+  onOpenDuplicateRecord?: (record: SavedManualActivityRecord) => void;
 }
+
+// historyRecords 未指定時の既定値。毎レンダー新しい [] を作ると useMemo の依存が毎回変わるため共有する。
+const NO_HISTORY_RECORDS: SavedManualActivityRecord[] = [];
 
 export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   locations,
@@ -104,6 +125,9 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   onCancel,
   onDelete,
   isDeleting = false,
+  historyRecords = NO_HISTORY_RECORDS,
+  excludeRecordId,
+  onOpenDuplicateRecord,
 }) => {
   const isEdit = mode === 'edit';
   const initialCategory = useMemo(() => entryCategoryFromInitialValues(initialValues), [initialValues]);
@@ -112,6 +136,17 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   const [category, setCategory] = useState<EntryCategory>(initialCategory ?? DEFAULT_ENTRY_CATEGORY);
   const [targetMonth, setTargetMonth] = useState(() => initialValues?.targetMonth ?? getCurrentYearMonth());
   const [amount, setAmount] = useState(initialValues?.amount ?? '');
+  // 入力時フィルタで弾いたことの案内（正規化しても数字にならなかったとき）。無言で無視しない。
+  const [amountRejected, setAmountRejected] = useState(false);
+  // IME 変換中フラグ。変換中の値（全角数字など）を controlled input が巻き戻すと
+  // composition が壊れて「何も入力できない」状態になるため、変換中は見たまま表示し、
+  // 確定（compositionend）のタイミングでまとめて正規化・判定する。
+  const isComposingAmountRef = useRef(false);
+  // 確定入力が数字にならなかったときに戻す先（変換開始時点の表示値。パターンを通過済み）。
+  // 変換開始のたびに取り直し、保存で欄を空にしたときも空に戻す。
+  // 保存前の値を持ったままにすると、空欄に数字以外を入れた瞬間に古い活動量が復活し、
+  // 翌月分として再保存できてしまう。
+  const lastValidAmountRef = useRef(initialValues?.amount ?? '');
   const [note, setNote] = useState(initialValues?.note ?? '');
   const [showPreview, setShowPreview] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -228,10 +263,37 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     fiscalYearLabel: recordFiscalYear?.label ?? null,
   });
 
+  // 拠点・カテゴリ・対象年月（Scope3積上げはさらにIDEA製品）が揃った時点で、保存時と同じ重複キーを
+  // 読み込み済みの入力履歴に照合し、活動量を入れる前に「既に登録済み」を知らせる。
+  // 警告はプレビュー・保存を止めない（履歴が古い可能性があるため、確定判定は保存時チェックに委ねる）。
+  // 保存成功直後の同じ条件では警告しない（条件が変わるまでの抑止は useDuplicateWarning が持つ）。
+  const duplicate = useDuplicateWarning({
+    historyRecords,
+    excludeRecordId,
+    locationId: effectiveSelectedLocationId,
+    category,
+    periodStart: period?.start ?? null,
+    ideaFactorId: idea.productDetail?.id ?? null,
+  });
+  const { candidate: duplicateCandidate, record: duplicateRecord } = duplicate;
+  const duplicateWarningText =
+    duplicateRecord && duplicateCandidate
+      ? buildDuplicateActivityRecordMessage({
+          locationName: selectedLocation?.name ?? null,
+          // 重複メッセージのカテゴリ表記は保存時（buildManualDuplicateMessage / buildScope3DuplicateMessage）と揃える。
+          categoryLabel:
+            category.kind === 'energy'
+              ? MANUAL_ACTIVITY_CATEGORY_MAP[category.energyType].labelJP
+              : `Scope3積上げ（カテゴリ${category.categoryId}）` +
+                (duplicateRecord.ideaProductName ? `・製品「${duplicateRecord.ideaProductName}」` : ''),
+          periodLabel: formatDuplicatePeriodLabel(duplicateCandidate.periodStart),
+        })
+      : null;
+
   const amountValidation = validateAmount(amount);
   const validAmount = amountValidation.kind === 'valid' ? amountValidation.value : null;
   // numeric(15,3) に収まらない桁数は入力欄の直下で即座に知らせる（計算結果が出ない理由を分かるようにする）。
-  // 空・0 は入力途中の状態なので、プレビュー / 保存時の検証（validateEntry）に任せる。
+  // 空は入力途中の状態なので、プレビュー / 保存時の検証（validateEntry）に任せる（0 は実績ゼロとして有効な値）。
   const amountDigitsError =
     amountValidation.kind === 'too-large' || amountValidation.kind === 'too-precise'
       ? amountValidationMessage(amountValidation)
@@ -277,6 +339,41 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     : period !== null && (!fiscalYearsReady || scope12.isLoadingFactors || scope12.applied.status === 'pending');
   const isPreviewBlocked =
     locations.length === 0 || initialLocationMissing || isSaving || isDeleting || isFactorLoading;
+
+  // 全角数字・カンマ付きは正規化して受け付け、それでも数字にならない入力は直前の値に戻して理由を出す。
+  // 戻す先は経路ごとに呼び出し側が決める（通常入力は表示中の値、IME 確定は変換開始時点の値）。
+  const commitAmount = (raw: string, fallback: React.SetStateAction<string>) => {
+    const normalized = normalizeAmountInput(raw);
+    if (DECIMAL_PATTERN.test(normalized)) {
+      setAmount(normalized);
+      setAmountRejected(false);
+    } else {
+      setAmount(fallback);
+      setAmountRejected(true);
+    }
+  };
+
+  const handleAmountChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (isComposingAmountRef.current) {
+      // 変換中は巻き戻さずそのまま表示する（確定時に commitAmount で正規化する）。
+      setAmount(event.target.value);
+      return;
+    }
+    // 変換を介さない入力では表示中の値がそのまま戻す先になる。ref を介さないので、
+    // 保存で欄を空にした後に古い値が復活することはない。
+    commitAmount(event.target.value, (prev) => (DECIMAL_PATTERN.test(prev) ? prev : ''));
+  };
+
+  const handleAmountCompositionStart = () => {
+    isComposingAmountRef.current = true;
+    // 変換開始時点の表示値は必ずパターンを通過しているので、確定が数字にならなかったときはここへ戻す。
+    lastValidAmountRef.current = amount;
+  };
+
+  const handleAmountCompositionEnd = (event: React.CompositionEvent<HTMLInputElement>) => {
+    isComposingAmountRef.current = false;
+    commitAmount(event.currentTarget.value, lastValidAmountRef.current);
+  };
 
   const handleCategoryChange = (value: string) => {
     const next = parseEntryCategoryValue(value);
@@ -362,7 +459,11 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
         onCancel?.();
       } else {
         // 続けて別の月・別製品を入力しやすいよう、拠点・カテゴリ・年月・係数/製品の選択は保持する。
+        // 条件がそのまま残るので、今保存したレコードが履歴に加わっても条件を変えるまで重複警告は出さない。
+        duplicate.markSaved();
         setAmount('');
+        // 戻す先も空にする（保存前の活動量が次の入力で復活しないように）。
+        lastValidAmountRef.current = '';
         setNote('');
       }
     } catch (error) {
@@ -405,12 +506,17 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
           estimatedEmissions,
         })
       : null;
-  const previewCaution =
+  const factorFallbackCaution =
     !isIdea && isEdit && !scope12.factorTouched && scope12.applied.status === 'resolved' && scope12.applied.fellBack
       ? scope12.applied.remapped
         ? '保存されていた係数は年度更新で入れ替わったため、同じ供給事業者・メニューの上記の係数で再計算されます。'
         : '保存されていた係数は現在の条件では適用できないため、上記の自動選択された係数で再計算されます。'
       : null;
+  // 活動量 0 は実績ゼロの記録として保存できるが、入力し忘れたまま確定するタイプミスを防ぐため確認表示を挟む。
+  const previewCautions = [
+    ...(validAmount === 0 ? [ZERO_AMOUNT_PREVIEW_NOTICE] : []),
+    ...(factorFallbackCaution ? [factorFallbackCaution] : []),
+  ];
 
   return (
     <>
@@ -530,6 +636,24 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
               />
             </EntryField>
           </div>
+
+          {/* 条件が揃った時点の重複事前警告。活動量まで入力して保存時に弾かれる手戻りを防ぐ。 */}
+          {duplicateWarningText && duplicateRecord && (
+            <div data-testid="manual-duplicate-warning">
+              <EntryNotice variant="warning">
+                {duplicateWarningText}
+                {onOpenDuplicateRecord && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenDuplicateRecord(duplicateRecord)}
+                    className="ml-1 font-semibold underline"
+                  >
+                    既存のレコードを開く
+                  </button>
+                )}
+              </EntryNotice>
+            </div>
+          )}
         </EntrySection>
 
         {locations.length > 0 && (
@@ -568,16 +692,19 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
                     inputMode="decimal"
                     placeholder="0.000"
                     value={amount}
-                    onChange={(event) => {
-                      if (DECIMAL_PATTERN.test(event.target.value)) {
-                        setAmount(event.target.value);
-                      }
-                    }}
+                    onChange={handleAmountChange}
+                    onCompositionStart={handleAmountCompositionStart}
+                    onCompositionEnd={handleAmountCompositionEnd}
                     aria-describedby="manual-unit-display"
                     className="gt-field"
                   />
                   <UnitBadge unit={currentUnit} />
                 </div>
+                {amountRejected && (
+                  <p className="mt-1.5 text-sm text-danger" data-testid="manual-amount-rejected">
+                    {AMOUNT_INPUT_REJECTED_MESSAGE}
+                  </p>
+                )}
                 {amountDigitsError && (
                   <p className="mt-1.5 text-sm text-danger" data-testid="manual-amount-error">
                     {amountDigitsError}
@@ -684,7 +811,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
         <ActivityEntryPreviewModal
           mode={mode}
           rows={previewRows}
-          caution={previewCaution}
+          cautions={previewCautions}
           isSaving={isSaving}
           onClose={closePreview}
           onSave={handleSave}

@@ -11,6 +11,7 @@ import { formatDateTime } from '@/lib/datetime';
 import { SCOPE3_CATEGORY_NAMES } from '@/features/scope-analysis/services/scopeAnalysisService';
 import { getActivityHistoryRecords, getManualEntryLocations } from '../services/activityRecordService';
 import type { HistoryFilterItem } from '../services/activityHistoryFilter';
+import { toMonthlyPeriodLabel } from '../services/manualEntryTargetMonth';
 import {
   MANUAL_ACTIVITY_CATEGORY_MAP,
   type ManualEntryLocationOption,
@@ -27,11 +28,21 @@ export interface HistoryItem extends HistoryFilterItem {
   scope3CategoryLabel?: string | null;
   /** Scope3積上げ行の IDEA 製品名（参照切れは null）。 */
   ideaProductName?: string | null;
+  /**
+   * 実際に算定で適用された係数のスナップショット名（例 '電気 (株)○○ メニューA（基礎）'）。
+   * 事業者名・メニュー名を含むため、係数の誤選択の点検に使える。未算定は null。
+   */
+  appliedFactorName?: string | null;
+  /** 適用係数の値と単位の表示（例 '0.000438 t-CO2e/kWh'）。未算定は null。 */
+  appliedFactorValueText?: string | null;
 }
 
 const NEW_ROW_HIGHLIGHT_MS = 2500;
 
+// データは月粒度（対象年月から月初・月末へ展開して保存）なので通常は「2026年3月」表記。
+// 月初〜月末に一致しない期間だけ従来の範囲表記で出す。
 const toHistoryPeriod = (periodStart: string, periodEnd: string) =>
+  toMonthlyPeriodLabel(periodStart, periodEnd) ??
   `${periodStart.replace(/-/g, '/')} - ${periodEnd.replace(/-/g, '/')}`;
 
 // 排出量（t-CO2e）の表示。未算定（null）は「未算定」と示す。
@@ -51,11 +62,23 @@ const toScope3CategoryLabel = (record: SavedManualActivityRecord): string | null
     : `カテゴリ${record.scope3CategoryId}`;
 };
 
+// 適用係数の値と単位の表示（例 '0.000438 t-CO2e/kWh'）。
+// 値は算定時スナップショットをそのまま示す（丸めると係数一覧・編集モーダルの表示とずれる）。
+const toAppliedFactorValueText = (record: SavedManualActivityRecord): string | null => {
+  if (record.appliedFactorValue === null) {
+    return null;
+  }
+  return [String(record.appliedFactorValue), record.appliedFactorUnit ?? '']
+    .join(' ')
+    .trim();
+};
+
 export const toHistoryItem = (
   record: SavedManualActivityRecord,
   isNew = false,
 ): HistoryItem => {
   const scope3CategoryLabel = toScope3CategoryLabel(record);
+  const appliedFactorValueText = toAppliedFactorValueText(record);
   return {
     id: record.id,
     name: record.locationName,
@@ -72,8 +95,14 @@ export const toHistoryItem = (
     createdAt: record.createdAt,
     noteText: record.note ?? '',
     emissionsText: formatEmissions(record.emissions),
-    // Scope3積上げ行はカテゴリ名・製品名でもキーワード検索に当たるようにする。
-    extraSearchText: [scope3CategoryLabel ?? '', record.ideaProductName ?? '']
+    // Scope3積上げ行のカテゴリ名・製品名、適用係数の事業者名・係数名・値でも
+    // キーワード検索に当たるようにする。
+    extraSearchText: [
+      scope3CategoryLabel ?? '',
+      record.ideaProductName ?? '',
+      record.appliedFactorName ?? '',
+      appliedFactorValueText ?? '',
+    ]
       .join(' ')
       .trim(),
     isNew,
@@ -81,6 +110,8 @@ export const toHistoryItem = (
     record,
     scope3CategoryLabel,
     ideaProductName: record.ideaProductName,
+    appliedFactorName: record.appliedFactorName,
+    appliedFactorValueText,
   };
 };
 

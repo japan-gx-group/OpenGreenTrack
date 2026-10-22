@@ -128,6 +128,43 @@ describe('getActivityHistoryRecords', () => {
     expect(historyQuery?.filters).toContainEqual({ op: 'eq', column: 'organizationId', value: 'org-1' });
   });
 
+  it('算定済みレコードには排出量と適用係数スナップショットを載せ、未算定レコードは null にする', async () => {
+    resolveQuery = (query) => {
+      if (query.table === 'emission_results') {
+        return {
+          data: [
+            {
+              activityRecordId: 'rec-00000',
+              emissions: '0.438',
+              appliedFactorName: '電気 (株)テスト電力 メニューA（基礎）',
+              appliedFactorValue: '0.000438',
+              appliedFactorUnit: 't-CO2e/kWh',
+            },
+          ],
+          error: null,
+        };
+      }
+      return makeResolver(2)(query);
+    };
+
+    const records = await getActivityHistoryRecords();
+
+    expect(records[0]).toMatchObject({
+      id: 'rec-00000',
+      emissions: 0.438,
+      appliedFactorName: '電気 (株)テスト電力 メニューA（基礎）',
+      appliedFactorValue: 0.000438,
+      appliedFactorUnit: 't-CO2e/kWh',
+    });
+    expect(records[1]).toMatchObject({
+      id: 'rec-00001',
+      emissions: null,
+      appliedFactorName: null,
+      appliedFactorValue: null,
+      appliedFactorUnit: null,
+    });
+  });
+
   it('取得に失敗した場合は履歴用のメッセージで throw する', async () => {
     resolveQuery = (query) =>
       query.table === 'activity_records'
