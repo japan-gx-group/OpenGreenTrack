@@ -37,3 +37,11 @@ regexes = ['''NEXT_PUBLIC_SUPABASE_ANON_KEY:\s*"eyJ[\w-]+\.[\w-]*dummy-anon-key"
 description = "PASSWORD_ALPHABET（文字集合であって鍵ではない）"
 regexTarget = "match"
 regexes = ['''PASSWORD_ALPHABET\s*=\s*'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';?''']
+
+# ハーネスの単体テスト（scripts/agent-harness/__tests__/guard.test.ts）が「同じ行にダミー値と本物が並んだとき
+# 本物だけを検出する」ことを確かめるために置いた、CI 用と同じダミー anon key。KEY= の代入の形で書かれた
+# 1 コミットが履歴に残っているため、その形だけを除外する（値まで固定しているので別の値は検出される）。
+[[allowlists]]
+description = "テストコード内のダミー anon key（CI 用と同じ値。実鍵ではない）"
+regexTarget = "match"
+regexes = ['''KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.dummy-anon-key"''']
