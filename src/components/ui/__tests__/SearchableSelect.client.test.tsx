@@ -95,6 +95,53 @@ describe('SearchableSelect', () => {
     unmount();
   });
 
+  it('IME 変換確定の Enter（isComposing）では候補を選択しない', () => {
+    const onChange = vi.fn();
+    const { container, unmount } = render(
+      <SearchableSelect id="location" options={options} value={null} onChange={onChange} />,
+    );
+    const input = getInput(container);
+    focusElement(input);
+    setInputValue(input, '東京');
+
+    keyDown(input, 'Enter', { isComposing: true });
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="listbox"]')).not.toBeNull();
+    unmount();
+  });
+
+  it('IME 変換確定直後の Enter（keyCode 229）では候補を選択しない', () => {
+    const onChange = vi.fn();
+    const { container, unmount } = render(
+      <SearchableSelect id="location" options={options} value={null} onChange={onChange} />,
+    );
+    const input = getInput(container);
+    focusElement(input);
+    setInputValue(input, '東京');
+
+    keyDown(input, 'Enter', { keyCode: 229 });
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="listbox"]')).not.toBeNull();
+    unmount();
+  });
+
+  it('IME 変換取り消しの Escape（isComposing）では候補リストを閉じず、検索語も保持する', () => {
+    const { container, unmount } = render(
+      <SearchableSelect id="location" options={options} value={null} onChange={() => {}} />,
+    );
+    const input = getInput(container);
+    focusElement(input);
+    setInputValue(input, '東京');
+
+    keyDown(input, 'Escape', { isComposing: true });
+
+    expect(container.querySelector('[role="listbox"]')).not.toBeNull();
+    expect(input.value).toBe('東京');
+    unmount();
+  });
+
   it('Escape キーで候補リストが閉じる', () => {
     const { container, unmount } = render(
       <SearchableSelect id="location" options={options} value={null} onChange={() => {}} />,

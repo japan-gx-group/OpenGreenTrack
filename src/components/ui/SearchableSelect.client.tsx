@@ -100,6 +100,12 @@ export const SearchableSelect = ({
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    // IME 変換中のキー操作は「変換の確定・取り消し・候補移動」であって、このリストへの
+    // 操作ではないため無視する。特に変換確定の Enter をそのまま通すと、入力のたびに
+    // highlightIndex が 0 へ戻る仕様とあわさって、常に最上部の候補が意図せず確定されてしまう。
+    // isComposing に加えて keyCode 229 も見るのは、変換確定直後の keydown を
+    // isComposing=false・keyCode=229 で届けるブラウザがあるため。
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     if (event.key === 'ArrowDown') {
       event.preventDefault();
       setIsOpen(true);
