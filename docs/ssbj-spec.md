@@ -162,8 +162,10 @@ T08a が OGT から**候補値**（`OgtCandidateValue`）を取得・表示し�
     表示の切り替えだけで、採用は基準の区別のない値と両方の基準の値をまとめて行い、保存版に両方を残す。
   - プレビュー・CSV・Excel は、基準別の値を別の表・行（`scope2.location_based` / `scope2.market_based`）で出す。
     未算定は空欄＋「未算定」。マーケット基準の行には、契約に基づく分と、標準係数で補った分がある旨を添える。
-  - 基準別の値を取り込む前に採用した値（保存版）には `basisTotals` が無い。その版は従来どおり「基準の区別なし・
-    ロケーション基準の値を含まない」と注記し、基準別の表・行を出さない。
+  - 基準別の値を取り込む前に採用した値（保存版）には `basisTotals` が無い。その版は従来どおり「OGT の値は基準の区別なし。
+    基準ごとの Scope 2 は外部算定値に示したものだけ」と注記し、基準別の表・行を出さない。
+  - 「外部で算定した排出量」（§13）の Scope 2 とは足し合わせない。OGT の同じ基準の合計が算定済みなら、CO2 を含む Scope 2 の
+    外部算定値は二重計上として拒否する（P2071。§13「決めたこと（重なりの規則）」）。
 - **Scope 3 とサプライヤー値（二重加算の防止）:** Scope 3 の採用値は、カテゴリごとに選ばれた方式
   （直接入力 **または** 積上げ）の値だけを使う。`supplier_emissions`（サプライヤー別実排出量）は OGT でも表示専用で
   `scope3Total` に算入していない（`functional-spec.md` §4.3）ため、採用値とは別の型 `OgtSupplierReference`
@@ -181,7 +183,7 @@ T08a が OGT から**候補値**（`OgtCandidateValue`）を取得・表示し�
 | Scope 3 カテゴリ別（方式適用後の採用値） | RPC `dashboard_scope3_category_emissions(fiscalYearId)`（合計は `scope3Total` と一致） |
 | 直接入力カテゴリの入力有無 | `scope3_category_emissions` の行の有無 |
 | Scope 2 の係数種別の内訳 | `emission_results` → 適用係数の `factorType` で集計（係数が削除され参照が切れた結果は `unclassified` に含める） |
-| Scope 2 の基準別の合計 | `dashboard_aggregates` の `scope2LocationBasedTotal` / `scope2MarketBasedTotal` / `scope2MarketContractTotal`（RPC `ssbj_ogt_numeric_values` が十進文字列で返す。`20261018000000_ssbj_ogt_scope2_basis_totals.sql`） |
+| Scope 2 の基準別の合計 | `dashboard_aggregates` の `scope2LocationBasedTotal` / `scope2MarketBasedTotal` / `scope2MarketContractTotal`（RPC `ssbj_ogt_numeric_values` が十進文字列で返す。`20261023120000_ssbj_ogt_scope2_basis_totals.sql`） |
 | 算定の充足状況 | RPC `report_activity_calculation_coverage` / `report_scope3_activity_calculation_coverage` |
 | 最新の算定バッチ | RPC `report_latest_calculation_batches` |
 | サプライヤー別実排出量（参考値のみ） | `supplier_emissions` |
@@ -996,7 +998,7 @@ OGT で算定できない排出量（CO2 以外のガス、対応していない
 
 | 対象 | 内容 |
 |---|---|
-| DB | `20261023110000_ssbj_external_emissions.sql`: `ssbj_external_emissions`（§10 の登録規約 1〜8。R2-12 と同じ形の RESTRICTIVE のポリシー）、重なりの判定 `ssbj_external_emission_overlap`、遅延の制約トリガー（外部算定値の書き込みと、OGT の値の採用の両方。P2071 / P2072）、保存版セクション `ssbj_snapshot_section__external_emissions` と復元 `ssbj_restore_section__external_emissions` |
+| DB | `20261023110000_ssbj_external_emissions.sql`: `ssbj_external_emissions`（§10 の登録規約 1〜8。R2-12 と同じ形の RESTRICTIVE のポリシー）、重なりの判定 `ssbj_external_emission_overlap`、遅延の制約トリガー（外部算定値の書き込みと、OGT の値の採用の両方。P2071 / P2072）、保存版セクション `ssbj_snapshot_section__external_emissions` と復元 `ssbj_restore_section__external_emissions`。Scope 2 の判定は R2-23 の `20261023130000_ssbj_scope2_basis_overlap.sql` で置き換えた |
 | 画面 | `/ssbj/[reportId]/external`（`SsbjExternalEmissions.client.tsx`・`SsbjExternalEmissionDialog.client.tsx`）。詳細の「レポートの内容」から入る。プレビューの「指標及び目標」に、OGT の値とは別の表で出す（`SsbjPreviewExternalEmissions.tsx`） |
 | 出力 | CSV・Excel に「GHG排出量（外部算定値）」の行（`services/versionCsvExternal.ts`）。OGT の値の行の注記は「出典: OGT 算定値」から始める |
 | コード | `types.ts` の `SsbjExternalEmission`・`SsbjExternalEmissionSnapshot`・`SSBJ_GHG_GASES`・`SSBJ_SCOPE2_BASES`、`utils/externalEmission.ts`、`services/externalEmissionService.ts`、`hooks/useSsbjExternalEmissions.ts`・`useSsbjExternalEmissionForm.ts`。採用の API は重なりを 409 で返す（`ogtAdoptionServer.ts`） |
@@ -1008,8 +1010,10 @@ OGT で算定できない排出量（CO2 以外のガス、対応していない
 - **Scope 1・Scope 3（同じカテゴリ）では、同じ区分の OGT の採用値が算定済み（`answered`）なら、CO2 を含む外部算定値は採用できない**（P2071）。
   OGT の採用値は実質 CO2 だけ（§7.2）なので、CO2 以外のガスだけの外部算定値は OGT の値を補う値として採用できる。
   OGT の値が未算定の区分は、外部算定値で CO2 を入れてよい。
-- **Scope 2 は、外部算定値を基準（ロケーション基準・マーケット基準）ごとの値とし、OGT の基準不明の値（§7.2）とは別の値として示す（足し合わせない）。**
-  OGT からは基準別の値が得られないため、ここを止めると基準別の値を入れる手段が無くなる。
+- **Scope 2 は、OGT の採用値のうち同じ基準の合計（§7.2 の `basisTotals`）が算定済みなら、CO2 を含む外部算定値は採用できない**（P2071。R2-23
+  の `20261023130000_ssbj_scope2_basis_overlap.sql`）。基準別の合計を持たない採用値（基準別の値を取り込む前に採用したもの）と、
+  その基準が未算定のときは重ならない。OGT から得られない基準の値は、外部算定値で入れられるようにするため。
+  OGT の基準の区別のない値（温対法の係数区分による合計）は、基準別の値とは別の値として示すので、重なりには数えない（足し合わせない）。
 - **外部算定値どうしは、同じ Scope・カテゴリ・基準で対象ガスが重なれば採用できない**（P2072）。
 - **OGT の値を採用（採用し直し）するときも、採用した結果と重なる外部算定値があれば採用しない**（P2071。採用の API は 409）。
 - **検査は採用の RPC ではなく、テーブルの遅延の制約トリガーで行う。** 画面からの直接の書き込み（RLS）・OGT の採用の RPC・版の復元の

@@ -315,16 +315,27 @@ test('7. 数値（出力）: 保存版・CSV・印刷で、値は出典ごとに
   const [item] = external as SsbjExternalEmissionSnapshot[];
   expect(item).toMatchObject({ id: externalId, scope: 1, gases: ['CH4', 'N2O'], value: EXTERNAL_VALUE, evidenceId });
 
-  // 二重計上が無い: CO2 を含む外部算定値（Scope 2 を除く）と同じ区分の OGT の採用値は、算定済みではない。
+  // 二重計上が無い: CO2 を含む外部算定値と同じ区分の OGT の採用値は、算定済みではない（Scope 2 は同じ基準の合計。R2-23）。
   for (const value of external!) {
-    if (value.scope === 2 || !value.gases.includes('CO2')) continue;
+    if (!value.gases.includes('CO2')) continue;
+    if (value.scope === 2) {
+      const scope2 = ghg!.values.find(adopted => adopted.scope === 2);
+      const totals = scope2?.scope === 2 ? scope2.method.basisTotals : undefined;
+      const total = value.scope2Basis === 'location' ? totals?.locationBased : totals?.marketBased;
+      expect(total?.state, `2-${value.scope2Basis}`).not.toBe('answered');
+      continue;
+    }
     const ogt = ghg!.values.find(adopted => adopted.scope === value.scope && adopted.scope3CategoryId === value.scope3CategoryId);
     expect(ogt?.value.state, `${value.scope}-${value.scope3CategoryId}`).not.toBe('answered');
   }
 
   const csv = await downloadVersionCsv(page, 1);
   const ogtRows = csv.filter(row => row[COLUMN.group] === OGT_GROUP && row[COLUMN.item] !== '採用日時');
-  expect(ogtRows).toHaveLength(ghg!.values.length);
+  // Scope 2 は、基準の区別のない値の行に加えて、基準別の 2 行（ロケーション基準・マーケット基準）が出る（R2-23）。
+  const scope2Adopted = ghg!.values.find(value => value.scope === 2);
+  const basisRowCount = scope2Adopted?.scope === 2 && scope2Adopted.method.basisTotals ? 2 : 0;
+  expect(ogtRows).toHaveLength(ghg!.values.length + basisRowCount);
+  expect(ogtRows.filter(row => row[COLUMN.target].startsWith('scope2.')).every(row => row[COLUMN.note].startsWith('出典: OGT 算定値'))).toBe(true);
   for (const value of ghg!.values) {
     const [row] = ogtRows.filter(candidate => candidate[COLUMN.target] === ogtValueKey(value));
     expect(row[COLUMN.note], ogtValueKey(value)).toMatch(/^出典: OGT 算定値/);
