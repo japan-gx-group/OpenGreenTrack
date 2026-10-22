@@ -82,6 +82,7 @@ export const toSsbjMemberRoleLog = (row: MemberRoleLogRow): SsbjMemberRoleLog =>
     userId: row.targetId,
     role: roleOrNull(details.role),
     previousRole: roleOrNull(details.previousRole),
+    memberDeleted: details.reason === 'member_deleted',
     createdAt: row.createdAt,
   };
 };
