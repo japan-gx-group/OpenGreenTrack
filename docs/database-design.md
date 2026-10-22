@@ -294,6 +294,7 @@ SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず
 | `createdByUserId` / `updatedByUserId` | 登録・更新操作者ID | UUID | NULL | `set_row_actor` トリガが auth.uid() で上書き |
 | `createdAt` / `updatedAt` | 作成・更新日時 | TIMESTAMPTZ | NOT NULL | `updatedAt` は `set_updated_at` トリガ |
 | `draftRevision` | 作業中データの版数 | INTEGER | NOT NULL, DEFAULT 1 | 基本情報の変更（`bump_ssbj_reports_draft_revision` トリガ）と各機能テーブルの変更（`bump_ssbj_draft_revision`）で +1。保存版作成時の競合検知に使う（`20260927180425_ssbj_report_versions.sql`） |
+| `basicInfoRevision` | 基本情報の版数 | INTEGER | NOT NULL, DEFAULT 0 | `20261010103000_ssbj_basic_info_revision.sql` で追加。基本情報の列が変わったときだけ +1（`bump_ssbj_reports_own_draft_revision` トリガ）。画面は読込時の値を更新の条件に含め、0 件更新なら他の画面の変更との競合として保存を拒否する（docs/ssbj-spec.md §8） |
 | `status` | 状態 | VARCHAR(20) | NOT NULL, DEFAULT `draft`, CHECK(`draft` / `in_review` / `approved`) | `20261002090100_ssbj_report_status.sql` で追加（以下 6 列も同じ）。`change_ssbj_report_status`（service_role）だけが変える。`approved` の間は作業中データの変更をトリガーが拒否する（レポートの行をロックしてから判定し、承認と保存を 1 つずつ処理する。`20261009090000_ssbj_report_write_lock.sql`） |
 | `approverUserId` | 承認者 | UUID | NULL（レビュー中・承認済みは必須） | レビュー依頼で指定する自組織の利用者 |
 | `approvedAt` / `approvedByUserId` | 承認日時 / 承認した人 | TIMESTAMPTZ / UUID | `approved` のときだけ非 NULL | |
@@ -304,7 +305,7 @@ SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず
 - RLS は select / insert / update を自組織に限定し、insert / update の with check で `fiscalYearId` が自組織の年度であることを
   `exists` で検証する（FK は行の存在しか見ないため）。delete のポリシーと GRANT は持たない（R1 では削除を提供しない）。
 - `authenticated` への insert / update は列指定の GRANT。update は基本情報の列だけで、組織・年度は作成後に付け替えられない。
-  `draftRevision` も GRANT に含めず、トリガーだけが進める。
+  `draftRevision`・`basicInfoRevision` も GRANT に含めず、トリガーだけが進める。
 - 年度を参照するため、年度削除の可否判定（`src/features/settings/services/fiscalYears.ts` の `REFERENCING_TABLES`）の対象に含める。
 
 親会社名・関係・持分比率・測定アプローチは、現行では報告の基本情報である。これらの入力だけで法人関係を登録したり、集計方法を切り替えたりする機能ではない。法人別集計での拡張は§5に記載する。
@@ -369,7 +370,7 @@ SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず
 | `createdAt` / `updatedAt` | 作成・更新日時 | TIMESTAMPTZ | NOT NULL | `updatedAt` は `set_updated_at` トリガ |
 
 - RLS・GRANT の考え方は 3.13 と同じ（自組織に限定、レポートの組織帰属を `exists` で検証、レポート・組織は作成後に変えない）。
-### 3.15 SSBJ 根拠文書 (`ssbj_evidence`) — 項目ごとの参照情報（`supabase/migrations/20260929150000_ssbj_evidence.sql`）
+### 3.15 SSBJ 根拠文書 (`ssbj_evidence`) — 項目ごとの参照情報（`supabase/migrations/20260929150000_ssbj_evidence.sql`、ファイルの記録は `20261011090000_ssbj_evidence_file_hash.sql`）
 
 1 つの項目に複数の資料を登録できる作業中データ。`itemId` は共通の項目ID形式で検証する。項目マスターはまだ無いため、現時点では形式以外の存在検証をしない。
 
@@ -380,9 +381,13 @@ SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず
 | `documentTitle` | 資料名 | TEXT | NOT NULL、空白のみ不可 | |
 | `documentVersion` / `internalLocation` / `referencePosition` / `ownerDepartment` | 版・内部保管先・参照位置・主管部署 | TEXT | NULL | 開示内容とは別列。主管部署の必須化は別Issueで判断 |
 | `disclosureState` / `disclosureText` | 開示用参照文の状態・本文 | `ssbj_field_state` / TEXT | `answered` のときだけ本文を保持 | |
+| `fileName` | ファイル名 | TEXT | NULL、空白のみ不可 | 照合用の記録（内部記録）。ファイル本体は保存しない |
+| `fileSha256` | ファイルの SHA-256 | TEXT | NULL、CHECK（小文字の 16 進 64 文字） | ブラウザの中で計算した値 |
+| `fileStorageVersionId` / `fileStoredBy` | 保管先での版 ID・保存担当 | TEXT | NULL | 任意入力（内部記録） |
+| `fileRecordedAt` | ファイルの記録日時 | TIMESTAMPTZ | NULL | トリガー `set_ssbj_evidence_file_recorded_at` が決める（利用者に列の権限なし）。ファイル名・SHA-256・記録日時は 3 つとも有るか 3 つとも NULL（CHECK） |
 | `createdByUserId` / `updatedByUserId` / `createdAt` / `updatedAt` | 監査情報 | UUID / TIMESTAMPTZ | | |
 
-RLSは自組織に限定し、レポートの組織帰属も検証する。変更ごとに `draftRevision` を進め、`ssbj_snapshot_section__evidence` が固定版へ取り込む。
+RLSは自組織に限定し、レポートの組織帰属も検証する。変更ごとに `draftRevision` を進め、`ssbj_snapshot_section__evidence` が固定版へ取り込む（ファイルの記録も含む）。
 
 ### 3.16 SSBJ OGT 採用値 (`ssbj_ogt_adoptions`) — レポートに明示採用した OGT の値（`supabase/migrations/20260929180243_ssbj_ogt_adoptions.sql`）
 レポートごとに 1 行の作業中データ。採用し直すと行を置き換える。変更のたびに `ssbj_reports.draftRevision` を進め、

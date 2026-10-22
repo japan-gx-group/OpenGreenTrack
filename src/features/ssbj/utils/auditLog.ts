@@ -60,6 +60,8 @@ const COLUMN_LABELS: Record<string, string> = {
   planningHorizonRelation: '計画期間との関係',
   itemId: '項目', documentTitle: '資料名', documentVersion: '版', internalLocation: '保管先',
   referencePosition: '参照位置', ownerDepartment: '主管部署',
+  fileName: 'ファイル名', fileSha256: 'SHA-256', fileStorageVersionId: '保管先での版 ID', fileStoredBy: '保存担当',
+  fileRecordedAt: 'ファイルの記録日時',
   adoptedValues: '採用値', supplierReferences: 'サプライヤー別の参考値', adoptedAt: '採用日時', adoptedByUserId: '採用者',
 };
 

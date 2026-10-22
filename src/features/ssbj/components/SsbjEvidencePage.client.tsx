@@ -3,7 +3,7 @@
 // 項目ごとの根拠文書参照。保管先などの内部記録は開示用参照文とは別に表示する。
 import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, FileCheck2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, FileCheck2, FileSearch, Pencil, Plus, Trash2 } from 'lucide-react';
 import { PageHeading } from '@/components/layout/PageHeading';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -15,7 +15,9 @@ import { Label } from '@/components/ui/label';
 import { LoadingIndicator } from '@/components/ui/PageLoading';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { formatDateTime } from '@/lib/datetime';
 import { useSsbjEvidence } from '../hooks/useSsbjEvidence';
+import { useSsbjFileHash } from '../hooks/useSsbjFileHash';
 import { useSsbjReport } from '../hooks/useSsbjReport';
 import { createSsbjEvidence, deleteSsbjEvidence, updateSsbjEvidence } from '../services/evidenceService';
 import {
@@ -31,11 +33,13 @@ import { SsbjTrialNotice } from './SsbjTrialNotice';
 import { isSsbjReportLocked } from '../utils/reportStatus';
 import { SsbjLockedNotice } from './SsbjLockedNotice';
 import { SsbjEditorLayout } from './SsbjEditorLayout.client';
+import { SsbjEvidenceFileFields } from './SsbjEvidenceFileFields.client';
+import { SsbjEvidenceFileVerifyDialog } from './SsbjEvidenceFileVerifyDialog.client';
 
-const Detail = ({ label, value }: { label: string; value: string | null }) => (
+const Detail = ({ label, value, mono = false }: { label: string; value: string | null; mono?: boolean }) => (
   <div className="flex flex-col gap-1 sm:flex-row sm:gap-4">
     <dt className="w-40 shrink-0 text-xs font-semibold text-text-muted">{label}</dt>
-    <dd className="m-0 whitespace-pre-wrap text-sm">{value ?? '未入力'}</dd>
+    <dd className={`m-0 whitespace-pre-wrap [overflow-wrap:anywhere] ${mono ? 'font-mono text-xs' : 'text-sm'}`}>{value ?? '未入力'}</dd>
   </div>
 );
 
@@ -44,6 +48,8 @@ export const SsbjEvidencePage = ({ reportId }: { reportId: string }) => {
   const list = useSsbjEvidence(reportId, report !== null);
   const [editing, setEditing] = useState<SsbjEvidence | 'new' | null>(null);
   const [deleting, setDeleting] = useState<SsbjEvidence | null>(null);
+  const [verifying, setVerifying] = useState<SsbjEvidence | null>(null);
+  const fileHash = useSsbjFileHash();
   const [form, setForm] = useState<SsbjEvidenceFormValues>(EMPTY_SSBJ_EVIDENCE_FORM);
   const [formError, setFormError] = useState('');
   const [deleteError, setDeleteError] = useState('');
@@ -56,12 +62,13 @@ export const SsbjEvidencePage = ({ reportId }: { reportId: string }) => {
   const openForm = (item: SsbjEvidence | 'new') => {
     setForm(item === 'new' ? EMPTY_SSBJ_EVIDENCE_FORM : toSsbjEvidenceFormValues(item));
     setFormError('');
+    fileHash.reset();
     setEditing(item);
   };
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
-    if (!report || !editing || isSaving) return;
+    if (!report || !editing || isSaving || fileHash.isHashing) return;
     const input = normalizeSsbjEvidenceInput(form);
     const errors = validateSsbjEvidenceInput(input);
     if (errors.length) { setFormError(errors.join('。')); return; }
@@ -133,12 +140,16 @@ export const SsbjEvidencePage = ({ reportId }: { reportId: string }) => {
                     <li key={item.id} className="rounded-lg border border-border p-4">
                       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
                         <div><p className="text-xs text-text-muted">{item.itemId} · 資料名（内部記録）</p><h3 className="text-sm font-bold">{item.documentTitle}</h3></div>
-                        {!isSsbjReportLocked(report.review) && (
-                          <div className="flex gap-2">
-                            <Button type="button" variant="outline" size="sm" onClick={() => openForm(item)}><Pencil size={14} />編集</Button>
-                            <Button type="button" variant="outline" size="sm" onClick={() => { setDeleteError(''); setDeleting(item); }}><Trash2 size={14} />削除</Button>
-                          </div>
-                        )}
+                        <div className="flex flex-wrap gap-2">
+                          {/* 照合は何も保存しないため、承認済みでも出す。 */}
+                          {item.fileSha256 && <Button type="button" variant="outline" size="sm" onClick={() => setVerifying(item)}><FileSearch size={14} />照合</Button>}
+                          {!isSsbjReportLocked(report.review) && (
+                            <>
+                              <Button type="button" variant="outline" size="sm" onClick={() => openForm(item)}><Pencil size={14} />編集</Button>
+                              <Button type="button" variant="outline" size="sm" onClick={() => { setDeleteError(''); setDeleting(item); }}><Trash2 size={14} />削除</Button>
+                            </>
+                          )}
+                        </div>
                       </div>
                       <dl className="flex flex-col gap-2">
                         <Detail label="開示用参照文" value={formatFieldValue(item.disclosure)} />
@@ -146,6 +157,13 @@ export const SsbjEvidencePage = ({ reportId }: { reportId: string }) => {
                         <Detail label="保管先（内部記録）" value={item.internalLocation} />
                         <Detail label="参照位置（内部記録）" value={item.referencePosition} />
                         <Detail label="主管部署（内部記録）" value={item.ownerDepartment} />
+                        <Detail
+                          label="ファイル（内部記録）"
+                          value={item.fileName && `${item.fileName}${item.fileRecordedAt ? `（${formatDateTime(item.fileRecordedAt)} に記録）` : ''}`}
+                        />
+                        <Detail label="SHA-256（内部記録）" value={item.fileSha256} mono />
+                        <Detail label="保管先での版 ID（内部記録）" value={item.fileStorageVersionId} />
+                        <Detail label="保存担当（内部記録）" value={item.fileStoredBy} />
                       </dl>
                     </li>
                   ))}
@@ -184,10 +202,17 @@ export const SsbjEvidencePage = ({ reportId }: { reportId: string }) => {
               </Select>
             </div>
             {form.disclosureState === 'answered' && <div className="flex flex-col gap-1"><Label htmlFor="evidence-disclosure">開示用参照文</Label><Textarea id="evidence-disclosure" value={form.disclosureText} onChange={event => setField('disclosureText', event.target.value)} disabled={isSaving} required /></div>}
+            <SsbjEvidenceFileFields
+              values={form}
+              saved={editing !== null && editing !== 'new' ? editing : null}
+              fileHash={fileHash}
+              disabled={isSaving}
+              onChange={patch => setForm(previous => ({ ...previous, ...patch }))}
+            />
             {formError && <p role="alert" className="text-sm text-danger">{formError}</p>}
             <DialogFooter>
               <Button type="button" variant="outline" disabled={isSaving} onClick={() => setEditing(null)}>キャンセル</Button>
-              <Button type="submit" disabled={isSaving}>{isSaving ? '保存中...' : '保存する'}</Button>
+              <Button type="submit" disabled={isSaving || fileHash.isHashing}>{isSaving ? '保存中...' : '保存する'}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -203,6 +228,9 @@ export const SsbjEvidencePage = ({ reportId }: { reportId: string }) => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* 開くたびに前の照合結果を消すため、対象ごとに作り直す。 */}
+      <SsbjEvidenceFileVerifyDialog key={verifying?.id ?? 'closed'} evidence={verifying} onClose={() => setVerifying(null)} />
     </div>
   );
 };

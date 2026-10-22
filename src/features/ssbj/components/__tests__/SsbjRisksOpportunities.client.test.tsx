@@ -8,7 +8,8 @@ import {
   fictionalRisksOpportunities,
   fictionalTimeHorizonDefinitions,
 } from '../../__fixtures__/fictionalReport';
-import type { SsbjReportWorkingRecord, SsbjRiskOpportunity } from '../../types';
+import type { SsbjReportWorkingRecord, SsbjRiskOpportunityWorkingRecord } from '../../types';
+import { SSBJ_EDIT_CONFLICT_MESSAGE, SsbjEditConflictError } from '../../utils/writeError';
 
 // SSBJ リスク・機会画面: 一覧の再表示（状態ラベル・内部メモの区別・リスクの種類・関連先）、Not Found、
 // 登録（検証・関連付け・一覧への反映）、編集、削除、時間軸の定義の表示・保存を検証する。
@@ -47,8 +48,13 @@ const REPORT: SsbjReportWorkingRecord = {
   periodStart: '2024-04-01',
   periodEnd: '2025-03-31',
   draftRevision: 1,
+  basicInfoRevision: 0,
   review: FICTIONAL_DRAFT_REVIEW,
 };
+
+// 画面が読み込んだ時点の一覧（更新の競合検知に使う行の更新日時を持つ）。
+const LOADED_AT = '2026-10-01T00:00:00.000001+00:00';
+const ITEMS: SsbjRiskOpportunityWorkingRecord[] = fictionalRisksOpportunities.map(item => ({ ...item, updatedAt: LOADED_AT }));
 
 const flushPromises = async (): Promise<void> => {
   await act(async () => {
@@ -105,7 +111,7 @@ const renderScreen = async (): Promise<RenderResult> => {
 
 beforeEach(() => {
   vi.mocked(getSsbjReport).mockResolvedValue(REPORT);
-  vi.mocked(listSsbjRisksOpportunities).mockResolvedValue(fictionalRisksOpportunities);
+  vi.mocked(listSsbjRisksOpportunities).mockResolvedValue(ITEMS);
   vi.mocked(getSsbjTimeHorizons).mockResolvedValue(fictionalTimeHorizonDefinitions);
 });
 
@@ -153,8 +159,9 @@ describe('SsbjRisksOpportunities', () => {
   });
 
   it('説明・時間軸・関連先を入れて登録すると一覧に加わる', async () => {
-    const created: SsbjRiskOpportunity = {
+    const created: SsbjRiskOpportunityWorkingRecord = {
       id: 'new-item',
+      updatedAt: LOADED_AT,
       kind: 'opportunity',
       title: '再生可能エネルギーの調達',
       riskType: { state: 'not_applicable' },
@@ -202,7 +209,7 @@ describe('SsbjRisksOpportunities', () => {
   });
 
   it('編集すると入力済みの内容から始まり、保存した内容で置き換わる', async () => {
-    const [first] = fictionalRisksOpportunities;
+    const [first] = ITEMS;
     vi.mocked(updateSsbjRiskOpportunity).mockResolvedValue({ ...first, title: '炭素価格の導入（改訂）' });
     await renderScreen();
 
@@ -213,7 +220,7 @@ describe('SsbjRisksOpportunities', () => {
     click(findButton('変更を保存', dialog()));
     await flushPromises();
 
-    expect(updateSsbjRiskOpportunity).toHaveBeenCalledWith(first.id, {
+    expect(updateSsbjRiskOpportunity).toHaveBeenCalledWith(first, {
       kind: first.kind,
       title: '炭素価格の導入（改訂）',
       riskType: first.riskType,
@@ -222,6 +229,38 @@ describe('SsbjRisksOpportunities', () => {
       linkTargets: first.linkTargets,
     });
     expect(itemCards()[0].textContent).toContain('炭素価格の導入（改訂）');
+  });
+
+  it('他の画面で先に同じリスク・機会が保存されていたら、競合を知らせて入力を残し、一覧を読み直す', async () => {
+    const [first] = ITEMS;
+    // 画面 B が開いた後、画面 A が同じ行の名称を変えて保存した。
+    const savedByOther = { ...first, title: '画面Aが保存した名称', updatedAt: '2026-10-02T00:00:00.000001+00:00' };
+    vi.mocked(listSsbjRisksOpportunities).mockResolvedValueOnce(ITEMS).mockResolvedValue([savedByOther, ...ITEMS.slice(1)]);
+    vi.mocked(updateSsbjRiskOpportunity).mockRejectedValue(new SsbjEditConflictError());
+    await renderScreen();
+
+    click(findButton('編集', itemCards()[0]));
+    setTextareaValue(field<HTMLTextAreaElement>('textarea[name="internalNote"]'), '画面Bのメモ');
+    click(findButton('変更を保存', dialog()));
+    await flushPromises();
+    await flushPromises();
+
+    // 開いた時点の行（更新日時）を条件に保存しようとし、拒否される。
+    expect(updateSsbjRiskOpportunity).toHaveBeenCalledWith(first, expect.objectContaining({ title: first.title }));
+    expect(dialog().querySelector('[role="alert"]')?.textContent).toContain(SSBJ_EDIT_CONFLICT_MESSAGE);
+    // 入力中の値は消さず、一覧は最新に読み直す（先に保存された名称が見える）。
+    expect(field<HTMLTextAreaElement>('textarea[name="internalNote"]').value).toBe('画面Bのメモ');
+    expect(listSsbjRisksOpportunities).toHaveBeenCalledTimes(2);
+    expect(itemCards()[0].textContent).toContain('画面Aが保存した名称');
+
+    // 閉じて開き直すと、最新の内容と更新日時から編集し直せる。
+    click(findButton('キャンセル', dialog()));
+    click(findButton('編集', itemCards()[0]));
+    expect(field<HTMLInputElement>('input[name="title"]').value).toBe('画面Aが保存した名称');
+    vi.mocked(updateSsbjRiskOpportunity).mockResolvedValue(savedByOther);
+    click(findButton('変更を保存', dialog()));
+    await flushPromises();
+    expect(vi.mocked(updateSsbjRiskOpportunity).mock.calls[1][0]).toEqual(savedByOther);
   });
 
   it('確認のうえ削除すると一覧から消える', async () => {
@@ -238,7 +277,7 @@ describe('SsbjRisksOpportunities', () => {
   });
 
   it('リスクの種類は区分がリスクのときだけ選べ、選んだ種類で登録する', async () => {
-    const [first] = fictionalRisksOpportunities;
+    const [first] = ITEMS;
     vi.mocked(createSsbjRiskOpportunity).mockResolvedValue({ ...first, id: 'new-risk' });
     await renderScreen();
 
