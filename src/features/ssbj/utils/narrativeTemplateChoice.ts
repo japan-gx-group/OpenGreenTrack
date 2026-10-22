@@ -4,6 +4,7 @@
 // 下書きは利用者が選んだ値と入力した補足だけから作り、選んでいない欄は【欄の名前】のまま残す（根拠のない内容を補わない）。
 // 文型の固定の部分には、会社によって違う事実（範囲・有無・前期の有無など）を書かない。そうした事実は選択肢（否定・未特定も選べる）か【 】にする。
 // 選択肢の文に {欄 ID} を含めると、その選択肢を選んだときだけその欄を使う（例: 報告している場合だけ、報告する人・頻度を入れる）。
+// 選択肢の文が「。」で終わる欄（文の欄）には sentence を付ける。「その他」で入力した文が「。」で終わっていなければ足し、次の文とつながらないようにする。
 // 【 】が残った本文は「入力済み」にできない（utils/narrative.ts の検証）ので、下書きがそのまま開示内容として確定することはない。
 // 選択肢と文例はチームが作った試行版で、外部の監修は受けていない（docs/ssbj-r1-scope.md §8）。
 // 項目 ID は要求項目マスター（暫定版）の ID。マスターの ID が変わったときは、ここの itemId も合わせて直す。
@@ -23,7 +24,11 @@ export const SSBJ_TEMPLATE_OTHER_OPTION_ID = 'other';
 export type SsbjTemplateChoiceOption = { id: string; label: string; text: string };
 
 export type SsbjTemplateSlot =
-  | { kind: 'choice'; id: string; label: string; options: SsbjTemplateChoiceOption[]; allowOther: boolean }
+  | {
+    kind: 'choice'; id: string; label: string; options: SsbjTemplateChoiceOption[]; allowOther: boolean;
+    /** 選択肢の文が 1 つ以上の文（「。」で終わる）の欄。「その他」で入力した文が「。」で終わっていなければ足す。 */
+    sentence?: boolean;
+  }
   | { kind: 'text'; id: string; label: string; hint: string };
 
 export type SsbjNarrativeChoiceTemplate = {
@@ -69,7 +74,7 @@ export const SSBJ_NARRATIVE_CHOICE_TEMPLATES: readonly SsbjNarrativeChoiceTempla
     itemId: 'governance.oversight_information',
     slots: [
       {
-        kind: 'choice', id: 'reporting', label: '定期的な報告', allowOther: true,
+        kind: 'choice', id: 'reporting', label: '定期的な報告', allowOther: true, sentence: true,
         options: [
           { id: 'reported', label: '報告している', text: '{reporter}が{frequency}、{body}に{content}を報告している。' },
           {
@@ -120,7 +125,7 @@ export const SSBJ_NARRATIVE_CHOICE_TEMPLATES: readonly SsbjNarrativeChoiceTempla
         ],
       },
       {
-        kind: 'choice', id: 'concentration', label: '影響の集中', allowOther: true,
+        kind: 'choice', id: 'concentration', label: '影響の集中', allowOther: true, sentence: true,
         options: [
           {
             id: 'concentrated', label: '特定の事業所・地域・工程に集中している',
@@ -149,7 +154,7 @@ export const SSBJ_NARRATIVE_CHOICE_TEMPLATES: readonly SsbjNarrativeChoiceTempla
         ],
       },
       {
-        kind: 'choice', id: 'assessment', label: '評価・優先順位付け', allowOther: true,
+        kind: 'choice', id: 'assessment', label: '評価・優先順位付け', allowOther: true, sentence: true,
         options: [
           {
             id: 'likelihood_and_impact', label: '発生可能性と影響の大きさで評価している',
@@ -166,14 +171,14 @@ export const SSBJ_NARRATIVE_CHOICE_TEMPLATES: readonly SsbjNarrativeChoiceTempla
         ],
       },
       {
-        kind: 'choice', id: 'scenario', label: 'シナリオ分析', allowOther: false,
+        kind: 'choice', id: 'scenario', label: 'シナリオ分析', allowOther: false, sentence: true,
         options: [
           { id: 'used', label: '用いている', text: 'リスクの識別・評価に、シナリオ分析を用いている。' },
           { id: 'not_used', label: '用いていない', text: 'リスクの識別・評価に、シナリオ分析は用いていない。' },
         ],
       },
       {
-        kind: 'choice', id: 'change', label: '前期からの変更', allowOther: true,
+        kind: 'choice', id: 'change', label: '前期からの変更', allowOther: true, sentence: true,
         options: [
           { id: 'unchanged', label: '変更していない', text: '前期からプロセスを変更していない。' },
           { id: 'changed', label: '変更した', text: '前期からプロセスを【変更した点】のとおり変更した。' },
@@ -234,6 +239,10 @@ export const isCurrentSsbjNarrativeTemplateInput = (input: SsbjNarrativeTemplate
 
 const placeholderOf = (slot: SsbjTemplateSlot) => `【${slot.label}】`;
 const SLOT_REFERENCE = /\{([a-z_]+)\}/g;
+const SENTENCE_END = /[。．！？!?]$/;
+
+/** 文の終わりに「。」が無ければ足す（例: 「重要度で評価している」の後ろに次の文が続いて、意味が変わらないように）。 */
+const asSentence = (text: string): string => (SENTENCE_END.test(text) ? text : `${text}。`);
 
 /** 選んだ選択肢（「その他」・未選択なら undefined）。 */
 const chosenOption = (slot: SsbjTemplateSlot, input: SsbjNarrativeTemplateInput): SsbjTemplateChoiceOption | undefined =>
@@ -244,7 +253,10 @@ const slotValue = (slot: SsbjTemplateSlot, input: SsbjNarrativeTemplateInput): s
   const text = input.texts[slot.id]?.trim() ?? '';
   if (slot.kind === 'text') return text || placeholderOf(slot);
   const choice = input.choices[slot.id];
-  if (choice === SSBJ_TEMPLATE_OTHER_OPTION_ID && slot.allowOther) return text || placeholderOf(slot);
+  if (choice === SSBJ_TEMPLATE_OTHER_OPTION_ID && slot.allowOther) {
+    if (!text) return placeholderOf(slot);
+    return slot.sentence ? asSentence(text) : text;
+  }
   return chosenOption(slot, input)?.text ?? placeholderOf(slot);
 };
 

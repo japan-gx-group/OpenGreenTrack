@@ -47,6 +47,17 @@ describe('テンプレートの定義', () => {
     }
   });
 
+  it('選択肢の文が「。」で終わる欄は、文の欄（sentence）にし、文の欄の選択肢はすべて文で終わる', () => {
+    for (const template of SSBJ_NARRATIVE_CHOICE_TEMPLATES) {
+      for (const slot of template.slots) {
+        if (slot.kind !== 'choice') continue;
+        const texts = slot.options.map(option => option.text);
+        if (texts.some(text => text.endsWith('。'))) expect(slot.sentence, `${template.itemId} の ${slot.id}`).toBe(true);
+        if (slot.sentence) for (const text of texts) expect(text).toMatch(/[。】]$/);
+      }
+    }
+  });
+
   it('文型の固定の部分に、会社によって違う事実を書かない（レビューで指摘された言い切り）', () => {
     const patterns = SSBJ_NARRATIVE_CHOICE_TEMPLATES.map(template => template.pattern).join('\n');
     for (const phrase of ['集中している', '評価・優先順位付けしている', '前期からプロセスを', 'サステナビリティ関連', '報告している', '温室効果ガス排出は']) {
@@ -104,6 +115,22 @@ describe('buildSsbjNarrativeDraft', () => {
     expect(ssbjTemplatePlaceholders(draft)).toEqual(['【識別の方法】', '【評価・優先順位付け】', '【シナリオ分析】', '【前期からの変更】']);
     expect(unfilledSsbjTemplateSlots(riskProcess, input({ frequency: 'yearly' })))
       .toEqual(['識別の方法', '評価・優先順位付け', 'シナリオ分析', '前期からの変更']);
+  });
+
+  it('文の欄で「その他」に入力した文が「。」で終わっていなければ足し、次の文とつながらないようにする', () => {
+    const choices = { frequency: 'yearly', method: 'hearing', assessment: 'other', scenario: 'not_used', change: 'unchanged' };
+    expect(buildSsbjNarrativeDraft(riskProcess, input(choices, { assessment: '重要度で評価している' }))).toBe(
+      '年 1 回、各部門へのヒアリングでリスクを識別している。重要度で評価している。' +
+      'リスクの識別・評価に、シナリオ分析は用いていない。前期からプロセスを変更していない。',
+    );
+    // 既に文で終わっていれば足さない。
+    expect(buildSsbjNarrativeDraft(riskProcess, input(choices, { assessment: '重要度で評価している。' })))
+      .toContain('識別している。重要度で評価している。リスクの識別・評価に');
+    expect(buildSsbjNarrativeDraft(oversightInformation, input({ reporting: 'other' }, { reporting: '必要に応じて報告している' })))
+      .toBe('必要に応じて報告している。');
+    // 文の途中に入る欄には足さない。
+    expect(buildSsbjNarrativeDraft(oversightBody, input({ scope: 'climate', body: 'other' }, { body: '経営会議' })))
+      .toBe('気候関連のリスク及び機会は、経営会議が監督している。');
   });
 
   it('「その他」を選んで何も入力していなければ【欄の名前】、空白だけの補足も入力していない扱い', () => {
