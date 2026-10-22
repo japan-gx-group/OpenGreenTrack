@@ -20,6 +20,7 @@ import {
   SSBJ_SECTION_LABELS,
   type SsbjDisclosableText,
   type SsbjItemId,
+  type SsbjNarrativeTemplateInput,
   type SsbjRequirement,
   type SsbjSectionId,
 } from '../types';
@@ -93,9 +94,9 @@ export const SsbjNarratives = ({ reportId }: { reportId: string }) => {
     });
   }, []);
 
-  const save = async (itemId: SsbjItemId, text: SsbjDisclosableText) => {
+  const save = async (itemId: SsbjItemId, text: SsbjDisclosableText, templateInput: SsbjNarrativeTemplateInput | null) => {
     if (!report) return;
-    replace(await saveSsbjNarrative(report, itemId, text));
+    replace(await saveSsbjNarrative(report, itemId, text, templateInput));
   };
 
   const requirementsOf = (sectionId: SsbjSectionId | null) =>

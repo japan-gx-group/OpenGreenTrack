@@ -173,6 +173,24 @@ export type SsbjDisclosableText = {
 export type SsbjNarrative = {
   itemId: SsbjItemId;
   text: SsbjDisclosableText;
+  /**
+   * 選択式テンプレートで選んだ値と補足入力（作業中データだけに持つ。保存版には含めない）。
+   * 使っていない項目・保存版から読んだ文章は undefined か null。
+   */
+  templateInput?: SsbjNarrativeTemplateInput | null;
+};
+
+/**
+ * 選択式テンプレート（utils/narrativeTemplateChoice.ts）で利用者が選んだ値と補足入力。
+ * 本文（disclosure）とは別に持ち、本文の代わりにはしない（下書きの元になった選択を後から確かめるため）。
+ * version はテンプレート定義の版。定義が変わった後の古い選択は、画面で選択肢に戻さず「以前の版」と出す。
+ */
+export type SsbjNarrativeTemplateInput = {
+  version: string;
+  /** 選択肢の欄 ID → 選んだ選択肢 ID。 */
+  choices: Record<string, string>;
+  /** 補足入力の欄 ID（「その他」を選んだ選択肢の欄を含む）→ 入力した文字列。 */
+  texts: Record<string, string>;
 };
 
 // ---------------------------------------------------------------------------
@@ -654,6 +672,29 @@ export type SsbjRiskOpportunity = {
   timeHorizon: SsbjFieldValue<SsbjTimeHorizon>;
   /** 関連する章・項目（章の順、同じ章では章そのものを先に並べる）。 */
   linkTargets: SsbjLinkTarget[];
+};
+
+/** 業種から出した候補（utils/industryCandidates.ts）への利用者の判断。採用は登録したリスク・機会につなぐ。 */
+export const SSBJ_RISK_CANDIDATE_DECISIONS = ['adopted', 'excluded'] as const;
+
+export type SsbjRiskCandidateDecisionKind = (typeof SSBJ_RISK_CANDIDATE_DECISIONS)[number];
+
+/**
+ * 候補 1 件への判断（ssbj_risk_candidate_decisions の 1 行。作業中データだけに持ち、保存版には含めない）。
+ * 判断は候補を検討の出発点にしたかどうかの記録で、該当性・重要性の判断（T09）ではない。
+ */
+export type SsbjRiskCandidateDecision = {
+  candidateId: string;
+  /** 判断したときの候補の定義の版。 */
+  candidateVersion: string;
+  /** 判断したときのレポートの業種（SICS の産業コード。未選択なら null）。 */
+  industryCode: string | null;
+  decision: SsbjRiskCandidateDecisionKind;
+  /** 採用・除外の理由（内部の記録。開示しない）。除外では必須。 */
+  reason: string | null;
+  /** 採用して登録したリスク・機会。外部キーではないので、削除しても ID は残る（残っているかは ssbjCandidateStatus が一覧の ID で確かめる）。 */
+  riskOpportunityId: string | null;
+  updatedAt: string;
 };
 
 /**

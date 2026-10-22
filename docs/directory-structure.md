@@ -19,9 +19,10 @@
 │   └── （機能仕様・DB設計等）
 ├── e2e/                          # Playwright の E2E スモークテスト
 ├── public/                       # 静的ファイル（favicon等）
-├── scripts/                      # 開発用スクリプト（seed 投入・マイグレーション検査・公式係数の生成）
+├── scripts/                      # 開発用スクリプト（seed 投入・マイグレーション検査・公式係数の生成・組織のデータの返却と削除）
 │   ├── db/                       # seed.ts / check-migrations.ts（テストは __tests__/、SQLフィクスチャは __fixtures__/）
-│   └── official-factors/         # 公式排出係数 seed の生成元データと generate.ts
+│   ├── official-factors/         # 公式排出係数 seed の生成元データと generate.ts
+│   └── ops/                      # org-data.ts（組織のデータの件数の確認・書き出し・削除）と対象のテーブルの一覧
 ├── supabase/                     # Supabase migrations / seeds / config
 │   ├── migrations/               # SQLマイグレーション（DDL のみ。データ禁止）
 │   └── seeds/

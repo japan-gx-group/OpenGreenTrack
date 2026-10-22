@@ -1,13 +1,16 @@
 'use client';
 
-// レポートの該当性・重要性の判断（T09）の読み込みと、保存後の差し替え。編集フォームは useSsbjJudgementForm が持つ。
+// レポートの該当性・重要性の判断（T09）の読み込みと、保存後の差し替え・読み直し。編集フォームは useSsbjJudgementForm が持つ。
 
 import { useEffect, useState } from 'react';
-import { listSsbjJudgements } from '../services/judgementService';
-import type { SsbjJudgement } from '../types';
+import { listSsbjJudgements, type SsbjJudgementWorkingRecord } from '../services/judgementService';
 
 export const useSsbjJudgements = (reportId: string | null) => {
-  const [result, setResult] = useState<{ reportId: string; judgements: SsbjJudgement[]; errorMessage: string } | null>(null);
+  const [result, setResult] = useState<
+    { reportId: string; judgements: SsbjJudgementWorkingRecord[]; errorMessage: string } | null
+  >(null);
+  // 読み直しの合図（増やすと再取得する）。読み直しの間も今の一覧は出したままにする。
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!reportId) return;
@@ -21,12 +24,12 @@ export const useSsbjJudgements = (reportId: string | null) => {
       }
     });
     return () => { active = false; };
-  }, [reportId]);
+  }, [reportId, reloadKey]);
 
   const current = result?.reportId === reportId ? result : null;
 
   /** 保存した 1 要求の判断を一覧へ反映する（読み直さずに済ませる）。 */
-  const replace = (saved: SsbjJudgement) => {
+  const replace = (saved: SsbjJudgementWorkingRecord) => {
     setResult(prev => prev && {
       ...prev,
       judgements: [...prev.judgements.filter(judgement => judgement.requirementId !== saved.requirementId), saved]
@@ -34,10 +37,14 @@ export const useSsbjJudgements = (reportId: string | null) => {
     });
   };
 
+  /** 他の画面で保存された最新の判断を読み直す（一覧から保存しようとして競合したとき）。 */
+  const reload = () => setReloadKey(key => key + 1);
+
   return {
     judgements: current?.judgements ?? [],
     isLoading: !!reportId && current === null,
     errorMessage: current?.errorMessage ?? '',
     replace,
+    reload,
   };
 };
