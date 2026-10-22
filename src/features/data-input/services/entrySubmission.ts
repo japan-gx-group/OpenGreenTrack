@@ -7,6 +7,24 @@ import type { ManualEntryPeriodDates } from './manualEntryTargetMonth';
 
 /** 半角数字と小数点 1 個のみ。入力時フィルタに使う（空文字・'.'・'1.' もパターン上は通る）。 */
 export const DECIMAL_PATTERN = /^\d*(?:\.\d*)?$/;
+
+/**
+ * 活動量入力の正規化。日本語IME経由の全角数字（U+FF10〜U+FF19）・全角小数点「．」（U+FF0E）を
+ * 半角へ揃え、桁区切りのカンマ（半角「,」・全角「，」U+FF0C）を除去する。JS の `\d` は半角数字のみのため、
+ * 正規化せずに DECIMAL_PATTERN へかけると IME オンの入力がすべて弾かれてしまう。
+ * 変換するのはこの 3 種だけに限定し、NFKC 正規化は使わない（上付き数字の `10²` が `102`、
+ * 丸数字の `①` が `1` になるなど、数字ではない入力まで数字として通ってしまうため）。
+ * それ以外の文字はそのまま残し、呼び出し側が DECIMAL_PATTERN で弾いて理由を表示する。
+ */
+export const normalizeAmountInput = (value: string): string =>
+  value
+    .replace(/[\uFF10-\uFF19]/g, (digit) => String.fromCharCode(digit.charCodeAt(0) - 0xfee0))
+    .replace(/\uFF0E/g, '.')
+    .replace(/[,\uFF0C]/g, '');
+
+/** 正規化しても DECIMAL_PATTERN に合わない入力を弾いたときの案内（無言で無視しない）。 */
+export const AMOUNT_INPUT_REJECTED_MESSAGE = '活動量は数字と小数点のみ入力できます。';
+
 export const NOTE_MAX_LENGTH = 500;
 
 /**

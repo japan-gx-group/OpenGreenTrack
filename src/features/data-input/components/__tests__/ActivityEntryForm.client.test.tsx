@@ -244,6 +244,13 @@ const setTextareaValue = (textarea: HTMLTextAreaElement, value: string): void =>
   });
 };
 
+/** IME の composition イベントを発火する（変換の開始・確定を再現する）。 */
+const fireComposition = (input: HTMLInputElement, type: 'compositionstart' | 'compositionend'): void => {
+  act(() => {
+    input.dispatchEvent(new CompositionEvent(type, { bubbles: true }));
+  });
+};
+
 const q = <T extends Element = HTMLElement>(container: HTMLElement, selector: string): T => {
   const element = container.querySelector<T>(selector);
   expect(element, `要素が見つかりません: ${selector}`).not.toBeNull();
@@ -830,6 +837,83 @@ describe('ActivityEntryForm', () => {
     expect(container.querySelector('[data-testid="manual-amount-error"]')).toBeNull();
     expect(resultEmissionsText(container)).toBeDefined();
     expect(onSave).not.toHaveBeenCalled();
+  });
+
+  // 日本語IMEがオンのままだと全角数字が DECIMAL_PATTERN に合わず、controlled input が
+  // 変換中の値を毎回巻き戻して「何も入力できない」状態になっていた。変換中は見たまま表示し、
+  // 確定時に全角→半角へ正規化して受け付けることを固定する。
+  describe('活動量入力の IME 対応と正規化', () => {
+    it('IME 変換中は入力をそのまま表示し、確定時に全角数字を半角へ正規化して受け付ける', async () => {
+      const { container } = renderForm();
+      await flush();
+      const input = amountInput(container);
+
+      fireComposition(input, 'compositionstart');
+      setInputValue(input, '１２３４５');
+      // 変換中に巻き戻すと composition が壊れるため、そのまま表示する。
+      expect(input.value).toBe('１２３４５');
+
+      fireComposition(input, 'compositionend');
+      expect(input.value).toBe('12345');
+      expect(container.querySelector('[data-testid="manual-amount-rejected"]')).toBeNull();
+    });
+
+    it('IME を使わない貼り付けでもカンマ・全角混じりを正規化して受け付ける', async () => {
+      const { container } = renderForm();
+      await flush();
+      setInputValue(amountInput(container), '12,345');
+      expect(amountInput(container).value).toBe('12345');
+      setInputValue(amountInput(container), '１，０００．５');
+      expect(amountInput(container).value).toBe('1000.5');
+    });
+
+    it('正規化しても数字にならない確定入力は直前の値に戻し、理由を表示する', async () => {
+      const { container } = renderForm();
+      await flush();
+      const input = amountInput(container);
+      setInputValue(input, '123');
+
+      fireComposition(input, 'compositionstart');
+      setInputValue(input, '123とうきょう');
+      fireComposition(input, 'compositionend');
+
+      expect(input.value).toBe('123');
+      expect(q(container, '[data-testid="manual-amount-rejected"]').textContent).toBe(
+        '活動量は数字と小数点のみ入力できます。',
+      );
+
+      // 数字を入力し直せば案内は消える。
+      setInputValue(input, '1234');
+      expect(input.value).toBe('1234');
+      expect(container.querySelector('[data-testid="manual-amount-rejected"]')).toBeNull();
+    });
+
+    // 保存成功で活動量を空にした直後に数字以外を入れると、戻す先が保存前の値のままだったため
+    // 古い活動量が復活し、翌月分として再保存できてしまっていた。空欄のまま理由だけ出すことを固定する。
+    it('保存成功で空になった欄に数字以外を入れても、保存前の活動量は復活しない', async () => {
+      const { container, onSave } = renderForm();
+      await flush();
+      setInputValue(amountInput(container), '100');
+      openPreview(container);
+      await saveFromPreview(container);
+      expect(onSave).toHaveBeenCalledTimes(1);
+      expect(amountInput(container).value).toBe('');
+
+      // 通常入力（IME を使わない経路）。
+      setInputValue(amountInput(container), 'a');
+      expect(amountInput(container).value).toBe('');
+      expect(q(container, '[data-testid="manual-amount-rejected"]').textContent).toBe(
+        '活動量は数字と小数点のみ入力できます。',
+      );
+
+      // IME 変換を確定する経路でも、変換開始時点の空欄に戻す。
+      const input = amountInput(container);
+      fireComposition(input, 'compositionstart');
+      setInputValue(input, 'あ');
+      fireComposition(input, 'compositionend');
+      expect(input.value).toBe('');
+      expect(q(container, '[data-testid="manual-amount-rejected"]')).not.toBeNull();
+    });
   });
 
   // 休止拠点・契約のみの月など、実績ゼロを「入力漏れ」と区別して記録できるようにする。
