@@ -219,10 +219,10 @@ erDiagram
 | `/ssbj/[reportId]/narratives` | SSBJ 四本柱の文章 | `ssbj_narratives` |
 | `/ssbj/[reportId]/risks` | SSBJ リスク・機会 | `ssbj_risks_opportunities`、`ssbj_report_time_horizons` |
 | `/ssbj/[reportId]/judgements` | SSBJ 該当性・重要性の判断 | `ssbj_judgements` |
-| `/ssbj/[reportId]/versions` | SSBJ 保存履歴・復元・CSV / Excel 出力 | `ssbj_report_versions`、`system_audit_logs`、`ssbj_audit_logs` |
+| `/ssbj/[reportId]/versions` | SSBJ 保存履歴・復元・CSV / Excel 出力 | `ssbj_report_versions`（閲覧者は `GET /api/ssbj/reports/[reportId]/approved-version`）、`system_audit_logs`、`ssbj_audit_logs` |
 | `/ssbj/[reportId]/history` | SSBJ 操作履歴 | `ssbj_audit_logs`、`profiles`（名前の表示） |
 | `/ssbj/[reportId]/ghg` | OGT の GHG 候補値・採用 | `dashboard_aggregates`、算定・Scope 3 データ（参照のみ）、`ssbj_ogt_adoptions`（採用値） |
-| `/ssbj/[reportId]/preview` `/ssbj/[reportId]/preview/print` | SSBJ プレビュー・印刷（PDF） | 作業中の内容（保存版と同じ組み立て）、`ssbj_report_versions`（保存版） |
+| `/ssbj/[reportId]/preview` `/ssbj/[reportId]/preview/print` | SSBJ プレビュー・印刷（PDF） | 作業中の内容（保存版と同じ組み立て）、`ssbj_report_versions`（保存版。閲覧者は `GET /api/ssbj/reports/[reportId]/approved-version`） |
 | `/settings/company` `/settings/account` | 設定 | `organizations`、`profiles`、`fiscal_years`、`invites` |
 | `/login` `/signup` `/forgot-password` `/reset-password` `/invite/[token]` | 認証 | Supabase Auth、`invites` |
 
@@ -394,6 +394,7 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 |---|---|
 | 一覧（`/ssbj`） | ヘッダーで選択中の年度のレポートを新しい順に表示し、新規作成する。レポートは選択中の年度に作る（作成ダイアログで対象年度を明示する）。年度が未登録なら企業設定へ案内する。「SSBJ の権限」へのリンクを出す |
 | SSBJ の権限（`/ssbj/roles`） | 自組織の利用者ごとの SSBJ のロール（管理者・入力担当・承認担当・閲覧者）を表示する。OGT の管理者は管理者（ここでは変えられない）、割り当ての無い人は「入力担当（既定）」。OGT の管理者だけがロールを変えられる（変えるとすぐ保存し、DB が操作履歴に記録する）。ロールの変更の記録を新しい順に表示する（最大 50 件）。ロールで何ができるかは [`authorization-matrix.md`](authorization-matrix.md) を正とする |
+| SSBJ のロールによる出し分け | 入力担当か管理者でなければ、新規作成・基本情報の編集・各入力画面の編集・保存版の作成・新版作成・復元・GHG の採用を出さない（承認担当には「編集できない」理由を出し、内容は見せる）。閲覧者は承認済みのレポートだけが一覧に出て、作業中の内容の画面（文章・リスク・機会・判断・根拠文書・GHG・操作履歴）は開けず（承認した保存版の見方を案内する）、詳細の「レポートの内容」にはプレビューと保存履歴だけを出す。プレビューは承認した保存版を既定にし、作業中の内容を選ばせない。DB と API も同じ判定で止める（[`authorization-matrix.md`](authorization-matrix.md)） |
 | 詳細（`/ssbj/[reportId]`） | 基本情報（レポート名・対象年度と期間・作成目的・報告範囲・参照する基準の版・親会社名・親会社との関係・親会社の持分比率・測定アプローチ・業種（SICS））を表示・編集する。業種には産業別ガイダンスの該当する巻へのリンクを出す。「保存版を作成」で、あとから書き換えられない保存版を作る（基本情報の編集中は不可。読込後に別の画面・別の人が内容を変えていれば競合として拒否し、開き直しを促す）。存在しない・他組織のレポートは「見つかりません」と表示し、存在を示唆しない |
 
 | 四本柱の文章（`/ssbj/[reportId]/narratives`） | 詳細画面の「レポートの内容」から入る。要求項目マスター（暫定版）の文章の項目を章ごとに並べ、項目ごとに開示する文章（状態＋本文。状態を「入力済み」にしたときだけ本文を保存）と内部メモ（開示しない）を編集する。各項目には答える要求の ID・項番号と、記載ガイド・記載例を出す。1 つの項目で一般開示基準と気候関連開示基準の同じ趣旨の要求に答える。章ごとに企業固有の補足の項目を 1 つ持つ。文章以外の画面で答える要求（リスク・機会、GHG、基本情報、注記）は、どの画面で答えるかを案内する。変更は作業中の内容で、保存版には詳細画面の「保存版を作成」で残す |
@@ -406,9 +407,9 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 | 穴埋めテンプレート（文章） | 編集中、本文が空なら「テンプレートを入れる」で項目ごとの文例を入れる。【 】の部分が残ったままでは「入力済み」で保存できない（書きかけを残すときは、文章を内部メモに移してから「未確認」で保存する）。入力済み以外の状態では本文を保存しないため、本文が入力されたまま入力済み以外で保存しようとすると、保存の前に警告する（取り消すと保存せずに編集へ戻る） |
 | 選択式テンプレート（文章） | 代表的な項目（各章 1 項目以上）では、編集中に「選択肢から下書きを作る」で選択肢と補足入力の欄を開き、選んだ内容から下書きを作る。選んでいない欄は【欄の名前】のまま入る。選んだ選択肢で使わない欄（例: 報告していないときの報告する人）は出さず、保存もしない。本文が空なら「下書きを本文に入れる」、書いてあれば「下書きを本文の後ろに追加」（上書きしない）。下書きであり開示内容は自動で確定しないことを欄の先頭に出す。下書きを一度も編集しないまま「入力済み」で保存しようとすると、自社の事実に合っているかを確かめるよう確認のダイアログを出す（「このまま保存」で保存、「編集に戻る」で保存しない）。選んだ値は本文と別に保存し（開示しない・保存版に含めない）、詳細に「選択式テンプレートで選んだ内容」として出し、次に編集を始めたときに選択肢へ戻す |
 | 操作履歴（`/ssbj/[reportId]/history`） | 作成・更新・削除・状態の変更・保存版の作成・復元・ファイルの出力を、誰がいつ行ったか新しい順に表示する（最大 1000 件）。操作の種類で絞り込み、CSV・Excel で出力する（出力も記録してから行う）。記録は書き換えられない |
-| 保存履歴・出力（`/ssbj/[reportId]/versions`） | 固定版の一覧・内容・作成者・由来を確認し、過去版のスナップショットから新しい固定版を作る（作業中データは変更しない）。固定版を選び、その版のスナップショットから社内確認用 CSV を出力する。版 ID・位置付け・単位を出力に明記し、生成履歴を表示する。履歴保存に失敗した場合はダウンロードしない。Excel（CSV と同じ内容）も出力できる。「この版の内容に戻す」で作業中の内容をその版に戻す（戻す前の内容は保存版として自動で残す。ただし保存版に含めない文章の選択式テンプレートの選択は残らないことを、確認のダイアログで伝える。承認済みのときはできない） |
+| 保存履歴・出力（`/ssbj/[reportId]/versions`） | 固定版の一覧・内容・作成者・由来を確認し、過去版のスナップショットから新しい固定版を作る（作業中データは変更しない）。固定版を選び、その版のスナップショットから社内確認用 CSV を出力する。版 ID・位置付け・単位を出力に明記し、生成履歴を表示する。履歴保存に失敗した場合はダウンロードしない。Excel（CSV と同じ内容）も出力できる。「この版の内容に戻す」で作業中の内容をその版に戻す（戻す前の内容は保存版として自動で残す。ただし保存版に含めない文章の選択式テンプレートの選択は残らないことを、確認のダイアログで伝える。承認済みのときはできない）。閲覧者は承認した版だけを、内部メモ・内部記録を除いた内容で確認・出力する（CSV / Excel に内部記録の列を入れない。操作履歴へのリンクと出力履歴は出さない。[`authorization-matrix.md`](authorization-matrix.md) §2.3） |
 | GHG 候補値（`/ssbj/[reportId]/ghg`） | レポートの年度に結び付く Scope 1・2・3 合計と Scope 3 の15カテゴリを参照する。期間・組織全体の集計範囲・採用方式・未算定を表示する。Scope 2 の基準は不明として係数区分の内訳を補足し、サプライヤー値は合計に加えず参考表示する。「表示中の候補値を採用する」で、Scope 1・2・3 合計と 15 カテゴリをまとめてレポートに採用する（確認ダイアログあり。採用し直す・取り消すこともできる）。採用値は OGT で算定し直しても自動では変わらず、変わったときは変わった区分を表示する。採用値は保存版を作成した時点で固定される |
-| プレビュー（`/ssbj/[reportId]/preview`） | 「表示する内容」で作業中の内容（未保存の変更を含む）か保存版 1 件を選び、基本情報・四本柱（戦略のリスク・機会と時間軸の定義、指標及び目標の GHG 排出量）・根拠文書（開示用参照文）・注記をレポートの形で表示する。先頭に作業中か保存版（版番号・保存日時・版 ID）かを必ず出す。未入力は「未入力」、未算定は「未算定」と出し、0 や空欄にしない。内部メモと根拠文書の内部記録（資料名・保管先・主管部署など）は既定で出さず、「内部メモも表示する」を選んだときだけ画面に「開示しない」と明示して出す。表示に対応していない項目は名前を出して知らせる。「印刷・PDFとして保存」で印刷ビュー（`/preview/print`）を別タブで開き、ブラウザの印刷ダイアログから PDF として保存する。印刷ビュー（PDF）には、画面で内部メモを表示しているかどうかにかかわらず、内部メモと内部記録を出さない（開示する文章・開示用参照文・数値・版情報だけを出す） |
+| プレビュー（`/ssbj/[reportId]/preview`） | 「表示する内容」で作業中の内容（未保存の変更を含む）か保存版 1 件を選び、基本情報・四本柱（戦略のリスク・機会と時間軸の定義、指標及び目標の GHG 排出量）・根拠文書（開示用参照文）・注記をレポートの形で表示する。先頭に作業中か保存版（版番号・保存日時・版 ID）かを必ず出す。未入力は「未入力」、未算定は「未算定」と出し、0 や空欄にしない。内部メモと根拠文書の内部記録（資料名・保管先・主管部署など）は既定で出さず、「内部メモも表示する」を選んだときだけ画面に「開示しない」と明示して出す。表示に対応していない項目は名前を出して知らせる。「印刷・PDFとして保存」で印刷ビュー（`/preview/print`）を別タブで開き、ブラウザの印刷ダイアログから PDF として保存する。印刷ビュー（PDF）には、画面で内部メモを表示しているかどうかにかかわらず、内部メモと内部記録を出さない（開示する文章・開示用参照文・数値・版情報だけを出す）。閲覧者には承認した保存版の開示する内容だけを出し、「内部メモも表示する」は出さない（印刷も同じ。[`authorization-matrix.md`](authorization-matrix.md) §2.3） |
 
 - 基本情報の必須はレポート名のみ。任意項目の未入力は「未入力」と表示し、空欄や「なし」にしない（項目名と必須性は T01 の合意。`ssbj-r1-scope.md`）
 - 親会社の持分比率は 0 より大きく 100 以下、小数点以下 2 桁まで。親会社との関係・測定アプローチ・業種は一覧から選ぶ（業種は SICS の 68 産業）
@@ -525,6 +526,7 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 | POST | `/api/ssbj/reports/[reportId]/versions` | SSBJ レポートの保存版（固定スナップショット）を作成する（`ssbj-spec.md` §8） |
 | POST | `/api/ssbj/reports/[reportId]/ogt-adoption` | SSBJ レポートに OGT の候補値を採用する。受け取るのは画面が表示した候補値の指紋だけで、値はサーバが OGT から取り直す（`ssbj-spec.md` §13） |
 | GET | `/api/ssbj/reports/[reportId]/preview` | SSBJ レポートの作業中の内容を、保存版と同じ形で返す（保存はしない。`ssbj-spec.md` §13） |
+| GET | `/api/ssbj/reports/[reportId]/approved-version` | SSBJ レポートの承認した保存版を、内部メモ・内部記録を除いて返す（閲覧者が読む経路。`authorization-matrix.md` §2.3） |
 | POST | `/api/ssbj/reports/[reportId]/status` | SSBJ レポートの状態を変える（レビュー依頼・取り下げ・承認・差戻し。`ssbj-spec.md` §13） |
 | POST | `/api/ssbj/reports/[reportId]/versions/[versionId]/restore` | SSBJ レポートの作業中の内容を、指定した保存版の内容に戻す（`ssbj-spec.md` §13） |
 | POST | `/api/account/delete` | アカウント削除 |
@@ -532,7 +534,7 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 | POST | `/api/csp-report` | CSP 違反レポートの受信 |
 | GET | `/auth/callback` | Supabase Auth のコールバック |
 
-`/api/calculations`・`/api/calculations/provisional-recalculation`・`/api/dashboard-aggregates/refresh`・`/api/idea-imports/upload-url`・`/api/idea-imports`・`/api/idea-imports/[id]`・`/api/account/delete`・`/api/ssbj/reports/[reportId]/versions`・`/api/ssbj/reports/[reportId]/ogt-adoption`・`/api/ssbj/reports/[reportId]/preview`・`/api/ssbj/reports/[reportId]/status`・`/api/ssbj/reports/[reportId]/versions/[versionId]/restore` の 12 本は `service_role` で RLS を越えて読み書きするため、Route Handler 側でログイン済み・自組織であることを検証する。SSBJ の 5 本は、さらに SSBJ のロールを確かめ、許さなければ 403 を返す（どのロールに何を許すかは [`authorization-matrix.md`](authorization-matrix.md) §2.2）。この組織チェックは RLS では効かず、ここでしか担保できない。`/api/idea-imports/upload-url` は自組織フォルダ（`${organizationId}/idea-imports/<uuid>.xlsx`）にだけ署名付き URL を発行し、`/api/idea-imports` は受け取ったパスがその形であることを検証してから Storage に触れる。`/api/health` も `service_role` を使うが `organizations` を 1 行読む疎通確認のみで、組織データは返さない。
+`/api/calculations`・`/api/calculations/provisional-recalculation`・`/api/dashboard-aggregates/refresh`・`/api/idea-imports/upload-url`・`/api/idea-imports`・`/api/idea-imports/[id]`・`/api/account/delete`・`/api/ssbj/reports/[reportId]/versions`・`/api/ssbj/reports/[reportId]/ogt-adoption`・`/api/ssbj/reports/[reportId]/preview`・`/api/ssbj/reports/[reportId]/approved-version`・`/api/ssbj/reports/[reportId]/status`・`/api/ssbj/reports/[reportId]/versions/[versionId]/restore` の 13 本は `service_role` で RLS を越えて読み書きするため、Route Handler 側でログイン済み・自組織であることを検証する。SSBJ の 6 本は、さらに SSBJ のロールを確かめ、許さなければ 403 を返す（どのロールに何を許すかは [`authorization-matrix.md`](authorization-matrix.md) §2.2）。この組織チェックは RLS では効かず、ここでしか担保できない。`/api/idea-imports/upload-url` は自組織フォルダ（`${organizationId}/idea-imports/<uuid>.xlsx`）にだけ署名付き URL を発行し、`/api/idea-imports` は受け取ったパスがその形であることを検証してから Storage に触れる。`/api/health` も `service_role` を使うが `organizations` を 1 行読む疎通確認のみで、組織データは返さない。
 
 ### 6.3 主要な RPC
 

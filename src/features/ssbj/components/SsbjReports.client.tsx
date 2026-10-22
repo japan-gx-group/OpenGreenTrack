@@ -14,8 +14,10 @@ import { Toast } from '@/components/ui/Toast.client';
 import { useFiscalYear } from '@/hooks/useFiscalYear';
 import { useToast } from '@/hooks/useToast';
 import { useSsbjReportForm } from '../hooks/useSsbjReportForm';
+import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
 import { useSsbjReports } from '../hooks/useSsbjReports';
 import { createSsbjReport } from '../services/reportService';
+import { canEditSsbj } from '../utils/memberRole';
 import { SsbjReportCreateDialog } from './SsbjReportCreateDialog.client';
 import { SsbjReportTable } from './SsbjReportTable';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
@@ -28,6 +30,8 @@ export const SsbjReports = () => {
   const hasNoFiscalYear = !isFiscalYearLoading && fiscalYears.length === 0;
 
   const list = useSsbjReports(fiscalYearId, showToast);
+  // 新規作成は、SSBJ のロールが入力担当か管理者のときだけ出す（DB も止める）。閲覧者の一覧には承認済みのレポートだけが出る。
+  const myRole = useSsbjMyRole();
   const [isCreateOpen, setIsCreateOpen] = useState<boolean>(false);
 
   const form = useSsbjReportForm(async input => {
@@ -58,12 +62,12 @@ export const SsbjReports = () => {
         <PageHeading
           title="SSBJレポート"
           description="サステナビリティ関連財務開示（SSBJ）の下書きを年度ごとに作成します"
-          primaryAction={
+          primaryAction={canEditSsbj(myRole.role) ? (
             <Button type="button" onClick={openCreate} disabled={!selectedFiscalYear}>
               <Plus size={15} strokeWidth={1.9} />
               新規作成
             </Button>
-          }
+          ) : null}
         />
 
         <Toast toast={toast} />
@@ -94,7 +98,13 @@ export const SsbjReports = () => {
               <p className="text-lg font-bold text-text-muted">
                 {selectedFiscalYear?.label ?? '選択中の年度'}のSSBJレポートはまだありません
               </p>
-              <p className="mt-2 text-sm text-text-muted">「新規作成」からレポートを作成してください。</p>
+              <p className="mt-2 text-sm text-text-muted">
+                {canEditSsbj(myRole.role)
+                  ? '「新規作成」からレポートを作成してください。'
+                  : myRole.role === 'viewer'
+                    ? 'SSBJ の閲覧者には、承認済みのレポートだけが表示されます。'
+                    : 'レポートの作成は、SSBJ の入力担当か管理者が行います。'}
+              </p>
             </Card>
           ) : (
             <Card>

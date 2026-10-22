@@ -123,6 +123,8 @@ describe('adoptSsbjRiskCandidate', () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { code: 'P2051', message: 'locked' } });
     await expect(adoptSsbjRiskCandidate('report-1', candidate, riskInput)).rejects.toThrow('承認済みのレポートは変更できません');
     mocks.rpc.mockResolvedValue({ data: null, error: { code: '42501', message: 'denied' } });
+    await expect(adoptSsbjRiskCandidate('report-1', candidate, riskInput)).rejects.toThrow('入力担当か管理者だけ');
+    mocks.rpc.mockResolvedValue({ data: null, error: { code: 'XX000', message: 'internal' } });
     await expect(adoptSsbjRiskCandidate('report-1', candidate, riskInput)).rejects.toThrow('リスク・機会も登録していません');
   });
 });
@@ -137,12 +139,20 @@ describe('deleteSsbjRiskCandidateDecision', () => {
       // 文字列のまま渡す（Date に変換するとマイクロ秒が落ちて一致しなくなる）。
       ['updatedAt', '2025-06-01T00:00:00.123456+00:00'],
     ]);
-    mocks.deleteSelect.mockResolvedValue({ data: null, error: { code: '42501' } });
+    mocks.deleteSelect.mockResolvedValue({ data: null, error: { code: 'XX000' } });
     await expect(deleteSsbjRiskCandidateDecision('report-1', excludedRow)).rejects.toThrow('取り消しに失敗しました');
   });
 
   it('他の画面で変わっていたか、登録したリスク・機会が残っていて RLS が削除させなかった（0 行）ら、開き直しを促す', async () => {
     mocks.deleteSelect.mockResolvedValue({ data: [], error: null });
+    mocks.rpc.mockResolvedValue({ data: true, error: null });
     await expect(deleteSsbjRiskCandidateDecision('report-1', excludedRow)).rejects.toThrow('他の画面で変更されたため、未検討に戻していません');
+    expect(mocks.rpc).toHaveBeenCalledWith('ssbj_current_user_can_edit');
+  });
+
+  it('0 行で、SSBJ のロールが変わって編集できなくなっていたら、権限のメッセージにする', async () => {
+    mocks.deleteSelect.mockResolvedValue({ data: [], error: null });
+    mocks.rpc.mockResolvedValue({ data: false, error: null });
+    await expect(deleteSsbjRiskCandidateDecision('report-1', excludedRow)).rejects.toThrow('入力担当か管理者だけ');
   });
 });

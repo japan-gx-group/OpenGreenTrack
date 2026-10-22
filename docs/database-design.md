@@ -326,7 +326,7 @@ SSBJ 開示レポートの本体と基本情報。組織と算定年度に必ず
 | `createdByUserId` | 保存者ID | UUID | NULL | Route Handler が `getCurrentProfile()` で確定した値を RPC に渡す |
 | `createdAt` | 保存日時 | TIMESTAMPTZ | NOT NULL | |
 
-- 書き込みは RPC `create_ssbj_report_version`（EXECUTE は service_role 限定）だけ。`authenticated` には select のみ（自組織）。
+- 書き込みは RPC `create_ssbj_report_version`（EXECUTE は service_role 限定）だけ。`authenticated` には select のみ（自組織。SSBJ の閲覧者は不可。3.20）。
 - UPDATE はトリガー `reject_ssbj_report_versions_update` で全ロール（service_role を含む）拒否する。
 - スナップショットの組み立ては `ssbj_build_report_snapshot`（`20260929182558_ssbj_report_preview.sql`）に一本化し、版生成 RPC とプレビュー（`preview_ssbj_report`。保存はしない）が同じ関数を使う。
 
@@ -501,6 +501,10 @@ SSBJ の中だけで使うロールの割り当て。権限の規則の正本は
 - 割り当て・変更・解除はトリガー（`ssbj_audit_member_role_change`）が `ssbj_audit_logs` に記録する（`reportId` は空）。組織の削除に伴う連鎖削除では記録しない。
   利用者の削除（退会・メンバーの削除）に伴う解除は、操作者を空（画面では「システム」）にし、`details.reason = 'member_deleted'` を残す。
   管理クライアントの削除ではログイン中の利用者がいないため、行に残っている以前の更新者を操作者にしない（`20261023090000_ssbj_member_roles_audit_actor.sql`）。
+- **SSBJ の各テーブルへの適用**（`20261023100000_ssbj_role_policies.sql`）: 3.11〜3.19 の各テーブルの RLS に、`AS RESTRICTIVE` のポリシーを重ねる。
+  作業中データの書き込み（`ssbj_reports` の作成・更新を含む）は入力担当か管理者だけ。作業中データ・操作履歴の select は閲覧者以外。
+  閲覧者が select できるのは、承認済みの `ssbj_reports` だけ。`ssbj_report_versions` は内部メモ・内部記録を含むので見せず、
+  承認した版の開示する内容は Route Handler が返す（[`authorization-matrix.md`](authorization-matrix.md) §2.3）。
 
 ---
 

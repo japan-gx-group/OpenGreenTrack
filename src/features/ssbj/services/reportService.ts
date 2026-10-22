@@ -15,6 +15,7 @@ import type {
 } from '../types';
 import type { SsbjReportBasicInfoInput } from '../utils/reportValidation';
 import { SsbjEditConflictError, ssbjWriteErrorMessage } from '../utils/writeError';
+import { throwIfSsbjEditForbidden } from './memberRoleService';
 
 type FiscalYearEmbed = { label: string; startDate: string; endDate: string };
 
@@ -220,6 +221,8 @@ export const updateSsbjReportBasicInfo = async (
     throw new Error(ssbjWriteErrorMessage(error, 'SSBJレポートの更新に失敗しました'));
   }
   if (!data) {
+    // 0 件更新: ロールで止められた（RESTRICTIVE のポリシーは 0 件にする）なら、競合ではなく権限のメッセージにする。
+    await throwIfSsbjEditForbidden();
     // 0 件更新: 版数が変わった（競合）か、RLS で対象が見えない（削除済み・他組織）。見えるかどうかで分ける。
     const { data: current, error: currentError } = await supabase
       .from('ssbj_reports')

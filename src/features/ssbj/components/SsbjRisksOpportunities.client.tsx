@@ -40,13 +40,17 @@ import { SsbjRiskOpportunityDialog } from './SsbjRiskOpportunityDialog.client';
 import { SsbjRiskOpportunityList } from './SsbjRiskOpportunityList';
 import { SsbjTimeHorizonCard } from './SsbjTimeHorizonCard.client';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
-import { isSsbjReportLocked } from '../utils/reportStatus';
+import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
+import { isSsbjReadOnly } from '../utils/reportStatus';
 import { SsbjLockedNotice } from './SsbjLockedNotice';
+import { SsbjRoleNotice } from './SsbjRoleNotice';
 import { SsbjEditorLayout } from './SsbjEditorLayout.client';
 
 export const SsbjRisksOpportunities = ({ reportId }: { reportId: string }) => {
   const { toast, showToast } = useToast();
   const { report, isLoading: isReportLoading, errorMessage: reportError, isNotFound } = useSsbjReport(reportId);
+  // 承認済みか、SSBJ のロールが入力担当でも管理者でもなければ、編集の操作を出さない（DB も止める）。
+  const myRole = useSsbjMyRole();
   const list = useSsbjRisksOpportunities(reportId, report !== null);
   // null: ダイアログを閉じている / 'new': 登録 / それ以外: 編集中の対象（開いた時点の updatedAt を更新の条件にする）
   const [editing, setEditing] = useState<SsbjRiskOpportunityWorkingRecord | 'new' | null>(null);
@@ -160,7 +164,7 @@ export const SsbjRisksOpportunities = ({ reportId }: { reportId: string }) => {
         description={report ? report.title : 'SSBJレポートのリスク・機会'}
         showFiscalYear={false}
         primaryAction={
-          report && !isSsbjReportLocked(report.review) ? (
+          report && !isSsbjReadOnly(report.review, myRole.role) ? (
             <Button type="button" onClick={openCreate}>
               <Plus size={16} />
               リスク・機会を追加
@@ -181,6 +185,7 @@ export const SsbjRisksOpportunities = ({ reportId }: { reportId: string }) => {
 
         <SsbjTrialNotice />
         {report && <SsbjLockedNotice report={report} />}
+        {report && <SsbjRoleNotice role={myRole.role} isLoading={myRole.isLoading} />}
 
         {errorMessage && (
           <div role="alert" className="rounded-md bg-danger-light px-4 py-3 text-sm text-danger">
@@ -215,14 +220,14 @@ export const SsbjRisksOpportunities = ({ reportId }: { reportId: string }) => {
               onStartEdit={startEditHorizons}
               onCancel={() => setIsEditingHorizons(false)}
               onSubmit={event => void handleSaveHorizons(event)}
-              readOnly={isSsbjReportLocked(report.review)}
+              readOnly={isSsbjReadOnly(report.review, myRole.role)}
             />
             <SsbjRiskCandidates
               reportId={reportId}
               industryCode={report.industryCode}
               decisions={candidates.decisions}
               items={list.items}
-              readOnly={isSsbjReportLocked(report.review)}
+              readOnly={isSsbjReadOnly(report.review, myRole.role)}
               onAdopt={openAdopt}
               onExclude={excludeCandidate}
               onUndo={undoCandidate}
@@ -233,7 +238,7 @@ export const SsbjRisksOpportunities = ({ reportId }: { reportId: string }) => {
                 items={list.items}
                 onEdit={openEdit}
                 onDelete={deletion.request}
-                readOnly={isSsbjReportLocked(report.review)}
+                readOnly={isSsbjReadOnly(report.review, myRole.role)}
               />
             </Card>
           </SsbjEditorLayout>

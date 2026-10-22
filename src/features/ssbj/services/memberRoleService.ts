@@ -5,6 +5,7 @@
 import { createClient } from '@/lib/supabase/client';
 import type { SsbjEffectiveRole, SsbjMemberRole, SsbjMemberRoleLog } from '../types';
 import { isSsbjEffectiveRole, isSsbjMemberRole } from '../utils/memberRole';
+import { SSBJ_FORBIDDEN_MESSAGE } from '../utils/writeError';
 
 /** RLS が拒否したとき（管理者でない）の SQLSTATE。 */
 const RLS_DENIED_SQLSTATE = '42501';
@@ -28,6 +29,17 @@ export const getMySsbjRole = async (): Promise<SsbjEffectiveRole | null> => {
   if (data === null) return null;
   if (!isSsbjEffectiveRole(data)) throw new Error(`SSBJ のロールが不正です: ${String(data)}`);
   return data;
+};
+
+/**
+ * 作業中データの更新・削除が 0 件だったときに呼び、SSBJ のロールで止められたのかを確かめる。
+ * RLS の RESTRICTIVE のポリシー（USING）で止められた更新・削除はエラー（42501）にならず 0 件になるので、画面を開いている間に
+ * ロールが変わった利用者には、成功・競合・「見つかりません」に見えてしまう。今も編集できるかを DB に聞き、できなければ
+ * 権限のメッセージで例外にする。確かめられないときは何もしない（呼び出し元の案内のままにする）。
+ */
+export const throwIfSsbjEditForbidden = async (): Promise<void> => {
+  const { data, error } = await createClient().rpc('ssbj_current_user_can_edit');
+  if (!error && data === false) throw new Error(SSBJ_FORBIDDEN_MESSAGE);
 };
 
 const assignErrorMessage = (error: { code?: string } | null): string =>

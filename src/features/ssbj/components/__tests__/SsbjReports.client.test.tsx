@@ -30,8 +30,15 @@ vi.mock('../../services/reportService', async importOriginal => ({
   createSsbjReport: vi.fn(),
 }));
 
+
+// SSBJ のロールは、既定で入力担当として操作する（編集の操作を出す）。
+vi.mock('../../services/memberRoleService', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../services/memberRoleService')>()),
+  getMySsbjRole: vi.fn(async () => 'editor'),
+}));
 import { createSsbjReport, listSsbjReports } from '../../services/reportService';
 import { SsbjReports } from '../SsbjReports.client';
+import { getMySsbjRole } from '../../services/memberRoleService';
 
 const REPORT: SsbjReportWorkingRecord = {
   ...fictionalReportBasicInfo,
@@ -113,6 +120,15 @@ describe('SsbjReports 一覧', () => {
     expect(container.textContent).toContain('算定年度が登録されていません');
     expect(findButton('新規作成').disabled).toBe(true);
     expect(listSsbjReports).not.toHaveBeenCalled();
+  });
+});
+
+describe('SsbjReports（SSBJ のロール）', () => {
+  it('入力担当か管理者でなければ、新規作成を出さない（一覧は見られる）', async () => {
+    vi.mocked(getMySsbjRole).mockResolvedValueOnce('viewer');
+    const { container } = await renderScreen();
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent?.includes('新規作成'))).toBe(false);
+    expect(listSsbjReports).toHaveBeenCalled();
   });
 });
 

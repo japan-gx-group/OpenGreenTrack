@@ -22,7 +22,14 @@ vi.mock('../../services/riskOpportunityService', async importOriginal => ({
   ...(await importOriginal<typeof import('../../services/riskOpportunityService')>()), listSsbjRisksOpportunities: vi.fn(),
 }));
 
+
+// SSBJ のロールは、既定で入力担当として操作する（編集の操作を出す）。
+vi.mock('../../services/memberRoleService', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../services/memberRoleService')>()),
+  getMySsbjRole: vi.fn(async () => 'editor'),
+}));
 import { listSsbjJudgements, saveSsbjJudgement, saveSsbjJudgementQuickChange } from '../../services/judgementService';
+import { getMySsbjRole } from '../../services/memberRoleService';
 import { getSsbjReport } from '../../services/reportService';
 import { listSsbjRisksOpportunities } from '../../services/riskOpportunityService';
 import { SSBJ_REQUIREMENTS } from '../../utils/requirementMaster';
@@ -331,5 +338,15 @@ describe('SsbjJudgements（承認ロック）', () => {
     expect(rows().some(row => row.textContent?.includes('詳細'))).toBe(false);
     expect(rows().some(row => row.querySelector('select') !== null)).toBe(false);
     expect(document.querySelector('[data-testid="ssbj-locked-notice"]')).not.toBeNull();
+  });
+
+  it('SSBJ のロールが承認担当なら、一覧の選択も詳細も出さない（DB も止める）', async () => {
+    vi.mocked(getMySsbjRole).mockResolvedValueOnce('approver');
+    rendered = render(<SsbjJudgements reportId={report.id} />);
+    await settle();
+    expect(rows().length).toBeGreaterThan(0);
+    expect(rows().some(row => row.textContent?.includes('詳細'))).toBe(false);
+    expect(rows().some(row => row.querySelector('select') !== null)).toBe(false);
+    expect(document.querySelector('[data-testid="ssbj-role-notice"]')).not.toBeNull();
   });
 });

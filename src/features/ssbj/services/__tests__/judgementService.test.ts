@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   insertSingle: vi.fn(),
   update: vi.fn(),
   insert: vi.fn(),
+  rpc: vi.fn(),
 }));
 
 vi.mock('@/lib/supabase/client', () => ({
@@ -30,6 +31,7 @@ vi.mock('@/lib/supabase/client', () => ({
         return { select: () => ({ single: mocks.insertSingle }) };
       },
     }),
+    rpc: mocks.rpc,
   }),
 }));
 
@@ -114,7 +116,15 @@ describe('saveSsbjJudgementQuickChange', () => {
 
   it('読込後に他の画面で保存されていれば（0 件更新）、競合にする', async () => {
     mocks.updateMaybeSingle.mockResolvedValue({ data: null, error: null });
+    mocks.rpc.mockResolvedValue({ data: true, error: null });
     await expect(saveSsbjJudgementQuickChange(report, savedAt, judgement)).rejects.toBeInstanceOf(SsbjEditConflictError);
+    expect(mocks.rpc).toHaveBeenCalledWith('ssbj_current_user_can_edit');
+  });
+
+  it('0 件更新で、SSBJ のロールが変わって編集できなくなっていたら、競合ではなく権限のメッセージにする', async () => {
+    mocks.updateMaybeSingle.mockResolvedValue({ data: null, error: null });
+    mocks.rpc.mockResolvedValue({ data: false, error: null });
+    await expect(saveSsbjJudgementQuickChange(report, savedAt, judgement)).rejects.toThrow('入力担当か管理者だけ');
   });
 
   it('行が無ければ作り、その間に他の画面が先に作っていれば（23505）上書きせずに競合にする', async () => {

@@ -54,11 +54,13 @@ import {
   type SsbjJudgementStatus,
 } from '../utils/judgement';
 import { formatParagraphReference } from '../utils/requirementMaster';
-import { isSsbjReportLocked } from '../utils/reportStatus';
+import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
+import { isSsbjReadOnly } from '../utils/reportStatus';
 import { SsbjEditConflictError } from '../utils/writeError';
 import { SsbjEditorLayout } from './SsbjEditorLayout.client';
 import { SsbjJudgementDialog } from './SsbjJudgementDialog.client';
 import { SsbjLockedNotice } from './SsbjLockedNotice';
+import { SsbjRoleNotice } from './SsbjRoleNotice';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
 
 const muted = (isUnconfirmed: boolean) => (isUnconfirmed ? 'text-text-muted' : '');
@@ -240,6 +242,8 @@ const FILTER_LABELS: Record<StatusFilter, string> = {
 
 export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
   const { report, isLoading: reportLoading, errorMessage: reportError, isNotFound } = useSsbjReport(reportId);
+  // 承認済みか、SSBJ のロールが入力担当でも管理者でもなければ、編集の操作を出さない（DB も止める）。
+  const myRole = useSsbjMyRole();
   const { judgements, isLoading: judgementsLoading, errorMessage: judgementsError, replace, reload } =
     useSsbjJudgements(report?.id ?? null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -327,6 +331,7 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
         </Link>
         <SsbjTrialNotice />
         {report && <SsbjLockedNotice report={report} />}
+        {report && <SsbjRoleNotice role={myRole.role} isLoading={myRole.isLoading} />}
         {(reportError || judgementsError) && (
           <div role="alert" className="rounded-md bg-danger-light px-4 py-3 text-sm text-danger">
             {reportError || judgementsError}
@@ -396,8 +401,8 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
                   <JudgementTable
                     entries={group.entries}
                     risksByRequirement={risksByRequirement}
-                    onQuickChange={isSsbjReportLocked(report.review) ? undefined : quickChange}
-                    onEdit={isSsbjReportLocked(report.review) ? undefined : openEdit}
+                    onQuickChange={isSsbjReadOnly(report.review, myRole.role) ? undefined : quickChange}
+                    onEdit={isSsbjReadOnly(report.review, myRole.role) ? undefined : openEdit}
                   />
                 ) : (
                   <p className="m-0 text-sm text-text-muted">条件に合う要求はありません。</p>

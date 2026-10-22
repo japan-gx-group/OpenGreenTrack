@@ -73,3 +73,10 @@ export const ssbjStatusActions = (
       return [restricted('reopen')];
   }
 };
+
+/**
+ * 作業中の内容を編集させないか。承認済み（DB が止める）か、SSBJ のロールが入力担当でも管理者でもない（RLS が止める）とき。
+ * ロールが分からないとき（読込中・取得の失敗）も編集させない側に倒す。
+ */
+export const isSsbjReadOnly = (review: Pick<SsbjReportReview, 'status'>, role: SsbjEffectiveRole | null): boolean =>
+  isSsbjReportLocked(review) || !canEditSsbj(role);

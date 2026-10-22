@@ -4,6 +4,7 @@ import type { SsbjEvidence, SsbjItemId } from '../types';
 import { fromFieldValue, toFieldValue } from '../utils/fieldValue';
 import type { SsbjEvidenceInput } from '../utils/evidence';
 import { ssbjWriteErrorMessage } from '../utils/writeError';
+import { throwIfSsbjEditForbidden } from './memberRoleService';
 
 type SsbjEvidenceRow = {
   id: string;
@@ -81,12 +82,20 @@ export const updateSsbjEvidence = async (id: string, input: SsbjEvidenceInput): 
   const { data, error } = await createClient().from('ssbj_evidence')
     .update(toColumns(input)).eq('id', id).select(SELECT_COLUMNS).maybeSingle();
   if (error) throw new Error(ssbjWriteErrorMessage(error, '根拠文書の更新に失敗しました'));
-  if (!data) throw new Error('根拠文書が見つかりません。画面を開き直してください');
+  if (!data) {
+    // 0 件: ロールで止められた（RESTRICTIVE のポリシーは 0 件にする）か、削除済み。
+    await throwIfSsbjEditForbidden();
+    throw new Error('根拠文書が見つかりません。画面を開き直してください');
+  }
   return toEvidence(data as unknown as SsbjEvidenceRow);
 };
 
 export const deleteSsbjEvidence = async (id: string): Promise<void> => {
   const { data, error } = await createClient().from('ssbj_evidence').delete().eq('id', id).select('id');
   if (error) throw new Error(ssbjWriteErrorMessage(error, '根拠文書の削除に失敗しました'));
-  if (!data?.length) throw new Error('根拠文書が見つかりません。画面を開き直してください');
+  if (!data?.length) {
+    // 0 件: ロールで止められた（RESTRICTIVE のポリシーは 0 件にする）か、削除済み。
+    await throwIfSsbjEditForbidden();
+    throw new Error('根拠文書が見つかりません。画面を開き直してください');
+  }
 };

@@ -4,6 +4,8 @@
 // 表示の本体は SsbjPreviewDocument（印刷ビューと共通）。内部メモは既定で隠し、利用者が選んだときだけ出す。
 // 内部メモの表示は画面の中だけの切替で、印刷ビュー（PDF）には渡さない。印刷・PDF は社外に共有されうるため、
 // 「開示しない」内部メモ・内部記録は画面での表示の有無にかかわらず出力しない。
+// 閲覧者には、承認した保存版の開示する内容（内部メモ・内部記録を除いたもの）だけを API から読んで出し、
+// 内部メモの表示の切替も出さない（docs/authorization-matrix.md §2.3）。
 
 import { useState } from 'react';
 import Link from 'next/link';
@@ -16,9 +18,12 @@ import { Label } from '@/components/ui/label';
 import { LoadingIndicator } from '@/components/ui/PageLoading';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatDateTime } from '@/lib/datetime';
+import { useSsbjApprovedVersion } from '../hooks/useSsbjApprovedVersion';
+import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
 import { useSsbjPreviewSource } from '../hooks/useSsbjPreviewSource';
 import { useSsbjReport } from '../hooks/useSsbjReport';
 import { useSsbjVersionSummaries } from '../hooks/useSsbjVersionSummaries';
+import { canViewSsbjWorking } from '../utils/memberRole';
 import { formatPreviewSelection, parsePreviewSelection, type SsbjPreviewSelection } from '../utils/preview';
 import { SsbjPreviewDocument } from './SsbjPreviewDocument';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
@@ -27,13 +32,26 @@ export const SsbjPreview = ({ reportId, initialSource = null }: { reportId: stri
   const { report, isLoading: reportLoading, errorMessage: reportError, isNotFound } = useSsbjReport(reportId);
   const [selection, setSelection] = useState<SsbjPreviewSelection>(() => parsePreviewSelection(initialSource));
   const [showInternalNotes, setShowInternalNotes] = useState(false);
-  const versions = useSsbjVersionSummaries(report?.id ?? null);
-  const preview = useSsbjPreviewSource(report?.id ?? null, selection);
+  // 閲覧者は作業中の内容も保存版の行も見られない（API・RLS が拒否する）。承認した保存版の開示する内容だけを API から読み、
+  // ほかの版・作業中の内容を選ばせない。ロールが分かるまではどちらも読まない。
+  const myRole = useSsbjMyRole();
+  const roleKnown = !myRole.isLoading;
+  const viewerOnly = roleKnown && !canViewSsbjWorking(myRole.role);
+  const workingReportId = roleKnown && !viewerOnly ? report?.id ?? null : null;
+  const versions = useSsbjVersionSummaries(workingReportId);
+  const approved = useSsbjApprovedVersion(viewerOnly ? report?.id ?? null : null);
+  const approvedVersionId = report?.review.approvedVersionId ?? null;
+  const shown: SsbjPreviewSelection = viewerOnly && approvedVersionId
+    ? { kind: 'version', versionId: approvedVersionId }
+    : selection;
+  const working = useSsbjPreviewSource(workingReportId, shown);
+  const preview = viewerOnly ? approved : working;
+  const versionOptions = viewerOnly ? (approved.version ? [approved.version] : []) : versions.versions;
 
   const printHref = `/ssbj/${encodeURIComponent(reportId)}/preview/print?source=${encodeURIComponent(
-    formatPreviewSelection(selection),
+    formatPreviewSelection(shown),
   )}`;
-  const errorMessage = reportError || versions.errorMessage || preview.errorMessage;
+  const errorMessage = reportError || (viewerOnly ? approved.errorMessage : versions.errorMessage || working.errorMessage);
 
   return (
     <div className="page-content gt-scroll relative">
@@ -74,14 +92,14 @@ export const SsbjPreview = ({ reportId, initialSource = null }: { reportId: stri
                 <div className="flex min-w-64 flex-col gap-1">
                   <Label htmlFor="ssbj-preview-source">表示する内容</Label>
                   <Select
-                    value={formatPreviewSelection(selection)}
+                    value={formatPreviewSelection(shown)}
                     onValueChange={value => setSelection(parsePreviewSelection(value))}
-                    disabled={versions.isLoading}
+                    disabled={viewerOnly ? approved.isLoading : versions.isLoading}
                   >
                     <SelectTrigger id="ssbj-preview-source" className="w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="working">作業中の内容（未保存の変更を含む）</SelectItem>
-                      {versions.versions.map(version => (
+                      {!viewerOnly && <SelectItem value="working">作業中の内容（未保存の変更を含む）</SelectItem>}
+                      {versionOptions.map(version => (
                         <SelectItem key={version.id} value={version.id}>
                           保存版 第{version.versionNumber}版（{formatDateTime(version.createdAt)}）
                         </SelectItem>
@@ -89,26 +107,28 @@ export const SsbjPreview = ({ reportId, initialSource = null }: { reportId: stri
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="flex items-center gap-2 pb-2">
-                  <Checkbox
-                    id="ssbj-preview-internal"
-                    checked={showInternalNotes}
-                    onCheckedChange={checked => setShowInternalNotes(checked === true)}
-                  />
-                  <Label htmlFor="ssbj-preview-internal">内部メモも表示する（開示しない内容）</Label>
-                </div>
-                {selection.kind === 'working' && (
-                  <Button type="button" variant="outline" size="sm" disabled={preview.isLoading} onClick={preview.reload}>
+                {roleKnown && !viewerOnly && (
+                  <div className="flex items-center gap-2 pb-2">
+                    <Checkbox
+                      id="ssbj-preview-internal"
+                      checked={showInternalNotes}
+                      onCheckedChange={checked => setShowInternalNotes(checked === true)}
+                    />
+                    <Label htmlFor="ssbj-preview-internal">内部メモも表示する（開示しない内容）</Label>
+                  </div>
+                )}
+                {!viewerOnly && shown.kind === 'working' && (
+                  <Button type="button" variant="outline" size="sm" disabled={working.isLoading} onClick={working.reload}>
                     <RefreshCw size={14} /> 作業中の内容を読み直す
                   </Button>
                 )}
               </div>
             </Card>
-            {preview.isLoading ? (
+            {!roleKnown || preview.isLoading ? (
               <Card><LoadingIndicator label="プレビューを組み立てています..." /></Card>
             ) : preview.source ? (
               <Card>
-                <SsbjPreviewDocument source={preview.source} showInternalNotes={showInternalNotes} />
+                <SsbjPreviewDocument source={preview.source} showInternalNotes={showInternalNotes && !viewerOnly} />
               </Card>
             ) : null}
           </>

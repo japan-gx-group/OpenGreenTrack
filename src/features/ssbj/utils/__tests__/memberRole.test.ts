@@ -83,6 +83,7 @@ describe('操作に要る権限', () => {
     expect(roles.map(role => ssbjRoleAllows(role, 'edit'))).toEqual([true, true, false, false, false]);
     expect(roles.map(role => ssbjRoleAllows(role, 'view_working'))).toEqual([true, true, true, false, false]);
     expect(roles.map(role => ssbjRoleAllows(role, 'approve'))).toEqual([true, false, true, false, false]);
+    expect(roles.map(role => ssbjRoleAllows(role, 'view_approved'))).toEqual([true, true, true, true, false]);
   });
 
   it('拒否のメッセージは、今のロールと誰ならできるかを伝える', () => {

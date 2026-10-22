@@ -5,6 +5,7 @@
 import { createClient } from '@/lib/supabase/client';
 import type { OgtAdoptedValue, OgtSupplierReference, SsbjGhgAdoption } from '../types';
 import { ssbjWriteErrorMessage } from '../utils/writeError';
+import { throwIfSsbjEditForbidden } from './memberRoleService';
 
 type SsbjOgtAdoptionRow = {
   adoptedValues: OgtAdoptedValue[];
@@ -50,6 +51,12 @@ export const adoptOgtCandidates = async (reportId: string, expectedFingerprint: 
 
 /** 採用を取り消す（作業中の採用値を消す。作成済みの保存版は変わらない）。 */
 export const clearOgtAdoption = async (reportId: string): Promise<void> => {
-  const { error } = await createClient().from('ssbj_ogt_adoptions').delete().eq('reportId', reportId);
+  const { data, error } = await createClient()
+    .from('ssbj_ogt_adoptions').delete().eq('reportId', reportId).select('reportId');
   if (error) throw new Error(ssbjWriteErrorMessage(error, '採用の取り消しに失敗しました'));
+  if (!data?.length) {
+    // 0 件: ロールで止められた（RESTRICTIVE のポリシーは 0 件にする）か、ほかの画面で取り消し済み。成功にしない。
+    await throwIfSsbjEditForbidden();
+    throw new Error('採用済みの値が見つかりません。画面を開き直してください');
+  }
 };

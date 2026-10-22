@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FICTIONAL_FISCAL_YEAR, fictionalReportBasicInfo } from '../../__fixtures__/fictionalReport';
 import type { SsbjReportBasicInfoInput } from '../../utils/reportValidation';
-import { SSBJ_EDIT_CONFLICT_MESSAGE, SsbjEditConflictError } from '../../utils/writeError';
+import { SSBJ_EDIT_CONFLICT_MESSAGE, SSBJ_FORBIDDEN_MESSAGE, SsbjEditConflictError } from '../../utils/writeError';
 import {
   getSsbjReport,
   toSsbjReportRecord,
@@ -13,8 +13,9 @@ import {
 // Supabase への問い合わせは「取得結果 → 画面の型」への変換と、ID 不正時の扱い、基本情報の更新の競合検知を検証する。
 // 更新は、eq の条件に合う行だけを書き換える 1 行だけの DB（db.row）で動かし、2 つの画面からの保存を再現する。
 // 基本情報の列が変わったときに版数を進めるのは DB のトリガー（bump_ssbj_reports_own_draft_revision）で、ここではその動きを真似る。
+// db.canEdit が false の間は、RLS の RESTRICTIVE のポリシーと同じく、更新をエラーにせず 0 件にする（読むことはできる）。
 type Query = { update: Record<string, unknown> | null; filters: [string, unknown][] };
-const db = vi.hoisted(() => ({ row: null as Record<string, unknown> | null }));
+const db = vi.hoisted(() => ({ row: null as Record<string, unknown> | null, canEdit: true }));
 const BASIC_INFO_COLUMNS = [
   'title', 'purpose', 'reportingScope', 'standardVersion', 'parentCompanyName', 'parentRelationship',
   'ownershipPercentage', 'measurementApproach', 'industryCode',
@@ -22,7 +23,9 @@ const BASIC_INFO_COLUMNS = [
 type QueryResult = { data: unknown; error: { code: string; message: string } | null };
 const runQuery = async ({ update, filters }: Query): Promise<QueryResult> => {
   const row = db.row;
-  if (!row || !filters.every(([column, value]) => row[column] === value)) return { data: null, error: null };
+  if (!row || !filters.every(([column, value]) => row[column] === value) || (update && !db.canEdit)) {
+    return { data: null, error: null };
+  }
   if (update) {
     const changed = BASIC_INFO_COLUMNS.some(column => column in update && update[column] !== row[column]);
     Object.assign(row, update);
@@ -52,6 +55,9 @@ vi.mock('@/lib/supabase/client', () => ({
       };
       return builder;
     },
+    rpc: async (name: string) => (name === 'ssbj_current_user_can_edit'
+      ? { data: db.canEdit, error: null }
+      : { data: null, error: { message: 'unexpected rpc' } }),
   }),
 }));
 
@@ -91,6 +97,7 @@ const EMBED = {
 beforeEach(() => {
   maybeSingle.mockImplementation((query: Query) => runQuery(query));
   db.row = null;
+  db.canEdit = true;
 });
 
 afterEach(() => {
@@ -225,6 +232,14 @@ describe('updateSsbjReportBasicInfo（2 つの画面からの保存）', () => {
     await expect(
       updateSsbjReportBasicInfo(loaded.id, loaded.basicInfoRevision, formOf({ title: 'A の名称' })),
     ).rejects.toThrow('SSBJレポートが見つかりません');
+  });
+
+  it('画面を開いた後にロールが変わって編集できなくなったら、競合ではなく権限のメッセージにする（基本情報は変えない）', async () => {
+    db.canEdit = false;
+    const stale = updateSsbjReportBasicInfo(loaded.id, loaded.basicInfoRevision, formOf({ title: 'A の名称' }));
+    await expect(stale).rejects.toThrow(SSBJ_FORBIDDEN_MESSAGE);
+    await expect(stale).rejects.not.toBeInstanceOf(SsbjEditConflictError);
+    expect(db.row).toMatchObject({ title: loaded.title, basicInfoRevision: 2 });
   });
 
   it('承認済みで DB が止めた（P2051）ときは承認済みの案内を返す', async () => {

@@ -25,10 +25,12 @@ import {
   type SsbjSectionId,
 } from '../types';
 import { mergeSsbjNarrativeDrafts, ssbjNarrativeEntriesOfSection } from '../utils/narrative';
-import { isSsbjReportLocked } from '../utils/reportStatus';
+import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
+import { isSsbjReadOnly } from '../utils/reportStatus';
 import { SSBJ_REQUIREMENTS } from '../utils/requirementMaster';
 import { SsbjEditorLayout } from './SsbjEditorLayout.client';
 import { SsbjLockedNotice } from './SsbjLockedNotice';
+import { SsbjRoleNotice } from './SsbjRoleNotice';
 import { SsbjNarrativeItemCard } from './SsbjNarrativeItemCard.client';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
 
@@ -72,6 +74,8 @@ const OtherRequirements = ({ reportId, requirements }: { reportId: string; requi
 
 export const SsbjNarratives = ({ reportId }: { reportId: string }) => {
   const { report, isLoading: reportLoading, errorMessage: reportError, isNotFound } = useSsbjReport(reportId);
+  // 承認済みか、SSBJ のロールが入力担当でも管理者でもなければ、編集の操作を出さない（DB も止める）。
+  const myRole = useSsbjMyRole();
   const { narratives, isLoading: narrativesLoading, errorMessage: narrativesError, replace } =
     useSsbjNarratives(report?.id ?? null);
 
@@ -109,6 +113,7 @@ export const SsbjNarratives = ({ reportId }: { reportId: string }) => {
         </Link>
         <SsbjTrialNotice />
         {report && <SsbjLockedNotice report={report} />}
+        {report && <SsbjRoleNotice role={myRole.role} isLoading={myRole.isLoading} />}
         {(reportError || narrativesError) && (
           <div role="alert" className="rounded-md bg-danger-light px-4 py-3 text-sm text-danger">
             {reportError || narrativesError}
@@ -149,7 +154,7 @@ export const SsbjNarratives = ({ reportId }: { reportId: string }) => {
                     key={entry.itemId}
                     entry={entry}
                     onSave={save}
-                    readOnly={isSsbjReportLocked(report.review)}
+                    readOnly={isSsbjReadOnly(report.review, myRole.role)}
                     onDraftChange={handleDraftChange}
                   />
                 ))}
