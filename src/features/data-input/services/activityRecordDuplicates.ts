@@ -92,6 +92,24 @@ export type ActivityEntryDuplicateCandidate =
       ideaFactorId: string;
     };
 
+/** 事前警告用の重複キー同士が同じ条件か（保存直後の同一条件で警告を抑えるときの比較に使う）。 */
+export const isSameDuplicateCandidate = (
+  a: ActivityEntryDuplicateCandidate,
+  b: ActivityEntryDuplicateCandidate,
+): boolean => {
+  if (a.locationId !== b.locationId || a.periodStart !== b.periodStart) {
+    return false;
+  }
+  if (a.kind === 'scope12') {
+    return b.kind === 'scope12' && a.energyType === b.energyType;
+  }
+  return (
+    b.kind === 'scope3' &&
+    a.scope3CategoryId === b.scope3CategoryId &&
+    a.ideaFactorId === b.ideaFactorId
+  );
+};
+
 // 拠点・カテゴリ・対象年月（Scope3積上げはIDEA製品まで）が揃った時点の事前警告用に、
 // 読み込み済みの入力履歴から保存時と同じ重複キーで既存レコードを探す。
 // 画面が全件取得済みの履歴に対する純関数のため、条件が変わるたびの追加クエリは要らず、

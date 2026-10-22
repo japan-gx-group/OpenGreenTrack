@@ -328,7 +328,9 @@ const renderForm = (props: Partial<ActivityEntryFormProps> = {}) => {
     container: result.container,
     onSave: allProps.onSave as ReturnType<typeof vi.fn<ActivityEntryFormProps['onSave']>>,
     props: allProps,
-    rerender: () => result.rerender(<ActivityEntryForm {...allProps} />),
+    /** props の一部を差し替えて再レンダリングする（親が履歴を更新したときなどを再現する）。 */
+    rerender: (overrides: Partial<ActivityEntryFormProps> = {}) =>
+      result.rerender(<ActivityEntryForm {...allProps} {...overrides} />),
   };
 };
 
@@ -1110,5 +1112,39 @@ describe('ActivityEntryForm', () => {
     expect(warning?.textContent).toContain('2024年12月 の活動量は既に登録済みです');
     // 編集モーダルからは onOpenDuplicateRecord を渡さないため、乗り換え導線は出ない。
     expect(warning?.textContent).not.toContain('既存のレコードを開く');
+  });
+
+  it('新規: 保存直後は同じ条件のまま履歴に加わっても警告せず、条件を変えると通常どおり警告する', async () => {
+    const existingDec = existingElectricityNov({
+      id: 'rec-dec',
+      periodStart: '2024-12-01',
+      periodEnd: '2024-12-31',
+    });
+    const { container, onSave, rerender } = renderForm({
+      historyRecords: [existingDec],
+      onOpenDuplicateRecord: vi.fn(),
+    });
+    await flush();
+    setInputValue(monthInput(container), '2024-11');
+    setInputValue(amountInput(container), '10000');
+    expect(duplicateWarning(container)).toBeNull();
+
+    openPreview(container);
+    await saveFromPreview(container);
+    expect(onSave).toHaveBeenCalledTimes(1);
+
+    // 親（DataInput）は保存したレコードを履歴の先頭に加える。拠点・カテゴリ・対象年月は保持されたままだが、
+    // 今保存した分を「既に登録済み」とは知らせない（保存成功の通知と並んで警告が出ないようにする）。
+    rerender({ historyRecords: [existingElectricityNov({ id: 'rec-saved' }), existingDec] });
+    expect(amountInput(container).value).toBe('');
+    expect(duplicateWarning(container)).toBeNull();
+
+    // 条件を変えれば通常どおり警告する。
+    setInputValue(monthInput(container), '2024-12');
+    expect(duplicateWarning(container)?.textContent).toContain('2024年12月 の活動量は既に登録済みです');
+
+    // 一度条件を変えたあとに保存時の条件へ戻した場合も警告する（抑止は保存直後だけ）。
+    setInputValue(monthInput(container), '2024-11');
+    expect(duplicateWarning(container)?.textContent).toContain('2024年11月 の活動量は既に登録済みです');
   });
 });

@@ -28,10 +28,9 @@ import {
 } from '../types';
 import {
   buildDuplicateActivityRecordMessage,
-  findDuplicateActivityRecord,
   formatDuplicatePeriodLabel,
-  type ActivityEntryDuplicateCandidate,
 } from '../services/activityRecordDuplicates';
+import { useDuplicateWarning } from '../hooks/useDuplicateWarning';
 import { useIdeaProductSelection } from '../hooks/useIdeaProductSelection';
 import { useKeyedLoader } from '../hooks/useKeyedLoader';
 import { useScope12FactorSelection } from '../hooks/useScope12FactorSelection';
@@ -253,38 +252,16 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   // 拠点・カテゴリ・対象年月（Scope3積上げはさらにIDEA製品）が揃った時点で、保存時と同じ重複キーを
   // 読み込み済みの入力履歴に照合し、活動量を入れる前に「既に登録済み」を知らせる。
   // 警告はプレビュー・保存を止めない（履歴が古い可能性があるため、確定判定は保存時チェックに委ねる）。
-  const duplicateIdeaFactorId = idea.productDetail?.id ?? null;
-  const duplicateCandidate = useMemo((): ActivityEntryDuplicateCandidate | null => {
-    if (!period || effectiveSelectedLocationId === '') {
-      return null;
-    }
-    if (category.kind === 'energy') {
-      return {
-        kind: 'scope12',
-        locationId: effectiveSelectedLocationId,
-        energyType: category.energyType,
-        periodStart: period.start,
-      };
-    }
-    // Scope3積上げの重複キーはIDEA製品まで含むため、製品が決まるまで判定しない。
-    if (duplicateIdeaFactorId === null) {
-      return null;
-    }
-    return {
-      kind: 'scope3',
-      locationId: effectiveSelectedLocationId,
-      periodStart: period.start,
-      scope3CategoryId: category.categoryId,
-      ideaFactorId: duplicateIdeaFactorId,
-    };
-  }, [period, effectiveSelectedLocationId, category, duplicateIdeaFactorId]);
-  const duplicateRecord = useMemo(
-    () =>
-      duplicateCandidate
-        ? findDuplicateActivityRecord(historyRecords, duplicateCandidate, { excludeRecordId })
-        : null,
-    [historyRecords, duplicateCandidate, excludeRecordId],
-  );
+  // 保存成功直後の同じ条件では警告しない（条件が変わるまでの抑止は useDuplicateWarning が持つ）。
+  const duplicate = useDuplicateWarning({
+    historyRecords,
+    excludeRecordId,
+    locationId: effectiveSelectedLocationId,
+    category,
+    periodStart: period?.start ?? null,
+    ideaFactorId: idea.productDetail?.id ?? null,
+  });
+  const { candidate: duplicateCandidate, record: duplicateRecord } = duplicate;
   const duplicateWarningText =
     duplicateRecord && duplicateCandidate
       ? buildDuplicateActivityRecordMessage({
@@ -433,6 +410,8 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
         onCancel?.();
       } else {
         // 続けて別の月・別製品を入力しやすいよう、拠点・カテゴリ・年月・係数/製品の選択は保持する。
+        // 条件がそのまま残るので、今保存したレコードが履歴に加わっても条件を変えるまで重複警告は出さない。
+        duplicate.markSaved();
         setAmount('');
         setNote('');
       }

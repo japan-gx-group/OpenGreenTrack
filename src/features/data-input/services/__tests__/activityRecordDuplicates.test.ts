@@ -8,6 +8,8 @@ import {
   findDuplicateActivityRecord,
   formatDuplicatePeriodLabel,
   isDuplicateActivityRecordError,
+  isSameDuplicateCandidate,
+  type ActivityEntryDuplicateCandidate,
   type ActivityRecordDuplicateKeyFields,
   type DuplicateWarningRecord,
 } from '../activityRecordDuplicates';
@@ -190,5 +192,35 @@ describe('findDuplicateActivityRecord', () => {
     expect(
       findDuplicateActivityRecord([self, other], candidate, { excludeRecordId: 'rec-self' }),
     ).toBe(other);
+  });
+});
+
+describe('isSameDuplicateCandidate', () => {
+  it('拠点・対象月に加え、Scope1/2 はカテゴリ、Scope3積上げはカテゴリ×IDEA製品まで同じときだけ同一条件とする', () => {
+    const scope12: ActivityEntryDuplicateCandidate = {
+      kind: 'scope12',
+      locationId: 'loc-1',
+      energyType: 'electricity',
+      periodStart: '2026-04-01',
+    };
+    const scope3: ActivityEntryDuplicateCandidate = {
+      kind: 'scope3',
+      locationId: 'loc-1',
+      periodStart: '2026-04-01',
+      scope3CategoryId: 1,
+      ideaFactorId: 'idea-1',
+    };
+
+    expect(isSameDuplicateCandidate(scope12, { ...scope12 })).toBe(true);
+    expect(isSameDuplicateCandidate(scope12, { ...scope12, locationId: 'loc-2' })).toBe(false);
+    expect(isSameDuplicateCandidate(scope12, { ...scope12, periodStart: '2026-05-01' })).toBe(false);
+    expect(isSameDuplicateCandidate(scope12, { ...scope12, energyType: 'city_gas' })).toBe(false);
+
+    expect(isSameDuplicateCandidate(scope3, { ...scope3 })).toBe(true);
+    expect(isSameDuplicateCandidate(scope3, { ...scope3, scope3CategoryId: 2 })).toBe(false);
+    expect(isSameDuplicateCandidate(scope3, { ...scope3, ideaFactorId: 'idea-2' })).toBe(false);
+
+    // 保存経路が違えば拠点・対象月が同じでも別条件。
+    expect(isSameDuplicateCandidate(scope12, scope3)).toBe(false);
   });
 });
