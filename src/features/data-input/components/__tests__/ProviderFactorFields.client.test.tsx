@@ -22,6 +22,15 @@ const providerOptions: ProviderOption[] = [
   },
 ];
 
+// 別カテゴリ（都市ガス）の事業者リスト。カテゴリ変更で親が差し替える選択肢を再現する。
+const gasProviderOptions: ProviderOption[] = [
+  {
+    value: '東京ガス',
+    label: '東京ガス（事業者コード: B00001）',
+    searchText: '東京ガス B00001',
+  },
+];
+
 const unselected: ProviderSelection = { factorType: 'adjusted', providerName: null, menuName: null };
 
 const baseProps: ProviderFactorFieldsProps = {
@@ -100,6 +109,36 @@ describe('ProviderFactorFields', () => {
       optionButton!.click();
     });
     expect(container.textContent).not.toContain(WARNING_FRAGMENT);
+    unmount();
+  });
+
+  it('事業者リストが別カテゴリのものに入れ替わると、前のリストで出した警告は消える', () => {
+    const { container, rerender, unmount } = render(<ProviderFactorFields {...baseProps} />);
+    const input = getProviderInput(container);
+
+    focusElement(input);
+    setInputValue(input, '東京');
+    pointerDownOutside();
+    expect(container.textContent).toContain('「東京」は確定されていません');
+
+    // カテゴリ変更（電気 → 都市ガス）で親はこの部品を再マウントせず、事業者リストと選択だけを差し替える。
+    rerender(<ProviderFactorFields {...baseProps} providerOptions={gasProviderOptions} />);
+    expect(container.textContent).not.toContain(WARNING_FRAGMENT);
+    unmount();
+  });
+
+  it('事業者リストが同じままなら、他の props が変わっても警告は保たれる', () => {
+    const { container, rerender, unmount } = render(<ProviderFactorFields {...baseProps} />);
+    const input = getProviderInput(container);
+
+    focusElement(input);
+    setInputValue(input, '東京');
+    pointerDownOutside();
+    expect(container.textContent).toContain(WARNING_FRAGMENT);
+
+    // 計算方法の切り替えでは事業者リストは変わらず、事業者も未選択のまま（警告の内容は正しいまま）。
+    rerender(<ProviderFactorFields {...baseProps} selection={{ ...unselected, factorType: 'basic' }} />);
+    expect(container.textContent).toContain('「東京」は確定されていません');
     unmount();
   });
 

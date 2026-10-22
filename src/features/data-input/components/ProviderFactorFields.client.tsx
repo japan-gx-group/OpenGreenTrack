@@ -43,7 +43,14 @@ export const ProviderFactorFields = ({
   // 「検索語を入れたのに選択されずに閉じた」ときだけ出す揮発性の警告。
   // 常設の説明文（未選択なら代替値）は見慣れて読まれないため、離脱の瞬間にその場限りで知らせる。
   // 再フォーカス・再入力・候補の選択のいずれでも消える（いずれも onQueryChange を通る）。
-  const [abandonedQuery, setAbandonedQuery] = useState<string | null>(null);
+  // 離脱したときの事業者リストも一緒に覚え、リストが入れ替わったら警告は出さない。親はカテゴリ変更で
+  // 事業者選択を解除するだけでこの部品を再マウントしないため、検索語だけを覚えると
+  // 電気で離脱した「東京」の警告が都市ガスの欄にも残り続ける。
+  const [abandonedSearch, setAbandonedSearch] = useState<{ query: string; options: ProviderOption[] } | null>(
+    null,
+  );
+  const abandonedQuery =
+    abandonedSearch !== null && abandonedSearch.options === providerOptions ? abandonedSearch.query : null;
 
   return (
     <div className="flex flex-col gap-2">
@@ -75,11 +82,11 @@ export const ProviderFactorFields = ({
             onChange={onProviderChange}
             placeholder={isLoadingProviders ? '事業者リストを取得中...' : '事業者名またはコードで検索して選択'}
             disabled={isLoadingProviders}
-            onQueryChange={() => setAbandonedQuery(null)}
+            onQueryChange={() => setAbandonedSearch(null)}
             onSearchAbandoned={(query) => {
               // 選択済みの事業者がいれば枠外クリックでも選択は保たれるため、未選択のときだけ警告する
               if (selection.providerName === null) {
-                setAbandonedQuery(query);
+                setAbandonedSearch({ query, options: providerOptions });
               }
             }}
           />
