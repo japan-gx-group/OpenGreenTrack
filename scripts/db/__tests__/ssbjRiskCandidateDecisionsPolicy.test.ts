@@ -6,7 +6,7 @@
 //   - 候補 ID の形式は utils/industryCandidates.ts と同じ、レポートと候補の組ごとに 1 行、除外は理由が必須
 //   - 組織・レポート・候補は作成後に変えない（update の列 GRANT に含めない）
 //   - 「採用して登録」はリスク・機会の登録と採用の記録を 1 つの RPC で保存し、既に採用済みなら上書きせず競合にする
-//   - 登録したリスク・機会が残っている採用は取り消せない（再採用で重複して登録しない）。関連付けは外部キーにしない（復元で切れない）
+//   - 登録したリスク・機会が残っている採用は取り消せず、上書きもできない（再採用で重複して登録しない）。関連付けは外部キーにしない（復元で切れない）
 //   - 承認済みの間は変えられず、操作履歴に記録する。保存版には含めない（draftRevision を進めない）
 
 import { readdirSync, readFileSync } from 'node:fs';
@@ -78,9 +78,20 @@ describe('ssbj_risk_candidate_decisions の RLS と権限', () => {
     expect(withCheck).toContain('ro."reportId" = ssbj_risk_candidate_decisions."reportId"');
   });
 
+  // 登録したリスク・機会が残っている採用（この条件に当たる行は、delete・update の対象にならない）。
+  const ADOPTED_WITH_RISK =
+    `and not ( decision = 'adopted' and exists ( select 1 from ssbj_risks_opportunities ro where ro.id = "riskOpportunityId" and ro."reportId" = ssbj_risk_candidate_decisions."reportId" ) )`;
+
   it('delete は、登録したリスク・機会が残っている採用を消させない（未検討に戻して再採用すると重複して登録されるため）', () => {
     const using = policyFor('delete').split('using')[1] ?? '';
-    expect(using).toContain(`and not ( decision = 'adopted' and exists ( select 1 from ssbj_risks_opportunities ro where ro.id = "riskOpportunityId"`);
+    expect(using).toContain(ADOPTED_WITH_RISK);
+  });
+
+  it('update は、登録したリスク・機会が残っている採用を上書きさせない（古い画面から除外して関連付けを外し、再採用で重複して登録されるのを防ぐ）', () => {
+    const [using = '', withCheck = ''] = (policyFor('update').split(/\busing\b/)[1] ?? '').split('with check');
+    expect(using).toContain(ADOPTED_WITH_RISK);
+    // with check は書き込んだ後の行を見るので、この条件を置くと adopt_ssbj_risk_candidate の採用し直しが通らなくなる。
+    expect(withCheck).not.toContain(ADOPTED_WITH_RISK);
   });
 
   it('update は判断の列だけ（組織・レポート・候補は作成後に変えられない）', () => {
@@ -124,8 +135,10 @@ describe('採用して登録（adopt_ssbj_risk_candidate）', () => {
   });
 
   it('既に採用済み（登録したリスク・機会が残っている）なら、関連付けを上書きせずに競合にする', () => {
+    // update の RLS で for update が選べない（登録したリスク・機会が残っている採用）ときも、行があれば競合にする。
     const conflict = adopt.indexOf(
-      `if v_has_decision and v_decision.decision = 'adopted' and exists ( select 1 from ssbj_risks_opportunities ro where ro.id = v_decision."riskOpportunityId" and ro."reportId" = p_report_id ) then raise exception`,
+      `if (v_has_decision and v_decision.decision = 'adopted' and exists ( select 1 from ssbj_risks_opportunities ro where ro.id = v_decision."riskOpportunityId" and ro."reportId" = p_report_id ))`
+      + ` or (not v_has_decision and exists ( select 1 from ssbj_risk_candidate_decisions d where d."reportId" = p_report_id and d."candidateId" = p_candidate_id )) then raise exception`,
     );
     expect(conflict).toBeGreaterThan(0);
     expect(conflict).toBeLessThan(adopt.indexOf('insert into ssbj_risks_opportunities'));

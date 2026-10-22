@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-// 保存（更新して、無ければ作る）・採用して登録（RPC）・取り消しと、DB 行 ⇔ 画面の型の変換を検証する（RLS・制約はマイグレーション側で確認する）。
+// 除外の記録（作るだけ）・採用して登録（RPC）・取り消しと、DB 行 ⇔ 画面の型の変換を検証する（RLS・制約はマイグレーション側で確認する）。
 const mocks = vi.hoisted(() => ({
-  updateSelect: vi.fn(),
   insertSingle: vi.fn(),
   update: vi.fn(),
   insert: vi.fn(),
+  deleteEq: vi.fn(),
   deleteSelect: vi.fn(),
   rpc: vi.fn(),
 }));
@@ -13,15 +13,21 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
     from: () => ({
-      update: (columns: unknown) => {
-        mocks.update(columns);
-        return { eq: () => ({ eq: () => ({ select: mocks.updateSelect }) }) };
-      },
+      update: mocks.update,
       insert: (row: unknown) => {
         mocks.insert(row);
         return { select: () => ({ single: mocks.insertSingle }) };
       },
-      delete: () => ({ eq: () => ({ eq: () => ({ select: mocks.deleteSelect }) }) }),
+      delete: () => {
+        const filter = {
+          eq: (column: string, value: unknown) => {
+            mocks.deleteEq(column, value);
+            return filter;
+          },
+          select: mocks.deleteSelect,
+        };
+        return filter;
+      },
     }),
     rpc: mocks.rpc,
   }),
@@ -29,8 +35,8 @@ vi.mock('@/lib/supabase/client', () => ({
 
 import {
   adoptSsbjRiskCandidate,
+  createSsbjRiskCandidateDecision,
   deleteSsbjRiskCandidateDecision,
-  saveSsbjRiskCandidateDecision,
   toSsbjRiskCandidateDecision,
 } from '../riskCandidateService';
 
@@ -40,6 +46,11 @@ const input = {
   decision: 'adopted' as const, reason: null, riskOpportunityId: 'risk-1',
 };
 const row = { ...input, updatedAt: '2025-06-01T00:00:00.000Z' };
+const excludedInput = {
+  candidateId: 'common.carbon_pricing', candidateVersion: 'r2-trial-1', industryCode: 'RT-IG',
+  decision: 'excluded' as const, reason: '炭素価格の対象となる排出が無いため', riskOpportunityId: null,
+};
+const excludedRow = { ...excludedInput, updatedAt: '2025-06-01T00:00:00.123456+00:00' };
 
 afterEach(() => vi.clearAllMocks());
 
@@ -50,28 +61,24 @@ describe('toSsbjRiskCandidateDecision', () => {
   });
 });
 
-describe('saveSsbjRiskCandidateDecision', () => {
-  it('行があれば更新だけで済ませる（候補 ID・組織・レポートは送らない）', async () => {
-    mocks.updateSelect.mockResolvedValue({ data: [row], error: null });
-    await expect(saveSsbjRiskCandidateDecision(report, input)).resolves.toEqual(row);
-    expect(mocks.update).toHaveBeenCalledWith({
-      candidateVersion: 'r2-trial-1', industryCode: 'RT-IG', decision: 'adopted', reason: null, riskOpportunityId: 'risk-1',
-    });
-    expect(mocks.insert).not.toHaveBeenCalled();
+describe('createSsbjRiskCandidateDecision', () => {
+  it('組織・レポート・候補を付けて判断の行を作り、既にある判断は更新しない', async () => {
+    mocks.insertSingle.mockResolvedValue({ data: excludedRow, error: null });
+    await expect(createSsbjRiskCandidateDecision(report, excludedInput)).resolves.toEqual(excludedRow);
+    expect(mocks.insert).toHaveBeenCalledWith({ ...excludedInput, reportId: 'report-1', organizationId: 'org-1' });
+    expect(mocks.update).not.toHaveBeenCalled();
   });
 
-  it('行が無ければ組織・レポート・候補を付けて作る', async () => {
-    mocks.updateSelect.mockResolvedValue({ data: [], error: null });
-    mocks.insertSingle.mockResolvedValue({ data: row, error: null });
-    await saveSsbjRiskCandidateDecision(report, input);
-    expect(mocks.insert).toHaveBeenCalledWith(expect.objectContaining({
-      reportId: 'report-1', organizationId: 'org-1', candidateId: 'common.carbon_pricing',
-    }));
+  it('他の画面で先に判断されていたら（一意制約）、上書きせずに開き直しを促す', async () => {
+    // 古い画面からの除外で、他の画面の採用の関連付けを外さない（外すと再採用で同じリスク・機会が重複して登録される）。
+    mocks.insertSingle.mockResolvedValue({ data: null, error: { code: '23505', message: 'duplicate key' } });
+    await expect(createSsbjRiskCandidateDecision(report, excludedInput)).rejects.toThrow('この候補は他の画面で先に判断されました');
+    expect(mocks.update).not.toHaveBeenCalled();
   });
 
   it('承認済みで止められたら、理由と次の手順を伝える', async () => {
-    mocks.updateSelect.mockResolvedValue({ data: null, error: { code: 'P2051', message: 'locked' } });
-    await expect(saveSsbjRiskCandidateDecision(report, input)).rejects.toThrow('承認済みのレポートは変更できません');
+    mocks.insertSingle.mockResolvedValue({ data: null, error: { code: 'P2051', message: 'locked' } });
+    await expect(createSsbjRiskCandidateDecision(report, excludedInput)).rejects.toThrow('承認済みのレポートは変更できません');
   });
 });
 
@@ -121,15 +128,21 @@ describe('adoptSsbjRiskCandidate', () => {
 });
 
 describe('deleteSsbjRiskCandidateDecision', () => {
-  it('失敗したら例外にする', async () => {
+  it('読み込んだ時点の判断の更新日時を条件にして削除し、失敗したら例外にする', async () => {
     mocks.deleteSelect.mockResolvedValue({ data: [{ candidateId: 'common.carbon_pricing' }], error: null });
-    await expect(deleteSsbjRiskCandidateDecision('report-1', 'common.carbon_pricing')).resolves.toBeUndefined();
+    await expect(deleteSsbjRiskCandidateDecision('report-1', excludedRow)).resolves.toBeUndefined();
+    expect(mocks.deleteEq.mock.calls).toEqual([
+      ['reportId', 'report-1'],
+      ['candidateId', 'common.carbon_pricing'],
+      // 文字列のまま渡す（Date に変換するとマイクロ秒が落ちて一致しなくなる）。
+      ['updatedAt', '2025-06-01T00:00:00.123456+00:00'],
+    ]);
     mocks.deleteSelect.mockResolvedValue({ data: null, error: { code: '42501' } });
-    await expect(deleteSsbjRiskCandidateDecision('report-1', 'common.carbon_pricing')).rejects.toThrow('取り消しに失敗しました');
+    await expect(deleteSsbjRiskCandidateDecision('report-1', excludedRow)).rejects.toThrow('取り消しに失敗しました');
   });
 
-  it('登録したリスク・機会が残っていて RLS が削除させなかった（0 行）ら、先にリスク・機会を削除するよう伝える', async () => {
+  it('他の画面で変わっていたか、登録したリスク・機会が残っていて RLS が削除させなかった（0 行）ら、開き直しを促す', async () => {
     mocks.deleteSelect.mockResolvedValue({ data: [], error: null });
-    await expect(deleteSsbjRiskCandidateDecision('report-1', 'common.carbon_pricing')).rejects.toThrow('先にそのリスク・機会を削除してください');
+    await expect(deleteSsbjRiskCandidateDecision('report-1', excludedRow)).rejects.toThrow('他の画面で変更されたため、未検討に戻していません');
   });
 });

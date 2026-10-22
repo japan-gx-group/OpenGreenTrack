@@ -29,7 +29,7 @@ vi.mock('../../services/riskOpportunityService', async importOriginal => ({
 vi.mock('../../services/riskCandidateService', () => ({
   adoptSsbjRiskCandidate: vi.fn(),
   listSsbjRiskCandidateDecisions: vi.fn(),
-  saveSsbjRiskCandidateDecision: vi.fn(),
+  createSsbjRiskCandidateDecision: vi.fn(),
   deleteSsbjRiskCandidateDecision: vi.fn(),
 }));
 vi.mock('../../services/timeHorizonService', async importOriginal => ({
@@ -41,9 +41,9 @@ vi.mock('../../services/timeHorizonService', async importOriginal => ({
 import { getSsbjReport } from '../../services/reportService';
 import {
   adoptSsbjRiskCandidate,
+  createSsbjRiskCandidateDecision,
   deleteSsbjRiskCandidateDecision,
   listSsbjRiskCandidateDecisions,
-  saveSsbjRiskCandidateDecision,
 } from '../../services/riskCandidateService';
 import {
   createSsbjRiskOpportunity,
@@ -126,7 +126,7 @@ beforeEach(() => {
   vi.mocked(listSsbjRisksOpportunities).mockResolvedValue(ITEMS);
   vi.mocked(getSsbjTimeHorizons).mockResolvedValue(fictionalTimeHorizonDefinitions);
   vi.mocked(listSsbjRiskCandidateDecisions).mockResolvedValue([]);
-  vi.mocked(saveSsbjRiskCandidateDecision).mockImplementation(async (_report, input) => ({
+  vi.mocked(createSsbjRiskCandidateDecision).mockImplementation(async (_report, input) => ({
     ...input, updatedAt: '2025-06-01T00:00:00.000Z',
   }));
   vi.mocked(deleteSsbjRiskCandidateDecision).mockResolvedValue();
@@ -433,7 +433,7 @@ describe('SsbjRisksOpportunities（業種から出した候補）', () => {
     );
     // 登録と採用の記録を別々に書かない（片方だけ残る経路を作らない）。
     expect(createSsbjRiskOpportunity).not.toHaveBeenCalled();
-    expect(saveSsbjRiskCandidateDecision).not.toHaveBeenCalled();
+    expect(createSsbjRiskCandidateDecision).not.toHaveBeenCalled();
     const row = candidateRow('rt.energy_intensive_process');
     expect(row.textContent).toContain('採用済み');
     expect(row.textContent).toContain('登録したリスク・機会: 第一工場の電力費用の上昇');
@@ -460,7 +460,7 @@ describe('SsbjRisksOpportunities（業種から出した候補）', () => {
     click(findButton('キャンセル', dialog()));
     expect(adoptSsbjRiskCandidate).not.toHaveBeenCalled();
     expect(createSsbjRiskOpportunity).not.toHaveBeenCalled();
-    expect(saveSsbjRiskCandidateDecision).not.toHaveBeenCalled();
+    expect(createSsbjRiskCandidateDecision).not.toHaveBeenCalled();
     expect(candidateRow('common.energy_price').textContent).not.toContain('採用済み');
   });
 
@@ -472,28 +472,68 @@ describe('SsbjRisksOpportunities（業種から出した候補）', () => {
     await act(async () => { click(findButton('除外を保存', row())); });
     await flushPromises();
     expect(row().querySelector('[role="alert"]')?.textContent).toContain('除外する理由を入力してください');
-    expect(saveSsbjRiskCandidateDecision).not.toHaveBeenCalled();
+    expect(createSsbjRiskCandidateDecision).not.toHaveBeenCalled();
 
     // 改行・タブ・全角スペースだけの理由は、理由が無いものとして保存しない。
     setInputValue(row().querySelector<HTMLInputElement>('input')!, '\t\u3000\n');
     await act(async () => { click(findButton('除外を保存', row())); });
     await flushPromises();
     expect(row().querySelector('[role="alert"]')?.textContent).toContain('除外する理由を入力してください');
-    expect(saveSsbjRiskCandidateDecision).not.toHaveBeenCalled();
+    expect(createSsbjRiskCandidateDecision).not.toHaveBeenCalled();
 
     setInputValue(row().querySelector<HTMLInputElement>('input')!, ' 当社は完成品を作らないため ');
     await act(async () => { click(findButton('除外を保存', row())); });
     await flushPromises();
-    expect(saveSsbjRiskCandidateDecision).toHaveBeenCalledWith(REPORT, expect.objectContaining({
+    expect(createSsbjRiskCandidateDecision).toHaveBeenCalledWith(REPORT, expect.objectContaining({
       candidateId: 'rt.efficient_products', decision: 'excluded', reason: '当社は完成品を作らないため', riskOpportunityId: null,
     }));
     expect(row().textContent).toContain('除外した理由（開示しない）: 当社は完成品を作らないため');
 
     await act(async () => { click(findButton('未検討に戻す', row())); });
     await flushPromises();
-    expect(deleteSsbjRiskCandidateDecision).toHaveBeenCalledWith(REPORT.id, 'rt.efficient_products');
+    // 読み込んだ（保存した）時点の判断の更新日時を条件にする（他の画面で先に変えた判断を消さない）。
+    expect(deleteSsbjRiskCandidateDecision).toHaveBeenCalledWith(REPORT.id, expect.objectContaining({
+      candidateId: 'rt.efficient_products', updatedAt: '2025-06-01T00:00:00.000Z',
+    }));
     expect(row().textContent).not.toContain('除外した理由');
     expect(findButton('除外', row())).toBeDefined();
+  });
+
+  it('他の画面で先に判断されていたら、除外を保存せずに理由を出し、未検討のままにする', async () => {
+    vi.mocked(createSsbjRiskCandidateDecision).mockRejectedValue(
+      new Error('この候補は他の画面で先に判断されました。画面を開き直してください'),
+    );
+    await renderScreen();
+    const row = () => candidateRow('rt.efficient_products');
+
+    click(findButton('除外', row()));
+    setInputValue(row().querySelector<HTMLInputElement>('input')!, '当社は完成品を作らないため');
+    await act(async () => { click(findButton('除外を保存', row())); });
+    await flushPromises();
+
+    expect(row().querySelector('[role="alert"]')?.textContent).toContain('この候補は他の画面で先に判断されました');
+    expect(row().textContent).not.toContain('除外した理由');
+  });
+
+  it('未検討に戻すのが他の画面の変更で止められたら、理由を出して判断を残す', async () => {
+    vi.mocked(listSsbjRiskCandidateDecisions).mockResolvedValue([
+      { candidateId: 'common.energy_price', candidateVersion: 'r2-trial-1', industryCode: 'RT-IG', decision: 'excluded',
+        reason: '電力は固定価格で購入しているため', riskOpportunityId: null, updatedAt: '2025-06-01T00:00:00.123456+00:00' },
+    ]);
+    vi.mocked(deleteSsbjRiskCandidateDecision).mockRejectedValue(
+      new Error('他の画面で変更されたため、未検討に戻していません。画面を開き直してください'),
+    );
+    await renderScreen();
+    const row = () => candidateRow('common.energy_price');
+
+    await act(async () => { click(findButton('未検討に戻す', row())); });
+    await flushPromises();
+
+    expect(deleteSsbjRiskCandidateDecision).toHaveBeenCalledWith(REPORT.id, expect.objectContaining({
+      candidateId: 'common.energy_price', updatedAt: '2025-06-01T00:00:00.123456+00:00',
+    }));
+    expect(row().querySelector('[role="alert"]')?.textContent).toContain('他の画面で変更されたため');
+    expect(row().textContent).toContain('除外した理由（開示しない）: 電力は固定価格で購入しているため');
   });
 
   it('保存済みの判断を再表示し、採用したリスク・機会が削除されていればそうと出す', async () => {

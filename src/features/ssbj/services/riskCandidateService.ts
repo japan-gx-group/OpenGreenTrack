@@ -51,38 +51,26 @@ export const listSsbjRiskCandidateDecisions = async (reportId: string): Promise<
 };
 
 /**
- * 候補 1 件への判断を保存する。行があれば更新し、無ければ作る
- * （upsert にしないのは、作成後に変えない列を update の列 GRANT に入れていないため。narrativeService.ts と同じ）。
+ * 画面で未検討の候補への判断（除外）を記録する。作るだけで、既にある判断は更新しない。
+ * 古い画面から既にある判断を上書きすると、採用の関連付けが外れて、再採用で同じリスク・機会が重複して登録されるため。
+ * 他の画面で先に判断されていれば（レポートと候補の組の一意制約）、開き直しを促す。
  */
-export const saveSsbjRiskCandidateDecision = async (
+export const createSsbjRiskCandidateDecision = async (
   report: { id: string; organizationId: string },
   input: SsbjRiskCandidateDecisionInput,
 ): Promise<SsbjRiskCandidateDecision> => {
-  const supabase = createClient();
-  const { candidateId, ...columns } = input;
-
-  const updated = await supabase
+  const { data, error } = await createClient()
     .from('ssbj_risk_candidate_decisions')
-    .update(columns)
-    .eq('reportId', report.id)
-    .eq('candidateId', candidateId)
-    .select(SELECT_COLUMNS);
-  if (updated.error) throw new Error(ssbjWriteErrorMessage(updated.error, '候補への判断の保存に失敗しました'));
-  const updatedRows = (updated.data ?? []) as SsbjRiskCandidateDecisionRow[];
-  if (updatedRows.length > 0) return toSsbjRiskCandidateDecision(updatedRows[0]);
-
-  const inserted = await supabase
-    .from('ssbj_risk_candidate_decisions')
-    .insert({ ...columns, candidateId, reportId: report.id, organizationId: report.organizationId })
+    .insert({ ...input, reportId: report.id, organizationId: report.organizationId })
     .select(SELECT_COLUMNS)
     .single();
-  if (inserted.error || !inserted.data) {
-    if (inserted.error?.code === '23505') {
-      throw new Error('他の画面で先に保存されました。画面を開き直してから保存し直してください');
+  if (error || !data) {
+    if (error?.code === '23505') {
+      throw new Error('この候補は他の画面で先に判断されました。画面を開き直してください');
     }
-    throw new Error(ssbjWriteErrorMessage(inserted.error, '候補への判断の保存に失敗しました'));
+    throw new Error(ssbjWriteErrorMessage(error, '候補への判断の保存に失敗しました'));
   }
-  return toSsbjRiskCandidateDecision(inserted.data as SsbjRiskCandidateDecisionRow);
+  return toSsbjRiskCandidateDecision(data as SsbjRiskCandidateDecisionRow);
 };
 
 /** 同じ候補が既に採用されているときに、adopt_ssbj_risk_candidate が返す SQLSTATE。 */
@@ -120,18 +108,26 @@ export const adoptSsbjRiskCandidate = async (
 
 /**
  * 候補への判断を取り消す（未検討に戻す）。登録したリスク・機会は消さない。
- * 登録したリスク・機会が残っている採用は、RLS が削除させない（0 行になる。再採用で重複して登録されるのを防ぐ）ので、
- * 削除した行数で確かめて、先にリスク・機会を削除するよう伝える。
+ * target.updatedAt は画面が読み込んだ時点の判断の更新日時。削除の条件に含め、他の画面で先に変えた判断を消さない
+ * （riskOpportunityService.ts の updateSsbjRiskOpportunity と同じ）。
+ * 登録したリスク・機会が残っている採用は、RLS が削除させない（0 行になる。再採用で重複して登録されるのを防ぐ）。
+ * どちらの場合も削除した行数で確かめて、開き直しを促す。
  */
-export const deleteSsbjRiskCandidateDecision = async (reportId: string, candidateId: string): Promise<void> => {
+export const deleteSsbjRiskCandidateDecision = async (
+  reportId: string,
+  target: Pick<SsbjRiskCandidateDecision, 'candidateId' | 'updatedAt'>,
+): Promise<void> => {
   const { data, error } = await createClient()
     .from('ssbj_risk_candidate_decisions')
     .delete()
     .eq('reportId', reportId)
-    .eq('candidateId', candidateId)
+    .eq('candidateId', target.candidateId)
+    .eq('updatedAt', target.updatedAt)
     .select('candidateId');
   if (error) throw new Error(ssbjWriteErrorMessage(error, '候補への判断の取り消しに失敗しました'));
   if ((data ?? []).length === 0) {
-    throw new Error('登録したリスク・機会が残っているため、未検討に戻せません。先にそのリスク・機会を削除してください（または画面を開き直してください）');
+    throw new Error(
+      '他の画面で変更されたため、未検討に戻していません。画面を開き直してください（登録したリスク・機会が残っている採用は、先にそれを削除すると戻せます）',
+    );
   }
 };

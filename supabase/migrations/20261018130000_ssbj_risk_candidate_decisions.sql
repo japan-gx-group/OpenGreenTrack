@@ -3,7 +3,7 @@
 -- 候補は src/features/ssbj/utils/industryCandidates.ts の定数（DB からは見えない）。候補 ID がそこにあるかはアプリが検証し、
 -- DB は形式だけを検証する。候補への判断は、候補を検討の出発点にしたかどうかの記録で、該当性・重要性の判断（ssbj_judgements）ではない。
 -- 採用した候補は、登録したリスク・機会（ssbj_risks_opportunities）につなぐ。除外は理由を必須にする（後から根拠を確かめるため）。
--- 登録したリスク・機会が残っている間は、採用を取り消せない（取り消して再採用すると、同じリスク・機会が重複して登録されるため）。
+-- 登録したリスク・機会が残っている間は、採用を取り消せず、除外などで上書きもできない（関連付けを外して再採用すると、同じリスク・機会が重複して登録されるため）。
 -- 作業用の記録で保存版には含めない（保存版セクション・draftRevision の繰り上げは付けない）。
 -- 承認済みの間は変更させず（reject_ssbj_change_when_approved）、操作履歴に記録する（ssbj_audit_row_change）。
 -- 「採用して登録」は adopt_ssbj_risk_candidate（§5）で、リスク・機会の登録と採用の記録を 1 つのトランザクションで保存する。
@@ -98,11 +98,24 @@ with check (
   )
 );
 
+-- 登録したリスク・機会が残っている採用は、更新させない（delete と同じ条件）。古い画面から除外などで上書きして関連付けを外すと、
+-- 再採用で同じリスク・機会が重複して登録されるため。条件に合わない行は更新されない（0 行）。
+-- adopt_ssbj_risk_candidate（§5）が更新するのは、除外していた候補か、登録したリスク・機会が削除済みの採用だけなので、この条件で止まらない。
 create policy "ssbj_risk_candidate_decisions_update_own_organization"
 on ssbj_risk_candidate_decisions
 for update
 to authenticated
-using ("organizationId" = (select current_user_organization_id()))
+using (
+  "organizationId" = (select current_user_organization_id())
+  and not (
+    decision = 'adopted'
+    and exists (
+      select 1 from ssbj_risks_opportunities ro
+      where ro.id = "riskOpportunityId"
+        and ro."reportId" = ssbj_risk_candidate_decisions."reportId"
+    )
+  )
+)
 with check (
   "organizationId" = (select current_user_organization_id())
   and exists (
@@ -141,6 +154,7 @@ using (
 
 -- §4 GRANT
 -- insert / update は列指定にする: 組織・レポート・候補は作成時にだけ指定できる。
+-- 画面は判断を insert（未検討の候補の除外）と delete（未検討に戻す）だけで書き、update は adopt_ssbj_risk_candidate（§5）が使う。
 
 grant select, delete on ssbj_risk_candidate_decisions to authenticated;
 grant insert (
@@ -195,15 +209,20 @@ begin
   end if;
 
   -- 同じ候補を同時に採用したときに、後の方を待たせて競合にする。
+  -- for update には update の RLS（§3）もかかり、登録したリスク・機会が残っている採用は選ばれない（0 行）。
+  -- そのため、選べなかったときは行があるかを select の RLS だけで確かめ、あれば採用済みとして競合にする。
   select * into v_decision
   from ssbj_risk_candidate_decisions
   where "reportId" = p_report_id and "candidateId" = p_candidate_id
   for update;
   v_has_decision := found;
-  if v_has_decision and v_decision.decision = 'adopted' and exists (
+  if (v_has_decision and v_decision.decision = 'adopted' and exists (
     select 1 from ssbj_risks_opportunities ro
     where ro.id = v_decision."riskOpportunityId" and ro."reportId" = p_report_id
-  ) then
+  )) or (not v_has_decision and exists (
+    select 1 from ssbj_risk_candidate_decisions d
+    where d."reportId" = p_report_id and d."candidateId" = p_candidate_id
+  )) then
     raise exception 'この候補は既に採用されています: %', p_candidate_id using errcode = 'P2062';
   end if;
 
