@@ -120,7 +120,10 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   // composition が壊れて「何も入力できない」状態になるため、変換中は見たまま表示し、
   // 確定（compositionend）のタイミングでまとめて正規化・判定する。
   const isComposingAmountRef = useRef(false);
-  // 確定入力が数字にならなかったときに戻す先（直前にパターンを通過した値）。
+  // 確定入力が数字にならなかったときに戻す先（変換開始時点の表示値。パターンを通過済み）。
+  // 変換開始のたびに取り直し、保存で欄を空にしたときも空に戻す。
+  // 保存前の値を持ったままにすると、空欄に数字以外を入れた瞬間に古い活動量が復活し、
+  // 翌月分として再保存できてしまう。
   const lastValidAmountRef = useRef(initialValues?.amount ?? '');
   const [note, setNote] = useState(initialValues?.note ?? '');
   const [showPreview, setShowPreview] = useState(false);
@@ -289,14 +292,14 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     locations.length === 0 || initialLocationMissing || isSaving || isDeleting || isFactorLoading;
 
   // 全角数字・カンマ付きは正規化して受け付け、それでも数字にならない入力は直前の値に戻して理由を出す。
-  const commitAmount = (raw: string) => {
+  // 戻す先は経路ごとに呼び出し側が決める（通常入力は表示中の値、IME 確定は変換開始時点の値）。
+  const commitAmount = (raw: string, fallback: React.SetStateAction<string>) => {
     const normalized = normalizeAmountInput(raw);
     if (DECIMAL_PATTERN.test(normalized)) {
-      lastValidAmountRef.current = normalized;
       setAmount(normalized);
       setAmountRejected(false);
     } else {
-      setAmount(lastValidAmountRef.current);
+      setAmount(fallback);
       setAmountRejected(true);
     }
   };
@@ -307,12 +310,20 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
       setAmount(event.target.value);
       return;
     }
-    commitAmount(event.target.value);
+    // 変換を介さない入力では表示中の値がそのまま戻す先になる。ref を介さないので、
+    // 保存で欄を空にした後に古い値が復活することはない。
+    commitAmount(event.target.value, (prev) => (DECIMAL_PATTERN.test(prev) ? prev : ''));
+  };
+
+  const handleAmountCompositionStart = () => {
+    isComposingAmountRef.current = true;
+    // 変換開始時点の表示値は必ずパターンを通過しているので、確定が数字にならなかったときはここへ戻す。
+    lastValidAmountRef.current = amount;
   };
 
   const handleAmountCompositionEnd = (event: React.CompositionEvent<HTMLInputElement>) => {
     isComposingAmountRef.current = false;
-    commitAmount(event.currentTarget.value);
+    commitAmount(event.currentTarget.value, lastValidAmountRef.current);
   };
 
   const handleCategoryChange = (value: string) => {
@@ -400,6 +411,8 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
       } else {
         // 続けて別の月・別製品を入力しやすいよう、拠点・カテゴリ・年月・係数/製品の選択は保持する。
         setAmount('');
+        // 戻す先も空にする（保存前の活動量が次の入力で復活しないように）。
+        lastValidAmountRef.current = '';
         setNote('');
       }
     } catch (error) {
@@ -606,9 +619,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
                     placeholder="0.000"
                     value={amount}
                     onChange={handleAmountChange}
-                    onCompositionStart={() => {
-                      isComposingAmountRef.current = true;
-                    }}
+                    onCompositionStart={handleAmountCompositionStart}
                     onCompositionEnd={handleAmountCompositionEnd}
                     aria-describedby="manual-unit-display"
                     className="gt-field"

@@ -64,6 +64,15 @@ describe('parseValidAmount / DECIMAL_PATTERN', () => {
     expect(DECIMAL_PATTERN.test(normalizeAmountInput('１２３'))).toBe(true);
   });
 
+  // NFKC 正規化だと上付き数字や丸数字まで半角数字に化けて、数字ではない入力が通ってしまう。
+  // 変換するのは全角数字・全角小数点・桁区切りカンマだけに限定していることを固定する。
+  it('normalizeAmountInput: 上付き数字・丸数字は数字に変換せず、そのまま弾かれる', () => {
+    expect(normalizeAmountInput('10²')).toBe('10²');
+    expect(normalizeAmountInput('①')).toBe('①');
+    expect(DECIMAL_PATTERN.test(normalizeAmountInput('10²'))).toBe(false);
+    expect(DECIMAL_PATTERN.test(normalizeAmountInput('①'))).toBe(false);
+  });
+
   it('検証結果ごとの文言を返す', () => {
     expect(amountValidationMessage({ kind: 'valid', value: 1 })).toBeNull();
     expect(amountValidationMessage({ kind: 'invalid' })).toBe('活動量は0より大きい半角数字で入力してください。');

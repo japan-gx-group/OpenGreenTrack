@@ -887,6 +887,33 @@ describe('ActivityEntryForm', () => {
       expect(input.value).toBe('1234');
       expect(container.querySelector('[data-testid="manual-amount-rejected"]')).toBeNull();
     });
+
+    // 保存成功で活動量を空にした直後に数字以外を入れると、戻す先が保存前の値のままだったため
+    // 古い活動量が復活し、翌月分として再保存できてしまっていた。空欄のまま理由だけ出すことを固定する。
+    it('保存成功で空になった欄に数字以外を入れても、保存前の活動量は復活しない', async () => {
+      const { container, onSave } = renderForm();
+      await flush();
+      setInputValue(amountInput(container), '100');
+      openPreview(container);
+      await saveFromPreview(container);
+      expect(onSave).toHaveBeenCalledTimes(1);
+      expect(amountInput(container).value).toBe('');
+
+      // 通常入力（IME を使わない経路）。
+      setInputValue(amountInput(container), 'a');
+      expect(amountInput(container).value).toBe('');
+      expect(q(container, '[data-testid="manual-amount-rejected"]').textContent).toBe(
+        '活動量は数字と小数点のみ入力できます。',
+      );
+
+      // IME 変換を確定する経路でも、変換開始時点の空欄に戻す。
+      const input = amountInput(container);
+      fireComposition(input, 'compositionstart');
+      setInputValue(input, 'あ');
+      fireComposition(input, 'compositionend');
+      expect(input.value).toBe('');
+      expect(q(container, '[data-testid="manual-amount-rejected"]')).not.toBeNull();
+    });
   });
 
   it('保存失敗（Error）: message をフォーム内の alert に表示し、入力は消さない', async () => {
