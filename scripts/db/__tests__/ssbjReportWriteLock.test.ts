@@ -8,6 +8,8 @@
 //   - 承認ロックのトリガーは、レポートの行をロックしてから状態を読む（ロックせずに読むと、承認の処理中に始まった保存が通る）
 //   - 作業中データの行を書き換える RPC は、最初に lock_ssbj_report_working_rows を呼ぶ
 //     （利用者の保存と同じ「作業中データの行 → レポートの行」の順にそろえ、デッドロックを避ける）
+//   - 利用者の権限で動く RPC（security invoker。lock_ssbj_report_working_rows は呼べない）は、書き換える行だけを先にロックし、
+//     レポートの行は承認ロックのトリガーに取らせる（利用者が画面から直接保存するときと同じ順）
 
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -37,6 +39,12 @@ const workingTables = [...all.matchAll(
 )].map(match => match[1]);
 
 const LOCK_CALL = 'perform lock_ssbj_report_working_rows(p_report_id);';
+
+/**
+ * 利用者の権限で動く（security invoker で authenticated に実行させる）RPC。lock_ssbj_report_working_rows は service_role 限定で呼べないため、
+ * 書き換える行を先に for update でロックし、レポートの行は承認ロックのトリガーに取らせる。
+ */
+const USER_WRITERS = ['adopt_ssbj_risk_candidate'];
 
 describe('承認と保存の排他', () => {
   it('承認ロックのトリガーは、レポートの行をロックしてから状態を読む', () => {
@@ -88,6 +96,7 @@ describe('ロックを取る順番（作業中データの行 → レポート�
     // 復元のセクションごとの関数（ssbj_restore_section__*）は restore_ssbj_report_version の中からだけ呼ばれる（service_role 限定）。
     const writers = [...latestFunctions.entries()].filter(([name, body]) =>
       !name.startsWith('ssbj_restore_section__')
+      && !USER_WRITERS.includes(name)
       && workingTables.some(table => new RegExp(`(insert into|delete from|update) ${table}\\b`).test(body)));
     expect(writers.map(([name]) => name)).toContain('adopt_ssbj_ogt_values');
     for (const [name, body] of writers) {
@@ -95,5 +104,13 @@ describe('ロックを取る順番（作業中データの行 → レポート�
       expect(body.indexOf(LOCK_CALL), name).toBeGreaterThan(0);
       expect(body.indexOf(LOCK_CALL), name).toBeLessThan(write);
     }
+  });
+
+  it('利用者の権限で動く RPC は security invoker で、書き込む前に書き換える行をロックする', () => {
+    const adopt = latest('adopt_ssbj_risk_candidate');
+    expect(adopt).not.toContain('security definer');
+    const lock = adopt.indexOf('from ssbj_risk_candidate_decisions where "reportId" = p_report_id and "candidateId" = p_candidate_id for update;');
+    expect(lock).toBeGreaterThan(0);
+    expect(lock).toBeLessThan(adopt.indexOf('insert into ssbj_risks_opportunities'));
   });
 });

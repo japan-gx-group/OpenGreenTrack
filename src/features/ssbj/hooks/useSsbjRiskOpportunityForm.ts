@@ -25,8 +25,8 @@ export interface SsbjRiskOpportunityFormController {
   /** 入力エラー・保存エラー（画面にそのまま並べる）。 */
   errors: string[];
   isSaving: boolean;
-  /** 入力値を差し替えてエラーを消す（ダイアログを開くとき）。 */
-  reset: (values?: SsbjRiskOpportunityFormValues) => void;
+  /** 入力値を差し替えてエラーを消す（ダイアログを開くとき）。編集では保存済みの関連先も渡す。 */
+  reset: (values?: SsbjRiskOpportunityFormValues, savedLinkTargets?: SsbjLinkTarget[]) => void;
   /** 検証して保存する。保存できたら true。 */
   submit: (event?: FormEvent) => Promise<boolean>;
 }
@@ -37,6 +37,8 @@ export function useSsbjRiskOpportunityForm(
   const [values, setValues] = useState<SsbjRiskOpportunityFormValues>(EMPTY_SSBJ_RISK_OPPORTUNITY_FORM_VALUES);
   const [errors, setErrors] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  // 編集を始めたときに保存されていた関連先（要求項目マスターに無い以前の関連先も、そのままなら残せる）。
+  const [savedLinkTargets, setSavedLinkTargets] = useState<SsbjLinkTarget[]>([]);
 
   const setField = <K extends keyof SsbjRiskOpportunityFormValues>(
     field: K,
@@ -53,8 +55,13 @@ export function useSsbjRiskOpportunityForm(
     setValues(prev => ({ ...prev, linkTargets: prev.linkTargets.filter(existing => existing !== target) }));
   };
 
-  const reset = (next: SsbjRiskOpportunityFormValues = EMPTY_SSBJ_RISK_OPPORTUNITY_FORM_VALUES) => {
+  /** savedLinkTargets は、編集する保存済みのリスク・機会の関連先（登録・候補からの登録では空）。 */
+  const reset = (
+    next: SsbjRiskOpportunityFormValues = EMPTY_SSBJ_RISK_OPPORTUNITY_FORM_VALUES,
+    saved: SsbjLinkTarget[] = [],
+  ) => {
     setValues(next);
+    setSavedLinkTargets(saved);
     setErrors([]);
   };
 
@@ -64,7 +71,7 @@ export function useSsbjRiskOpportunityForm(
     if (isSaving) return false;
 
     const input = normalizeSsbjRiskOpportunityInput(values);
-    const validationErrors = validateSsbjRiskOpportunityInput(input);
+    const validationErrors = validateSsbjRiskOpportunityInput(input, savedLinkTargets);
     setErrors(validationErrors);
     if (validationErrors.length > 0) return false;
 

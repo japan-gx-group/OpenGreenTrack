@@ -25,7 +25,7 @@ SSBJ 開示レポートで、データを書き換えられる経路をすべて
 決めたこと:
 
 - **SSBJ のロールは SSBJ 専用のテーブル（`ssbj_member_roles`。組織×利用者で 1 行）に持つ。** 判定は DB の関数
-  `ssbj_user_role`（service_role 限定）と `ssbj_current_user_role()` ほか（authenticated）で行う（[`database-design.md`](database-design.md) 3.20）。 OGT 本体の `profiles.role` のうち、SSBJ が読むのは
+  `ssbj_user_role`（service_role 限定）と `ssbj_current_user_role()` ほか（authenticated）で行う（[`database-design.md`](database-design.md) 3.21）。 OGT 本体の `profiles.role` のうち、SSBJ が読むのは
   `'admin'` だけにする。`logger` / `viewer` は SSBJ のロールに使わない。本体はロールで権限を分けておらず
   （`src/types/role.ts` の「ロール無効化中」）、招待で決まる値をあとから変える画面も無いため、SSBJ の権限の根拠にできない。
 - **ロールを割り当てていない利用者は入力担当として扱う。** 今は同じ組織の利用者なら誰でもすべてを編集できるので、
@@ -50,6 +50,7 @@ SSBJ 開示レポートで、データを書き換えられる経路をすべて
 | レポートの作成 | `ssbj_reports` insert | ○ | × | × | ○ | R2-12 |
 | 基本情報の更新 | `ssbj_reports` update（基本情報の列だけ GRANT） | ○ | × | × | ○ | R2-12 |
 | リスク・機会 | `ssbj_risks_opportunities` insert / update / delete | ○ | × | × | ○ | R2-12 |
+| 業種から出した候補への判断 | `ssbj_risk_candidate_decisions` insert / update / delete、RPC `adopt_ssbj_risk_candidate`（利用者の権限で、リスク・機会の登録と採用の記録を一緒に保存） | ○ | × | × | ○ | R2-12 |
 | 時間軸の定義 | `ssbj_report_time_horizons` insert / update / delete | ○ | × | × | ○ | R2-12 |
 | 根拠文書 | `ssbj_evidence` insert / update / delete | ○ | × | × | ○ | R2-12 |
 | 四本柱の文章 | `ssbj_narratives` insert / update / delete | ○ | × | × | ○ | R2-12 |
