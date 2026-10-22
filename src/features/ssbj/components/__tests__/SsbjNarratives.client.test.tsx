@@ -333,6 +333,35 @@ describe('SsbjNarratives（穴埋めテンプレート・2 画面エディタ・
       );
     });
 
+    it('下書きの前後に空白を足しただけでは、編集したことにしない', async () => {
+      rendered = render(<SsbjNarratives reportId={report.id} />);
+      await settle();
+      const card = cardOf('リスクの識別・評価・管理のプロセス');
+      click(buttonIn(card, '編集'));
+      click(buttonIn(card, '選択肢から下書きを作る'));
+      const values = ['yearly', 'hearing', 'likelihood_and_impact', 'not_used', 'unchanged'];
+      choiceSelects(card).forEach((select, index) => setSelectValue(select, values[index]));
+      click(buttonIn(card, '下書きを本文に入れる'));
+      setTextareaValue(bodyOf(card), ` ${riskProcessDraft}\n\n`);
+      await act(async () => { click(buttonIn(card, '保存')); });
+      await settle();
+      expect(saveSsbjNarrative).not.toHaveBeenCalled();
+      expect(document.querySelector('[data-testid="ssbj-narrative-unedited-draft-dialog"]')).not.toBeNull();
+    });
+
+    it('補足入力で Enter を押しても、項目の保存を走らせない（日本語入力の確定は止めない）', async () => {
+      rendered = render(<SsbjNarratives reportId={report.id} />);
+      await settle();
+      const card = cardOf('ビジネス・モデルとバリュー・チェーンへの影響');
+      click(buttonIn(card, '編集'));
+      click(buttonIn(card, '選択肢から下書きを作る'));
+      const supplement = choicesOf(card)!.querySelector<HTMLInputElement>('input')!;
+      const pressEnter = (isComposing: boolean) =>
+        supplement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, isComposing }));
+      expect(pressEnter(false)).toBe(false);
+      expect(pressEnter(true)).toBe(true);
+    });
+
     it('選んでいない欄は【 】のまま入り、置き換えるまで入力済みで保存できない', async () => {
       rendered = render(<SsbjNarratives reportId={report.id} />);
       await settle();

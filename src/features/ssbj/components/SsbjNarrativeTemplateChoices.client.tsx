@@ -5,7 +5,7 @@
 // テンプレートを使っても開示内容は確定しないこと（本文は自社の事実に照らして編集し、利用者が保存・確認する）を画面に出す。
 // 本文が書いてあるときは、下書きを後ろに足すだけで、自由入力の本文を上書きしない。
 
-import { useId } from 'react';
+import { useId, type KeyboardEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -32,6 +32,12 @@ interface SsbjNarrativeTemplateChoicesProps {
   hasBody: boolean;
   disabled?: boolean;
 }
+
+// 補足入力は項目の編集フォームの中にあるので、Enter で文章の保存（未入力の項目なら保存して閉じる）が走らないようにする。
+// 日本語入力の変換を確定する Enter は止めない。
+const preventSubmitOnEnter = (event: KeyboardEvent<HTMLInputElement>) => {
+  if (event.key === 'Enter' && !event.nativeEvent.isComposing) event.preventDefault();
+};
 
 export const SsbjNarrativeTemplateChoices = ({
   template,
@@ -80,6 +86,7 @@ export const SsbjNarrativeTemplateChoices = ({
                   value={current.texts[slot.id] ?? ''}
                   disabled={disabled}
                   onChange={event => setText(slot.id, event.target.value)}
+                  onKeyDown={preventSubmitOnEnter}
                 />
               </div>
             );
@@ -106,6 +113,7 @@ export const SsbjNarrativeTemplateChoices = ({
                   value={current.texts[slot.id] ?? ''}
                   disabled={disabled}
                   onChange={event => setText(slot.id, event.target.value)}
+                  onKeyDown={preventSubmitOnEnter}
                 />
               )}
             </div>

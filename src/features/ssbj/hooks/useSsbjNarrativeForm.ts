@@ -111,7 +111,8 @@ export function useSsbjNarrativeForm(
       setIsConfirmingDiscard(true);
       return false;
     }
-    if (values.state === 'answered' && insertedDraftText !== null && values.text === insertedDraftText) {
+    // 前後の空白だけを足しても保存する本文（前後の空白を除く）は下書きと同じなので、編集していない扱いにする。
+    if (values.state === 'answered' && insertedDraftText !== null && values.text.trim() === insertedDraftText.trim()) {
       setIsConfirmingUneditedDraft(true);
       return false;
     }
