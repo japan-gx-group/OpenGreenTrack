@@ -24,7 +24,13 @@ import {
   type ActivityEntryInitialValues,
   type ActivityEntryInput,
   type ManualEntryLocationOption,
+  type SavedManualActivityRecord,
 } from '../types';
+import {
+  buildDuplicateActivityRecordMessage,
+  formatDuplicatePeriodLabel,
+} from '../services/activityRecordDuplicates';
+import { useDuplicateWarning } from '../hooks/useDuplicateWarning';
 import { useIdeaProductSelection } from '../hooks/useIdeaProductSelection';
 import { useKeyedLoader } from '../hooks/useKeyedLoader';
 import { useScope12FactorSelection } from '../hooks/useScope12FactorSelection';
@@ -97,7 +103,19 @@ export interface ActivityEntryFormProps {
   onDelete?: () => Promise<void>;
   /** 削除処理中フラグ（ボタンの二重押下防止）。 */
   isDeleting?: boolean;
+  /**
+   * 読み込み済みの入力履歴（組織の全レコード）。拠点・カテゴリ・対象年月が揃った時点の
+   * 重複事前警告の照合に使う。未指定なら事前警告は出さない（保存時チェックは従来どおり）。
+   */
+  historyRecords?: SavedManualActivityRecord[];
+  /** edit のとき編集中レコード自身を重複に数えないための除外 id。 */
+  excludeRecordId?: string;
+  /** 事前警告から重複レコードの編集を開く操作。指定時のみ「既存のレコードを開く」を表示する（新規入力用）。 */
+  onOpenDuplicateRecord?: (record: SavedManualActivityRecord) => void;
 }
+
+// historyRecords 未指定時の既定値。毎レンダー新しい [] を作ると useMemo の依存が毎回変わるため共有する。
+const NO_HISTORY_RECORDS: SavedManualActivityRecord[] = [];
 
 export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   locations,
@@ -107,6 +125,9 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   onCancel,
   onDelete,
   isDeleting = false,
+  historyRecords = NO_HISTORY_RECORDS,
+  excludeRecordId,
+  onOpenDuplicateRecord,
 }) => {
   const isEdit = mode === 'edit';
   const initialCategory = useMemo(() => entryCategoryFromInitialValues(initialValues), [initialValues]);
@@ -241,6 +262,33 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     method: scope3MethodLoader.state?.status === 'ready' ? scope3MethodLoader.state.value : null,
     fiscalYearLabel: recordFiscalYear?.label ?? null,
   });
+
+  // 拠点・カテゴリ・対象年月（Scope3積上げはさらにIDEA製品）が揃った時点で、保存時と同じ重複キーを
+  // 読み込み済みの入力履歴に照合し、活動量を入れる前に「既に登録済み」を知らせる。
+  // 警告はプレビュー・保存を止めない（履歴が古い可能性があるため、確定判定は保存時チェックに委ねる）。
+  // 保存成功直後の同じ条件では警告しない（条件が変わるまでの抑止は useDuplicateWarning が持つ）。
+  const duplicate = useDuplicateWarning({
+    historyRecords,
+    excludeRecordId,
+    locationId: effectiveSelectedLocationId,
+    category,
+    periodStart: period?.start ?? null,
+    ideaFactorId: idea.productDetail?.id ?? null,
+  });
+  const { candidate: duplicateCandidate, record: duplicateRecord } = duplicate;
+  const duplicateWarningText =
+    duplicateRecord && duplicateCandidate
+      ? buildDuplicateActivityRecordMessage({
+          locationName: selectedLocation?.name ?? null,
+          // 重複メッセージのカテゴリ表記は保存時（buildManualDuplicateMessage / buildScope3DuplicateMessage）と揃える。
+          categoryLabel:
+            category.kind === 'energy'
+              ? MANUAL_ACTIVITY_CATEGORY_MAP[category.energyType].labelJP
+              : `Scope3積上げ（カテゴリ${category.categoryId}）` +
+                (duplicateRecord.ideaProductName ? `・製品「${duplicateRecord.ideaProductName}」` : ''),
+          periodLabel: formatDuplicatePeriodLabel(duplicateCandidate.periodStart),
+        })
+      : null;
 
   const amountValidation = validateAmount(amount);
   const validAmount = amountValidation.kind === 'valid' ? amountValidation.value : null;
@@ -411,6 +459,8 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
         onCancel?.();
       } else {
         // 続けて別の月・別製品を入力しやすいよう、拠点・カテゴリ・年月・係数/製品の選択は保持する。
+        // 条件がそのまま残るので、今保存したレコードが履歴に加わっても条件を変えるまで重複警告は出さない。
+        duplicate.markSaved();
         setAmount('');
         // 戻す先も空にする（保存前の活動量が次の入力で復活しないように）。
         lastValidAmountRef.current = '';
@@ -586,6 +636,24 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
               />
             </EntryField>
           </div>
+
+          {/* 条件が揃った時点の重複事前警告。活動量まで入力して保存時に弾かれる手戻りを防ぐ。 */}
+          {duplicateWarningText && duplicateRecord && (
+            <div data-testid="manual-duplicate-warning">
+              <EntryNotice variant="warning">
+                {duplicateWarningText}
+                {onOpenDuplicateRecord && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenDuplicateRecord(duplicateRecord)}
+                    className="ml-1 font-semibold underline"
+                  >
+                    既存のレコードを開く
+                  </button>
+                )}
+              </EntryNotice>
+            </div>
+          )}
         </EntrySection>
 
         {locations.length > 0 && (

@@ -20,7 +20,11 @@ import {
   type CandidateFactorRow,
 } from '../../services/factorSelectionService';
 import { getScope3CategoryMethod } from '../../services/scope3Adoption';
-import type { ActivityEntryInitialValues, ManualEntryLocationOption } from '../../types';
+import type {
+  ActivityEntryInitialValues,
+  ManualEntryLocationOption,
+  SavedManualActivityRecord,
+} from '../../types';
 import { ActivityEntryForm, type ActivityEntryFormProps } from '../ActivityEntryForm.client';
 
 // 統合データ入力フォーム（ActivityEntryForm）のコンポーネントテスト。
@@ -331,7 +335,9 @@ const renderForm = (props: Partial<ActivityEntryFormProps> = {}) => {
     container: result.container,
     onSave: allProps.onSave as ReturnType<typeof vi.fn<ActivityEntryFormProps['onSave']>>,
     props: allProps,
-    rerender: () => result.rerender(<ActivityEntryForm {...allProps} />),
+    /** props の一部を差し替えて再レンダリングする（親が履歴を更新したときなどを再現する）。 */
+    rerender: (overrides: Partial<ActivityEntryFormProps> = {}) =>
+      result.rerender(<ActivityEntryForm {...allProps} {...overrides} />),
   };
 };
 
@@ -1134,5 +1140,130 @@ describe('ActivityEntryForm', () => {
     expect(container.querySelector('[data-testid="manual-factor-section"]')).toBeNull();
     expect(container.querySelector('#manual-amount-input')).toBeNull();
     expect(previewButton(container).disabled).toBe(true);
+  });
+
+  // ---- 重複の事前警告: 拠点・カテゴリ・対象年月が揃った時点で入力済みを知らせる ----
+
+  const duplicateWarning = (container: HTMLElement) =>
+    container.querySelector('[data-testid="manual-duplicate-warning"]');
+
+  /** 事前警告の照合に使う既存レコード（大阪支社・電気・2024年11月）。 */
+  const existingElectricityNov = (
+    overrides: Partial<SavedManualActivityRecord> = {},
+  ): SavedManualActivityRecord => ({
+    id: 'rec-existing',
+    locationId: OSAKA.id,
+    locationName: OSAKA.name,
+    energyType: 'electricity',
+    amount: 1000,
+    unit: 'kWh',
+    periodStart: '2024-11-01',
+    periodEnd: '2024-11-30',
+    note: null,
+    createdAt: '2024-12-01T00:00:00Z',
+    emissionFactorId: null,
+    emissions: null,
+    appliedFactorName: null,
+    appliedFactorValue: null,
+    appliedFactorUnit: null,
+    scope3CategoryId: null,
+    ideaFactorId: null,
+    ideaProductName: null,
+    ...overrides,
+  });
+
+  it('新規: 拠点・カテゴリ・対象年月が既存レコードと揃った時点で警告し、月を変えると消える', async () => {
+    const onOpenDuplicateRecord = vi.fn();
+    const existing = existingElectricityNov();
+    const { container } = renderForm({
+      historyRecords: [existing],
+      onOpenDuplicateRecord,
+    });
+    await flush();
+
+    // 既定の対象月（2025-01）は重複していないため警告なし。
+    expect(duplicateWarning(container)).toBeNull();
+
+    setInputValue(monthInput(container), '2024-11');
+    const warning = duplicateWarning(container);
+    expect(warning?.textContent).toContain('『大阪支社』の電気・2024年11月 の活動量は既に登録済みです');
+    expect(warning?.textContent).toContain('活動量を合算してください');
+    // 警告は事前の注意にとどめ、プレビュー・保存は止めない（確定判定は保存時チェック）。
+    expect(previewButton(container).disabled).toBe(false);
+
+    click(findButton(container, '既存のレコードを開く'));
+    expect(onOpenDuplicateRecord).toHaveBeenCalledWith(existing);
+
+    setInputValue(monthInput(container), '2024-12');
+    expect(duplicateWarning(container)).toBeNull();
+  });
+
+  it('新規: カテゴリが違えば同じ拠点・対象月でも警告しない', async () => {
+    const { container } = renderForm({ historyRecords: [existingElectricityNov()] });
+    await flush();
+
+    setSelectValue(categorySelect(container), 'energy:city_gas');
+    setInputValue(monthInput(container), '2024-11');
+
+    expect(duplicateWarning(container)).toBeNull();
+  });
+
+  it('編集: 自分自身は重複に数えず、対象月を他レコードと同じへ変えたときだけ警告する', async () => {
+    const self = existingElectricityNov({ id: 'rec-self' });
+    const other = existingElectricityNov({
+      id: 'rec-other',
+      periodStart: '2024-12-01',
+      periodEnd: '2024-12-31',
+    });
+    const { container } = renderForm({
+      mode: 'edit',
+      initialValues: editScope12(),
+      historyRecords: [self, other],
+      excludeRecordId: 'rec-self',
+    });
+    await flush();
+
+    // 開いた直後（条件未変更）は自分自身と一致するが警告しない。
+    expect(duplicateWarning(container)).toBeNull();
+
+    setInputValue(monthInput(container), '2024-12');
+    const warning = duplicateWarning(container);
+    expect(warning?.textContent).toContain('2024年12月 の活動量は既に登録済みです');
+    // 編集モーダルからは onOpenDuplicateRecord を渡さないため、乗り換え導線は出ない。
+    expect(warning?.textContent).not.toContain('既存のレコードを開く');
+  });
+
+  it('新規: 保存直後は同じ条件のまま履歴に加わっても警告せず、条件を変えると通常どおり警告する', async () => {
+    const existingDec = existingElectricityNov({
+      id: 'rec-dec',
+      periodStart: '2024-12-01',
+      periodEnd: '2024-12-31',
+    });
+    const { container, onSave, rerender } = renderForm({
+      historyRecords: [existingDec],
+      onOpenDuplicateRecord: vi.fn(),
+    });
+    await flush();
+    setInputValue(monthInput(container), '2024-11');
+    setInputValue(amountInput(container), '10000');
+    expect(duplicateWarning(container)).toBeNull();
+
+    openPreview(container);
+    await saveFromPreview(container);
+    expect(onSave).toHaveBeenCalledTimes(1);
+
+    // 親（DataInput）は保存したレコードを履歴の先頭に加える。拠点・カテゴリ・対象年月は保持されたままだが、
+    // 今保存した分を「既に登録済み」とは知らせない（保存成功の通知と並んで警告が出ないようにする）。
+    rerender({ historyRecords: [existingElectricityNov({ id: 'rec-saved' }), existingDec] });
+    expect(amountInput(container).value).toBe('');
+    expect(duplicateWarning(container)).toBeNull();
+
+    // 条件を変えれば通常どおり警告する。
+    setInputValue(monthInput(container), '2024-12');
+    expect(duplicateWarning(container)?.textContent).toContain('2024年12月 の活動量は既に登録済みです');
+
+    // 一度条件を変えたあとに保存時の条件へ戻した場合も警告する（抑止は保存直後だけ）。
+    setInputValue(monthInput(container), '2024-11');
+    expect(duplicateWarning(container)?.textContent).toContain('2024年11月 の活動量は既に登録済みです');
   });
 });
