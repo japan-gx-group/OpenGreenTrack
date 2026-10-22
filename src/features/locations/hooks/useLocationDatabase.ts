@@ -20,6 +20,7 @@ export interface LocationDatabase {
    * 「条件に合致する拠点が見つかりません」がオーバーレイ越しに透けて見える。
    */
   hasFetchedOnce: boolean;
+  hasError: boolean;
   /** 一覧を丸ごと取り直した回数。ページングを 1 ページ目へ戻す合図（usePagination の resetKey）に使う。 */
   dataVersion: number;
   /** 一覧を取り直す（CSV 取込後に採番された ID と更新後の値を表示へ反映するため）。失敗は throw する。 */
@@ -31,6 +32,7 @@ export function useLocationDatabase(showToast: ShowToast): LocationDatabase {
   const [database, setDatabase] = useState<LocationRecord[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [hasFetchedOnce, setHasFetchedOnce] = useState<boolean>(false);
+  const [hasError, setHasError] = useState<boolean>(false);
   const [dataVersion, setDataVersion] = useState<number>(0);
 
   useEffect(() => {
@@ -47,10 +49,12 @@ export function useLocationDatabase(showToast: ShowToast): LocationDatabase {
         if (isMounted) {
           setDatabase(locations);
           setDataVersion(version => version + 1);
+          setHasError(false);
         }
       })
       .catch(() => {
         if (isMounted) {
+          setHasError(true);
           showToast('拠点の取得に失敗しました', 'error');
         }
       })
@@ -69,10 +73,19 @@ export function useLocationDatabase(showToast: ShowToast): LocationDatabase {
   }, [showToast, refreshToken]);
 
   const reload = useCallback(async () => {
-    const locations = await getLocations();
-    setDatabase(locations);
-    setDataVersion(version => version + 1);
+    setIsLoading(true);
+    setHasError(false);
+    try {
+      const locations = await getLocations();
+      setDatabase(locations);
+      setDataVersion(version => version + 1);
+    } catch (error) {
+      setHasError(true);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  return { database, setDatabase, isLoading, hasFetchedOnce, dataVersion, reload };
+  return { database, setDatabase, isLoading, hasFetchedOnce, hasError, dataVersion, reload };
 }
