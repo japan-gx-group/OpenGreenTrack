@@ -9,7 +9,8 @@
 //
 // 接続先は scripts/db/seed.ts と同じ:
 //   既定      ローカル Supabase の DB コンテナ（supabase/config.toml の project_id から supabase_db_<project_id>）の中で psql を実行する
-//   --db-url  ホストの psql で任意の DB に接続する。接続文字列はコマンドに直接書かず、環境変数から渡す（手順書の例を参照）
+//   --db-url-from-env  ホストの psql で、環境変数 OGT_DB_URL の DB に接続する（接続文字列をコマンドの引数に出さない。ps で見えるため）
+//   --db-url  ホストの psql で任意の DB に接続する（引数は ps で見えるので、共用のマシンでは --db-url-from-env を使う）
 // service_role キーは使わない（DB に postgres ユーザーで接続し、RLS の対象外で読む・消す）。
 //
 // 安全のための決まり:
@@ -18,6 +19,8 @@
 //   - 削除は 1 つのトランザクション（repeatable read）で行い、確定の前に「この組織の行が 0 件」
 //     「ほかの組織の行の件数とチェックサムが変わっていない」を確かめる。満たさなければ何も消さずに止まる
 //   - 実際に削除するには --execute・--confirm-name（DB の組織名と一致すること）・--record をそろえる
+//   - OGT 本体の監査ログ（system_audit_logs）は、組織への外部キーが意図的に on delete restrict。消してよいかは Issue #160 で合意するまで
+//     既定では消さず、監査ログのある組織は何も消さずに止まる。--delete-audit-logs を明示したときだけ、先に消す
 //
 // 出力: 結果の表（summary は --json で JSON）。終了コード: 0 = 成功 / 1 = 引数エラー・実行環境エラー・SQL エラー・確認の失敗
 // 単体テスト: scripts/ops/__tests__/org-data.test.ts（純粋関数だけを対象にし、docker / psql / DB には触れない）
@@ -46,9 +49,11 @@ export const USAGE = `使い方: node scripts/ops/org-data.ts <summary|export|de
     --execute                実際に削除する
     --confirm-name <組織名>  実際に削除するとき、DB の組織名と同じ名前を指定する（取り違え防止）
     --record <ファイル>      実際に削除するとき、削除の記録（JSON）の保存先。リポジトリの外に限る
+    --delete-audit-logs      OGT 本体の監査ログ（system_audit_logs）も消す（Issue #160 で合意するまで使わない）
   共通
     --org <組織ID>           対象の組織（UUID）
-    --db-url <url>           ホストの psql で指定した DB に接続する（既定: ローカル Supabase の DB コンテナ）
+    --db-url-from-env        ホストの psql で、環境変数 OGT_DB_URL の DB に接続する（既定: ローカル Supabase の DB コンテナ）
+    --db-url <url>           ホストの psql で指定した DB に接続する（引数は ps で見えるので、--db-url-from-env を勧める）
     --container <name>       ローカル Supabase の DB コンテナ名（既定: supabase/config.toml の project_id から）
   終了コード: 0 = 成功 / 1 = 引数エラー・実行環境エラー・SQL エラー・確認の失敗`;
 
@@ -70,7 +75,11 @@ export interface OrgDataOptions {
   execute: boolean;
   confirmName: string | null;
   record: string | null;
+  deleteAuditLogs: boolean;
 }
+
+/** --db-url-from-env で読む環境変数の名前。 */
+export const DB_URL_ENV = 'OGT_DB_URL';
 
 export type ParsedArgs = { help: true } | { help: false; options: OrgDataOptions };
 
@@ -83,7 +92,7 @@ export const isUuid = (value: string): boolean => UUID_PATTERN.test(value);
  * コマンドライン引数を解釈する。値を取るオプションは `--name value` と `--name=value` の両方を受け付ける。
  * 誤りは UsageError として投げる（サブコマンドに関係しないオプションの指定も誤りにする）。
  */
-export const parseArgs = (argv: readonly string[]): ParsedArgs => {
+export const parseArgs = (argv: readonly string[], env: Readonly<Record<string, string | undefined>> = process.env): ParsedArgs => {
   if (argv.includes('-h') || argv.includes('--help')) {
     return { help: true };
   }
@@ -123,6 +132,8 @@ export const parseArgs = (argv: readonly string[]): ParsedArgs => {
         break;
       case '--json':
       case '--execute':
+      case '--delete-audit-logs':
+      case '--db-url-from-env':
         if (inlineValue !== null) throw new UsageError(`${name} は値を取りません`);
         flags.add(name);
         break;
@@ -140,16 +151,24 @@ export const parseArgs = (argv: readonly string[]): ParsedArgs => {
   const organizationId = values.get('--org');
   if (organizationId === undefined) throw new UsageError('--org で組織 ID を指定してください');
   if (!isUuid(organizationId)) throw new UsageError(`組織 ID は小文字の UUID で指定してください（指定値: ${organizationId}）`);
-  if (values.has('--db-url') && values.has('--container')) {
-    throw new UsageError('--container と --db-url は同時に指定できません（--db-url はホストの psql で直接接続します）');
+  if (values.has('--db-url') && flags.has('--db-url-from-env')) {
+    throw new UsageError('--db-url と --db-url-from-env は同時に指定できません');
+  }
+  const dbUrlFromEnv = flags.has('--db-url-from-env') ? env[DB_URL_ENV] : undefined;
+  if (flags.has('--db-url-from-env') && !dbUrlFromEnv) {
+    throw new UsageError(`--db-url-from-env には、環境変数 ${DB_URL_ENV} に接続文字列を入れてください`);
+  }
+  const dbUrl = values.get('--db-url') ?? dbUrlFromEnv ?? null;
+  if (dbUrl !== null && values.has('--container')) {
+    throw new UsageError('--container と --db-url（--db-url-from-env）は同時に指定できません（ホストの psql で直接接続します）');
   }
 
   const allowed: Record<OrgDataCommand, string[]> = {
     summary: ['--json'],
     export: ['--out'],
-    delete: ['--execute', '--confirm-name', '--record'],
+    delete: ['--execute', '--confirm-name', '--record', '--delete-audit-logs'],
   };
-  const commandOptions = ['--json', '--out', '--execute', '--confirm-name', '--record'];
+  const commandOptions = ['--json', '--out', '--execute', '--confirm-name', '--record', '--delete-audit-logs'];
   for (const option of commandOptions) {
     if ((values.has(option) || flags.has(option)) && !allowed[command].includes(option)) {
       throw new UsageError(`${option} は ${command} では使えません`);
@@ -169,13 +188,14 @@ export const parseArgs = (argv: readonly string[]): ParsedArgs => {
     options: {
       command,
       organizationId,
-      dbUrl: values.get('--db-url') ?? null,
+      dbUrl,
       container: values.get('--container') ?? null,
       json: flags.has('--json'),
       out: values.get('--out') ?? null,
       execute,
       confirmName: values.get('--confirm-name') ?? null,
       record: values.get('--record') ?? null,
+      deleteAuditLogs: flags.has('--delete-audit-logs'),
     },
   };
 };
@@ -302,10 +322,12 @@ const snapshotSql = (organizationId: string, tempTable: string): string => {
 /**
  * delete の SQL。repeatable read の 1 つのトランザクションで、消す前の値を取り、消し、確定の前に確かめる。
  * 試行（execute = false）は最後に rollback し、実際の削除（execute = true）は commit する。
- * 消す順番: system_audit_logs（organizations への外部キーが on delete restrict のため先に消す）→
- * 組織のユーザー（auth.users。profiles は連鎖削除）→ organizations（ほかのテーブルは連鎖削除）。
+ * 消す順番: （deleteAuditLogs のときだけ）system_audit_logs → 組織のユーザー（auth.users。profiles は連鎖削除）→
+ * organizations（ほかのテーブルは連鎖削除）。
+ * system_audit_logs は organizations への外部キーが意図的に on delete restrict（スキーマの §7）。消してよいかは Issue #160 で
+ * 合意するまで、既定では消さずに、監査ログがあれば何も消さずに止める（本体の設計判断をこのスクリプトで変えないため）。
  */
-export const buildDeleteSql = (organizationId: string, execute: boolean): string => {
+export const buildDeleteSql = (organizationId: string, execute: boolean, deleteAuditLogs = false): string => {
   const org = `${literal(organizationId)}::uuid`;
   return [
     '\\set ON_ERROR_STOP 1',
@@ -320,8 +342,15 @@ begin
   end if;
 end
 $$;`),
+    deleteAuditLogs ? '' : `do $$
+begin
+  if exists (select 1 from public.system_audit_logs where "organizationId" = ${org}) then
+    raise exception 'この組織には OGT 本体の監査ログ（system_audit_logs）があります。監査ログを消してよいかは Issue #160 で合意してから進めてください（合意前は何も消しません）';
+  end if;
+end
+$$;`,
     snapshotSql(organizationId, 'ogt_org_data_before'),
-    `delete from public.system_audit_logs where "organizationId" = ${org};`,
+    deleteAuditLogs ? `delete from public.system_audit_logs where "organizationId" = ${org};` : '',
     `delete from auth.users u where ${authUserFilter(organizationId)};`,
     `delete from public.organizations where id = ${org};`,
     snapshotSql(organizationId, 'ogt_org_data_after'),
@@ -531,6 +560,8 @@ export interface DeletionRecord {
   operator: string;
   tables: DeleteRow[];
   checks: string[];
+  /** 監査ログ（system_audit_logs）の扱い（Issue #160） */
+  auditLogs: string;
 }
 
 // ---- ここから下は実行環境に触れる（単体テストの対象外） ----
@@ -626,7 +657,9 @@ const runDelete = (options: OrgDataOptions, target: Target): number => {
     }
   }
   const startedAt = new Date().toISOString();
-  const { organizationName, rows } = parseDeleteOutput(runPsql(target, buildDeleteSql(options.organizationId, options.execute)));
+  const { organizationName, rows } = parseDeleteOutput(
+    runPsql(target, buildDeleteSql(options.organizationId, options.execute, options.deleteAuditLogs)),
+  );
   const finishedAt = new Date().toISOString();
   console.log(`org-data: ${organizationName}（${options.organizationId}）— ${describeTarget(target)}`);
   printTable(
@@ -646,6 +679,7 @@ const runDelete = (options: OrgDataOptions, target: Target): number => {
     operator: userInfo().username,
     tables: rows,
     checks: ['削除の後、この組織の行が 0 件', 'ほかの組織の行の件数とチェックサム（auth.users は件数）が削除の前と同じ'],
+    auditLogs: options.deleteAuditLogs ? '消した（--delete-audit-logs）' : '無かった（監査ログのある組織は消さずに止める）',
   };
   writeFileSync(path.resolve(options.record!), `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 });
   console.log(`org-data: 削除しました。削除の記録 → ${path.resolve(options.record!)}`);

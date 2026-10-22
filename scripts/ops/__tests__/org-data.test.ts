@@ -72,6 +72,24 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['summary', 'export', '--org', ORG])).toThrow('1 つだけ');
     expect(() => parseArgs(['summary', '--org', ORG, '--org', ORG])).toThrow('1 回だけ');
     expect(() => parseArgs(['purge', '--org', ORG])).toThrow('summary・export・delete');
+    expect(() => parseArgs(['summary', '--org', ORG, '--delete-audit-logs'])).toThrow('summary では使えません');
+  });
+
+  it('監査ログを消すのは --delete-audit-logs を明示したときだけ', () => {
+    expect(options(['delete', '--org', ORG])).toMatchObject({ deleteAuditLogs: false });
+    expect(options(['delete', '--org', ORG, '--delete-audit-logs'])).toMatchObject({ deleteAuditLogs: true });
+  });
+
+  it('接続文字列は環境変数 OGT_DB_URL からも受け取れる（引数は ps で見えるため）', () => {
+    const fromEnv = parseArgs(['summary', '--org', ORG, '--db-url-from-env'], { OGT_DB_URL: 'postgresql://example' });
+    expect(fromEnv.help ? null : fromEnv.options.dbUrl).toBe('postgresql://example');
+    expect(() => parseArgs(['summary', '--org', ORG, '--db-url-from-env'], {})).toThrow('OGT_DB_URL');
+    expect(() => parseArgs(['summary', '--org', ORG, '--db-url-from-env', '--db-url', 'postgresql://x'], { OGT_DB_URL: 'y' }))
+      .toThrow('同時に');
+    expect(() => parseArgs(['summary', '--org', ORG, '--db-url-from-env', '--container', 'c'], { OGT_DB_URL: 'y' }))
+      .toThrow('同時に');
+    // 指定しなければ、環境変数があっても使わない（ローカルのつもりでクラウドに繋がないため）。
+    expect(options(['summary', '--org', ORG])).toMatchObject({ dbUrl: null });
   });
 });
 
@@ -112,8 +130,18 @@ describe('SQL の組み立て', () => {
     }
   });
 
+  it('監査ログ（system_audit_logs）は、明示したときだけ消す。既定では、監査ログがあれば何も消さずに止める（Issue #160）', () => {
+    const keep = buildDeleteSql(ORG, true);
+    expect(keep).not.toContain('delete from public.system_audit_logs');
+    expect(keep).toContain('Issue #160');
+    // 止める確認は、何かを消す前に行う。
+    expect(keep.indexOf('Issue #160')).toBeLessThan(keep.indexOf('delete from'));
+    expect(buildDeleteSql(ORG, true, true)).toContain(`delete from public.system_audit_logs where "organizationId" = '${ORG}'::uuid;`);
+    expect(buildDeleteSql(ORG, true, true)).not.toContain('Issue #160');
+  });
+
   it('削除の文は 3 つだけで、どれもこの組織に絞る（ほかの行は外部キーの連鎖削除に任せる）', () => {
-    const deletes = buildDeleteSql(ORG, true).match(/delete from [^;]+;/g) ?? [];
+    const deletes = buildDeleteSql(ORG, true, true).match(/delete from [^;]+;/g) ?? [];
     expect(deletes).toEqual([
       `delete from public.system_audit_logs where "organizationId" = '${ORG}'::uuid;`,
       `delete from auth.users u where u.id in (select p.id from public.profiles p where p."organizationId" = '${ORG}'::uuid);`,
