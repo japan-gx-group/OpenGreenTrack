@@ -1270,7 +1270,7 @@ describe('ActivityEntryForm', () => {
     // 既定の対象月（2025-01）は重複していないため警告なし。
     expect(duplicateWarning(container)).toBeNull();
 
-    setInputValue(monthInput(container), '2024-11');
+    setSelectValue(monthInput(container), '2024-11');
     const warning = duplicateWarning(container);
     expect(warning?.textContent).toContain('『大阪支社』の電気・2024年11月 の活動量は既に登録済みです');
     expect(warning?.textContent).toContain('活動量を合算してください');
@@ -1280,7 +1280,7 @@ describe('ActivityEntryForm', () => {
     click(findButton(container, '既存のレコードを開く'));
     expect(onOpenDuplicateRecord).toHaveBeenCalledWith(existing);
 
-    setInputValue(monthInput(container), '2024-12');
+    setSelectValue(monthInput(container), '2024-12');
     expect(duplicateWarning(container)).toBeNull();
   });
 
@@ -1289,7 +1289,7 @@ describe('ActivityEntryForm', () => {
     await flush();
 
     setSelectValue(categorySelect(container), 'energy:city_gas');
-    setInputValue(monthInput(container), '2024-11');
+    setSelectValue(monthInput(container), '2024-11');
 
     expect(duplicateWarning(container)).toBeNull();
   });
@@ -1312,7 +1312,7 @@ describe('ActivityEntryForm', () => {
     // 開いた直後（条件未変更）は自分自身と一致するが警告しない。
     expect(duplicateWarning(container)).toBeNull();
 
-    setInputValue(monthInput(container), '2024-12');
+    setSelectValue(monthInput(container), '2024-12');
     const warning = duplicateWarning(container);
     expect(warning?.textContent).toContain('2024年12月 の活動量は既に登録済みです');
     // 編集モーダルからは onOpenDuplicateRecord を渡さないため、乗り換え導線は出ない。
@@ -1330,7 +1330,7 @@ describe('ActivityEntryForm', () => {
       onOpenDuplicateRecord: vi.fn(),
     });
     await flush();
-    setInputValue(monthInput(container), '2024-11');
+    setSelectValue(monthInput(container), '2024-11');
     setInputValue(amountInput(container), '10000');
     expect(duplicateWarning(container)).toBeNull();
 
@@ -1345,11 +1345,11 @@ describe('ActivityEntryForm', () => {
     expect(duplicateWarning(container)).toBeNull();
 
     // 条件を変えれば通常どおり警告する。
-    setInputValue(monthInput(container), '2024-12');
+    setSelectValue(monthInput(container), '2024-12');
     expect(duplicateWarning(container)?.textContent).toContain('2024年12月 の活動量は既に登録済みです');
 
     // 一度条件を変えたあとに保存時の条件へ戻した場合も警告する（抑止は保存直後だけ）。
-    setInputValue(monthInput(container), '2024-11');
+    setSelectValue(monthInput(container), '2024-11');
     expect(duplicateWarning(container)?.textContent).toContain('2024年11月 の活動量は既に登録済みです');
   });
 });
