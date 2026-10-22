@@ -1,4 +1,4 @@
-﻿// @vitest-environment jsdom
+// @vitest-environment jsdom
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { click, render } from '@/lib/testing/render';
@@ -19,7 +19,7 @@ describe('LocationFilterBar search clear', () => {
       <LocationFilterBar filters={filters} activeFilters={[]} onChange={onChange} />,
     );
 
-    click(container.querySelector('input')!.parentElement!.querySelector('button')!);
+    click(container.querySelector('button[aria-label="検索キーワードをクリア"]')!);
 
     expect(setSearchQuery).toHaveBeenCalledWith('');
     expect(onChange).toHaveBeenCalledTimes(1);
