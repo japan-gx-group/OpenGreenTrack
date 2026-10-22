@@ -11,6 +11,7 @@ import {
 } from '../types';
 import type { SsbjExternalEmissionInput } from '../utils/externalEmission';
 import { ssbjWriteErrorMessage } from '../utils/writeError';
+import { throwIfSsbjEditForbidden } from './memberRoleService';
 
 type SsbjExternalEmissionRow = {
   id: string;
@@ -89,8 +90,8 @@ export const externalEmissionErrorMessage = (
   return ssbjWriteErrorMessage(error, fallback);
 };
 
-/** 更新・削除が 0 件だったときの、考えられる理由（RLS で止められた操作はエラーにならず 0 件になる）。 */
-const NOT_CHANGED_REASON = '他の画面で削除されたか、SSBJ のロールが変わった可能性があります';
+/** 更新・削除が 0 件だったときの、考えられる理由（ロールが変わって編集できなくなった場合は、先に権限のメッセージにする）。 */
+const NOT_CHANGED_REASON = '他の画面で削除された可能性があります';
 
 export const listSsbjExternalEmissions = async (reportId: string): Promise<SsbjExternalEmission[]> => {
   const { data, error } = await createClient()
@@ -128,7 +129,11 @@ export const updateSsbjExternalEmission = async (
     .select(SELECT_COLUMNS)
     .maybeSingle();
   if (error) throw new Error(externalEmissionErrorMessage(error, '外部算定値の保存に失敗しました'));
-  if (!data) throw new Error(`外部算定値を保存できませんでした（${NOT_CHANGED_REASON}）。画面を開き直してください`);
+  if (!data) {
+    // RLS で止められた更新はエラーにならず 0 件になる。今も編集できるかを確かめ、できなければ権限のメッセージにする。
+    await throwIfSsbjEditForbidden();
+    throw new Error(`外部算定値を保存できませんでした（${NOT_CHANGED_REASON}）。画面を開き直してください`);
+  }
   return toSsbjExternalEmission(data as unknown as SsbjExternalEmissionRow);
 };
 
@@ -140,5 +145,8 @@ export const updateSsbjExternalEmission = async (
 export const deleteSsbjExternalEmission = async (id: string): Promise<void> => {
   const { data, error } = await createClient().from('ssbj_external_emissions').delete().eq('id', id).select('id');
   if (error) throw new Error(externalEmissionErrorMessage(error, '外部算定値の削除に失敗しました'));
-  if (!data?.length) throw new Error(`外部算定値を削除できませんでした（${NOT_CHANGED_REASON}）。画面を開き直してください`);
+  if (!data?.length) {
+    await throwIfSsbjEditForbidden();
+    throw new Error(`外部算定値を削除できませんでした（${NOT_CHANGED_REASON}）。画面を開き直してください`);
+  }
 };

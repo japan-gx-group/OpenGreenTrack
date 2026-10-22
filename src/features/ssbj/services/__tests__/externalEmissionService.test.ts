@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // 外部算定値の DB 行 ⇔ 画面の型の変換と、書き込みの失敗のメッセージを検証する（RLS・制約・重なりはマイグレーション側と DB で確認する）。
 const mocks = vi.hoisted(() => ({
-  single: vi.fn(), maybeSingle: vi.fn(), insert: vi.fn(), update: vi.fn(), del: vi.fn(), delSelect: vi.fn(),
+  single: vi.fn(), maybeSingle: vi.fn(), insert: vi.fn(), update: vi.fn(), del: vi.fn(), delSelect: vi.fn(), rpc: vi.fn(),
 }));
 vi.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
@@ -11,6 +11,7 @@ vi.mock('@/lib/supabase/client', () => ({
       update: (row: unknown) => { mocks.update(row); return { eq: () => ({ select: () => ({ maybeSingle: mocks.maybeSingle }) }) }; },
       delete: () => ({ eq: (column: string, value: unknown) => { mocks.del(column, value); return { select: mocks.delSelect }; } }),
     }),
+    rpc: mocks.rpc,
   }),
 }));
 
@@ -72,9 +73,17 @@ describe('updateSsbjExternalEmission', () => {
     await expect(updateSsbjExternalEmission('e1', input)).resolves.toMatchObject({ id: 'e1', value: '1.250' });
   });
 
-  it('0 件（他の画面で削除された・ロールが変わって RLS で止められた）なら、開き直しを案内する', async () => {
+  it('0 件（他の画面で削除された）なら、開き直しを案内する', async () => {
     mocks.maybeSingle.mockResolvedValue({ data: null, error: null });
+    mocks.rpc.mockResolvedValue({ data: true, error: null });
     await expect(updateSsbjExternalEmission('e1', input)).rejects.toThrow('画面を開き直してください');
+    expect(mocks.rpc).toHaveBeenCalledWith('ssbj_current_user_can_edit');
+  });
+
+  it('0 件で、SSBJ のロールが変わって編集できなくなっていたら、権限のメッセージにする', async () => {
+    mocks.maybeSingle.mockResolvedValue({ data: null, error: null });
+    mocks.rpc.mockResolvedValue({ data: false, error: null });
+    await expect(updateSsbjExternalEmission('e1', input)).rejects.toThrow('入力担当か管理者だけ');
   });
 });
 
@@ -86,11 +95,18 @@ describe('deleteSsbjExternalEmission', () => {
     expect(mocks.delSelect).toHaveBeenCalledWith('id');
   });
 
-  it('0 件（RLS で止められた削除はエラーにならない）なら成功にせず、開き直しを案内する', async () => {
+  it('0 件（他の画面で削除された）なら成功にせず、開き直しを案内する', async () => {
     mocks.delSelect.mockResolvedValue({ data: [], error: null });
+    mocks.rpc.mockResolvedValue({ data: true, error: null });
     await expect(deleteSsbjExternalEmission('e1')).rejects.toThrow(
-      '外部算定値を削除できませんでした（他の画面で削除されたか、SSBJ のロールが変わった可能性があります）。画面を開き直してください',
+      '外部算定値を削除できませんでした（他の画面で削除された可能性があります）。画面を開き直してください',
     );
+  });
+
+  it('0 件で、SSBJ のロールが変わって編集できなくなっていたら（RLS で止められた削除はエラーにならない）、権限のメッセージにする', async () => {
+    mocks.delSelect.mockResolvedValue({ data: [], error: null });
+    mocks.rpc.mockResolvedValue({ data: false, error: null });
+    await expect(deleteSsbjExternalEmission('e1')).rejects.toThrow('入力担当か管理者だけ');
   });
 
   it('承認済みなどで DB が拒否したときは、その理由を出す', async () => {

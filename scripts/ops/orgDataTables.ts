@@ -52,6 +52,7 @@ export const ORG_DATA_TABLES: readonly OrgDataTable[] = [
   { name: 'ssbj_judgements', organizationColumn: 'organizationId', primaryKey: ['id'] },
   { name: 'ssbj_risk_candidate_decisions', organizationColumn: 'organizationId', primaryKey: ['id'] },
   { name: 'ssbj_member_roles', organizationColumn: 'organizationId', primaryKey: ['organizationId', 'userId'] },
+  { name: 'ssbj_external_emissions', organizationColumn: 'organizationId', primaryKey: ['id'] },
   { name: 'ssbj_audit_logs', organizationColumn: 'organizationId', primaryKey: ['id'] },
 ];
 

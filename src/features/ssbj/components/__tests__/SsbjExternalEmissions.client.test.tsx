@@ -146,7 +146,7 @@ describe('SsbjExternalEmissions', () => {
 
   it('削除が 0 件で止められたら、一覧から外さず、開き直しを案内する', async () => {
     vi.mocked(deleteSsbjExternalEmission).mockRejectedValueOnce(
-      new Error('外部算定値を削除できませんでした（他の画面で削除されたか、SSBJ のロールが変わった可能性があります）。画面を開き直してください'),
+      new Error('外部算定値を削除できませんでした（他の画面で削除された可能性があります）。画面を開き直してください'),
     );
     const { container } = await open();
     await act(async () => { click(button('削除', container.querySelector<HTMLElement>('[data-testid="ssbj-external-emission"]')!)); });
