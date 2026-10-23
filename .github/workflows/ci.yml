@@ -48,9 +48,14 @@ jobs:
           rm gitleaks.tar.gz
 
       # --redact: 検出した値そのものをログに出さない（CI ログ経由の二次流出を防ぐ）。
+      # --log-opts="HEAD": この実行で取り出したコミットの履歴だけを調べる。PR では取り出すのが
+      # マージ先との合成コミットなので、マージ先の履歴と PR のコミットの両方が入る。範囲を付けないと
+      # gitleaks は git log --all で、fetch-depth: 0 で取ってきた全ブランチを調べるため、まだどこにも
+      # 入っていない別のブランチの 1 コミットで、関係の無い PR の CI まで落ちる。
+      # 別のブランチのコミットは、そのブランチの PR の CI で調べる。
       # 検出時は終了コード 1 で落ちる。
       - name: Scan for committed secrets
-        run: ./gitleaks git . --config .gitleaks.toml --redact --no-banner
+        run: ./gitleaks git . --config .gitleaks.toml --redact --no-banner --log-opts="HEAD"
 
   lint-and-build:
     name: Lint & Build Verification
