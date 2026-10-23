@@ -495,7 +495,7 @@ export const Dashboard = () => {
       <div className="page-content gt-scroll relative">
         <PageHeading title="ダッシュボード" description="全社の排出量サマリーと削減進捗" />
         <div className="gt-card" style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>
-          <p style={{ margin: 0 }}>算定年度が登録されていません。企業設定から年度を追加してください。</p>
+          <p style={{ margin: 0 }}>算定年度が登録されていません。企業・メンバー設定の「算定年度の管理」で年度を追加してください（追加は管理者が行います）。</p>
           <Link href="/settings/company" className="gt-btn" style={{ marginTop: '12px' }}>
             企業設定へ
           </Link>

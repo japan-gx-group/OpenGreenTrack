@@ -53,8 +53,12 @@ export const getOrganization = async (): Promise<OrganizationInfo> => {
   return toOrganizationInfo(data as OrgRow);
 };
 
-// 企業情報を更新する。ロール無効化中のため、認証済みユーザーなら自組織を更新できる。
-// 自組織以外の id を渡した場合は RLS で更新対象が0行になり、single() がエラーになる。
+// PostgREST が single() で 0 行を返したときのエラーコード。
+const NO_ROWS_CODE = 'PGRST116';
+
+// 企業情報を更新する。更新できるのは自組織の管理者だけ（RLS の organizations_update_own が
+// current_user_is_admin() を見る）。管理者でない人・自組織以外の id では、RLS で更新対象が 0 行になり、
+// エラーではなく 0 行で返るため、single() の 0 行のエラーを「管理者のみ変更できます」として伝える。
 export const updateOrganization = async (
   id: string,
   input: OrganizationUpdateInput,
@@ -75,8 +79,10 @@ export const updateOrganization = async (
     .select(ORG_COLUMNS)
     .single();
 
+  if (error?.code === NO_ROWS_CODE) {
+    throw new Error('企業情報は管理者のみ変更できます');
+  }
   if (error || !data) {
-    // RLS で弾かれた（自組織以外を指定した）場合もここに来る。
     throw new Error('企業情報の保存に失敗しました');
   }
   return toOrganizationInfo(data as OrgRow);

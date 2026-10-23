@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { addFiscalYear } from '../fiscalYears';
+import { addFiscalYear, deleteFiscalYear } from '../fiscalYears';
 
 // createAdminClient は環境変数が無いと throw するため、DB アクセスはモックへ差し替える。
 // getCurrentProfile も Cookie セッションを読むのでモックにする。
@@ -66,7 +66,7 @@ const APRIL_2026: FiscalYearRow = {
 describe('addFiscalYear', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getCurrentProfileMock.mockResolvedValue({ organizationId: ORGANIZATION_ID });
+    getCurrentProfileMock.mockResolvedValue({ organizationId: ORGANIZATION_ID, role: 'admin' });
   });
 
   it('重ならない年度は追加できる', async () => {
@@ -127,5 +127,34 @@ describe('addFiscalYear', () => {
 
     expect(result.ok).toBe(true);
     expect(inserted[0]).toMatchObject({ startDate: '2025-04-01', endDate: '2026-03-31' });
+  });
+});
+
+// 年度の追加・削除は管理者だけ（service_role を使うため、RLS ではなく Server Action で確かめる）。
+describe('年度の追加・削除の権限', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('メンバー（logger・viewer）は年度を追加できず、DB に触れない', async () => {
+    for (const role of ['logger', 'viewer']) {
+      getCurrentProfileMock.mockResolvedValue({ organizationId: ORGANIZATION_ID, role });
+      const result = await addFiscalYear({ startYear: 2026 });
+      expect(result).toEqual({ ok: false, error: '管理者のみ操作できます' });
+    }
+    expect(createAdminClientMock).not.toHaveBeenCalled();
+  });
+
+  it('メンバーは年度を削除できず、DB に触れない', async () => {
+    getCurrentProfileMock.mockResolvedValue({ organizationId: ORGANIZATION_ID, role: 'logger' });
+    const result = await deleteFiscalYear('fy-2026');
+    expect(result).toEqual({ ok: false, error: '管理者のみ操作できます' });
+    expect(createAdminClientMock).not.toHaveBeenCalled();
+  });
+
+  it('ログインしていなければ断る', async () => {
+    getCurrentProfileMock.mockResolvedValue(null);
+    const result = await addFiscalYear({ startYear: 2026 });
+    expect(result).toEqual({ ok: false, error: 'セッションが確認できません。ログインし直してください' });
   });
 });

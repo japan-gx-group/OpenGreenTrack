@@ -1,7 +1,11 @@
 'use client';
 
+// 企業情報の表示と編集。編集は管理者だけに出す（保存は RLS の organizations_update_own でも管理者に限られる）。
+
 import React, { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/card';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { isAdmin } from '@/types/role';
 import { getOrganization, updateOrganization } from '../services/organizationService';
 import type { OrganizationInfo } from '../types';
 
@@ -33,6 +37,9 @@ export const CompanyInfo = ({
   showToast: (message: string, type: 'success' | 'error') => void;
   onSaved?: () => void;
 }) => {
+  const { profile } = useCurrentUser();
+  // 画面の出し分けだけに使う。権限の正しさは RLS で確かめている。
+  const canEdit = isAdmin(profile?.role);
   const [organization, setOrganization] = useState<OrganizationInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -143,7 +150,9 @@ export const CompanyInfo = ({
     <Card className="flex flex-col gap-4">
       <div className="flex justify-between items-center">
         <h2 className="font-serif font-semibold text-lg text-text-heading flex items-center gap-2">企業情報</h2>
-        {!isEditing ? (
+        {!canEdit ? (
+          <span className="text-xs text-text-muted">管理者のみ変更できます</span>
+        ) : !isEditing ? (
           <button type="button" onClick={startEditing} className="gt-btn text-xs">
             編集
           </button>

@@ -62,7 +62,7 @@ export const IdeaVersionsCard = ({ versions, fiscalYears }: IdeaVersionsCardProp
             </h4>
             {sortedFiscalYears.length === 0 ? (
               <p className="text-sm text-text-muted">
-                算定年度が未登録です。企業・メンバー設定の「算定年度の管理」で登録してください。
+                算定年度が未登録です。企業・メンバー設定の「算定年度の管理」で登録してください（登録は管理者が行います）。
               </p>
             ) : (
               <div style={{ overflowX: 'auto' }}>

@@ -1,17 +1,19 @@
 // @vitest-environment jsdom
 import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { click, render, type RenderResult } from '@/lib/testing/render';
+import { click, render, setInputValue, type RenderResult } from '@/lib/testing/render';
 import { saveMemberChanges } from '@/features/settings/services/members';
+import { createInvite } from '@/features/settings/services/invites';
 import { MemberList } from '../MemberList.client';
 
-// メンバー管理のロールの出し分けと、保存で送る変更の組み立てを確かめる。
+// メンバー管理のロールの出し分け（招待・削除・ロールの変更は管理者だけ）と、保存・招待で送る内容を確かめる。
 // Supabase の読み取り・Server Action・ログイン中の人だけをモックし、下書きと差分の組み立ては実物を通す。
 
 const mocks = vi.hoisted(() => ({
   profiles: [] as { id: string; fullName: string; email: string; role: string }[],
   currentProfile: null as null | { id: string; role: string },
   refresh: vi.fn(),
+  invitesQueried: 0,
 }));
 
 vi.mock('@/lib/supabase/client', () => ({
@@ -20,6 +22,7 @@ vi.mock('@/lib/supabase/client', () => ({
       if (table === 'profiles') {
         return { select: () => ({ order: async () => ({ data: mocks.profiles, error: null }) }) };
       }
+      mocks.invitesQueried += 1;
       return {
         select: () => ({ is: () => ({ order: async () => ({ data: [], error: null }) }) }),
       };
@@ -66,6 +69,7 @@ describe('MemberList のロール', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(saveMemberChanges).mockResolvedValue({ ok: true, data: undefined });
+    mocks.invitesQueried = 0;
     mocks.profiles = [
       { id: 'admin-1', fullName: '管理 一郎', email: 'admin@example.com', role: 'admin' },
       { id: 'member-1', fullName: '入力 花子', email: 'member@example.com', role: 'logger' },
@@ -84,7 +88,7 @@ describe('MemberList のロール', () => {
     return view.container;
   };
 
-  it('メンバーには、ロールを表示するだけで、変更と削除の操作を出さない', async () => {
+  it('メンバーには、ロールを表示するだけで、招待・変更・削除の操作を出さない', async () => {
     mocks.currentProfile = { id: 'member-1', role: 'logger' };
     const container = await mount();
 
@@ -94,7 +98,10 @@ describe('MemberList のロール', () => {
     expect(rows[0]).toContain('管理者');
     // viewer も「メンバー」と表示する
     expect(rows[2]).toContain('メンバー');
-    expect(container.textContent).toContain('ロールの変更とメンバーの削除は、管理者のみできます。');
+    expect(container.textContent).toContain('メンバーの招待・削除・ロールの変更は、管理者のみできます。');
+    expect(buttonByText(container, 'メンバーを招待')).toBeUndefined();
+    // 招待中の一覧（招待リンクを含む）は RLS で管理者にしか返らないため、取得もしない
+    expect(mocks.invitesQueried).toBe(0);
   });
 
   it('管理者が 1 人だけなら、2 人以上にすることを勧める', async () => {
@@ -148,5 +155,40 @@ describe('MemberList のロール', () => {
 
     expect(container.textContent).toContain('管理者が 1 人もいなくなるため保存できません');
     expect((buttonByText(container, '変更を保存') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('管理者はロールを選んで招待でき、選んだロールを送る', async () => {
+    mocks.currentProfile = { id: 'admin-1', role: 'admin' };
+    vi.mocked(createInvite).mockResolvedValue({
+      ok: true,
+      data: {
+        token: '11111111-1111-1111-1111-111111111111',
+        email: 'new@example.com',
+        expiresAt: '2026-11-01T00:00:00Z',
+        emailStatus: 'skipped',
+      },
+    });
+    const container = await mount();
+    expect(mocks.invitesQueried).toBeGreaterThan(0);
+
+    click(buttonByText(container, 'メンバーを招待') as HTMLButtonElement);
+    const roleSelectInModal = container.querySelector<HTMLSelectElement>('#inviteRole');
+    // 既定はメンバー
+    expect(roleSelectInModal?.value).toBe('logger');
+    setInputValue(container.querySelector('#inviteEmail') as HTMLInputElement, 'new@example.com');
+    selectValue(roleSelectInModal as HTMLSelectElement, 'admin');
+    click(buttonByText(container, '招待リンクを発行') as HTMLButtonElement);
+    await flush();
+
+    expect(createInvite).toHaveBeenCalledWith({ email: 'new@example.com', role: 'admin' });
+  });
+
+  it('組織に管理者が 1 人もいなければ、復旧の手順へ案内する（だれが見ても出す）', async () => {
+    mocks.currentProfile = { id: 'member-1', role: 'logger' };
+    mocks.profiles[0].role = 'logger';
+    const container = await mount();
+    expect(container.textContent).toContain('この組織には管理者がいません');
+    const link = container.querySelector<HTMLAnchorElement>('a[href*="setup-guide.md#h-2-"]');
+    expect(link).not.toBeNull();
   });
 });
