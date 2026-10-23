@@ -36,6 +36,7 @@ const SCOPE_CARDS = [
 ] as const;
 
 export const LocationDetail = ({ locationId }: { locationId: string }) => {
+  const isValidLocationId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(locationId);
   const { fiscalYear, fiscalYearId, fiscalYears, isLoading: isFiscalYearLoading } = useFiscalYear();
   // 年度が1件も無い（初期セットアップ直後・最後の年度を削除した後）。fiscalYear が空文字の
   // ままだと集計データの取得 effect が走らず「読み込んでいます...」から抜けられないため、
@@ -52,6 +53,7 @@ export const LocationDetail = ({ locationId }: { locationId: string }) => {
 
   // 拠点そのものの取得。存在しない・他組織の拠点は null（Not Found 表示）。
   useEffect(() => {
+    if (!isValidLocationId) return;
     let isMounted = true;
 
     const loadLocation = async () => {
@@ -81,12 +83,13 @@ export const LocationDetail = ({ locationId }: { locationId: string }) => {
     return () => {
       isMounted = false;
     };
-  }, [locationId]);
+  }, [isValidLocationId, locationId]);
 
   // 集計データの取得。年度切替（Headerの年度セレクタ）に追従する。
   // 切替中は直前のデータを保持して白画面を避け、RefreshingIndicator で更新中を明示する
   // （stale-while-revalidate。ダッシュボードと同じ方針）。
   useEffect(() => {
+    if (!isValidLocationId) return;
     // FiscalYearContext のロード完了前は fiscalYear が空文字。このまま取得すると
     // 不正な年度クエリでエラー表示になるため、実際の年度が入るまで待つ。
     if (fiscalYear === '') return;
@@ -121,9 +124,9 @@ export const LocationDetail = ({ locationId }: { locationId: string }) => {
     return () => {
       isMounted = false;
     };
-  }, [fiscalYear, fiscalYearId, locationId]);
+  }, [fiscalYear, fiscalYearId, isValidLocationId, locationId]);
 
-  const isNotFound = !isLocationLoading && !locationErrorMessage && location === null;
+  const isNotFound = !isValidLocationId || (!isLocationLoading && !locationErrorMessage && location === null);
   const hasScope3 = detail?.hasScope3 ?? false;
   const visibleScopeCards = SCOPE_CARDS.filter(card => card.key !== 'scope3' || hasScope3);
   const chartData = detail?.monthlyData ?? [];
