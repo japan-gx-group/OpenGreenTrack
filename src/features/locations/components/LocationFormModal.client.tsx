@@ -104,7 +104,7 @@ export const LocationFormModal = ({ form, returnFocusRef }: LocationFormModalPro
       </div>
 
       <div className="flex justify-end gap-2 mt-6">
-        <button type="button" className="gt-btn" onClick={form.close}>
+        <button type="button" className="gt-btn" onClick={form.close} disabled={form.isSaving}>
           キャンセル
         </button>
         <button type="submit" className="gt-btn-primary">
