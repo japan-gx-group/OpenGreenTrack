@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { RefreshingIndicator } from '@/components/ui/RefreshingIndicator';
 import { LoadingIndicator } from '@/components/ui/PageLoading';
 import { useFiscalYear } from '@/hooks/useFiscalYear';
+import { useAppRefresh } from '@/hooks/useAppRefresh';
 import { getLocationById } from '@/features/locations/services/locationService';
 import { LocationStatusBadge } from '@/features/locations/components/LocationStatusBadge';
 import {
@@ -37,6 +38,8 @@ const SCOPE_CARDS = [
 
 export const LocationDetail = ({ locationId }: { locationId: string }) => {
   const { fiscalYear, fiscalYearId, fiscalYears, isLoading: isFiscalYearLoading } = useFiscalYear();
+  // ヘッダーの「最新データに更新」で増える。他の全データページと同じく、取得 effect の依存に入れて再取得する。
+  const { refreshToken } = useAppRefresh();
   // 年度が1件も無い（初期セットアップ直後・最後の年度を削除した後）。fiscalYear が空文字の
   // ままだと集計データの取得 effect が走らず「読み込んでいます...」から抜けられないため、
   // Context のロード完了後に判定して空状態の案内へ切り替える。
@@ -81,7 +84,7 @@ export const LocationDetail = ({ locationId }: { locationId: string }) => {
     return () => {
       isMounted = false;
     };
-  }, [locationId]);
+  }, [locationId, refreshToken]);
 
   // 集計データの取得。年度切替（Headerの年度セレクタ）に追従する。
   // 切替中は直前のデータを保持して白画面を避け、RefreshingIndicator で更新中を明示する
@@ -121,7 +124,7 @@ export const LocationDetail = ({ locationId }: { locationId: string }) => {
     return () => {
       isMounted = false;
     };
-  }, [fiscalYear, fiscalYearId, locationId]);
+  }, [fiscalYear, fiscalYearId, locationId, refreshToken]);
 
   const isNotFound = !isLocationLoading && !locationErrorMessage && location === null;
   const hasScope3 = detail?.hasScope3 ?? false;
