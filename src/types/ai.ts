@@ -65,16 +65,24 @@ export type AiGenerateErrorCode =
   /** 回数の上限（用途ごと・組織全体）を超えた */
   | 'limit_exceeded';
 
-/** AI の設定の状態（GET /api/ai/status の応答） */
+/** AI の設定の状態（GET /api/ai/status の応答）。鍵の値・暗号文は含めない */
 export interface AiStatus {
-  /** 鍵の置き場所。今は環境変数（方式A）だけ */
-  keySource: 'server';
-  /** 提供元と鍵がサーバに正しく設定されているか */
+  /** 鍵の置き場所。'server' = 環境変数（方式A）、'app' = 画面から登録（方式B） */
+  keySource: 'server' | 'app';
+  /** 提供元と鍵が使える状態か（方式A: 環境変数が正しい / 方式B: 登録済みで復号できる） */
   configured: boolean;
-  /** 設定されている提供元。未設定・不正なら null */
+  /** 使う提供元。未設定・未登録なら null */
   provider: AiProviderId | null;
   /** 選択中のモデル ID。未選択、または提供元が変わって無効になったら null */
   modelId: string | null;
   /** ログイン中の人が AI の設定を変えられるか（管理者か） */
   canManage: boolean;
+  /** 方式B: 画面から登録してよい提供元（方式A では空） */
+  allowedProviders: AiProviderId[];
+  /** 方式B: 登録済みの鍵（末尾 4 文字と更新日時）。未登録なら null */
+  registeredKey: { provider: AiProviderId; last4: string; updatedAt: string } | null;
+  /** 方式B: 暗号化の鍵を替えた・許可されない提供元になったなどで、登録し直しが必要 */
+  needsReRegistration: boolean;
+  /** 方式A: 以前に方式B で登録した鍵が DB に残っている（削除できる） */
+  leftoverKey: boolean;
 }

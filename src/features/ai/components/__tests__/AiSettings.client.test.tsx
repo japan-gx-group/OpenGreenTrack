@@ -9,6 +9,7 @@ import { AiSettings } from '../AiSettings.client';
 // /api/ai/status・/api/ai/models の fetch と、モデルの保存（Server Action）をモックする。
 
 vi.mock('../../services/aiSettingsActions', () => ({ saveAiModel: vi.fn() }));
+vi.mock('../../services/aiCredentialActions', () => ({ saveAiCredential: vi.fn(), deleteAiCredential: vi.fn() }));
 
 const mocks = vi.hoisted(() => ({
   status: null as unknown,
@@ -130,5 +131,47 @@ describe('AiSettings', () => {
     const container = await mount();
     expect(container.textContent).toContain('API キーが無効か、権限がありません');
     expect(buttonByText(container, '再取得')).toBeDefined();
+  });
+
+  const appStatus = (overrides: Record<string, unknown> = {}) => ({
+    keySource: 'app',
+    configured: true,
+    provider: 'openai',
+    modelId: null,
+    canManage: true,
+    allowedProviders: ['anthropic', 'openai'],
+    registeredKey: { provider: 'openai', last4: 'a1b2', updatedAt: '2026-10-24T01:00:00Z' },
+    needsReRegistration: false,
+    leftoverKey: false,
+    ...overrides,
+  });
+
+  it('方式B では、管理者に鍵の登録のフォームを出し、末尾 4 文字だけを表示する', async () => {
+    mocks.status = appStatus();
+    mocks.models = { status: 200, body: { provider: 'openai', models: [model('gpt-5')] } };
+    const container = await mount();
+    expect(container.textContent).toContain('画面から登録（方式B）');
+    expect(container.textContent).toContain('末尾 a1b2');
+    expect(container.querySelector('#ai-key-value')).not.toBeNull();
+    expect(container.querySelector('#ai-key-reauth')).not.toBeNull();
+  });
+
+  it('方式B でも、メンバーには鍵のフォームを出さない', async () => {
+    mocks.status = appStatus({ canManage: false });
+    const container = await mount();
+    expect(container.textContent).toContain('末尾 a1b2');
+    expect(container.querySelector('#ai-key-value')).toBeNull();
+  });
+
+  it('方式B で登録し直しが必要なら知らせる', async () => {
+    mocks.status = appStatus({ configured: false, provider: null, needsReRegistration: true });
+    const container = await mount();
+    expect(container.textContent).toContain('登録し直してください');
+  });
+
+  it('方式A で DB に鍵が残っていれば、管理者に削除を出す', async () => {
+    mocks.status = { ...appStatus(), keySource: 'server', registeredKey: null, allowedProviders: [], leftoverKey: true };
+    const container = await mount();
+    expect(container.textContent).toContain('以前に画面から登録した API キーが DB に残っています');
   });
 });

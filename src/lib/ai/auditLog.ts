@@ -16,7 +16,7 @@ export interface AiRequestRecord {
   purposeId: string;
   provider: AiProviderId;
   modelId: string;
-  keySource: 'server';
+  keySource: 'server' | 'app';
   inputs: AiInputSummary[];
   result: 'success' | AiGenerateErrorCode;
   durationMs: number;

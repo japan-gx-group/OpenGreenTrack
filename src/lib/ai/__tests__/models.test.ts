@@ -12,6 +12,8 @@ vi.mock('../providers', async (importOriginal) => {
   };
 });
 
+vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => ({}) }));
+
 import { AiProviderError } from '../providers';
 import { MODEL_LIST_LIMIT_PER_MINUTE, listAvailableModels, resetModelListLimiterForTest } from '../models';
 

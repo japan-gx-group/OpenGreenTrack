@@ -439,7 +439,11 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 
 AI を使う機能で使う提供元とモデル。企業・メンバー設定に「AI の設定」のカードを置く。
 
-- 提供元（Anthropic / Google（Gemini API）/ OpenAI）と API キーは、サーバの環境変数 `AI_PROVIDER` / `AI_API_KEY` に置く（方式A）。画面からは変えられず、カードには「設定済み / 未設定」だけを出す。API キーの値はブラウザに返さない。
+- 提供元（Anthropic / Google（Gemini API）/ OpenAI）と API キーの置き場所は、環境変数で 2 つの方式から選ぶ。画面からは方式を切り替えられない。API キーの値・暗号文はブラウザに返さない。
+  - **方式A（既定）**: サーバの環境変数 `AI_PROVIDER` / `AI_API_KEY` に置く。画面からは変えられず、カードには「設定済み / 未設定」だけを出す。
+  - **方式B**（`AI_ALLOW_KEY_REGISTRATION=true`）: 管理者がカードから提供元（`AI_ALLOWED_PROVIDERS` の中から）と API キーを登録する。登録・差し替え・削除のたびに**ログインパスワードの再入力（本人確認）**を求め、失敗は `ai.reauth.failed` として残す。登録の前にその鍵でモデル一覧を取得して使えることを確かめ、AES-256-GCM で暗号化して `ai_credentials` に保存する（[`database-design.md`](./database-design.md) 3.16）。カードには末尾 4 文字と更新日時だけを出す。変更は `ai.credential.update` / `ai.credential.delete` として残す。
+  - 暗号化の鍵（`AI_ENCRYPTION_KEY`）を替えた・登録した提供元が許可されなくなった場合は「登録し直してください」と表示し、AI は使えない状態にする。
+  - 方式A に戻したあとに DB に鍵が残っていれば、管理者に知らせ、本人確認のうえで削除できるようにする（方式B に戻すと古い鍵がまた使われるため）。
 - モデルは管理者がプルダウンで選ぶ（組織で 1 つ。`ai_settings`。[`database-design.md`](./database-design.md) 3.15）。プルダウンには、提供元のモデル一覧 API から取得し、画像・PDF を読めて決まった形（JSON スキーマ）で出力できるものに絞って並べる（新しい順。廃止予定は末尾にまとめる）。Google と OpenAI は能力を API が示さないため、名前で推定する（`src/lib/ai/providers/`）。
 - 保存のときは、モデル ID の形（`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`）と、提供元の一覧に含まれることをサーバで確かめる。変更は `system_audit_logs` に `ai.model.update` として残す。
 - カードは全メンバーに見せる（何に送られるかを誰でも確かめられるように）。モデルを変えられるのは管理者だけ。

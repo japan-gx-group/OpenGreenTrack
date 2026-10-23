@@ -34,6 +34,11 @@ vi.mock('../rateLimit', async (importOriginal) => ({
   checkAiRateLimit: mocks.rateLimit,
 }));
 vi.mock('../auditLog', () => ({ recordAiRequest: mocks.recordAiRequest }));
+// 鍵の取り出しは実物を通す（方式A の環境変数）。方式B のテストだけ、取り出した結果を差し替える。
+vi.mock('../credentials', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../credentials')>();
+  return { ...original, resolveAiCredential: vi.fn(original.resolveAiCredential) };
+});
 vi.mock('@/lib/logging/requestLogger', () => ({
   getRequestLogger: async () => {
     const log = { error: mocks.logError, warn: vi.fn(), child: () => log };
@@ -49,6 +54,7 @@ vi.mock('@/lib/supabase/admin', () => ({
 }));
 
 import { AiProviderError } from '../providers';
+import { resolveAiCredential } from '../credentials';
 import { generateStructured, type GenerateStructuredArgs } from '../generate';
 
 // テスト用のダミーの鍵。鍵らしい文字列をソースに書くと秘密情報の走査（gitleaks）に当たるため、同じ文字の繰り返しで作る。
@@ -184,5 +190,19 @@ describe('generateStructured', () => {
     const result = await generateStructured(args());
     expect(result.ok).toBe(true);
     expect(mocks.logError).toHaveBeenCalled();
+  });
+
+  it('方式B で登録した鍵でも同じように送り、監査ログに方式（app）を残す', async () => {
+    vi.mocked(resolveAiCredential).mockResolvedValueOnce({ ok: true, keySource: 'app', provider: 'anthropic', apiKey: KEY });
+    const result = await generateStructured(args());
+    expect(result.ok).toBe(true);
+    expect(mocks.generate.mock.calls[0][0]).toMatchObject({ apiKey: KEY });
+    expect(mocks.recordAiRequest.mock.calls[0][1]).toMatchObject({ keySource: 'app' });
+  });
+
+  it('方式B で鍵が未登録・登録し直しが必要なら、送らずに not_configured', async () => {
+    vi.mocked(resolveAiCredential).mockResolvedValueOnce({ ok: false, problem: 'credential_unreadable' });
+    await expect(generateStructured(args())).resolves.toMatchObject({ ok: false, code: 'not_configured' });
+    expect(mocks.generate).not.toHaveBeenCalled();
   });
 });
