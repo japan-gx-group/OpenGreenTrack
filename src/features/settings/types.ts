@@ -1,7 +1,7 @@
 // 設定機能（企業情報 / アカウント）で扱う型。
 
 // 個人プロフィール。氏名・電話番号は編集可、メール・組織は表示のみ。
-// ロールは持たない（ロール判定は無効。DB の profiles.role は互換のため残るが参照しない）。
+// ロールはここでは持たない（ログイン中の人のロールは CurrentUserContext / getCurrentProfile から取る）。
 export interface CurrentProfile {
   id: string;
   email: string;

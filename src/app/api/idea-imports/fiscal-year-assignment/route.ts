@@ -6,7 +6,7 @@
 // 認証ガード（/api/idea-imports と同方針）:
 //   RPC は service_role で RLS を越えて書き込むため、呼び出し元をここで検証する。
 //   対象組織は body ではなくログイン中プロフィールから取る（他組織の年度・版は RPC が組織の突き合わせで拒否する）。
-//   ロールによる絞り込みは行わない（ロール判定は無効）。
+//   ロールによる絞り込みは行わない（IDEA の取込はメンバーも行う）。
 
 import { NextResponse } from 'next/server';
 import { getCurrentProfile } from '@/lib/currentProfile';

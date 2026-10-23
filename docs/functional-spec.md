@@ -26,7 +26,7 @@ OpenGreenTrack は、企業の温室効果ガス（GHG）排出量を算定・�
 
 | 区分 | 対応内容 |
 |---|---|
-| 認証 | Supabase Auth（メール + パスワード）。招待によるメンバー追加、パスワード再設定。ロールによる権限分岐は持たない（`profiles.role` は残るが参照しない） |
+| 認証 | Supabase Auth（メール + パスワード）。招待によるメンバー追加、パスワード再設定。ロールは管理者（`profiles.role = 'admin'`）とメンバー（それ以外）の 2 つ（§4.8.1） |
 | マルチテナント | `organizations` 単位。全テーブルを RLS で組織スコープに閉じる |
 | Scope 1 / 2 | 活動量 × 排出係数で算定。電気・都市ガス・熱・各種燃料に対応 |
 | Scope 3 | カテゴリ（1〜15）ごとに **direct（直接入力）** と **calculated（IDEA 原単位の積上げ）** を排他選択（§4.3.3 / §7.2） |
@@ -409,6 +409,22 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 **組織設定**: 組織情報、算定年度（開始月を含む）の管理、メンバー一覧と招待。
 **アカウント設定**: プロフィール、パスワード変更、アカウント削除。
 
+#### 4.8.1 ロール（管理者・メンバー）
+
+- ロールは管理者とメンバーの 2 つ。`profiles.role` が `admin` なら管理者、それ以外（`logger`・`viewer`）はメンバー。組織を作った人（初期セットアップ）は管理者、招待された人はメンバー（招待の `role` の既定値 `logger`）。DB の扱いは [`database-design.md`](./database-design.md) 3.14。
+- メンバー一覧には全員のロールを表示する。**ロールの変更とメンバーの削除は管理者だけ**ができ、どちらも「変更を保存」でまとめて確定する。反映の順は「管理者への昇格 → メンバーへの降格 → 削除」（別の人を管理者にして自分をメンバーにする変更を 1 回で保存できるようにするため）。途中で失敗したら止め、反映済みの件数を知らせる。
+- 管理者が自分をメンバーに変えるときは、保存の確認で「管理者でなくなる」ことを知らせる。自分自身はメンバー一覧から削除できない（退会はアカウント設定から行う）。
+- 組織の管理者が 0 人になる変更（最後の管理者の降格・削除・退会）は拒否する。画面は保存を止め、サーバ（Server Action・`/api/account/delete`）が先に断り、DB のトリガー `ensure_organization_keeps_admin` が最後に必ず止める。
+- 管理者が 1 人だけのときは、管理者を 2 人以上にすることを勧める表示を出す。
+- ロールの変更（`member.role.update`）とメンバーの削除（`member.remove`）は `system_audit_logs` に残す。
+- 組織の設定（企業情報・算定年度・招待）は、ロールにかかわらず全員が変えられる。
+
+| メッセージ（例） | 状況 |
+|---|---|
+| 管理者のみ操作できます | 管理者でない人がロールの変更・メンバーの削除をしようとした |
+| 管理者が 1 人もいなくなるため変更できません | 変更を反映すると組織の管理者が 0 人になる |
+| 組織で最後の管理者のため削除できません。先に別のメンバーを管理者にしてください | 最後の管理者が退会しようとした |
+
 ---
 
 ## 5. バリデーション規則
@@ -537,6 +553,7 @@ Scope 1・2 は選択拠点、Scope 3 は組織全体という集計範囲の違
 | `refresh_dashboard_aggregates` | ダッシュボード集計のみを再計算 |
 | `create_calculation_batch_with_rate_limit` | バッチ作成とレート制限判定を組織単位の advisory lock 内で原子的に行う。滞留した `pending` は先に `failed` へ回収する |
 | `complete_idea_import` / `delete_idea_import` | IDEA 取込の完了処理・削除 |
+| `change_member_role` | メンバーのロールの変更（管理者 / メンバー）。操作する人が同じ組織の管理者であることを中で確かめ、監査ログを同じトランザクションで残す。EXECUTE は `service_role` 限定 |
 | `dashboard_monthly_emissions` / `dashboard_location_emissions` / `dashboard_location_emissions_by_scope` / `dashboard_scope3_category_emissions` | ダッシュボードの読取集計 |
 | `report_location_scope_emissions` / `report_location_energy_usage` / `report_latest_calculation_batches` / `report_activity_calculation_coverage` / `report_scope3_activity_calculation_coverage` | レポートの読取集計 |
 

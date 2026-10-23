@@ -18,7 +18,8 @@ export type CurrentUserContextValue = {
   profile: CurrentUserProfile | null;
   /**
    * profile?.role の短縮。未ログイン・プロフィール取得失敗時は null。
-   * ロール無効化中のため権限判定には使わないこと。DB に残る値の参照用。
+   * 画面の出し分け（src/types/role.ts の isAdmin）に使う。ブラウザに残った古い値のことがあるため、
+   * 権限の正しさはサーバ（src/lib/authz.ts の requireAdmin）と DB で確かめる。
    */
   role: MemberRole | null;
   isLoading: boolean;
