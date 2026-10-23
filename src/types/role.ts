@@ -3,23 +3,33 @@
 // 値の正本は DB の check 制約（supabase/migrations/20260831000000_schema.sql の
 // profiles_role_check / invites_role_check）。
 //
-// ロール無効化中: 認証済みユーザーは同一権限として扱うため、ロールによる権限判定は
-// アプリ・RLS の双方で行わない（RLS 側は supabase/migrations/20260831000001_rls.sql の
-// current_user_can_edit / current_user_is_admin が「認証済みか」だけを返す）。
-// 以下は DB に残る role 列の値を扱うための型・検証・表示ラベルのみで、
-// 「このロールなら○○できる」という判定をここへ再び追加しないこと。
+// ロールは「管理者」と「メンバー」の 2 つ。role が 'admin' なら管理者、それ以外（'logger'・'viewer'）は
+// すべてメンバーとして扱い、判定は isAdmin() だけで行う（'logger' や 'viewer' を個別に判定しない）。
+// 新しくメンバーにするときに書く値は 'logger'（DB の既定値）。'member' という値は足さない
+// （既存の行を書き換えるデータの更新をマイグレーションに書けないため: AGENTS.md R12）。
+//
+// 管理者だけに限っているのは、ロールの変更とメンバーの削除。組織の設定（企業情報・算定年度・招待）は
+// まだ全員が変えられる（RLS の current_user_is_admin() は「ログインしているか」を返したまま）。
 
 export const MEMBER_ROLES = ['admin', 'logger', 'viewer'] as const;
 
 export type MemberRole = (typeof MEMBER_ROLES)[number];
 
-// 表示ラベル。ロール無効化中は権限を画面に出さないため現在の参照元は無いが、
-// DB に残る role 値を再び表示する場合の正本としてロール無効化の方針どおり維持する。
-export const MEMBER_ROLE_LABELS: Record<MemberRole, string> = {
-  admin: '管理者',
-  logger: '入力担当者',
-  viewer: '閲覧者',
-};
+// ロールを変えるときに書ける値（管理者 / メンバー）。'viewer' は既存の行に残る値で、新しくは書かない。
+export const ASSIGNABLE_MEMBER_ROLES = ['admin', 'logger'] as const;
+
+export type AssignableMemberRole = (typeof ASSIGNABLE_MEMBER_ROLES)[number];
+
+export const ADMIN_ROLE: AssignableMemberRole = 'admin';
+export const MEMBER_ROLE: AssignableMemberRole = 'logger';
 
 export const isMemberRole = (value: unknown): value is MemberRole =>
   typeof value === 'string' && (MEMBER_ROLES as readonly string[]).includes(value);
+
+export const isAssignableMemberRole = (value: unknown): value is AssignableMemberRole =>
+  typeof value === 'string' && (ASSIGNABLE_MEMBER_ROLES as readonly string[]).includes(value);
+
+export const isAdmin = (role: MemberRole | null | undefined): boolean => role === 'admin';
+
+// 画面の表示名。'logger'・'viewer' はどちらも「メンバー」。
+export const memberRoleLabel = (role: MemberRole): string => (isAdmin(role) ? '管理者' : 'メンバー');

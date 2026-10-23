@@ -12,7 +12,7 @@
 //   - 係数の優先順位: docs/calculation-logic.md（resolveEmissionFactor）
 //   - 未公表年度の暫定適用と公表後の再算定導線: docs/calculation-logic.md「未公表年度の暫定適用」と
 //     src/features/data-input/components/DataInput.client.tsx（「正式係数で再算定」バナー）
-// ユーザー権限の FAQ はロール無効化中のため置かない。ロール再導入時に実挙動ベースで復活させる。
+// ユーザー権限の FAQ はまだ置かない。組織の設定を管理者に限ったあと、実挙動ベースで足す。
 
 export type GlossaryTerm = {
   term: string;

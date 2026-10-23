@@ -1,74 +1,122 @@
 'use server';
 
-// メンバー管理（メンバー削除）の Server Action。
+// メンバー管理（ロールの変更・メンバーの削除）の Server Action。
 //
 // なぜ service_role（admin client）を使うか:
 //   - メンバー削除は auth.users の削除（profiles へ on delete cascade）まで必要で、
 //     authenticated のクライアントにはその権限がない。
+//   - profiles.role は authenticated が更新できる列に含めていない（列 GRANT）。ロールの変更は
+//     service_role 限定の RPC（change_member_role）で行い、RPC の中でも操作する人が管理者かを確かめる。
 //
-// 呼び出し元は Cookie セッションからサーバ側で確認する（getCurrentProfile）。
-// ロールによる絞り込みは行わない（ロール判定は無効）。ただし service_role は
-// RLS を越えるため、「対象が自組織のメンバーか」の確認はここでしか担保できない。
-//
-// profiles.role の変更 API はロール判定の廃止に合わせて削除した。role 列は GRANT 対象外のままなので、
-// 直接 supabase-js から UPDATE することもできない。
+// どちらも管理者だけに許す。呼び出し元は Cookie セッションからサーバ側で確認する（requireAdmin）。
+// service_role は RLS を越えるため、「対象が自組織のメンバーか」の確認はここでしか担保できない。
+// 組織の管理者が 0 人になる変更は、ここで先に断り、DB のトリガー（ensure_organization_keeps_admin）が最後に必ず止める。
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getCurrentProfile } from '@/lib/currentProfile';
+import { ADMIN_ONLY_MESSAGE, requireAdmin } from '@/lib/authz';
+import { getRequestLogger } from '@/lib/logging/requestLogger';
 import type { ActionResult } from '@/types/actionResult';
+import type { MemberRole } from '@/types/role';
+import {
+  LAST_ADMIN_MESSAGE,
+  planMemberChanges,
+  type MemberChangesInput,
+} from './memberChangePlan';
 
-export interface MemberChangesInput {
-  /** 削除するメンバーの profiles.id（= auth.users.id） */
-  removedMemberIds: string[];
-}
+// change_member_role の SQLSTATE（supabase/migrations/20261024090000_member_roles.sql）。
+const ROLE_CHANGE_ERROR_MESSAGES: Record<string, string> = {
+  P2081: LAST_ADMIN_MESSAGE,
+  P2082: ADMIN_ONLY_MESSAGE,
+  P2083: '対象のメンバーが見つかりません',
+};
+
+// 途中で失敗したときは、どこまで反映したかを添える（画面側は一覧を取り直して整合させる）。
+const withAppliedCount = (message: string, applied: number) =>
+  applied > 0 ? `${message}（${applied} 件は反映済みです）` : message;
 
 // メンバー一覧画面の「下書き→保存」でまとめて確定するため、変更を一括で受け取る。
 export const saveMemberChanges = async (
   input: MemberChangesInput,
 ): Promise<ActionResult> => {
-  const caller = await getCurrentProfile();
-  if (!caller) {
-    return { ok: false, error: 'セッションが確認できません。ログインし直してください' };
+  const check = await requireAdmin();
+  if (!check.ok) {
+    return { ok: false, error: check.error };
   }
+  const caller = check.profile;
 
-  const removedMemberIds = input.removedMemberIds ?? [];
-  if (removedMemberIds.length === 0) {
+  const hasRemovals = (input?.removedMemberIds ?? []).length > 0;
+  const hasRoleChanges = (input?.roleChanges ?? []).length > 0;
+  if (!hasRemovals && !hasRoleChanges) {
     return { ok: true, data: undefined };
-  }
-
-  // 自分自身の削除は禁止（誤操作の防止。アカウント削除は設定＞アカウントから行う）。
-  const targetIds = removedMemberIds;
-  if (targetIds.includes(caller.id)) {
-    return { ok: false, error: '自分自身の削除はできません' };
   }
 
   const admin = createAdminClient();
 
-  // 対象が全員「自組織のメンバー」であることをサーバ側でも確認する
-  // （service_role は RLS を越えるため、他組織の id を混ぜられても弾けるように）。
-  const { data: targets, error: targetsError } = await admin
+  const { data: rows, error: membersError } = await admin
     .from('profiles')
-    .select('id')
-    .eq('organizationId', caller.organizationId)
-    .in('id', targetIds);
-  if (targetsError) {
+    .select('id, role')
+    .eq('organizationId', caller.organizationId);
+  if (membersError) {
     return { ok: false, error: 'メンバー情報の確認に失敗しました' };
   }
-  const knownIds = new Set((targets ?? []).map((row) => row.id as string));
-  if (targetIds.some((id) => !knownIds.has(id))) {
-    return { ok: false, error: '組織に存在しないメンバーが含まれています' };
-  }
+  const members = (rows ?? []).map((row) => ({
+    id: row.id as string,
+    role: row.role as MemberRole,
+  }));
 
-  // 複数件の削除は個別HTTPになるため厳密には原子的でない。途中失敗時は
-  // 「一部のみ反映された可能性」を伝え、画面側で一覧を取り直して整合させる。
-  for (const memberId of removedMemberIds) {
-    // auth.users を消せば profiles は on delete cascade で消える。
-    const { error } = await admin.auth.admin.deleteUser(memberId);
+  const planned = planMemberChanges(members, input ?? { removedMemberIds: [] }, caller.id);
+  if (!planned.ok) {
+    return { ok: false, error: planned.error };
+  }
+  const { promotions, demotions, removals } = planned.plan;
+
+  const log = await getRequestLogger();
+  let applied = 0;
+
+  // 複数件の変更は個別の呼び出しになるため厳密には原子的でない。途中で失敗したら止め、
+  // 反映済みの件数を伝える。
+  for (const change of [...promotions, ...demotions]) {
+    const { error } = await admin.rpc('change_member_role', {
+      p_actor_id: caller.id,
+      p_target_user_id: change.memberId,
+      p_role: change.role,
+    });
     if (error) {
+      const known = ROLE_CHANGE_ERROR_MESSAGES[error.code ?? ''];
+      if (!known) {
+        log.error({ error, memberId: change.memberId }, 'メンバーのロールの変更に失敗しました');
+      }
       return {
         ok: false,
-        error: 'メンバーの削除に失敗しました（一部のみ反映された可能性があります）',
+        error: withAppliedCount(known ?? 'ロールの変更に失敗しました', applied),
       };
+    }
+    applied += 1;
+  }
+
+  for (const removal of removals) {
+    // auth.users を消せば profiles は on delete cascade で消える。
+    const { error } = await admin.auth.admin.deleteUser(removal.memberId);
+    if (error) {
+      log.error({ error, memberId: removal.memberId }, 'メンバーの削除に失敗しました');
+      return {
+        ok: false,
+        error: withAppliedCount('メンバーの削除に失敗しました', applied),
+      };
+    }
+    applied += 1;
+
+    // 削除はもう取り消せないので、記録に失敗しても成功として返し、ログにだけ残す。
+    const { error: auditError } = await admin.from('system_audit_logs').insert({
+      organizationId: caller.organizationId,
+      userId: caller.id,
+      action: 'member.remove',
+      entityName: 'profiles',
+      entityId: removal.memberId,
+      detail: JSON.stringify({ role: removal.role }),
+    });
+    if (auditError) {
+      log.error({ error: auditError, memberId: removal.memberId }, 'メンバーの削除の記録に失敗しました');
     }
   }
 

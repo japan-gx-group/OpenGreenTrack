@@ -220,7 +220,7 @@ export const updateLocations = async (
 
 // 既存拠点の更新。編集後の LocationRecord を返す。
 // organizationId は変更しない（所属組織の付け替えは対象外）。RLS は組織一致のみを見るため、
-// 自組織の拠点であれば所属メンバーの誰でも更新できる（profiles.role による権限差は未導入。
+// 自組織の拠点であれば所属メンバーの誰でも更新できる（拠点はロールにかかわらず編集できる。
 // current_user_can_edit はポリシー未参照）。
 export const updateLocation = async (
   locationId: string,
@@ -365,7 +365,7 @@ export interface LocationDeleteResult {
 }
 
 // 拠点の削除。RLS は組織一致のみを見るため、自組織の拠点であれば所属メンバーの誰でも削除できる
-// （profiles.role による権限差は未導入）。
+// （拠点はロールにかかわらず削除できる）。
 // ⚠️ activity_records / emission_results は locations を on delete cascade で参照しているため、
 //   拠点を削除すると紐づく活動量データ・算定結果も連鎖削除される（呼び出し側で明示的に警告すること）。
 // V-LOC-004（機能仕様 §5.2）: 未算定（isCalculated = false）の活動量データが1件でも残る拠点は

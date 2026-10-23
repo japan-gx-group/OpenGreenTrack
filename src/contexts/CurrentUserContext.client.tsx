@@ -2,9 +2,9 @@
 
 // ログイン中ユーザーのプロフィール（ID・所属組織・表示名）をアプリ全体へ配る Context。
 // 組織名の表示やユーザー識別に使う。
-// ※ ロールによる画面の出し分けは行わない（ロール判定は無効）。ここへ
-//   「このロールなら○○できる」というフラグを再び生やさないこと。書き込み可否は
-//   RLS とサーバ側の組織チェックで担保しており、クライアントの値では決めない。
+// ※ role は画面の出し分け（src/types/role.ts の isAdmin）にだけ使う。書き込み可否は
+//   RLS とサーバ側の組織・ロールのチェック（src/lib/authz.ts の requireAdmin）で担保しており、
+//   クライアントの値では決めない。ここへ「このロールなら○○できる」というフラグを生やさないこと。
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createClient } from '@/lib/supabase/client';
@@ -41,7 +41,7 @@ export const CurrentUserProvider = ({ children }: { children: ReactNode }) => {
     if (!activeRef.current) return;
 
     // プロフィールを取得できない場合は profile = null（＝組織名や表示名を出さない）に倒す。
-    // role は DB の check 制約と同じ3値であることだけ確認する（権限判定には使わない）。
+    // role は DB の check 制約と同じ3値であることだけ確認する（権限の判定はサーバと DB で行う）。
     if (data && isMemberRole(data.role)) {
       // supabase-js は生成型なしだと埋め込み（organizations(...)）を配列として推論するため正規化する
       // （scopeAnalysisService.ts の suppliers 埋め込みと同じ方針）。

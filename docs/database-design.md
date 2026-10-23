@@ -233,7 +233,7 @@ Route Handler + service_role 限定）。詳細な確定 DDL は `idea-scope3-sp
 **行が無いカテゴリ×年度の既定は `direct`**（後方互換）。方式の排他選択により direct 値と
 積上げ値の二重計上は構造的に発生しない。`calculated` 切替後も直接入力値は削除せず保持する
 （Scope分析画面で「未採用」表示。切替の可逆性）。RLS・GRANT は `scope3_category_emissions`
-と同型（認証済み + 自組織スコープ。認証済みユーザーを同一権限として扱うためロール判定なし）。
+と同型（認証済み + 自組織スコープ。Scope 3 の入力方式はロールにかかわらず編集できるためロール判定なし）。
 
 | 物理名 | 論理名 | 型 | 制約 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -317,6 +317,18 @@ GHG プロトコルのロケーション基準／マーケット基準それぞ�
 
 - 書き込みは service_role 限定の RPC `assign_idea_import_to_fiscal_year` だけ（割り当てと同時に、その年度の未算定の積上げ明細を割り当てた版へ付け替えるため）。`authenticated` は SELECT のみ（自組織限定。IDEA のライセンスは法人単位）。
 - 取込完了の `complete_idea_import` は、版を割り当てた年度の明細を新しい版への付け替え・孤児化の対象から除く。`delete_idea_import` は割り当て中の版を P2033 で拒否する。
+
+### 3.14 メンバーのロール（`profiles.role`）（`supabase/migrations/20261024090000_member_roles.sql`）
+
+ロールは管理者とメンバーの 2 つ。`profiles.role` が `admin` なら管理者、それ以外（`logger`・`viewer`）はすべてメンバーとして扱う。判定は「`role` が `admin` か」だけで行い（`src/types/role.ts` の `isAdmin`）、`logger` や `viewer` を個別に判定しない。新しくメンバーにするときに書く値は `logger`（列の既定値）。`member` という値は足さない（既存の行を書き換えるデータの更新をマイグレーションに書けないため: AGENTS.md R12）。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `role` | ロール | VARCHAR(50) | NOT NULL, DEFAULT `'logger'`, CHECK (`admin` / `logger` / `viewer`) | `admin` = 管理者、それ以外 = メンバー。組織を作った人（初期セットアップ）は `admin`、招待された人は招待の `role`（既定 `logger`） |
+
+- `authenticated` は `role` を更新できない（列 GRANT に含めない）。ロールの変更は service_role 限定の RPC `change_member_role(p_actor_id, p_target_user_id, p_role)` だけが行う。RPC は操作する人が同じ組織の管理者であること（P2082）、対象が同じ組織のメンバーであること（P2083）、値が `admin` か `logger` であること（P2084）を確かめ、`system_audit_logs` に `member.role.update` を同じトランザクションで残す。管理者かどうかが変わらない変更（`viewer` → `logger` など）は何もしない。
+- トリガー `ensure_organization_keeps_admin`（`profiles` の `role`・`organizationId` の更新と削除の前）は、組織の管理者が 0 人になる変更を P2081 で拒否する。メンバーの削除・退会（`auth.users` の削除から連鎖する削除）・ロールの変更のどの経路でも効く。組織ごとに `pg_advisory_xact_lock` を取ってから数えるため、2 人の管理者が同時に互いを降格しても 0 人にならない。組織ごとの削除（`organizations` からの連鎖）は止めない。
+- メンバーの削除は `system_audit_logs` に `member.remove`（`detail` に削除したときのロール）として Server Action が残す。
 
 ---
 

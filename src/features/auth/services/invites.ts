@@ -4,7 +4,7 @@
 //
 // 招待の「発行」とメール送信は src/features/settings/services/invites.ts 側。
 // ここではトークンの検証と、招待された人の登録（既存組織への参加）だけを行う。
-// profiles.role には招待の role をそのまま写すが、権限判定には使わない（ロール判定は無効）。
+// profiles.role には招待の role をそのまま写す（'admin' なら管理者、それ以外はメンバー: src/types/role.ts）。
 //
 // service_role を使う理由は setup.ts と同じ（authenticated は profiles に INSERT できない）。
 

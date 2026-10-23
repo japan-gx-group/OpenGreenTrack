@@ -5,12 +5,14 @@
 //   - 削除対象は「セッションのユーザー自身」に固定する。リクエストボディの id 等は一切信用しない。
 //   - service_role は RLS をバイパスするため、必ず先にセッションでログイン本人を確定させる。
 //   - 組織で最後の1人（メンバー不在になる削除）は拒否する（isLastMember ガード）。
+//   - 組織で最後の管理者（管理者が 0 人になる削除）も拒否する（isLastAdmin ガード）。
 //   - 破壊的操作のため、Origin ヘッダがサイト自身であることを確認する（CSRF緩和）。
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { isLastMember } from '@/features/settings/services/accountGuards';
+import { isLastAdmin, isLastMember } from '@/features/settings/services/accountGuards';
+import { isAdmin, isMemberRole } from '@/types/role';
 
 // service_role を使うため Node ランタイムで実行する（Edge では実行しない）。
 export const runtime = 'nodejs';
@@ -69,15 +71,14 @@ export const POST = async (request: NextRequest) => {
   // 2) 本人のプロフィール（組織・権限）を取得する。
   const { data: profile, error: profileError } = await admin
     .from('profiles')
-    .select('id, organizationId')
+    .select('id, organizationId, role')
     .eq('id', user.id)
     .single();
   if (profileError || !profile) {
     return NextResponse.json({ error: 'プロフィールが見つかりません' }, { status: 404 });
   }
 
-  // 3) 安全ガード: 組織で最後の1人なら削除を拒否する（ロール判定が無効なため、
-  //    「最後の admin」ではなく「最後のメンバー」を守る）。
+  // 3) 安全ガード: 組織で最後の1人なら削除を拒否する。
   // 既知の限界（TOCTOU）: このカウントと下の削除はトランザクション化できないため
   // （supabase-js は複数文のトランザクションを張れない）、2人がミリ秒差で同時に退会すると
   // 両方が count>1 を通過し、メンバー不在の組織が残り得る。
@@ -100,6 +101,32 @@ export const POST = async (request: NextRequest) => {
       },
       { status: 409 },
     );
+  }
+
+  // 3b) 安全ガード: 組織で最後の管理者なら削除を拒否する。同時の操作は DB のトリガー
+  //     （ensure_organization_keeps_admin）が組織ごとのロックで止めるので、上のような TOCTOU は残らない。
+  //     role が想定外の値なら、管理者ではないものとして扱う。
+  if (isMemberRole(profile.role) && isAdmin(profile.role)) {
+    const { count: adminCount, error: adminCountError } = await admin
+      .from('profiles')
+      .select('id', { count: 'exact', head: true })
+      .eq('organizationId', profile.organizationId)
+      .eq('role', 'admin');
+    if (adminCountError) {
+      return NextResponse.json(
+        { error: 'アカウント削除の事前確認に失敗しました' },
+        { status: 500 },
+      );
+    }
+    if (isLastAdmin(profile.role, adminCount ?? 0)) {
+      return NextResponse.json(
+        {
+          error:
+            '組織で最後の管理者のため削除できません。先に別のメンバーを管理者にしてください',
+        },
+        { status: 409 },
+      );
+    }
   }
 
   // 4) auth ユーザーを削除する。
