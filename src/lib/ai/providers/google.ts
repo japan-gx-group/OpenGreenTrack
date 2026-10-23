@@ -10,18 +10,22 @@
 
 import 'server-only';
 import { isValidAiModelId, type AiModelOption } from '@/types/ai';
+import type { AiPreparedInput } from '../inputCheck';
 import {
   AiProviderError,
+  GENERATE_TIMEOUT_MS,
   LIST_MODELS_TIMEOUT_MS,
   MAX_LIST_PAGES,
   classifyHttpStatus,
   fetchProviderJson,
   isRecord,
+  parseJsonOutput,
+  postJson,
   withTimeout,
   type ClassifyHttpError,
 } from './http';
 import { sortModelOptions } from './sortModels';
-import type { AiProvider } from './types';
+import type { AiGenerateRequest, AiProvider } from './types';
 
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 const MODEL_NAME_PREFIX = 'models/';
@@ -53,8 +57,56 @@ export const toGoogleModelOptions = (rows: unknown[]): AiModelOption[] =>
     return [{ id, displayName, createdAt: null, deprecated: false, retiresOn: null }];
   });
 
+const toPart = (part: AiPreparedInput) =>
+  part.type === 'text' ? { text: part.text } : { inlineData: { mimeType: part.mimeType, data: part.base64 } };
+
+/** generateContent に送る本文（テストのため export する） */
+export const buildGoogleGenerateBody = (request: AiGenerateRequest) => ({
+  systemInstruction: { parts: [{ text: request.instructions }] },
+  contents: [{ role: 'user', parts: request.input.map(toPart) }],
+  // 決まった形（JSON スキーマ）で出力させる。responseMimeType と responseJsonSchema の組み合わせを使う
+  // （新しい responseFormat が正式版かを確かめられていないため、以前から使える書き方にする）。
+  generationConfig: {
+    responseMimeType: 'application/json',
+    responseJsonSchema: request.schema,
+    maxOutputTokens: request.maxOutputTokens,
+  },
+});
+
+/** generateContent の応答から JSON を取り出す（テストのため export する） */
+export const readGoogleOutput = (body: unknown): unknown => {
+  if (!isRecord(body)) throw new AiProviderError('bad_response');
+  // 入力が安全上の理由で止められたとき（promptFeedback.blockReason）は候補が返らない。
+  if (isRecord(body.promptFeedback) && body.promptFeedback.blockReason) {
+    throw new AiProviderError('bad_response');
+  }
+  const candidate = Array.isArray(body.candidates) ? body.candidates[0] : undefined;
+  if (!isRecord(candidate)) throw new AiProviderError('bad_response');
+  // STOP 以外（MAX_TOKENS・SAFETY など）は、形が欠けている可能性があるため使わない。
+  if (candidate.finishReason !== undefined && candidate.finishReason !== 'STOP') {
+    throw new AiProviderError('bad_response');
+  }
+  const parts = isRecord(candidate.content) && Array.isArray(candidate.content.parts) ? candidate.content.parts : [];
+  const text = parts
+    .map((part) => (isRecord(part) && typeof part.text === 'string' ? part.text : ''))
+    .join('');
+  return parseJsonOutput(text);
+};
+
 export const googleProvider: AiProvider = {
   id: 'google',
+  async generate(request) {
+    // モデル ID は保存前に形を確かめているが、URL のパスに入るので送る直前にも確かめ、エンコードする。
+    if (!isValidAiModelId(request.modelId)) throw new AiProviderError('model_unavailable');
+    const body = await postJson(
+      `${API_BASE}/models/${encodeURIComponent(request.modelId)}:generateContent`,
+      { 'x-goog-api-key': request.apiKey },
+      buildGoogleGenerateBody(request),
+      withTimeout(GENERATE_TIMEOUT_MS, request.signal),
+      classify,
+    );
+    return readGoogleOutput(body);
+  },
   async listModels(apiKey, signal) {
     const requestSignal = withTimeout(LIST_MODELS_TIMEOUT_MS, signal);
     const models: AiModelOption[] = [];

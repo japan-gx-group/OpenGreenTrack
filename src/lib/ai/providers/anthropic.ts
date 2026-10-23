@@ -10,19 +10,23 @@
 
 import 'server-only';
 import { isValidAiModelId, type AiModelOption } from '@/types/ai';
+import type { AiPreparedInput } from '../inputCheck';
 import {
   AiProviderError,
+  GENERATE_TIMEOUT_MS,
   LIST_MODELS_TIMEOUT_MS,
   MAX_LIST_PAGES,
   classifyHttpStatus,
   fetchProviderJson,
   isRecord,
+  parseJsonOutput,
+  postJson,
   toDateOnly,
   withTimeout,
   type ClassifyHttpError,
 } from './http';
 import { sortModelOptions } from './sortModels';
-import type { AiProvider } from './types';
+import type { AiGenerateRequest, AiProvider } from './types';
 
 const API_BASE = 'https://api.anthropic.com/v1';
 export const ANTHROPIC_VERSION = '2023-06-01';
@@ -58,8 +62,47 @@ export const toAnthropicModelOptions = (rows: unknown[]): AiModelOption[] =>
     ];
   });
 
+// 入力を Messages API の content ブロックにする。PDF は document、画像は image（どちらも base64）。
+const toContentBlock = (part: AiPreparedInput) => {
+  if (part.type === 'text') return { type: 'text', text: part.text };
+  const source = { type: 'base64', media_type: part.mimeType, data: part.base64 };
+  return part.mimeType === 'application/pdf' ? { type: 'document', source } : { type: 'image', source };
+};
+
+/** Messages API に送る本文（テストのため export する） */
+export const buildAnthropicMessagesBody = (request: AiGenerateRequest) => ({
+  model: request.modelId,
+  max_tokens: request.maxOutputTokens,
+  system: request.instructions,
+  messages: [{ role: 'user', content: request.input.map(toContentBlock) }],
+  // 決まった形（JSON スキーマ）で出力させる。ツールを強制して形を出させる方式は使わない（新しいモデルでは 400）。
+  // temperature・top_p・top_k は送らない（新しい API の版では受け付けない）。
+  output_config: { format: { type: 'json_schema', schema: request.schema } },
+});
+
+/** Messages API の応答から JSON を取り出す（テストのため export する） */
+export const readAnthropicOutput = (body: unknown): unknown => {
+  if (!isRecord(body) || !Array.isArray(body.content)) throw new AiProviderError('bad_response');
+  // 拒否と、出力の上限での打ち切りは、形が欠けている可能性があるため使わない。
+  if (body.stop_reason === 'refusal' || body.stop_reason === 'max_tokens') {
+    throw new AiProviderError('bad_response');
+  }
+  const text = body.content.find((block) => isRecord(block) && block.type === 'text');
+  return parseJsonOutput(isRecord(text) ? text.text : undefined);
+};
+
 export const anthropicProvider: AiProvider = {
   id: 'anthropic',
+  async generate(request) {
+    const body = await postJson(
+      `${API_BASE}/messages`,
+      { 'x-api-key': request.apiKey, 'anthropic-version': ANTHROPIC_VERSION },
+      buildAnthropicMessagesBody(request),
+      withTimeout(GENERATE_TIMEOUT_MS, request.signal),
+      classify,
+    );
+    return readAnthropicOutput(body);
+  },
   async listModels(apiKey, signal) {
     const requestSignal = withTimeout(LIST_MODELS_TIMEOUT_MS, signal);
     const models: AiModelOption[] = [];
