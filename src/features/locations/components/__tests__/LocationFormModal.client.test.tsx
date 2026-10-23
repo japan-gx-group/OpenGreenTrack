@@ -48,4 +48,18 @@ describe('LocationFormModal ラベルの関連付け', () => {
     expect(container.querySelector('button[type="submit"]')?.hasAttribute('disabled')).toBe(true);
     unmount();
   });
+
+  it('保存中はキャンセルできない', () => {
+    const form = {
+      isModalOpen: true, editingLocationId: null,
+      values: { name: '拠点', region: 'Kanto', type: 'office', person: '', status: 'active' },
+      setValues: vi.fn(), isSaving: true, openAdd: vi.fn(), openEdit: vi.fn(), close: vi.fn(), submit: vi.fn(),
+    } as unknown as LocationFormController;
+    const { container, unmount } = render(
+      <LocationFormModal form={form} returnFocusRef={{ current: null }} />,
+    );
+
+    expect(container.querySelector<HTMLButtonElement>('button[type="button"]:not([aria-label])')?.disabled).toBe(true);
+    unmount();
+  });
 });
