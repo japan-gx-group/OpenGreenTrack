@@ -33,3 +33,11 @@ export const AI_GENERATE_ERROR_MESSAGES: Record<AiGenerateErrorCode, string> = {
   invalid_input: '送る内容が正しくありません',
   limit_exceeded: 'AI の利用回数の上限に達しました。時間をおいてお試しください',
 };
+
+/** 方式B の鍵の問題（管理者が「AI の設定」で見る文） */
+export const AI_CREDENTIAL_PROBLEM_MESSAGES = {
+  credential_missing: 'API キーがまだ登録されていません。「AI の設定」で登録してください',
+  credential_unreadable: '暗号化の鍵が変わったため、登録した API キーを読めません。API キーを登録し直してください',
+  credential_provider_not_allowed:
+    '登録した API キーの提供元は、今は使えない設定になっています。許可されている提供元の API キーを登録し直してください',
+} as const;

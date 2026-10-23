@@ -50,16 +50,13 @@ describe('readAiConfig', () => {
     });
   });
 
-  it('画面からの鍵の登録（方式B）はまだ使えないので、true を指定されたら使えない側に倒す', () => {
-    expect(
-      readAiConfig({ AI_PROVIDER: 'openai', AI_API_KEY: KEY, AI_ALLOW_KEY_REGISTRATION: 'true' }),
-    ).toEqual({ ok: false, problem: 'registration_not_supported' });
+  it('AI_ALLOW_KEY_REGISTRATION は true / false 以外なら使えない側に倒す', () => {
     expect(
       readAiConfig({ AI_PROVIDER: 'openai', AI_API_KEY: KEY, AI_ALLOW_KEY_REGISTRATION: 'yes' }),
     ).toEqual({ ok: false, problem: 'invalid_registration_flag' });
     expect(
       readAiConfig({ AI_PROVIDER: 'openai', AI_API_KEY: KEY, AI_ALLOW_KEY_REGISTRATION: 'false' }),
-    ).toMatchObject({ ok: true });
+    ).toMatchObject({ ok: true, keySource: 'server' });
   });
 });
 
@@ -72,5 +69,43 @@ describe('isValidAiApiKey', () => {
   it('512 文字を超える鍵は受け付けない', () => {
     expect(isValidAiApiKey('a'.repeat(512))).toBe(true);
     expect(isValidAiApiKey('a'.repeat(513))).toBe(false);
+  });
+});
+
+describe('readAiConfig（方式B: 画面からの登録）', () => {
+  // 暗号化の鍵もテストでは同じ値の繰り返しで作る（鍵らしい文字列をソースに書かない）。
+  const ENCRYPTION_KEY = Buffer.alloc(32, 1).toString('base64');
+
+  it('暗号化の鍵がそろえば方式B。提供元は既定で 3 社すべて、AI_PROVIDER・AI_API_KEY は読まない', () => {
+    const config = readAiConfig({ AI_ALLOW_KEY_REGISTRATION: 'true', AI_ENCRYPTION_KEY: ENCRYPTION_KEY });
+    expect(config).toMatchObject({
+      ok: true,
+      keySource: 'app',
+      allowedProviders: ['anthropic', 'google', 'openai'],
+      ignoresServerKey: false,
+    });
+    expect(config.ok && config.keySource === 'app' && config.encryptionKeyId).toMatch(/^[0-9a-f]{16}$/);
+
+    expect(
+      readAiConfig({ AI_ALLOW_KEY_REGISTRATION: 'true', AI_ENCRYPTION_KEY: ENCRYPTION_KEY, AI_API_KEY: KEY }),
+    ).toMatchObject({ ok: true, keySource: 'app', ignoresServerKey: true });
+  });
+
+  it('暗号化の鍵が無い・32 バイトでない・base64 でないなら、暗号化せずに保存する方向へは倒さず使えない状態にする', () => {
+    for (const key of [undefined, '', Buffer.alloc(16, 1).toString('base64'), 'not base64!!']) {
+      expect(readAiConfig({ AI_ALLOW_KEY_REGISTRATION: 'true', AI_ENCRYPTION_KEY: key })).toEqual({
+        ok: false,
+        problem: 'invalid_encryption_key',
+      });
+    }
+  });
+
+  it('AI_ALLOWED_PROVIDERS で登録してよい提供元を絞れる。対応していない名前があれば使えない状態にする', () => {
+    expect(
+      readAiConfig({ AI_ALLOW_KEY_REGISTRATION: 'true', AI_ENCRYPTION_KEY: ENCRYPTION_KEY, AI_ALLOWED_PROVIDERS: ' openai, anthropic ' }),
+    ).toMatchObject({ ok: true, allowedProviders: ['anthropic', 'openai'] });
+    expect(
+      readAiConfig({ AI_ALLOW_KEY_REGISTRATION: 'true', AI_ENCRYPTION_KEY: ENCRYPTION_KEY, AI_ALLOWED_PROVIDERS: 'openai,azure' }),
+    ).toEqual({ ok: false, problem: 'invalid_allowed_providers' });
   });
 });

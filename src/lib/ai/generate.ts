@@ -3,7 +3,7 @@
 // 処理の順番:
 //   1. 用途が登録済みか（purposes.ts）。出力の形（JSON スキーマ）が 3 社で使える書き方か（schema.ts）
 //   2. 入力が用途の範囲内か（種類・量）。ファイルの形式を先頭のバイトで確かめる（inputCheck.ts）
-//   3. 設定（環境変数の提供元・鍵）と、管理者が選んだモデル（ai_settings）を読む
+//   3. 鍵（方式A: 環境変数 / 方式B: 登録した鍵を復号。credentials.ts）と、管理者が選んだモデル（ai_settings）を読む
 //   4. 回数の上限（用途ごと・組織全体。rateLimit.ts）
 //   5. 提供元に送る（ツールは渡さない。提供元に保存させない）
 //   6. 機能側の validate で出力を検証する（形が合わない・値の範囲外なら使わない）
@@ -19,7 +19,7 @@ import { getRequestLogger } from '@/lib/logging/requestLogger';
 import type { CurrentProfile } from '@/lib/currentProfile';
 import { AI_GENERATE_ERROR_MESSAGES } from '@/features/ai/messages';
 import type { AiGenerateErrorCode, AiProviderId } from '@/types/ai';
-import { readAiConfig } from './config';
+import { resolveAiCredential } from './credentials';
 import { prepareAiInputs, type AiInputPart } from './inputCheck';
 import { AiProviderError, getAiProvider } from './providers';
 import { findAiPurpose, type AiPurposeId } from './purposes';
@@ -78,13 +78,14 @@ export const generateStructured = async <T>(args: GenerateStructuredArgs<T>): Pr
     return fail('invalid_input', { message: `${AI_GENERATE_ERROR_MESSAGES.invalid_input}（${prepared.reason}）` });
   }
 
-  const config = readAiConfig();
+  const admin = createAdminClient();
+  // 方式A（環境変数）か方式B（登録した鍵を復号）かは、ここで吸収する（credentials.ts）。
+  const config = await resolveAiCredential(admin, args.profile.organizationId);
   if (!config.ok) {
-    log.warn({ problem: config.problem }, 'AI の設定（環境変数）が不足しているか、正しくありません');
+    log.warn({ problem: config.problem }, 'AI の鍵を取り出せませんでした（設定の不足・未登録・登録し直しが必要）');
     return fail('not_configured');
   }
 
-  const admin = createAdminClient();
   const { data: settings, error: settingsError } = await admin
     .from('ai_settings')
     .select('provider, modelId')

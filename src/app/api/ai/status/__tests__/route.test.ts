@@ -3,11 +3,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   profile: null as null | { id: string; organizationId: string; role: string },
   settings: null as null | { provider: string; modelId: string },
+  credential: null as null | { provider: string; keyId: string; keyLast4: string; updatedAt: string },
 }));
 
 vi.mock('@/lib/currentProfile', () => ({ getCurrentProfile: async () => mocks.profile }));
 vi.mock('@/lib/logging/requestLogger', () => ({
   getRequestLogger: async () => ({ warn: vi.fn(), error: vi.fn() }),
+}));
+vi.mock('@/lib/supabase/admin', () => ({
+  createAdminClient: () => ({
+    from: () => ({
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: mocks.credential, error: null }) }) }),
+    }),
+  }),
 }));
 vi.mock('@/lib/supabase/server', () => ({
   createClient: async () => ({
@@ -24,6 +32,7 @@ describe('GET /api/ai/status', () => {
   beforeEach(() => {
     mocks.profile = { id: 'member-1', organizationId: 'org-1', role: 'logger' };
     mocks.settings = { provider: 'anthropic', modelId: 'claude-sonnet-5-5' };
+    mocks.credential = null;
     vi.stubEnv('AI_PROVIDER', 'anthropic');
     vi.stubEnv('AI_API_KEY', KEY);
     vi.stubEnv('AI_ALLOW_KEY_REGISTRATION', '');
@@ -50,6 +59,10 @@ describe('GET /api/ai/status', () => {
       provider: 'anthropic',
       modelId: 'claude-sonnet-5-5',
       canManage: false,
+      allowedProviders: [],
+      registeredKey: null,
+      needsReRegistration: false,
+      leftoverKey: false,
     });
   });
 
@@ -70,5 +83,13 @@ describe('GET /api/ai/status', () => {
       provider: null,
       modelId: null,
     });
+  });
+
+  it('方式A で DB に鍵が残っていれば知らせる（暗号文は返さない）', async () => {
+    mocks.credential = { provider: 'openai', keyId: 'abcdef0123456789', keyLast4: 'a1b2', updatedAt: '2026-10-24T00:00:00Z' };
+    const response = await GET();
+    const body = await response.json();
+    expect(body).toMatchObject({ keySource: 'server', leftoverKey: true, registeredKey: null });
+    expect(JSON.stringify(body)).not.toContain('abcdef0123456789');
   });
 });

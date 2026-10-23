@@ -345,6 +345,26 @@ GHG プロトコルのロケーション基準／マーケット基準それぞ�
 
 - `authenticated` は自組織の SELECT だけ（何に送られるかを誰でも確かめられるように）。書き込みは、管理者であることを Server Action（`saveAiModel` の `requireAdmin`）で確かめたうえで service_role から行う。変更は `system_audit_logs` に `ai.model.update` として残す。
 
+### 3.16 画面から登録した AI の API キー (`ai_credentials`)（`supabase/migrations/20261024180000_ai_credentials.sql`）
+
+方式B（`AI_ALLOW_KEY_REGISTRATION=true`）で、管理者が画面から登録した API キー。1 組織 = 1 行。鍵は AES-256-GCM の暗号文だけを持つ（`src/lib/ai/crypto.ts`）。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `organizationId` | 組織ID | UUID | Primary Key, FK → `organizations` | 削除時: CASCADE |
+| `provider` | 提供元 | VARCHAR(20) | NOT NULL, CHECK (`anthropic` / `google` / `openai`) | |
+| `ciphertext` | 暗号文 | TEXT | NOT NULL | base64 |
+| `iv` | IV | TEXT | NOT NULL | base64（12 バイト。保存のたびに作り直す） |
+| `authTag` | 認証タグ | TEXT | NOT NULL | base64（16 バイト） |
+| `keyId` | 暗号化の鍵の指紋 | VARCHAR(16) | NOT NULL | `AI_ENCRYPTION_KEY` の SHA-256 の先頭 16 文字。替えたら一致しなくなり、登録し直してもらう |
+| `keyLast4` | 鍵の末尾 4 文字 | VARCHAR(4) | NOT NULL | 画面表示用 |
+| `updatedBy` | 更新者 | UUID | NULL 可 | |
+| `updatedAt` | 更新日時 | TIMESTAMPTZ | NOT NULL | |
+
+- 追加認証データに `ai-credential:v1:<organizationId>:<provider>` を入れて暗号化するので、暗号文を別の組織・別の提供元の行に移しても復号できない。
+- RLS を有効にしてポリシーを置かず、`anon`・`authenticated` の権限はすべて外す（ブラウザ側からは一切読めない）。読み書きは、管理者であることと本人確認（ログインパスワードの再入力）をサーバで確かめたうえで service_role から行う。
+- 暗号化の鍵（`AI_ENCRYPTION_KEY`）は DB の外（環境変数）に置く。DB やバックアップだけが漏れても鍵は読めない。`pgcrypto` や Supabase Vault は使わない（鍵の平文が SQL 文に乗り、DB のログに残りうるため）。
+
 ---
 
 ## 4. 計算の整合性・業務ルール

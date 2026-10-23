@@ -63,6 +63,9 @@ OpenGreenTrack は複数企業（organization）が同居するマルチテナ�
 | `LOG_LEVEL` | サーバのみ | Pino ロガーの最小ログレベル (`info`, `debug`, `error` など。デフォルト: `info`) |
 | `AI_PROVIDER` | サーバのみ | AI の提供元（`anthropic` / `google` / `openai`）。任意 |
 | `AI_API_KEY` | **サーバのみ。絶対に公開しない** | AI の提供元の API キー。`src/lib/ai/config.ts` だけが読み、ブラウザ・ログへは出さない。任意 |
+| `AI_ALLOW_KEY_REGISTRATION` | サーバのみ | `true` で、管理者が画面から API キーを登録する方式（方式B）にする。任意（既定は方式A） |
+| `AI_ENCRYPTION_KEY` | **サーバのみ。絶対に公開しない** | 方式B で登録した API キーを暗号化する鍵（32 バイトの base64）。`SUPABASE_SERVICE_ROLE_KEY` とは別の値にする |
+| `AI_ALLOWED_PROVIDERS` | サーバのみ | 方式B で登録してよい提供元（カンマ区切り）。未設定なら 3 社すべて |
 
 `.env.example` をコピーして `.env.local` を作成する（`.env.local` はコミット禁止）。
 
@@ -96,7 +99,9 @@ AI を使う機能（請求書の読取り・開示文の下書きなど）は�
 
 | ファイル | 役割 |
 |---|---|
-| `config.ts` | 環境変数（`AI_PROVIDER` / `AI_API_KEY`）の読み取りと検証。足りない・不正なら AI を使えない状態にする |
+| `config.ts` | 環境変数の読み取りと検証。方式A（`AI_PROVIDER` / `AI_API_KEY`）か方式B（`AI_ALLOW_KEY_REGISTRATION=true`）かもここで決める。足りない・不正なら AI を使えない状態にする |
+| `credentials.ts` | 鍵の取り出し。方式A は環境変数、方式B は `ai_credentials` の暗号文を復号する。呼び出し側は方式の違いを知らずに済む |
+| `crypto.ts` | 方式B の鍵の暗号化と復号（AES-256-GCM。追加認証データに組織 ID と提供元）。暗号化の鍵は環境変数 `AI_ENCRYPTION_KEY` |
 | `providers/` | 3 社（Anthropic・Google（Gemini API）・OpenAI）の呼び出し。SDK を使わず `fetch`。送信先の URL は固定し、リダイレクトは追わない。HTTP のエラーは共通の分類（`AiErrorCode`）にそろえ、提供元のエラー本文は出さない |
 | `purposes.ts` | 用途の一覧。AI を使う機能は、ここに用途（送ってよい入力の種類・量、回数の上限、出力の上限）を登録してから呼ぶ |
 | `inputCheck.ts` | 入力の確認。ファイルの形式は先頭のバイトで判定する（PDF・PNG・JPEG・WebP） |
