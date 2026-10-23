@@ -49,6 +49,11 @@ export const loggerOptions: pino.LoggerOptions = {
       '*.apiKey',
       '*.secret',
       '*.cookie',
+      // AI の提供元へ送る鍵のヘッダ（Anthropic: x-api-key / Google: x-goog-api-key）
+      '["x-api-key"]',
+      '["x-goog-api-key"]',
+      '*["x-api-key"]',
+      '*["x-goog-api-key"]',
     ],
     censor: '[REDACTED]',
   },
