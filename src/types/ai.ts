@@ -48,6 +48,23 @@ export type AiErrorCode =
   | 'bad_response'
   | 'unknown';
 
+/**
+ * 共通の入口（generateStructured）の失敗の分類。提供元の失敗（AiErrorCode）に、
+ * 送る前にアプリ側で断る理由を足したもの。
+ */
+export type AiGenerateErrorCode =
+  | AiErrorCode
+  /** 環境変数に提供元・鍵が無い・不正 */
+  | 'not_configured'
+  /** 管理者がモデルを選んでいない（または提供元を替えてモデルが無効になった） */
+  | 'model_not_selected'
+  /** 登録していない用途から呼ばれた */
+  | 'unknown_purpose'
+  /** 用途の範囲外の入力（種類・形式・量） */
+  | 'invalid_input'
+  /** 回数の上限（用途ごと・組織全体）を超えた */
+  | 'limit_exceeded';
+
 /** AI の設定の状態（GET /api/ai/status の応答） */
 export interface AiStatus {
   /** 鍵の置き場所。今は環境変数（方式A）だけ */

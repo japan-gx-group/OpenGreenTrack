@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { googleProvider, toGoogleModelOptions } from '../google';
+import { buildGoogleGenerateBody, googleProvider, readGoogleOutput, toGoogleModelOptions } from '../google';
+import { AiProviderError } from '../http';
 import { installFetchMock, jsonResponse } from './fetchMock';
 
 // テスト用のダミーの鍵。鍵らしい文字列をソースに書くと秘密情報の走査（gitleaks）に当たるため、同じ文字の繰り返しで作る。
@@ -66,5 +67,67 @@ describe('googleProvider.listModels', () => {
     await expect(googleProvider.listModels(KEY)).rejects.toMatchObject({ code: 'invalid_key' });
     installFetchMock([jsonResponse(429, {})]);
     await expect(googleProvider.listModels(KEY)).rejects.toMatchObject({ code: 'rate_limited' });
+  });
+});
+
+const SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['amount'],
+  properties: { amount: { type: ['number', 'null'] } },
+};
+
+const request = (overrides = {}) => ({
+  apiKey: KEY,
+  modelId: 'gemini-2.5-flash',
+  instructions: '使用量を読み取る',
+  input: [
+    { type: 'file' as const, mimeType: 'application/pdf' as const, base64: 'UERGLWJhc2U2NA==' },
+    { type: 'file' as const, mimeType: 'image/png' as const, base64: 'UE5HLWJhc2U2NA==' },
+    { type: 'text' as const, text: '補足の文' },
+  ],
+  schema: SCHEMA,
+  maxOutputTokens: 800,
+  ...overrides,
+});
+
+describe('googleProvider.generate', () => {
+  it('generateContent に inlineData で送り、出力の形を responseJsonSchema で指定する。鍵は URL に載せない', async () => {
+    const { requests } = installFetchMock([
+      jsonResponse(200, { candidates: [{ content: { parts: [{ text: '{"amount": 7}' }] }, finishReason: 'STOP' }] }),
+    ]);
+    const output = await googleProvider.generate(request());
+    expect(output).toEqual({ amount: 7 });
+
+    expect(requests[0].url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent');
+    expect(requests[0].url).not.toContain(KEY);
+    expect(requests[0].headers['x-goog-api-key']).toBe(KEY);
+    const body = JSON.parse(String(requests[0].init.body));
+    expect(body).toEqual(buildGoogleGenerateBody(request()));
+    expect(body).toMatchObject({
+      systemInstruction: { parts: [{ text: '使用量を読み取る' }] },
+      generationConfig: { responseMimeType: 'application/json', responseJsonSchema: SCHEMA, maxOutputTokens: 800 },
+    });
+    expect(body.contents[0].parts).toEqual([
+      { inlineData: { mimeType: 'application/pdf', data: 'UERGLWJhc2U2NA==' } },
+      { inlineData: { mimeType: 'image/png', data: 'UE5HLWJhc2U2NA==' } },
+      { text: '補足の文' },
+    ]);
+  });
+
+  it('URL のパスに入るモデル ID の形が不正なら、送らずに断る', async () => {
+    const { fetchMock } = installFetchMock([]);
+    await expect(googleProvider.generate(request({ modelId: '../files' }))).rejects.toMatchObject({ code: 'model_unavailable' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('止められた入力・STOP 以外の終わり方・候補が無い応答は bad_response', () => {
+    expect(() => readGoogleOutput({ promptFeedback: { blockReason: 'SAFETY' } })).toThrow(AiProviderError);
+    expect(() => readGoogleOutput({ candidates: [{ content: { parts: [{ text: '{"amount":' }] }, finishReason: 'MAX_TOKENS' }] })).toThrow(AiProviderError);
+    expect(() => readGoogleOutput({ candidates: [] })).toThrow(AiProviderError);
+  });
+
+  it('分かれて返った文を つなげて読む', () => {
+    expect(readGoogleOutput({ candidates: [{ content: { parts: [{ text: '{"amou' }, { text: 'nt": 5}' }] }, finishReason: 'STOP' }] })).toEqual({ amount: 5 });
   });
 });

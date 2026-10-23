@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { openAiProvider, toOpenAiModelOptions } from '../openai';
+import { buildOpenAiResponsesBody, openAiProvider, readOpenAiOutput, toOpenAiModelOptions } from '../openai';
+import { AiProviderError } from '../http';
 import { installFetchMock, jsonResponse } from './fetchMock';
 
 // テスト用のダミーの鍵。鍵らしい文字列をソースに書くと秘密情報の走査（gitleaks）に当たるため、同じ文字の繰り返しで作る。
@@ -84,5 +85,67 @@ describe('openAiProvider.listModels', () => {
     const error = await openAiProvider.listModels(KEY).catch((e: unknown) => e);
     expect(error).toMatchObject({ code: 'invalid_key' });
     expect(String((error as Error).message)).not.toContain(KEY.slice(0, 8));
+  });
+});
+
+const SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['amount'],
+  properties: { amount: { type: ['number', 'null'] } },
+};
+
+const request = (overrides = {}) => ({
+  apiKey: KEY,
+  modelId: 'gpt-5',
+  instructions: '使用量を読み取る',
+  input: [
+    { type: 'file' as const, mimeType: 'application/pdf' as const, base64: 'UERGLWJhc2U2NA==' },
+    { type: 'file' as const, mimeType: 'image/png' as const, base64: 'UE5HLWJhc2U2NA==' },
+    { type: 'text' as const, text: '補足の文' },
+  ],
+  schema: SCHEMA,
+  maxOutputTokens: 800,
+  ...overrides,
+});
+
+describe('openAiProvider.generate', () => {
+  it('Responses API に store: false で送り、PDF は input_file・画像は input_image、出力の形は strict の json_schema', async () => {
+    const { requests } = installFetchMock([
+      jsonResponse(200, {
+        status: 'completed',
+        output: [{ type: 'message', content: [{ type: 'output_text', text: '{"amount": 9}' }] }],
+      }),
+    ]);
+    const output = await openAiProvider.generate(request());
+    expect(output).toEqual({ amount: 9 });
+
+    expect(requests[0].url).toBe('https://api.openai.com/v1/responses');
+    expect(requests[0].headers.authorization).toBe(`Bearer ${KEY}`);
+    const body = JSON.parse(String(requests[0].init.body));
+    expect(body).toEqual(buildOpenAiResponsesBody(request()));
+    expect(body).toMatchObject({
+      model: 'gpt-5',
+      instructions: '使用量を読み取る',
+      store: false,
+      max_output_tokens: 800,
+      text: { format: { type: 'json_schema', name: 'result', schema: SCHEMA, strict: true } },
+    });
+    expect(body.input[0].content).toEqual([
+      { type: 'input_file', filename: 'input.pdf', file_data: 'data:application/pdf;base64,UERGLWJhc2U2NA==' },
+      { type: 'input_image', image_url: 'data:image/png;base64,UE5HLWJhc2U2NA==' },
+      { type: 'input_text', text: '補足の文' },
+    ]);
+    expect(body).not.toHaveProperty('tools');
+  });
+
+  it('拒否・打ち切り（incomplete）・JSON でない応答は bad_response', () => {
+    expect(() =>
+      readOpenAiOutput({ status: 'completed', output: [{ type: 'message', content: [{ type: 'refusal', refusal: 'できません' }] }] }),
+    ).toThrow(AiProviderError);
+    expect(() =>
+      readOpenAiOutput({ status: 'incomplete', output: [{ type: 'message', content: [{ type: 'output_text', text: '{"amount":' }] }] }),
+    ).toThrow(AiProviderError);
+    expect(() => readOpenAiOutput({ status: 'completed', output: [] })).toThrow(AiProviderError);
   });
 });

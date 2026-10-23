@@ -90,6 +90,30 @@ OpenGreenTrack ではセルフホスト・単一テナント運用を前提と�
    - 接続確認は `service_role` クライアントで行います。RLS ポリシーがすべて `to authenticated` のため、anon では DB が正常でも `permission denied` になり疎通を判定できないためです。レスポンスは `ok` / `error` の2値のみで、DB のエラー詳細やデータは一切返さずサーバーログにのみ残します。
 
 
+## AI 連携（`src/lib/ai/`）
+
+AI を使う機能（請求書の読取り・開示文の下書きなど）は、提供元の API を直接呼ばず、共通の入口 `generateStructured`（`src/lib/ai/generate.ts`）だけを通す。鍵・提供元・モデルの解決、回数の上限、監査ログ、エラーの分類を 1 か所にまとめるため。`src/lib/ai/` はすべてサーバ専用（`import 'server-only'`）。
+
+| ファイル | 役割 |
+|---|---|
+| `config.ts` | 環境変数（`AI_PROVIDER` / `AI_API_KEY`）の読み取りと検証。足りない・不正なら AI を使えない状態にする |
+| `providers/` | 3 社（Anthropic・Google（Gemini API）・OpenAI）の呼び出し。SDK を使わず `fetch`。送信先の URL は固定し、リダイレクトは追わない。HTTP のエラーは共通の分類（`AiErrorCode`）にそろえ、提供元のエラー本文は出さない |
+| `purposes.ts` | 用途の一覧。AI を使う機能は、ここに用途（送ってよい入力の種類・量、回数の上限、出力の上限）を登録してから呼ぶ |
+| `inputCheck.ts` | 入力の確認。ファイルの形式は先頭のバイトで判定する（PDF・PNG・JPEG・WebP） |
+| `schema.ts` | 出力の形（JSON スキーマ）が 3 社で使える書き方かの確認 |
+| `rateLimit.ts` | 回数の上限（用途ごとの 1 分・24 時間、組織全体の 24 時間）。監査ログの件数で数える |
+| `auditLog.ts` | 監査ログ（`system_audit_logs` の `ai.request`）。鍵・送った内容・出力は残さない |
+| `models.ts` | 使えるモデルの一覧（AI の設定のプルダウン） |
+
+AI を使う機能が守ること:
+
+- 用途を登録し、`generateStructured` だけを使う。機能の Route Handler でログインと組織を確かめ、`getCurrentProfile()` の結果を `profile` に渡す。
+- 送る前に、共通の確認ダイアログ（`src/features/ai/components/AiSendConfirmDialog.client.tsx`）で送り先と送る内容を見せる。
+- 送るのは必要なものだけにする。利用者が入力した文は `instructions` に混ぜず、`input` の `text` として渡す。ファイルは保存しない。
+- 出力の形を決め、`validate` で値の範囲まで確かめる（範囲の指定は JSON スキーマに書かない）。
+- AI の出力はそのまま確定データにしない。画面で「候補」として見せ、保存は人が行う。出力は文字として表示する（HTML として解釈しない）。
+- テストでは鍵らしい文字列を書かない（CI の Secret Scan に当たる）。ダミーの鍵は `'x'.repeat(24)` のように作る。
+
 ## Supabaseクライアントの使い分け（`src/lib/supabase/`）
 
 | ファイル | 使う場所 |

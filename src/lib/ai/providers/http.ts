@@ -28,6 +28,47 @@ export const LIST_MODELS_TIMEOUT_MS = 15_000;
 /** 1 回の一覧の取得で辿るページの上限（提供元の応答が壊れていても回り続けないように） */
 export const MAX_LIST_PAGES = 10;
 
+/** 生成（読取り・下書きなど）の打ち切り時間 */
+export const GENERATE_TIMEOUT_MS = 60_000;
+
+/**
+ * 決まった形で出力させた文字列を JSON として読む。読めなければ bad_response。
+ * 形を指定していても、まれにコードブロック（```json … ```）で囲まれて返ることがあるため、囲みだけは外す。
+ */
+export const parseJsonOutput = (text: unknown): unknown => {
+  if (typeof text !== 'string' || !text.trim()) {
+    throw new AiProviderError('bad_response');
+  }
+  const unfenced = text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '');
+  try {
+    return JSON.parse(unfenced) as unknown;
+  } catch {
+    throw new AiProviderError('bad_response');
+  }
+};
+
+/** JSON の本文で POST する */
+export const postJson = (
+  url: string,
+  headers: Record<string, string>,
+  body: unknown,
+  signal: AbortSignal,
+  classify: ClassifyHttpError,
+) =>
+  fetchProviderJson(
+    url,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+      signal,
+    },
+    classify,
+  );
+
 /** 提供元の HTTP エラー（ステータスと本文）を分類に変える。本文は分類にだけ使い、ログに出さないこと */
 export type ClassifyHttpError = (status: number, body: unknown) => AiErrorCode;
 

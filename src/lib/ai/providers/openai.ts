@@ -10,18 +10,22 @@
 
 import 'server-only';
 import { isValidAiModelId, type AiModelOption } from '@/types/ai';
+import type { AiPreparedInput } from '../inputCheck';
 import {
   AiProviderError,
+  GENERATE_TIMEOUT_MS,
   LIST_MODELS_TIMEOUT_MS,
   classifyHttpStatus,
   fetchProviderJson,
   isRecord,
+  parseJsonOutput,
+  postJson,
   toDateOnly,
   withTimeout,
   type ClassifyHttpError,
 } from './http';
 import { sortModelOptions } from './sortModels';
-import type { AiProvider } from './types';
+import type { AiGenerateRequest, AiProvider } from './types';
 
 const API_BASE = 'https://api.openai.com/v1';
 const INCLUDED_FAMILIES = /^(gpt-(4o|4\.1|([5-9]|[1-9]\d)(\.\d+)?)|o([3-9]|[1-9]\d))(-|$)/;
@@ -66,8 +70,53 @@ export const toOpenAiModelOptions = (rows: unknown[]): AiModelOption[] =>
     ];
   });
 
+// 入力を Responses API の content にする。PDF は input_file、画像は input_image（どちらも data URL）。
+const toContentPart = (part: AiPreparedInput) => {
+  if (part.type === 'text') return { type: 'input_text', text: part.text };
+  const dataUrl = `data:${part.mimeType};base64,${part.base64}`;
+  return part.mimeType === 'application/pdf'
+    ? { type: 'input_file', filename: 'input.pdf', file_data: dataUrl }
+    : { type: 'input_image', image_url: dataUrl };
+};
+
+/** Responses API に送る本文（テストのため export する） */
+export const buildOpenAiResponsesBody = (request: AiGenerateRequest) => ({
+  model: request.modelId,
+  instructions: request.instructions,
+  input: [{ role: 'user', content: request.input.map(toContentPart) }],
+  // 省略すると応答が保存され、同じ鍵で後から取り出せる。送った内容を提供元に残さないため必ず false にする。
+  store: false,
+  max_output_tokens: request.maxOutputTokens,
+  text: { format: { type: 'json_schema', name: 'result', schema: request.schema, strict: true } },
+});
+
+/** Responses API の応答から JSON を取り出す（テストのため export する） */
+export const readOpenAiOutput = (body: unknown): unknown => {
+  if (!isRecord(body) || !Array.isArray(body.output)) throw new AiProviderError('bad_response');
+  // 出力の上限での打ち切り（incomplete）は、形が欠けている可能性があるため使わない。
+  if (body.status !== undefined && body.status !== 'completed') throw new AiProviderError('bad_response');
+  const contents = body.output.flatMap((item) =>
+    isRecord(item) && item.type === 'message' && Array.isArray(item.content) ? item.content : [],
+  );
+  if (contents.some((content) => isRecord(content) && content.type === 'refusal')) {
+    throw new AiProviderError('bad_response');
+  }
+  const text = contents.find((content) => isRecord(content) && content.type === 'output_text');
+  return parseJsonOutput(isRecord(text) ? text.text : undefined);
+};
+
 export const openAiProvider: AiProvider = {
   id: 'openai',
+  async generate(request) {
+    const body = await postJson(
+      `${API_BASE}/responses`,
+      { authorization: `Bearer ${request.apiKey}` },
+      buildOpenAiResponsesBody(request),
+      withTimeout(GENERATE_TIMEOUT_MS, request.signal),
+      classify,
+    );
+    return readOpenAiOutput(body);
+  },
   async listModels(apiKey, signal) {
     const body = await fetchProviderJson(
       `${API_BASE}/models`,

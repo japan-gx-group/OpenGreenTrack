@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ANTHROPIC_VERSION, anthropicProvider, toAnthropicModelOptions } from '../anthropic';
+import {
+  ANTHROPIC_VERSION,
+  anthropicProvider,
+  buildAnthropicMessagesBody,
+  readAnthropicOutput,
+  toAnthropicModelOptions,
+} from '../anthropic';
 import { AiProviderError } from '../http';
 import { installFetchMock, jsonResponse } from './fetchMock';
 
@@ -79,5 +85,68 @@ describe('anthropicProvider.listModels', () => {
     abort.name = 'TimeoutError';
     installFetchMock([abort]);
     await expect(anthropicProvider.listModels(KEY)).rejects.toMatchObject({ code: 'timeout' });
+  });
+});
+
+const SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['amount'],
+  properties: { amount: { type: ['number', 'null'] } },
+};
+
+const request = (overrides = {}) => ({
+  apiKey: KEY,
+  modelId: 'claude-sonnet-5-5',
+  instructions: '使用量を読み取る',
+  input: [
+    { type: 'file' as const, mimeType: 'application/pdf' as const, base64: 'UERGLWJhc2U2NA==' },
+    { type: 'file' as const, mimeType: 'image/png' as const, base64: 'UE5HLWJhc2U2NA==' },
+    { type: 'text' as const, text: '補足の文' },
+  ],
+  schema: SCHEMA,
+  maxOutputTokens: 800,
+  ...overrides,
+});
+
+describe('anthropicProvider.generate', () => {
+  it('Messages API に、PDF は document・画像は image のブロックで送り、出力の形を output_config で指定する', async () => {
+    const { requests } = installFetchMock([
+      jsonResponse(200, { content: [{ type: 'text', text: '{"amount": 12}' }], stop_reason: 'end_turn' }),
+    ]);
+    const output = await anthropicProvider.generate(request());
+    expect(output).toEqual({ amount: 12 });
+
+    expect(requests[0].url).toBe('https://api.anthropic.com/v1/messages');
+    expect(requests[0].headers['x-api-key']).toBe(KEY);
+    expect(requests[0].headers['anthropic-version']).toBe(ANTHROPIC_VERSION);
+    const body = JSON.parse(String(requests[0].init.body));
+    expect(body).toEqual(buildAnthropicMessagesBody(request()));
+    expect(body).toMatchObject({
+      model: 'claude-sonnet-5-5',
+      max_tokens: 800,
+      system: '使用量を読み取る',
+      output_config: { format: { type: 'json_schema', schema: SCHEMA } },
+    });
+    expect(body.messages[0].content).toEqual([
+      { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: 'UERGLWJhc2U2NA==' } },
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'UE5HLWJhc2U2NA==' } },
+      { type: 'text', text: '補足の文' },
+    ]);
+    // サンプリングのパラメータ・ツールは送らない
+    expect(body).not.toHaveProperty('temperature');
+    expect(body).not.toHaveProperty('top_p');
+    expect(body).not.toHaveProperty('top_k');
+    expect(body).not.toHaveProperty('tools');
+  });
+
+  it('拒否・出力の上限での打ち切り・JSON でない応答は bad_response', () => {
+    expect(() => readAnthropicOutput({ content: [{ type: 'text', text: '{}' }], stop_reason: 'refusal' })).toThrow(AiProviderError);
+    expect(() => readAnthropicOutput({ content: [{ type: 'text', text: '{"amount":' }], stop_reason: 'max_tokens' })).toThrow(AiProviderError);
+    expect(() => readAnthropicOutput({ content: [{ type: 'text', text: 'すみません' }], stop_reason: 'end_turn' })).toThrow(AiProviderError);
+  });
+
+  it('コードブロックで囲まれて返っても読める', () => {
+    expect(readAnthropicOutput({ content: [{ type: 'text', text: '```json\n{"amount": 3}\n```' }], stop_reason: 'end_turn' })).toEqual({ amount: 3 });
   });
 });
