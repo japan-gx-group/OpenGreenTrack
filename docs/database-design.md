@@ -329,6 +329,7 @@ GHG プロトコルのロケーション基準／マーケット基準それぞ�
 - `authenticated` は `role` を更新できない（列 GRANT に含めない）。ロールの変更は service_role 限定の RPC `change_member_role(p_actor_id, p_target_user_id, p_role)` だけが行う。RPC は操作する人が同じ組織の管理者であること（P2082）、対象が同じ組織のメンバーであること（P2083）、値が `admin` か `logger` であること（P2084）を確かめ、`system_audit_logs` に `member.role.update` を同じトランザクションで残す。管理者かどうかが変わらない変更（`viewer` → `logger` など）は何もしない。
 - トリガー `ensure_organization_keeps_admin`（`profiles` の `role`・`organizationId` の更新と削除の前）は、組織の管理者が 0 人になる変更を P2081 で拒否する。メンバーの削除・退会（`auth.users` の削除から連鎖する削除）・ロールの変更のどの経路でも効く。組織ごとに `pg_advisory_xact_lock` を取ってから数えるため、2 人の管理者が同時に互いを降格しても 0 人にならない。組織ごとの削除（`organizations` からの連鎖）は止めない。
 - メンバーの削除は `system_audit_logs` に `member.remove`（`detail` に削除したときのロール）として Server Action が残す。
+- `current_user_is_admin()`（`supabase/migrations/20261024120000_admin_only_settings.sql` で差し替え）は「ログイン中の利用者の `role` が `admin` か」を返す。`organizations` の更新（企業情報）と `invites` の参照・作成・削除（招待）のポリシーが参照し、これらは管理者だけになる。`current_user_can_edit()` はロールにかかわらず「認証済みか」を返すまま（データの入力・算定・マスタの編集は全員が行う）。
 
 ---
 

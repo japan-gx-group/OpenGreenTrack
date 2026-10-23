@@ -4,8 +4,8 @@
 // 招待リンクの発行・コピー・取り消しを行う。招待発行時はサーバ側で招待メールを送信し、
 // その結果（送信済み / メール未設定 / 送信失敗）をモーダル内で案内する。
 // メンバー・招待の読み取りは RLS 前提でブラウザから直接行い、書き込みは Server Action 経由で行う。
-// ロールの変更とメンバーの削除は管理者にだけ出す（サーバの requireAdmin と DB の RPC・トリガーでも確かめる）。
-// 招待はまだ全員が使える。
+// メンバーの招待・削除・ロールの変更は管理者にだけ出す（サーバの requireAdmin と、RLS・DB の RPC・トリガーでも確かめる）。
+// 招待中の一覧（招待リンクの秘密を含む）は RLS で管理者にしか返らないため、管理者のときだけ取得する。
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
@@ -27,6 +27,7 @@ import {
   isAdmin,
   isMemberRole,
   memberRoleLabel,
+  type AssignableMemberRole,
   type MemberRole,
 } from '@/types/role';
 
@@ -82,6 +83,10 @@ const buildInviteUrl = (token: string) => `${window.location.origin}/invite/${to
 // 設定はアプリ内の画面ではなく .env.local への追記で行うため、公開リポジトリの手順へ誘導する。
 const INVITE_EMAIL_SETUP_DOC_URL =
   'https://github.com/japan-gx-group/OpenGreenTrack/blob/main/docs/setup-guide.md#2-c-招待メールの設定任意';
+
+// 管理者が 0 人の組織の復旧手順（セットアップガイドの「2-H」の「H-2」）。運用担当が SQL で管理者を決め直す。
+const ADMIN_RECOVERY_DOC_URL =
+  'https://github.com/japan-gx-group/OpenGreenTrack/blob/main/docs/setup-guide.md#h-2-管理者がいなくなったときの復旧';
 
 // 一覧の取得はコンポーネント外の純粋な fetch 関数に分け、state 反映は呼び出し側の
 // コールバックで行う（react-hooks/set-state-in-effect 対応。Locations.tsx と同じ方針）。
@@ -140,7 +145,10 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
   const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
 
   const [isInviteOpen, setIsInviteOpen] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteForm, setInviteForm] = useState<{ email: string; role: AssignableMemberRole }>({
+    email: '',
+    role: MEMBER_ROLE,
+  });
   const [issuedInvite, setIssuedInvite] = useState<IssuedInviteView | null>(null);
   const [isInviting, setIsInviting] = useState(false);
 
@@ -177,8 +185,9 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
   }, [applyMembers]);
 
   useEffect(() => {
+    if (!canManageMembers) return;
     fetchPendingInvites().then(setPendingInvites);
-  }, []);
+  }, [canManageMembers]);
 
   const handleRemove = (id: string) => {
     setMemberToDelete(id);
@@ -244,14 +253,14 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
 
   const handleSendInvite = async () => {
     if (isInviting) return;
-    if (!isValidEmail(inviteEmail)) {
+    if (!isValidEmail(inviteForm.email)) {
       showToast('有効なメールアドレスを入力してください', 'error');
       return;
     }
 
     setIsInviting(true);
     try {
-      const result = await createInvite({ email: inviteEmail });
+      const result = await createInvite({ email: inviteForm.email, role: inviteForm.role });
       if (!result.ok) {
         showToast(result.error, 'error');
         return;
@@ -278,7 +287,7 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
 
   const closeInviteModal = () => {
     setIsInviteOpen(false);
-    setInviteEmail('');
+    setInviteForm({ email: '', role: MEMBER_ROLE });
     setIssuedInvite(null);
   };
 
@@ -311,15 +320,37 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
     <Card className="flex flex-col gap-4 relative">
       <div className="flex justify-between items-center">
         <h2 className="font-serif font-semibold text-lg text-text-heading flex items-center gap-2">メンバー管理</h2>
-        <button
-          type="button"
-          onClick={() => setIsInviteOpen(true)}
-          className="gt-btn-primary flex items-center gap-1 text-xs"
-        >
-          <Plus size={16} /> メンバーを招待
-        </button>
+        {canManageMembers && (
+          <button
+            type="button"
+            onClick={() => setIsInviteOpen(true)}
+            className="gt-btn-primary flex items-center gap-1 text-xs"
+          >
+            <Plus size={16} /> メンバーを招待
+          </button>
+        )}
       </div>
       <hr className="border-border" />
+
+      {/* 管理者が 0 人の組織（この仕組みを入れる前に、組織を作った人のアカウントを削除していた場合など）。
+          画面からは直せないため、運用担当による復旧（setup-guide の手順）へ案内する。 */}
+      {!isLoading && !loadError && members.length > 0 && savedAdminCount === 0 && (
+        <div className="flex items-start gap-2 rounded-lg border border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger" role="alert">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <span>
+            この組織には管理者がいません。組織の設定を変えられる人がいないため、運用担当に連絡してください（
+            <a
+              href={ADMIN_RECOVERY_DOC_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2"
+            >
+              セットアップガイド「管理者がいなくなったときの復旧」
+            </a>
+            ）。
+          </span>
+        </div>
+      )}
 
       {canManageMembers && !isLoading && !loadError && savedAdminCount === 1 && (
         <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning">
@@ -409,7 +440,7 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
       </div>
 
       {!canManageMembers && !isLoading && !loadError && (
-        <p className="text-xs text-text-muted">ロールの変更とメンバーの削除は、管理者のみできます。</p>
+        <p className="text-xs text-text-muted">メンバーの招待・削除・ロールの変更は、管理者のみできます。</p>
       )}
 
       {hasDraft && (
@@ -433,8 +464,8 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
         </div>
       )}
 
-      {/* 未受諾の招待一覧。リンクの再コピーと取り消しができる */}
-      {pendingInvites.length > 0 && (
+      {/* 未受諾の招待一覧。リンクの再コピーと取り消しができる（管理者だけ） */}
+      {canManageMembers && pendingInvites.length > 0 && (
         <div className="flex flex-col gap-2 mt-2">
           <h3 className="font-serif font-semibold text-sm text-text-heading">招待中</h3>
           <table className="w-full text-left border-collapse">
@@ -561,11 +592,31 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
               <input
                 id="inviteEmail"
                 type="email"
-                value={inviteEmail}
-                onChange={e => setInviteEmail(e.target.value)}
+                value={inviteForm.email}
+                onChange={e => setInviteForm(prev => ({ ...prev, email: e.target.value }))}
                 className="gt-field"
                 placeholder="例: name@abc.com"
               />
+            </div>
+            <div className="flex flex-col gap-2">
+              <label htmlFor="inviteRole" className="text-sm font-semibold text-text-muted">ロール</label>
+              <select
+                id="inviteRole"
+                value={inviteForm.role}
+                onChange={e =>
+                  setInviteForm(prev => ({
+                    ...prev,
+                    role: isAdmin(e.target.value as MemberRole) ? ADMIN_ROLE : MEMBER_ROLE,
+                  }))
+                }
+                className="gt-field"
+              >
+                <option value={MEMBER_ROLE}>{memberRoleLabel(MEMBER_ROLE)}</option>
+                <option value={ADMIN_ROLE}>{memberRoleLabel(ADMIN_ROLE)}</option>
+              </select>
+              <p className="text-xs text-text-muted">
+                招待を受けた人は、ここで選んだロールになります。管理者は、組織の設定（企業情報・算定年度・メンバー）を変えられます。
+              </p>
             </div>
             <div className="flex justify-end gap-2 mt-6 pt-6">
               <button

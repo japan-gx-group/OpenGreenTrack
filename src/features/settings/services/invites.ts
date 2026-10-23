@@ -6,20 +6,23 @@
 // ここでは service_role ではなく「セッション付きサーバクライアント」を使う。
 // RLS（自組織の invites だけを select / insert / delete できる）がそのまま
 // 二重の防壁になり、万一サーバ側チェックに漏れがあっても DB 側で拒否される。
-// ロールによる絞り込みは行わない（ロール判定は無効）。招待の role 列は
-// DB 既定値（logger）のまま作成し、アプリからは指定しない。
+// 招待の発行・取り消しは管理者だけに許す。RLS（current_user_is_admin()）でも止まるが、
+// 拒否された操作は「0 行」で返り理由が分からないため、先に requireAdmin で分かりやすく断る。
+// 招待の role は 'admin'（管理者）/ 'logger'（メンバー）だけを受け付ける。受諾時にそのまま profiles に写る。
 // token・expiresAt・acceptedAt は列指定 GRANT の対象外なのでクライアントから指定できず、
 // invitedByUserId はトリガで実行ユーザーに強制される。
+// 発行・取り消しは system_audit_logs に残す（招待リンクの秘密である token は残さない。監査ログはメンバー全員が読めるため）。
 //
 // 招待メールの送信は createInvite の発行成功後に行う。送信の成否は招待の成立に
 // 影響させず（未設定・失敗時はリンク共有にフォールバック）、結果を emailStatus で返す。
 
 import { headers } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
-import { getCurrentProfile } from '@/lib/currentProfile';
+import { requireAdmin } from '@/lib/authz';
 import type { ActionResult } from '@/types/actionResult';
 import { logger } from '@/lib/logging/logger';
 import { isValidEmail } from '@/lib/email';
+import { MEMBER_ROLE, isAssignableMemberRole, type AssignableMemberRole } from '@/types/role';
 import {
   isInviteEmailConfigured,
   sendInviteEmail,
@@ -60,19 +63,46 @@ const resolveRequestOrigin = async (): Promise<string | null> => {
   return `${protocol}://${host}`;
 };
 
+// 監査ログに残す。記録に失敗しても招待の操作は取り消さず、ログにだけ残す。
+const recordInviteAudit = async (
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  organizationId: string,
+  action: 'invite.create' | 'invite.revoke',
+  detail: Record<string, string>,
+) => {
+  // userId はトリガ（set_system_audit_logs_user_id）が auth.uid() で上書きする。
+  const { error } = await supabase.from('system_audit_logs').insert({
+    organizationId,
+    action,
+    entityName: 'invites',
+    detail: JSON.stringify(detail),
+  });
+  if (error) {
+    logger.error({ error, action }, '招待の監査ログの記録に失敗しました');
+  }
+};
+
 export const createInvite = async (input: {
   email: string;
+  /** 招待を受けた人のロール（'admin' = 管理者 / 'logger' = メンバー）。省略時はメンバー */
+  role?: AssignableMemberRole;
 }): Promise<ActionResult<IssuedInvite>> => {
   // 受け取り側（acceptInvite）が小文字化して登録するため、発行時点で揃えておく。
-  const email = input.email.trim().toLowerCase();
+  const email = String(input?.email ?? '').trim().toLowerCase();
   if (!isValidEmail(email)) {
     return { ok: false, error: '有効なメールアドレスを入力してください' };
   }
-
-  const caller = await getCurrentProfile();
-  if (!caller) {
-    return { ok: false, error: 'セッションが確認できません。ログインし直してください' };
+  // Server Action はブラウザから任意の値で呼べるため、ロールの値もここで確かめる。
+  const role = input?.role ?? MEMBER_ROLE;
+  if (!isAssignableMemberRole(role)) {
+    return { ok: false, error: 'ロールの値が正しくありません' };
   }
+
+  const check = await requireAdmin();
+  if (!check.ok) {
+    return { ok: false, error: check.error };
+  }
+  const caller = check.profile;
 
   const supabase = await createClient();
 
@@ -102,15 +132,16 @@ export const createInvite = async (input: {
     return { ok: false, error: '招待の作成に失敗しました' };
   }
 
-  // role は指定しない。DB 既定値（logger）で作成される。
   const { data: created, error: insertError } = await supabase
     .from('invites')
-    .insert({ organizationId: caller.organizationId, email })
+    .insert({ organizationId: caller.organizationId, email, role })
     .select('token, email, expiresAt')
     .single();
   if (insertError || !created) {
     return { ok: false, error: '招待の作成に失敗しました' };
   }
+
+  await recordInviteAudit(supabase, caller.organizationId, 'invite.create', { email, role });
 
   // 招待メールの送信。送信対象はいま自組織に発行した招待のみ
   // （他組織の invite を指定する余地はない）。
@@ -162,10 +193,11 @@ export const revokeInvite = async (token: string): Promise<ActionResult> => {
     return { ok: false, error: 'この招待は取り消せません' };
   }
 
-  const caller = await getCurrentProfile();
-  if (!caller) {
-    return { ok: false, error: 'セッションが確認できません。ログインし直してください' };
+  const check = await requireAdmin();
+  if (!check.ok) {
+    return { ok: false, error: check.error };
   }
+  const caller = check.profile;
 
   // 自組織の招待だけを消せることは RLS（invites_delete_own_organization_admin）で担保する。
   const supabase = await createClient();
@@ -174,7 +206,7 @@ export const revokeInvite = async (token: string): Promise<ActionResult> => {
     .delete()
     .eq('token', token)
     .is('acceptedAt', null)
-    .select('token')
+    .select('token, email')
     .maybeSingle();
   if (error) {
     return { ok: false, error: '招待の取り消しに失敗しました' };
@@ -182,6 +214,10 @@ export const revokeInvite = async (token: string): Promise<ActionResult> => {
   if (!deleted) {
     return { ok: false, error: 'この招待は既に使用済みか、取り消されています' };
   }
+
+  await recordInviteAudit(supabase, caller.organizationId, 'invite.revoke', {
+    email: deleted.email as string,
+  });
 
   return { ok: true, data: undefined };
 };
