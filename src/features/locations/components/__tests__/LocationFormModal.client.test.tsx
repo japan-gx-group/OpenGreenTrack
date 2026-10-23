@@ -35,4 +35,17 @@ describe('LocationFormModal ラベルの関連付け', () => {
     }
     unmount();
   });
+  it('disables submit while saving', () => {
+    const form = {
+      isModalOpen: true, editingLocationId: null,
+      values: { name: '', region: 'Kanto', type: 'office', person: '', status: 'active' },
+      setValues: vi.fn(), isSaving: true, openAdd: vi.fn(), openEdit: vi.fn(), close: vi.fn(), submit: vi.fn(),
+    } as unknown as LocationFormController;
+    const { container, unmount } = render(
+      <LocationFormModal form={form} returnFocusRef={{ current: null }} />,
+    );
+
+    expect(container.querySelector('button[type="submit"]')?.hasAttribute('disabled')).toBe(true);
+    unmount();
+  });
 });
