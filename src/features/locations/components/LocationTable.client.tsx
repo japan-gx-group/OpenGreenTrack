@@ -81,7 +81,15 @@ export const LocationTable = ({
               <tr
                 key={row.id}
                 className="gt-row-link"
-                onClick={() => router.push(`/locations/${row.id}`)}
+                onClick={(e) => {
+                  const href = `/locations/${row.id}`;
+                  // 修飾キー付きクリックは現在タブを動かさず新規タブで開く（名前セルのリンクと同じ挙動）
+                  if (e.metaKey || e.ctrlKey || e.shiftKey) {
+                    window.open(href, '_blank', 'noopener');
+                    return;
+                  }
+                  router.push(href);
+                }}
                 title={`「${row.name}」のScope内訳を表示`}
               >
                 <td style={{ fontWeight: 600 }}>
