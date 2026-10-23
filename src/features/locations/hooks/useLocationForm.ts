@@ -68,6 +68,7 @@ export function useLocationForm(
 
   // モーダルを閉じ、編集状態とフォームを初期化する。
   const close = () => {
+    if (isSaving) return;
     setIsModalOpen(false);
     setEditingLocationId(null);
     resetLocationForm();
