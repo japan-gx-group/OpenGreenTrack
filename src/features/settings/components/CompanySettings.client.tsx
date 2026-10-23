@@ -5,6 +5,7 @@ import { PageHeading } from '@/components/layout/PageHeading';
 import { CompanyInfo } from './CompanyInfo.client';
 import { MemberList } from './MemberList.client';
 import { FiscalYearList } from './FiscalYearList.client';
+import { AiSettings } from '@/features/ai/components/AiSettings.client';
 import { CheckCircle, AlertCircle } from 'lucide-react';
 
 export const CompanySettings = () => {
@@ -30,7 +31,7 @@ export const CompanySettings = () => {
       <div className="page-content gt-scroll max-w-[900px] mx-auto pb-12">
         <PageHeading
           title="企業・メンバー設定"
-          description="組織情報・算定年度・メンバーの管理（変更は管理者のみ）"
+          description="組織情報・算定年度・メンバー・AI の管理（変更は管理者のみ）"
           showFiscalYear={false}
           primaryAction={null}
         />
@@ -42,6 +43,7 @@ export const CompanySettings = () => {
         {/* 会計年度は自組織マスタ */}
         <FiscalYearList showToast={showToast} refreshKey={fiscalYearListRefreshKey} />
         <MemberList showToast={showToast} />
+        <AiSettings showToast={showToast} />
         </div>
       </div>
 

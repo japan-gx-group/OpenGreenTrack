@@ -61,6 +61,8 @@ OpenGreenTrack は複数企業（organization）が同居するマルチテナ�
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ブラウザに公開される | 匿名キー。**RLS前提で公開してよい**キー |
 | `SUPABASE_SERVICE_ROLE_KEY` | **サーバのみ。絶対に公開しない** | RLSをバイパスする管理者キー。バッチ等の限定用途 |
 | `LOG_LEVEL` | サーバのみ | Pino ロガーの最小ログレベル (`info`, `debug`, `error` など。デフォルト: `info`) |
+| `AI_PROVIDER` | サーバのみ | AI の提供元（`anthropic` / `google` / `openai`）。任意 |
+| `AI_API_KEY` | **サーバのみ。絶対に公開しない** | AI の提供元の API キー。`src/lib/ai/config.ts` だけが読み、ブラウザ・ログへは出さない。任意 |
 
 `.env.example` をコピーして `.env.local` を作成する（`.env.local` はコミット禁止）。
 

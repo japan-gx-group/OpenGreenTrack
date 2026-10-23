@@ -80,6 +80,24 @@ describe('logger', () => {
     expect(context.secret).toBe('[REDACTED]');
   });
 
+  it('redacts the API key headers sent to the AI providers', () => {
+    const entry = captureLog((log) =>
+      log.error(
+        {
+          'x-api-key': 'sk-ant-xxx',
+          headers: { 'x-api-key': 'sk-ant-yyy', 'x-goog-api-key': 'AIza-zzz', authorization: 'Bearer sk-proj' },
+        },
+        'AI の提供元へのヘッダのマスク確認',
+      ),
+    );
+
+    expect(entry['x-api-key']).toBe('[REDACTED]');
+    const headers = entry.headers as Record<string, unknown>;
+    expect(headers['x-api-key']).toBe('[REDACTED]');
+    expect(headers['x-goog-api-key']).toBe('[REDACTED]');
+    expect(headers.authorization).toBe('[REDACTED]');
+  });
+
   it('omits pid and hostname so the log platform can supply them', () => {
     const entry = captureLog((log) => log.info('起動しました'));
 

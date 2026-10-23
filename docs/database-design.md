@@ -331,6 +331,20 @@ GHG プロトコルのロケーション基準／マーケット基準それぞ�
 - メンバーの削除は `system_audit_logs` に `member.remove`（`detail` に削除したときのロール）として Server Action が残す。
 - `current_user_is_admin()`（`supabase/migrations/20261024120000_admin_only_settings.sql` で差し替え）は「ログイン中の利用者の `role` が `admin` か」を返す。`organizations` の更新（企業情報）と `invites` の参照・作成・削除（招待）のポリシーが参照し、これらは管理者だけになる。`current_user_can_edit()` はロールにかかわらず「認証済みか」を返すまま（データの入力・算定・マスタの編集は全員が行う）。
 
+### 3.15 AI の設定 (`ai_settings`)（`supabase/migrations/20261024150000_ai_settings.sql`）
+
+組織で使う AI の提供元とモデル（管理者が選ぶ）。1 組織 = 1 行。API キーは環境変数（`AI_API_KEY`）に置き、DB には持たない。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `organizationId` | 組織ID | UUID | Primary Key, FK → `organizations` | 削除時: CASCADE |
+| `provider` | 提供元 | VARCHAR(20) | NOT NULL, CHECK (`anthropic` / `google` / `openai`) | モデルを選んだ時点の提供元。環境変数の提供元と違えば、選んだモデルは無効として扱う |
+| `modelId` | モデルID | VARCHAR(200) | NOT NULL | 提供元のモデル ID（Gemini は `models/` を外したもの） |
+| `updatedBy` | 更新者 | UUID | NULL 可 | |
+| `updatedAt` | 更新日時 | TIMESTAMPTZ | NOT NULL | |
+
+- `authenticated` は自組織の SELECT だけ（何に送られるかを誰でも確かめられるように）。書き込みは、管理者であることを Server Action（`saveAiModel` の `requireAdmin`）で確かめたうえで service_role から行う。変更は `system_audit_logs` に `ai.model.update` として残す。
+
 ---
 
 ## 4. 計算の整合性・業務ルール
