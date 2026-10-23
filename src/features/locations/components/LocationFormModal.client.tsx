@@ -107,7 +107,7 @@ export const LocationFormModal = ({ form, returnFocusRef }: LocationFormModalPro
         <button type="button" className="gt-btn" onClick={form.close}>
           キャンセル
         </button>
-        <button type="submit" className="gt-btn-primary">
+        <button type="submit" className="gt-btn-primary" disabled={form.isSaving}>
           {form.editingLocationId ? '変更を保存' : '保存'}
         </button>
       </div>
