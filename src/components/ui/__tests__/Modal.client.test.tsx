@@ -76,6 +76,28 @@ describe('Modal', () => {
     unmount();
   });
 
+  it('does not close for an input drag ending on the overlay or an IME Escape', () => {
+    const onClose = vi.fn();
+    const { container, unmount } = render(
+      <Modal isOpen onClose={onClose} title="入力">
+        <input aria-label="名称" />
+      </Modal>,
+    );
+
+    const input = container.querySelector('input')!;
+    const overlay = container.firstElementChild as HTMLElement;
+    input.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    overlay.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    overlay.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(onClose).not.toHaveBeenCalled();
+
+    keyDown(document, 'Escape', { isComposing: true });
+    expect(onClose).not.toHaveBeenCalled();
+    keyDown(document, 'Escape', { keyCode: 229 });
+    expect(onClose).not.toHaveBeenCalled();
+    unmount();
+  });
+
   it('オーバーレイのクリックで onClose が呼ばれ、パネル内クリックでは呼ばれない', () => {
     const onClose = vi.fn();
     const { container, unmount } = render(
@@ -89,6 +111,8 @@ describe('Modal', () => {
     expect(onClose).not.toHaveBeenCalled();
 
     const overlay = container.firstElementChild as HTMLElement;
+    overlay.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    overlay.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
     click(overlay);
     expect(onClose).toHaveBeenCalledTimes(1);
     unmount();
