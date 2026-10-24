@@ -27,8 +27,8 @@ let latest: LocationFilters;
 // レンダリング中にモジュール変数へ直接代入すると react-hooks/globals に弾かれるため、関数を経由して受け取る。
 const capture = (value: LocationFilters) => { latest = value; };
 
-const Probe = () => {
-  capture(useLocationFilters(database));
+const Probe = ({ data = database }: { data?: LocationRecord[] }) => {
+  capture(useLocationFilters(data));
   return null;
 };
 
@@ -100,6 +100,20 @@ describe('useLocationFilters', () => {
     act(() => latest.resetFilters());
     expect(latest.activeFilters).toEqual([]);
     expect(latest.totalCount).toBe(3);
+    unmount();
+  });
+
+  it('normalizes whitespace and full-width characters in search', () => {
+    const { unmount } = render(<Probe data={[
+      location({ id: 'l4', name: '\u516b\u4e01\u58002185' }),
+      location({ id: 'l5', name: '\u516b\u4e01\u5800\uff12\uff11\uff18\uff15' }),
+    ]} />);
+
+    act(() => latest.setSearchQuery('\uff12\uff11\uff18\uff15 '));
+    expect(names()).toEqual(['\u516b\u4e01\u58002185', '\u516b\u4e01\u5800\uff12\uff11\uff18\uff15']);
+
+    act(() => latest.setSearchQuery('2185'));
+    expect(names()).toEqual(['\u516b\u4e01\u58002185', '\u516b\u4e01\u5800\uff12\uff11\uff18\uff15']);
     unmount();
   });
 });
