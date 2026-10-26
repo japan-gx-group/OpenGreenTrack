@@ -219,3 +219,78 @@ describe('useActivityEntrySave.save（帳票の紐づけ）', () => {
     expect(params.runAutoCalculation).toHaveBeenCalledWith(['2024-11-01']);
   });
 });
+
+describe('useActivityEntrySave.saveMany（請求書の一括登録）', () => {
+  const many = (key: string, month: string, evidenceFileIds: string[] = ['file-1']) => ({
+    key,
+    entry: item(month).entry,
+    evidenceFileIds,
+  });
+
+  beforeEach(() => {
+    vi.mocked(addManualActivityRecord)
+      .mockReset()
+      .mockImplementation(async (input) => record({ id: `new-${input.periodStart}`, periodStart: input.periodStart }));
+    vi.mocked(linkEvidence).mockReset().mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    latest = null;
+  });
+
+  it('1 件ずつ保存して帳票を紐づけ、失敗した行があっても残りを続け、算定は保存できた月で 1 回だけ行う', async () => {
+    vi.mocked(addManualActivityRecord)
+      .mockImplementationOnce(async (input) => record({ id: 'rec-a', periodStart: input.periodStart }))
+      .mockRejectedValueOnce(new Error('同じ拠点・カテゴリ・対象年月の活動量が既に登録済みです。'));
+    const { params } = setup();
+    vi.mocked(params.runAutoCalculation).mockResolvedValue(['2件を算定しました']);
+
+    const result = await latest!.saveMany([many('a', '2024-11'), many('b', '2024-11'), many('c', '2024-12', ['file-2'])]);
+
+    expect(result).toEqual({
+      savedKeys: ['a', 'c'],
+      failures: [{ key: 'b', reason: '同じ拠点・カテゴリ・対象年月の活動量が既に登録済みです。' }],
+    });
+    expect(vi.mocked(linkEvidence).mock.calls).toEqual([
+      ['rec-a', ['file-1']],
+      ['new-2024-12-01', ['file-2']],
+    ]);
+    expect(params.runAutoCalculation).toHaveBeenCalledTimes(1);
+    expect(params.runAutoCalculation).toHaveBeenCalledWith(['2024-11-01', '2024-12-01']);
+    expect(params.refreshHistory).toHaveBeenCalledTimes(1);
+    expect(params.onBulkSaved).toHaveBeenCalledTimes(1);
+    expect(params.showToast).toHaveBeenNthCalledWith(1, '請求書から 2 件の活動量を登録しました。排出量を計算しています...', 'success');
+    expect(params.showToast).toHaveBeenNthCalledWith(
+      2,
+      ['1 件は登録できませんでした。表の理由を確かめてください。', '2件を算定しました'].join('\n'),
+      'error',
+    );
+  });
+
+  it('紐づけに失敗しても記録は保存できた行として返し、紐づけ直しを案内する', async () => {
+    vi.mocked(linkEvidence).mockRejectedValue(new Error('boom'));
+    const { params } = setup();
+
+    const result = await latest!.saveMany([many('a', '2024-11')]);
+
+    expect(result).toEqual({ savedKeys: ['a'], failures: [] });
+    expect(params.showToast).toHaveBeenLastCalledWith(
+      '1 件は記録を保存しましたが、帳票を紐づけられませんでした。入力履歴から記録を開いて、帳票を追加してください。',
+      'error',
+    );
+  });
+
+  it('すべて失敗したら算定も履歴の取り直しもせず、失敗を伝える', async () => {
+    vi.mocked(addManualActivityRecord).mockReset().mockRejectedValue(new Error('活動量レコードの登録に失敗しました'));
+    const { params } = setup();
+
+    const result = await latest!.saveMany([many('a', '2024-11')]);
+
+    expect(result.savedKeys).toEqual([]);
+    expect(linkEvidence).not.toHaveBeenCalled();
+    expect(params.runAutoCalculation).not.toHaveBeenCalled();
+    expect(params.refreshHistory).not.toHaveBeenCalled();
+    expect(params.showToast).toHaveBeenCalledWith('選んだ明細を登録できませんでした（1 件）。表の理由を確かめてください。', 'error');
+  });
+});

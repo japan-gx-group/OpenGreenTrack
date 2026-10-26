@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { InvoiceExtractedItem, InvoiceExtraction } from '../../types';
+import type { EvidenceFile } from '@/features/activity-evidence/types';
 import { buildFuelCandidates, buildProviderCandidates, type CandidateSourceRow } from '../factorCandidates';
 import type { MatchingAnswer } from '../factorMatching';
 import {
@@ -51,12 +52,23 @@ const providerCandidates = (menus: string[]) =>
 
 const answered = (key: string | null, reason = '理由'): MatchingAnswer => ({ answered: true, key, reason });
 
+const EVIDENCE: EvidenceFile = {
+  id: 'file-1',
+  fileName: '9月分.pdf',
+  mimeType: 'application/pdf',
+  sizeBytes: 2048,
+  convertedFrom: null,
+  storagePath: 'org/activity-evidence/file-1.pdf',
+  createdAt: '2026-10-26T00:00:00Z',
+  uploadedBy: 'user-1',
+};
+
 const build = (context: Partial<ItemContext>, location: { id: string; name: string } | null = { id: 'tokyo', name: '東京本社' }) =>
   buildReadingItem({
     extraction,
     context: { index: 1, item: electricityItem, candidates: null, answer: undefined, matchingError: null, ...context },
     location,
-    fileName: '9月分.pdf',
+    evidence: EVIDENCE,
   });
 
 describe('normalizeInvoiceUnit / convertToEntryUnit', () => {
@@ -110,6 +122,8 @@ describe('buildReadingItem（電気・都市ガス）', () => {
       note: '請求書から読取り 東京電力エナジーパートナー株式会社 スタンダードS 2025年9月分',
       factor: { kind: 'provider', providerName: '東京電力エナジーパートナー(株)', menuName: 'メニューL(残差)' },
       sourceLabel: '請求書「9月分.pdf」から読み取った値を入れました。',
+      // 読み取った帳票をフォームの帳票の欄に入れ、保存した記録に紐づける
+      evidenceFiles: [EVIDENCE],
     });
   });
 

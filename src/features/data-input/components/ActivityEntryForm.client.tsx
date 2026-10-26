@@ -143,7 +143,7 @@ export interface ActivityEntryFormProps {
   /** 事前警告から重複レコードの編集を開く操作。指定時のみ「既存のレコードを開く」を表示する（新規入力用）。 */
   onOpenDuplicateRecord?: (record: SavedManualActivityRecord) => void;
   /**
-   * 新規入力のフォームに入れておく値（請求書の読取りの「フォームに反映」）。create のときだけ使う。
+   * 新規入力のフォームに入れておく値（請求書の読取りの「フォームで開く」）。create のときだけ使う。
    * 初期値として読むだけなので、別の値を入れ直すときは呼び出し側が key を替えてフォームを作り直す。
    */
   prefill?: ActivityEntryPrefill;

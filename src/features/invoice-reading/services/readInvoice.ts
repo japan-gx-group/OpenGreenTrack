@@ -6,7 +6,8 @@
 //      ログイン中の人のセッションで読む（RLS で自組織と公式係数だけ）。電気・都市ガスは事業者別係数、燃料は主要燃料の標準係数
 //   3. 係数の判定（用途 invoice_factor_matching。読み取った文字と候補だけを送る。失敗しても読取りの結果は返す）
 //   4. 拠点の候補（コード。需要場所の住所と拠点の住所を突き合わせる。拠点の一覧は AI に送らない）
-// ファイル・読み取った値・AI の出力は保存しない（監査ログには共通の入口が用途・モデル・結果だけを残す）。
+// 読むのは保存済みの帳票（activity_evidence_files。呼び出し側が保存先から読んで渡す）。読み取った値と AI の出力は
+// 保存しない（監査ログには共通の入口が用途・モデル・結果だけを残す）。
 // 呼び出し側（Route Handler）がログイン済みであることを確かめ、getCurrentProfile() の結果を渡すこと。
 
 import 'server-only';
@@ -24,6 +25,7 @@ import {
 } from '@/features/calculation/engine/resolveEmissionFactor';
 import type { EmissionFactorRow, EnergyType } from '@/features/calculation/types';
 import { getCurrentYearMonth } from '@/features/data-input/services/manualEntryTargetMonth';
+import type { EvidenceFile } from '@/features/activity-evidence/types';
 import {
   INVOICE_FUEL_ENERGY_TYPES,
   type InvoiceExtractedItem,
@@ -154,7 +156,8 @@ const buildCandidates = async (
 export const readInvoice = async (args: {
   profile: Pick<CurrentProfile, 'id' | 'organizationId'>;
   file: Uint8Array;
-  fileName: string;
+  /** 読む帳票（保存済み）。結果とフォームに入れる値に添える */
+  evidence: EvidenceFile;
   signal?: AbortSignal;
 }): Promise<ReadInvoiceResult> => {
   const log = await getRequestLogger();
@@ -228,6 +231,7 @@ export const readInvoice = async (args: {
   return {
     ok: true,
     result: {
+      evidence: args.evidence,
       supplierName: extraction.supplierName,
       supplyAddress: extraction.supplyAddress,
       warnings: extraction.warnings,
@@ -244,7 +248,7 @@ export const readInvoice = async (args: {
             matchingError,
           },
           location,
-          fileName: args.fileName,
+          evidence: args.evidence,
         }),
       ),
     },

@@ -48,6 +48,16 @@ vi.mock('@/lib/supabase/server', () => ({
 import { readInvoice } from '../readInvoice';
 
 const PDF = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31]);
+const EVIDENCE = {
+  id: 'file-1',
+  fileName: '9月分.pdf',
+  mimeType: 'application/pdf' as const,
+  sizeBytes: 6,
+  convertedFrom: null,
+  storagePath: 'org-1/activity-evidence/file-1.pdf',
+  createdAt: '2026-10-26T00:00:00Z',
+  uploadedBy: 'user-1',
+};
 const profile = { id: 'user-1', organizationId: 'org-1' };
 
 const factor = (overrides: Record<string, unknown>) => ({
@@ -112,7 +122,7 @@ describe('readInvoice', () => {
         modelId: 'gemini-3.5-flash',
       }));
 
-    const result = await readInvoice({ profile, file: PDF, fileName: '9月分.pdf' });
+    const result = await readInvoice({ profile, file: PDF, evidence: EVIDENCE });
 
     expect(mocks.generate.mock.calls[0][0]).toMatchObject({ purpose: 'invoice_reading', profile, input: [{ type: 'pdf', data: PDF }] });
     const matching = mocks.generate.mock.calls[1][0];
@@ -127,7 +137,13 @@ describe('readInvoice', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.result).toMatchObject({ provider: 'google', modelId: 'gemini-3.5-flash', supplierName: '東京電力エナジーパートナー株式会社' });
+    expect(result.result).toMatchObject({
+      evidence: EVIDENCE,
+      provider: 'google',
+      modelId: 'gemini-3.5-flash',
+      supplierName: '東京電力エナジーパートナー株式会社',
+    });
+    expect(result.result.items[0].prefill?.evidenceFiles).toEqual([EVIDENCE]);
     expect(result.result.items[0]).toMatchObject({
       energyType: 'electricity',
       location: { id: 'tokyo', name: '東京本社' },
@@ -138,7 +154,7 @@ describe('readInvoice', () => {
 
   it('読取りに失敗したら、その分類と文をそのまま返す（判定は呼ばない）', async () => {
     mocks.generate.mockResolvedValueOnce({ ok: false, code: 'limit_exceeded', message: '上限です', retryAfterSeconds: 30 });
-    const result = await readInvoice({ profile, file: PDF, fileName: 'a.pdf' });
+    const result = await readInvoice({ profile, file: PDF, evidence: EVIDENCE });
     expect(result).toEqual({ ok: false, code: 'limit_exceeded', message: '上限です', retryAfterSeconds: 30 });
     expect(mocks.generate).toHaveBeenCalledTimes(1);
   });
@@ -147,7 +163,7 @@ describe('readInvoice', () => {
     mocks.generate
       .mockResolvedValueOnce({ ok: true, value: extraction, provider: 'google', modelId: 'm' })
       .mockResolvedValueOnce({ ok: false, code: 'timeout', message: '時間内に応答がありませんでした' });
-    const result = await readInvoice({ profile, file: PDF, fileName: 'a.pdf' });
+    const result = await readInvoice({ profile, file: PDF, evidence: EVIDENCE });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.result.items[0].factor).toEqual({
@@ -160,7 +176,7 @@ describe('readInvoice', () => {
   it('対象年度の係数が無い明細は、判定の AI を呼ばない', async () => {
     mocks.factors = [];
     mocks.generate.mockResolvedValueOnce({ ok: true, value: extraction, provider: 'google', modelId: 'm' });
-    const result = await readInvoice({ profile, file: PDF, fileName: 'a.pdf' });
+    const result = await readInvoice({ profile, file: PDF, evidence: EVIDENCE });
     expect(mocks.generate).toHaveBeenCalledTimes(1);
     expect(result.ok && result.result.items[0].factor.status).toBe('unavailable');
   });
@@ -168,7 +184,7 @@ describe('readInvoice', () => {
   it('拠点の読み込みに失敗したら、決まった文を返す', async () => {
     mocks.locationError = { message: 'boom' };
     mocks.generate.mockResolvedValueOnce({ ok: true, value: extraction, provider: 'google', modelId: 'm' });
-    const result = await readInvoice({ profile, file: PDF, fileName: 'a.pdf' });
+    const result = await readInvoice({ profile, file: PDF, evidence: EVIDENCE });
     expect(result).toEqual({
       ok: false,
       code: 'load_failed',
@@ -179,7 +195,7 @@ describe('readInvoice', () => {
   it('画像は image として送る', async () => {
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
     mocks.generate.mockResolvedValueOnce({ ok: false, code: 'timeout', message: 'x' });
-    await readInvoice({ profile, file: png, fileName: 'a.png' });
+    await readInvoice({ profile, file: png, evidence: EVIDENCE });
     expect(mocks.generate.mock.calls[0][0].input).toEqual([{ type: 'image', data: png }]);
   });
 });

@@ -3,7 +3,7 @@
 // データ入力フォームの「帳票（請求書など）」の欄の状態。
 // - 新規入力: 上げた帳票をこの欄に並べておき、記録を保存したあとに呼び出し側が紐づける（evidenceFileIds）
 // - 編集: 記録に紐づいている帳票を読み、足す・外すをその場で記録に反映する（記録の保存を待たない）
-// 「WebP に変換して容量を減らす」の選択は使う人ごとの好みなので、このブラウザに覚えておく（読めなくても動く）。
+// 「WebP に変換して容量を減らす」の選択は、このブラウザに覚えておく（services/convertPreference.ts）。
 
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -13,24 +13,7 @@ import {
 } from '../types';
 import { getRecordEvidence, linkEvidence, openEvidenceFile, unlinkEvidence, uploadEvidenceFile } from '../services/evidenceClient';
 import { convertImageToWebp } from '../services/webpConversion';
-
-const CONVERT_PREFERENCE_KEY = 'ogt.activityEvidence.convertToWebp';
-
-const readConvertPreference = (): boolean => {
-  try {
-    return window.localStorage.getItem(CONVERT_PREFERENCE_KEY) === 'true';
-  } catch {
-    return false;
-  }
-};
-
-const writeConvertPreference = (value: boolean) => {
-  try {
-    window.localStorage.setItem(CONVERT_PREFERENCE_KEY, String(value));
-  } catch {
-    // 保存できない環境（プライベートブラウズなど）では、この画面を開いている間だけ覚える。
-  }
-};
+import { readConvertPreference, writeConvertPreference } from '../services/convertPreference';
 
 /** 上げる前に分かる理由で断る。送れるなら null */
 export const evidenceFileProblem = (file: File): string | null => {
@@ -45,7 +28,7 @@ export const evidenceFileProblem = (file: File): string | null => {
 export interface UseEvidenceAttachmentsArgs {
   /** 編集中の記録。指定すると紐づいている帳票を読み、足す・外すをその場で反映する */
   recordId?: string | null;
-  /** 新規入力で最初から入れておく帳票（請求書の読取りの「フォームに反映」など） */
+  /** 新規入力で最初から入れておく帳票（請求書の読取りの「フォームで開く」など） */
   initialFiles?: EvidenceFile[];
   /** 編集で紐づけを変えたあとに呼ぶ（入力履歴の帳票の数を取り直すため） */
   onChanged?: () => void;
@@ -58,9 +41,16 @@ export const useEvidenceAttachments = ({ recordId = null, initialFiles, onChange
   const [errors, setErrors] = useState<string[]>([]);
   const [convertToWebp, setConvertToWebpState] = useState(false);
 
+  // 覚えておいた選択は描画の後に読む（サーバの描画と食い違わないように）。読み取りと反映を分け、
+  // .then で反映する（react-hooks/set-state-in-effect 対応。useAiStatus と同じ方針）。
   useEffect(() => {
-    // 覚えておいた選択は描画の後に読む（サーバの描画と食い違わないように）。
-    setConvertToWebpState(readConvertPreference());
+    let active = true;
+    Promise.resolve(readConvertPreference()).then((value) => {
+      if (active) setConvertToWebpState(value);
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {

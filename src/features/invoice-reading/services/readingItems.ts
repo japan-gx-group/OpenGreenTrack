@@ -4,6 +4,7 @@
 
 import { resolveUnitConversion } from '@/features/calculation/engine/units';
 import { MANUAL_ACTIVITY_CATEGORY_MAP, type ActivityEntryPrefill } from '@/features/data-input/types';
+import type { EvidenceFile } from '@/features/activity-evidence/types';
 import { NOTE_MAX_LENGTH } from '@/features/data-input/services/entrySubmission';
 import type {
   InvoiceEnergyType,
@@ -167,9 +168,10 @@ export const buildReadingItem = (args: {
   extraction: InvoiceExtraction;
   context: ItemContext;
   location: { id: string; name: string } | null;
-  fileName: string;
+  /** 読み取った帳票。「フォームで開く」で帳票の欄へ入れ、表から登録した記録にも紐づける */
+  evidence: EvidenceFile;
 }): InvoiceReadingItem => {
-  const { extraction, context, location, fileName } = args;
+  const { extraction, context, location, evidence } = args;
   const { item, index } = context;
   const targetMonth = targetMonthOf(item);
   const printedAmount =
@@ -245,7 +247,8 @@ export const buildReadingItem = (args: {
           amount: amount ? String(amount.value) : '',
           note,
           factor,
-          sourceLabel: `請求書「${fileName}」${extraction.items.length > 1 ? `の明細 ${index} ` : ''}から読み取った値を入れました。`,
+          sourceLabel: `請求書「${evidence.fileName}」${extraction.items.length > 1 ? `の明細 ${index} ` : ''}から読み取った値を入れました。`,
+          evidenceFiles: [evidence],
         }
       : null,
   };

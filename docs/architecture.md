@@ -114,7 +114,7 @@ AI を使う機能が守ること:
 
 - 用途を登録し、`generateStructured` だけを使う。機能の Route Handler でログインと組織を確かめ、`getCurrentProfile()` の結果を `profile` に渡す。
 - 送る前に、共通の確認ダイアログ（`src/features/ai/components/AiSendConfirmDialog.client.tsx`）で送り先と送る内容を見せる。
-- 送るのは必要なものだけにする。利用者が入力した文は `instructions` に混ぜず、`input` の `text` として渡す。ファイルは保存しない。
+- 送るのは必要なものだけにする。利用者が入力した文は `instructions` に混ぜず、`input` の `text` として渡す。送るためだけにファイルを保存しない（記録の根拠として残すファイルは、その機能の保存の流れで保存してから読む。例: 請求書の読取りは帳票として保存した請求書を読む）。
 - 出力の形を決め、`validate` で値の範囲まで確かめる（範囲の指定は JSON スキーマに書かない）。
 - AI の出力はそのまま確定データにしない。画面で「候補」として見せ、保存は人が行う。出力は文字として表示する（HTML として解釈しない）。
 - テストでは鍵らしい文字列を書かない（CI の Secret Scan に当たる）。ダミーの鍵は `'x'.repeat(24)` のように作る。
@@ -123,7 +123,7 @@ AI を使う機能が守ること:
 
 | 用途 | 機能 | 送るもの | 1 分 / 24 時間 |
 |---|---|---|---|
-| `invoice_reading` | 請求書の読取り（データ入力。`src/features/invoice-reading/`） | 請求書の PDF・画像 | 5 / 100 回 |
+| `invoice_reading` | 請求書の読取り（データ入力。`src/features/invoice-reading/`） | 請求書の PDF・画像（保存済みの帳票） | 10 / 200 回 |
 | `invoice_factor_matching` | 請求書の排出係数の判定（同上） | 読み取った事業者名・料金メニュー・燃料の名称と、排出係数の候補（公表値）の文字 | 10 / 200 回 |
 
 ## Supabaseクライアントの使い分け（`src/lib/supabase/`）

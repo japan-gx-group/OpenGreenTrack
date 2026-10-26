@@ -83,7 +83,7 @@ export const DataInput = () => {
     () => history.flatMap((item) => (item.record ? [item.record] : [])),
     [history],
   );
-  // 請求書の読取りの「フォームに反映」。フォームは初期値として読むだけなので、key を替えて作り直す。
+  // 請求書の読取りの「フォームで開く」。フォームは初期値として読むだけなので、key を替えて作り直す。
   // 保存に成功したら案内（どこから入れた値か）だけを消し、key は替えない（拠点・カテゴリの保持を崩さない）。
   const [entryFormKey, setEntryFormKey] = useState(0);
   const [entryPrefill, setEntryPrefill] = useState<ActivityEntryPrefill | undefined>(undefined);
@@ -119,8 +119,13 @@ export const DataInput = () => {
         {/* Scope 1・2 と Scope 3 積上げ（IDEA連携）を 1 つのフォームで入力する。
             カテゴリに応じて排出係数の参照方式（供給事業者別 / 標準 / IDEA）をフォーム側で切り替える。
             複数月まとめて入力（一括入力）は履歴全件と照合して登録済みの月を表示する。 */}
-        {/* 請求書（電気・都市ガス・燃料）の AI 読取り。読み取った値は「フォームに反映」で下のフォームに入る。 */}
-        <InvoiceReadingCard onApply={applyPrefill} />
+        {/* 請求書（電気・都市ガス・燃料）の AI 読取り。読み取った明細は表でまとめて登録するか、「フォームで開く」で下のフォームに入る。 */}
+        <InvoiceReadingCard
+          locations={manualEntryLocations}
+          historyRecords={historyRecords}
+          onApply={applyPrefill}
+          onSaveRows={entrySave.saveMany}
+        />
 
         <div ref={entryFormRef} className="scroll-mt-4">
           <ActivityEntryForm

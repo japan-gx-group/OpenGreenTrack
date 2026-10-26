@@ -29,6 +29,7 @@ export const AiSendConfirmDialog = ({
   isSending,
   onCancel,
   onConfirm,
+  storageNote = '送った内容は、このアプリにも提供元にも保存しない設定で送ります。',
 }: {
   isOpen: boolean;
   /** 用途の表示名（例: 請求書の読取り） */
@@ -39,6 +40,8 @@ export const AiSendConfirmDialog = ({
   isSending: boolean;
   onCancel: () => void;
   onConfirm: () => void;
+  /** 送った内容をどこに残すか（既定は「アプリにも提供元にも保存しない」）。帳票として残す用途は、その旨を渡す */
+  storageNote?: string;
 }) => (
   <Modal
     isOpen={isOpen}
@@ -68,7 +71,7 @@ export const AiSendConfirmDialog = ({
         </dd>
       </dl>
       <p className="text-xs text-text-muted">
-        送った内容は、このアプリにも提供元にも保存しない設定で送ります。AI の結果は候補として表示し、保存は確認してから行ってください。提供元の扱いは{' '}
+        {storageNote}AI の結果は候補として表示し、保存は確認してから行ってください。提供元の扱いは{' '}
         <a
           href={AI_DATA_HANDLING_DOC_URL}
           target="_blank"

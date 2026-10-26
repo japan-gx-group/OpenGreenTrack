@@ -71,7 +71,7 @@ export interface UseScope12FactorSelectionArgs {
   /** 編集で開いたレコードの emissionFactorId（Scope3 レコード・新規は null）。 */
   initialFactorId: string | null;
   /**
-   * 新規入力に入れておく係数の選択（請求書の読取りの「フォームに反映」）。事業者別係数は事業者名・メニュー名を
+   * 新規入力に入れておく係数の選択（請求書の読取りの「フォームで開く」）。事業者別係数は事業者名・メニュー名を
    * ユーザーの選択として持ち、標準係数は同じ名前の候補を選ぶ。どちらもユーザーが選び直せば上書きされる。
    */
   prefillFactor?: EntryFactorPrefill | null;

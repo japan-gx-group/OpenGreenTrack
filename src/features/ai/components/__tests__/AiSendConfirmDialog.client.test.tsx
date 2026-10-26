@@ -47,6 +47,16 @@ describe('AiSendConfirmDialog', () => {
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 
+  it('送った内容の残し方は、既定では「保存しない」と伝え、用途ごとに差し替えられる', () => {
+    const { container } = mount();
+    expect(container.textContent).toContain('送った内容は、このアプリにも提供元にも保存しない設定で送ります。');
+    view?.unmount();
+
+    mount({ storageNote: '請求書は帳票としてこのアプリに保存します。' });
+    expect(container.textContent).toContain('請求書は帳票としてこのアプリに保存します。AI の結果は候補として表示し');
+    expect(container.textContent).not.toContain('このアプリにも提供元にも保存しない');
+  });
+
   it('「やめる」では送らない', () => {
     const { container, onConfirm, onCancel } = mount();
     click(buttonByText(container, 'やめる') as HTMLButtonElement);
