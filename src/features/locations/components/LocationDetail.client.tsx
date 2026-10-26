@@ -37,7 +37,7 @@ const SCOPE_CARDS = [
 ] as const;
 
 export const LocationDetail = ({ locationId }: { locationId: string }) => {
-  const { fiscalYear, fiscalYearId, fiscalYears, isLoading: isFiscalYearLoading } = useFiscalYear();
+  const { fiscalYear, fiscalYearId, fiscalYears, isLoading: isFiscalYearLoading, fiscalYearError, refresh: refreshFiscalYears } = useFiscalYear();
   // ヘッダーの「最新データに更新」で増える。他の全データページと同じく、取得 effect の依存に入れて再取得する。
   const { refreshToken } = useAppRefresh();
   // 年度が1件も無い（初期セットアップ直後・最後の年度を削除した後）。fiscalYear が空文字の
@@ -177,6 +177,11 @@ export const LocationDetail = ({ locationId }: { locationId: string }) => {
             <Link href="/locations" className="gt-btn mt-6">
               拠点一覧へ戻る
             </Link>
+          </Card>
+        ) : fiscalYearError ? (
+          <Card className="text-sm text-text-muted">
+            <p className="m-0">年度を取得できませんでした。通信状態を確認して再試行してください。</p>
+            <button type="button" className="gt-btn mt-4" onClick={() => void refreshFiscalYears()}>再試行</button>
           </Card>
         ) : hasNoFiscalYear ? (
           /* 年度未登録の空状態（拠点そのものは表示できるが、年度別の集計は出せない） */

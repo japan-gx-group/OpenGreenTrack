@@ -19,6 +19,7 @@ export type FiscalYearContextValue = {
   /** 選択肢一覧（fiscal_years マスタ由来） */
   fiscalYears: FiscalYearOption[];
   isLoading: boolean;
+  fiscalYearError: boolean;
   setFiscalYearId: (id: string) => void;
   /**
    * 年度一覧を取り直す。Provider はルート直下にあり client 遷移で再マウントされないため、
