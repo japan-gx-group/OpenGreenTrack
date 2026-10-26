@@ -47,6 +47,7 @@ const RESULT: InvoiceReadingResult = {
       notices: [],
       prefill: {
         locationId: 'tokyo',
+        supplyAddress: '東京都架空区架空町1-1-1',
         energyType: 'electricity',
         targetMonth: '2025-09',
         amount: '12345',

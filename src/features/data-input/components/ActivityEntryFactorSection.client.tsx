@@ -38,6 +38,8 @@ const REMAPPED_MESSAGE =
 
 export interface ActivityEntryFactorSectionProps {
   factorSource: FactorSource;
+  /** 拠点が選ばれている。Scope1/2 の係数は拠点（地域・拠点固有のカスタム係数）で決まるため、未選択の間は判定しない */
+  hasLocation: boolean;
   /** 対象年月が検証を通っている（係数を引ける） */
   hasPeriod: boolean;
   /** 会計年度マスタが確定している。未確定の間は Scope1/2 の係数を取得しない */
@@ -49,6 +51,7 @@ export interface ActivityEntryFactorSectionProps {
 
 export const ActivityEntryFactorSection = ({
   factorSource,
+  hasLocation,
   hasPeriod,
   fiscalYearsReady,
   isEdit,
@@ -76,6 +79,9 @@ export const ActivityEntryFactorSection = ({
 
       {isIdea ? (
         <IdeaFactorFields idea={idea} />
+      ) : !hasLocation ? (
+        // 拠点が未選択（請求書の読取りで拠点が決まらなかった）の間は、取得中・候補なしの表示を出さない。
+        <p className="text-sm text-text-muted">拠点を選ぶと適用係数を表示します。</p>
       ) : !hasPeriod ? (
         // 対象年月が確定していない間は係数を引けない。エラー本文は入力直下に出すため、
         // ここでは何を直せば表示されるかだけを案内する。

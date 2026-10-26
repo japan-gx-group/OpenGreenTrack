@@ -1673,6 +1673,7 @@ describe('ActivityEntryForm', () => {
     const { container, onSave } = renderForm({
       prefill: {
         locationId: OSAKA.id,
+        supplyAddress: null,
         energyType: 'electricity',
         targetMonth: '2024-11',
         amount: '10000',
@@ -1707,6 +1708,7 @@ describe('ActivityEntryForm', () => {
     const { container } = renderForm({
       prefill: {
         locationId: OSAKA.id,
+        supplyAddress: null,
         energyType: 'fuel_heavy_oil',
         targetMonth: '2024-11',
         amount: '1000',
@@ -1733,6 +1735,7 @@ describe('ActivityEntryForm', () => {
       initialValues: editScope12({ amount: '500' }),
       prefill: {
         locationId: OSAKA.id,
+        supplyAddress: null,
         energyType: 'electricity',
         targetMonth: '2024-12',
         amount: '99999',
@@ -1744,5 +1747,67 @@ describe('ActivityEntryForm', () => {
     await flush();
     expect(amountInput(container).value).toBe('500');
     expect(container.textContent).not.toContain('請求書から読み取った値です。');
+  });
+
+  describe('請求書から反映（拠点が決まらなかった）', () => {
+    const NAGOYA: ManualEntryLocationOption = { id: 'loc-2', name: '名古屋工場', region: 'Chubu' };
+    const unresolvedPrefill = (supplyAddress: string | null) => ({
+      locationId: '',
+      supplyAddress,
+      energyType: 'electricity' as const,
+      targetMonth: '2024-11',
+      amount: '10000',
+      note: '',
+      factor: null,
+      sourceLabel: '',
+    });
+    const locationSelect = (container: HTMLElement) => q<HTMLSelectElement>(container, '#manual-location-select');
+
+    it('先頭の拠点に倒さず未選択にし、住所を添えて案内し、拠点を選ぶまでプレビューを押せない', async () => {
+      const { container } = renderForm({
+        locations: [OSAKA, NAGOYA],
+        prefill: unresolvedPrefill('東京都架空区架空町9-9-9'),
+      });
+      await flush();
+
+      expect(locationSelect(container).value).toBe('');
+      expect(locationSelect(container).options[0].textContent).toBe('拠点を選んでください');
+      expect(q(container, '#manual-location-select-error').textContent).toBe(
+        '請求書の住所（東京都架空区架空町9-9-9）から拠点を決められませんでした。拠点を選んでください',
+      );
+      expect(locationSelect(container).getAttribute('aria-describedby')).toBe('manual-location-select-error');
+      expect(previewButton(container).disabled).toBe(true);
+      // 拠点が無い間は係数を判定しない（取得中・候補なしの表示を出さない）
+      expect(q(container, '[data-testid="manual-factor-section"]').textContent).toContain('拠点を選ぶと適用係数を表示します。');
+      expect(countText(container, LOADING_TEXT)).toBe(0);
+
+      setSelectValue(locationSelect(container), NAGOYA.id);
+      await flush();
+
+      expect(locationSelect(container).value).toBe(NAGOYA.id);
+      expect(container.querySelector('#manual-location-select-error')).toBeNull();
+      expect([...locationSelect(container).options].map((option) => option.textContent)).toEqual(['大阪支社', '名古屋工場']);
+      expect(previewButton(container).disabled).toBe(false);
+      expect(resultEmissionsText(container)).toBe('5.5 t-CO2e');
+    });
+
+    it('住所が読めなかったときは、読めなかったことを案内する', async () => {
+      const { container } = renderForm({ locations: [OSAKA, NAGOYA], prefill: unresolvedPrefill(null) });
+      await flush();
+      expect(q(container, '#manual-location-select-error').textContent).toBe(
+        '請求書から需要場所の住所を読み取れなかったため、拠点を決められませんでした。拠点を選んでください',
+      );
+    });
+
+    it('拠点が決まっていれば、その拠点を選んだ状態で始まり案内は出さない', async () => {
+      const { container } = renderForm({
+        locations: [OSAKA, NAGOYA],
+        prefill: { ...unresolvedPrefill('愛知県架空市架空町2-1-1'), locationId: NAGOYA.id },
+      });
+      await flush();
+      expect(locationSelect(container).value).toBe(NAGOYA.id);
+      expect(container.querySelector('#manual-location-select-error')).toBeNull();
+      expect(previewButton(container).disabled).toBe(false);
+    });
   });
 });

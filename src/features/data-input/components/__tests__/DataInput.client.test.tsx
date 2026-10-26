@@ -35,6 +35,7 @@ vi.mock('@/features/invoice-reading/components/InvoiceReadingCard.client', () =>
       onClick={() =>
         onApply({
           locationId: 'loc-1',
+          supplyAddress: '東京都架空区架空町1-1-1',
           energyType: 'electricity',
           targetMonth: '2025-09',
           amount: '12345',

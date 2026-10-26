@@ -203,10 +203,13 @@ export type EntryFactorPrefill =
 
 /**
  * 新規入力のフォームに入れておく値（請求書の読取りの「フォームに反映」）。保存は人が入力プレビューから行う。
- * 拠点が決まらなければ locationId は ''（未選択）、活動量が読めなければ amount は ''。
+ * 拠点が決まらなければ locationId は ''（未選択。フォームは先頭の拠点に倒さず、選ぶまでプレビューを開けない）、
+ * 活動量が読めなければ amount は ''。
  */
 export interface ActivityEntryPrefill {
   locationId: string;
+  /** 請求書の需要場所の住所（拠点が決まらなかったときの案内に出す）。読めなければ null */
+  supplyAddress: string | null;
   energyType: EnergyType;
   /** 対象年月（'YYYY-MM'）。読めなければ null（フォームの既定の当月のまま） */
   targetMonth: string | null;

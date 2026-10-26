@@ -239,6 +239,7 @@ export const buildReadingItem = (args: {
     prefill: energyType
       ? {
           locationId: location?.id ?? '',
+          supplyAddress: extraction.supplyAddress,
           energyType,
           targetMonth,
           amount: amount ? String(amount.value) : '',

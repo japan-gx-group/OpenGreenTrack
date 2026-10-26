@@ -191,11 +191,17 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   // 削除は誤操作防止のため2段階（1回目で確認表示、2回目で実行）。ダイアログは使わない。
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
+  // 請求書の読取りから入れた値で拠点が決まらなかった（住所が拠点と一致しない）ときは、先頭の拠点に倒さず未選択にし、
+  // 拠点を選ぶまでプレビューを開けないようにする。請求書と関係のない拠点の活動量として黙って保存しないため。
+  const awaitingLocationChoice =
+    prefill !== undefined && !locations.some((location) => location.id === selectedLocationId);
   // 選択肢に無い id（稼働中・一時停止でなくなった拠点の記録を編集中）は採用せず先頭拠点へ倒す。
   // ネイティブ select は一致する option が無いと先頭を表示するため、表示・係数判定・保存内容を一致させる。
-  const effectiveSelectedLocationId = locations.some((location) => location.id === selectedLocationId)
-    ? selectedLocationId
-    : (locations[0]?.id ?? '');
+  const effectiveSelectedLocationId = awaitingLocationChoice
+    ? ''
+    : locations.some((location) => location.id === selectedLocationId)
+      ? selectedLocationId
+      : (locations[0]?.id ?? '');
   const selectedLocation = useMemo(
     () => locations.find((location) => location.id === effectiveSelectedLocationId),
     [locations, effectiveSelectedLocationId],
@@ -470,6 +476,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   const isPreviewBlocked =
     locations.length === 0 ||
     initialLocationMissing ||
+    awaitingLocationChoice ||
     isSaving ||
     isDeleting ||
     isFactorLoading ||
@@ -888,7 +895,17 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
               </div>
             )}
 
-            <EntryField htmlFor="manual-location-select" label="拠点">
+            <EntryField
+              htmlFor="manual-location-select"
+              label="拠点"
+              error={
+                awaitingLocationChoice && locations.length > 0
+                  ? prefill?.supplyAddress
+                    ? `請求書の住所（${prefill.supplyAddress}）から拠点を決められませんでした。拠点を選んでください`
+                    : '請求書から需要場所の住所を読み取れなかったため、拠点を決められませんでした。拠点を選んでください'
+                  : null
+              }
+            >
               <select
                 id="manual-location-select"
                 value={effectiveSelectedLocationId}
@@ -898,8 +915,14 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
                   scope12.onConditionChanged('location');
                 }}
                 disabled={isConditionLocked}
+                aria-describedby={awaitingLocationChoice ? 'manual-location-select-error' : undefined}
                 className="gt-field"
               >
+                {awaitingLocationChoice && (
+                  <option value="" disabled>
+                    拠点を選んでください
+                  </option>
+                )}
                 {locations.map((location) => (
                   <option key={location.id} value={location.id}>
                     {location.name}
@@ -1011,6 +1034,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
           <EntrySection step={2} title="排出係数の参照" titleId="manual-step-2">
             <ActivityEntryFactorSection
               factorSource={factorSource}
+              hasLocation={selectedLocation !== undefined}
               hasPeriod={period !== null}
               fiscalYearsReady={fiscalYearsReady}
               isEdit={isEdit}
