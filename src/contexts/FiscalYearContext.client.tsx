@@ -20,6 +20,7 @@ export const FiscalYearProvider = ({ children }: { children: ReactNode }) => {
   const [fiscalYears, setFiscalYears] = useState<FiscalYearOption[]>([]);
   const [fiscalYearId, setFiscalYearIdState] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [fiscalYearError, setFiscalYearError] = useState(false);
   // refresh() 用に「誰でログイン中か」を保持する。auth イベント外から取り直す際に getUser を
   // 呼び直さずに済ませるため（コールバック内の supabase.auth 直呼びはデッドロックし得る）。
   const userIdRef = useRef<string | null>(null);
@@ -34,12 +35,14 @@ export const FiscalYearProvider = ({ children }: { children: ReactNode }) => {
       if (activeRef.current) {
         setFiscalYears([]);
         setFiscalYearIdState(null);
+        setFiscalYearError(false);
         setIsLoading(false);
       }
       return;
     }
 
     setIsLoading(true);
+    setFiscalYearError(false);
 
     // fiscal_years の RLS（fiscal_years_select_own_organization）は自組織の年度だけを返す。
     // グループ会社（子孫組織）の仕組みは撤去済みのため、organizationId で
@@ -53,6 +56,7 @@ export const FiscalYearProvider = ({ children }: { children: ReactNode }) => {
 
     if (error || !data) {
       setFiscalYears([]);
+      setFiscalYearError(true);
       setIsLoading(false);
       return;
     }
@@ -65,6 +69,7 @@ export const FiscalYearProvider = ({ children }: { children: ReactNode }) => {
       endDate: row.endDate,
     }));
     setFiscalYears(options);
+    setFiscalYearError(false);
 
     // 既定は常に最新年度（startDate 降順ソート済みなので options[0] が最新）。
     // 「基本的に最新年度を表示」方針のため、古い選択を localStorage から復元して
@@ -122,10 +127,11 @@ export const FiscalYearProvider = ({ children }: { children: ReactNode }) => {
       fiscalYear: selected?.year ?? '',
       fiscalYears,
       isLoading,
+      fiscalYearError,
       setFiscalYearId,
       refresh,
     };
-  }, [fiscalYearId, fiscalYears, isLoading, setFiscalYearId, refresh]);
+  }, [fiscalYearId, fiscalYears, isLoading, fiscalYearError, setFiscalYearId, refresh]);
 
   return (
     <FiscalYearContext.Provider value={value}>
