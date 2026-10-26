@@ -27,8 +27,26 @@ export const DEFAULT_MAX_INPUT_BYTES = 4 * 1024 * 1024;
 /** 用途にかかわらない、組織全体の 24 時間あたりの回数の上限 */
 export const AI_ORGANIZATION_DAILY_LIMIT = 500;
 
-// 用途を足すときは、ここに 1 行足す（例: invoice_reading）。
-export const AI_PURPOSES = {} satisfies Record<string, AiPurpose>;
+// 用途を足すときは、ここに 1 行足す。
+export const AI_PURPOSES = {
+  // 請求書（電気・都市ガス・燃料）の PDF・画像から、使用量・使用月・事業者などを読み取る（データ入力）。
+  invoice_reading: {
+    label: '請求書の読取り',
+    inputs: ['pdf', 'image'],
+    maxInputBytes: DEFAULT_MAX_INPUT_BYTES,
+    limits: { perMinute: 5, perDay: 100 },
+    maxOutputTokens: 2_000,
+  },
+  // 読み取った事業者名・料金メニュー・燃料の名称に当てはまる排出係数を、候補の一覧（公表値）から選ぶ。
+  // 請求書の読取り 1 回につき 1 回呼ぶ。事業者を絞れないときは電気の全事業者（約 560 社）が候補になる。
+  invoice_factor_matching: {
+    label: '請求書の排出係数の判定',
+    inputs: ['text'],
+    maxInputBytes: DEFAULT_MAX_INPUT_BYTES,
+    limits: { perMinute: 10, perDay: 200 },
+    maxOutputTokens: 1_000,
+  },
+} satisfies Record<string, AiPurpose>;
 
 export type AiPurposeId = keyof typeof AI_PURPOSES;
 

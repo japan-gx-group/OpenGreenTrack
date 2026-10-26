@@ -22,8 +22,30 @@ vi.mock('../../services/provisionalRecalculation', async (importOriginal) => ({
 }));
 
 vi.mock('../ActivityEntryForm.client', () => ({
-  ActivityEntryForm: ({ mode = 'create' }: { mode?: 'create' | 'edit' }) => (
-    <div data-testid="entry-form" data-mode={mode} />
+  ActivityEntryForm: ({ mode = 'create', prefill }: { mode?: 'create' | 'edit'; prefill?: { sourceLabel: string } }) => (
+    <div data-testid="entry-form" data-mode={mode} data-prefill={prefill?.sourceLabel ?? ''} />
+  ),
+}));
+
+// 請求書の読取り（AI）は自分のテストを持つので、「フォームに反映」を押したことにするボタンだけのスタブにする。
+vi.mock('@/features/invoice-reading/components/InvoiceReadingCard.client', () => ({
+  InvoiceReadingCard: ({ onApply }: { onApply: (prefill: unknown) => void }) => (
+    <button
+      type="button"
+      onClick={() =>
+        onApply({
+          locationId: 'loc-1',
+          energyType: 'electricity',
+          targetMonth: '2025-09',
+          amount: '12345',
+          note: '請求書から読取り',
+          factor: null,
+          sourceLabel: '請求書「9月分.pdf」から読み取った値を入れました。',
+        })
+      }
+    >
+      反映する（スタブ）
+    </button>
   ),
 }));
 
@@ -134,5 +156,22 @@ describe('DataInput 入力履歴', () => {
 
     click(document.querySelector('.modal-overlay')!);
     expect(document.querySelector('[data-testid="entry-form"][data-mode="edit"]')).toBeNull();
+  });
+
+  it('請求書の読取りの「フォームに反映」で、新規入力のフォームに読み取った値を渡す', async () => {
+    // jsdom は scrollIntoView を持たないため、呼ばれたことだけを見る。
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    view = render(<DataInput />);
+    await flush();
+
+    const createForm = () => view.container.querySelector('[data-testid="entry-form"][data-mode="create"]');
+    expect(createForm()?.getAttribute('data-prefill')).toBe('');
+    const applyButton = Array.from(view.container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '反映する（スタブ）',
+    )!;
+    click(applyButton);
+    expect(createForm()?.getAttribute('data-prefill')).toBe('請求書「9月分.pdf」から読み取った値を入れました。');
+    expect(scrollIntoView).toHaveBeenCalled();
   });
 });

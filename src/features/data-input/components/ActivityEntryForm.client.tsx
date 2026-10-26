@@ -22,6 +22,7 @@ import { scopeAnalysisHref } from '@/features/scope-analysis/utils/scopeAnalysis
 import {
   MANUAL_ACTIVITY_CATEGORY_MAP,
   type ActivityEntryInitialValues,
+  type ActivityEntryPrefill,
   type ActivityEntryInput,
   type ManualEntryLocationOption,
   type SavedManualActivityRecord,
@@ -136,6 +137,11 @@ export interface ActivityEntryFormProps {
   excludeRecordId?: string;
   /** 事前警告から重複レコードの編集を開く操作。指定時のみ「既存のレコードを開く」を表示する（新規入力用）。 */
   onOpenDuplicateRecord?: (record: SavedManualActivityRecord) => void;
+  /**
+   * 新規入力のフォームに入れておく値（請求書の読取りの「フォームに反映」）。create のときだけ使う。
+   * 初期値として読むだけなので、別の値を入れ直すときは呼び出し側が key を替えてフォームを作り直す。
+   */
+  prefill?: ActivityEntryPrefill;
 }
 
 // historyRecords 未指定時の既定値。毎レンダー新しい [] を作ると useMemo の依存が毎回変わるため共有する。
@@ -153,14 +159,20 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   historyRecords = NO_HISTORY_RECORDS,
   excludeRecordId,
   onOpenDuplicateRecord,
+  prefill: prefillProp,
 }) => {
   const isEdit = mode === 'edit';
   const initialCategory = useMemo(() => entryCategoryFromInitialValues(initialValues), [initialValues]);
+  const prefill = isEdit ? undefined : prefillProp;
 
-  const [selectedLocationId, setSelectedLocationId] = useState(initialValues?.locationId ?? '');
-  const [category, setCategory] = useState<EntryCategory>(initialCategory ?? DEFAULT_ENTRY_CATEGORY);
-  const [targetMonth, setTargetMonth] = useState(() => initialValues?.targetMonth ?? getCurrentYearMonth());
-  const [amount, setAmount] = useState(initialValues?.amount ?? '');
+  const [selectedLocationId, setSelectedLocationId] = useState(initialValues?.locationId ?? prefill?.locationId ?? '');
+  const [category, setCategory] = useState<EntryCategory>(
+    initialCategory ?? (prefill ? { kind: 'energy', energyType: prefill.energyType } : DEFAULT_ENTRY_CATEGORY),
+  );
+  const [targetMonth, setTargetMonth] = useState(
+    () => initialValues?.targetMonth ?? prefill?.targetMonth ?? getCurrentYearMonth(),
+  );
+  const [amount, setAmount] = useState(initialValues?.amount ?? prefill?.amount ?? '');
   // 入力時フィルタで弾いたことの案内（正規化しても数字にならなかったとき）。無言で無視しない。
   const [amountRejected, setAmountRejected] = useState(false);
   // IME 変換中フラグ。変換中の値（全角数字など）を controlled input が巻き戻すと
@@ -171,8 +183,8 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   // 変換開始のたびに取り直し、保存で欄を空にしたときも空に戻す。
   // 保存前の値を持ったままにすると、空欄に数字以外を入れた瞬間に古い活動量が復活し、
   // 翌月分として再保存できてしまう。
-  const lastValidAmountRef = useRef(initialValues?.amount ?? '');
-  const [note, setNote] = useState(initialValues?.note ?? '');
+  const lastValidAmountRef = useRef(initialValues?.amount ?? prefill?.amount ?? '');
+  const [note, setNote] = useState(initialValues?.note ?? prefill?.note ?? '');
   const [showPreview, setShowPreview] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -248,6 +260,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     applicableYear: factorYear,
     isEdit,
     initialFactorId: isEdit && initialValues?.kind === 'scope12' ? initialValues.emissionFactorId : null,
+    prefillFactor: prefill?.factor ?? null,
   });
   // 対象年月が属する会計年度（画面上部で選択中の年度ではなく、この記録の帰属先）。
   // Scope 3 の算定方法の注記と、IDEA 製品を検索する版（その年度に割り当てた版）の決定に使う。
@@ -783,6 +796,11 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
         {locations.length === 0 && (
           <EntryNotice variant="warning">
             データ入力に使用できる拠点がありません。稼働中または一時停止の拠点を登録してください。
+          </EntryNotice>
+        )}
+        {prefill && (
+          <EntryNotice variant="info">
+            {prefill.sourceLabel}拠点・対象年月・活動量・排出係数を確かめてから「入力プレビュー」で保存してください。
           </EntryNotice>
         )}
         {initialLocationMissing && initialValues && (
