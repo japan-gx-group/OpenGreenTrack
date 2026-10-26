@@ -107,11 +107,16 @@ import { ActivityEntryPreviewModal } from './ActivityEntryPreviewModal.client';
 import { BulkEntryPreviewModal } from './BulkEntryPreviewModal.client';
 import { EntryCalculationResult } from './EntryCalculationResult';
 import { EntryField, EntryNotice, EntrySection, FactorSourceChip, UnitBadge } from './EntryFormPrimitives';
+import { EvidenceField } from '@/features/activity-evidence/components/EvidenceField.client';
+import { useEvidenceAttachments } from '@/features/activity-evidence/hooks/useEvidenceAttachments';
 
 export interface ActivityEntryFormProps {
   locations: ManualEntryLocationOption[];
-  /** Scope1/2・Scope3 のどちらでも 1 本で受ける。reject 時は error.message をフォーム内に表示する。 */
-  onSave: (entry: ActivityEntryInput) => Promise<void>;
+  /**
+   * Scope1/2・Scope3 のどちらでも 1 本で受ける。reject 時は error.message をフォーム内に表示する。
+   * 新規入力では、帳票の欄に並べた帳票の ID を options.evidenceFileIds で渡す（保存した記録に紐づけるのは呼び出し側）。
+   */
+  onSave: (entry: ActivityEntryInput, options?: { evidenceFileIds: string[] }) => Promise<void>;
   /** 'create'（新規入力・既定）または 'edit'（履歴編集）。edit ではモーダル内に埋め込む。 */
   mode?: EntryMode;
   /** edit のときの初期値。kind でカテゴリ選択肢の保存経路を固定する。 */
@@ -142,6 +147,10 @@ export interface ActivityEntryFormProps {
    * 初期値として読むだけなので、別の値を入れ直すときは呼び出し側が key を替えてフォームを作り直す。
    */
   prefill?: ActivityEntryPrefill;
+  /** edit のときの記録 ID。帳票の欄が、この記録に紐づいている帳票を読み、足す・外すをその場で反映する。 */
+  recordId?: string;
+  /** edit で帳票の紐づけを変えたあとに呼ぶ（入力履歴の帳票の数を取り直すため）。 */
+  onEvidenceChange?: () => void;
 }
 
 // historyRecords 未指定時の既定値。毎レンダー新しい [] を作ると useMemo の依存が毎回変わるため共有する。
@@ -160,6 +169,8 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   excludeRecordId,
   onOpenDuplicateRecord,
   prefill: prefillProp,
+  recordId,
+  onEvidenceChange,
 }) => {
   const isEdit = mode === 'edit';
   const initialCategory = useMemo(() => entryCategoryFromInitialValues(initialValues), [initialValues]);
@@ -190,6 +201,12 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // 削除は誤操作防止のため2段階（1回目で確認表示、2回目で実行）。ダイアログは使わない。
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // 帳票（請求書など）。新規は保存のあとに紐づけ（onSave の options）、編集はその場で紐づけ・外す。
+  const evidence = useEvidenceAttachments({
+    recordId: isEdit ? (recordId ?? null) : null,
+    initialFiles: prefill?.evidenceFiles,
+    onChanged: onEvidenceChange,
+  });
 
   // 請求書の読取りから入れた値で拠点が決まらなかった（住所が拠点と一致しない）ときは、先頭の拠点に倒さず未選択にし、
   // 拠点を選ぶまでプレビューを開けないようにする。請求書と関係のない拠点の活動量として黙って保存しないため。
@@ -479,6 +496,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     awaitingLocationChoice ||
     isSaving ||
     isDeleting ||
+    evidence.uploading.length > 0 ||
     isFactorLoading ||
     bulkPreview.isResolving;
 
@@ -594,7 +612,10 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     setIsSaving(true);
     setErrorMessage(null);
     try {
-      await onSave(entry);
+      // 帳票を並べたときだけ、保存した記録に紐づける ID を渡す（編集は欄の中で紐づけ済み）。
+      await (isEdit || evidence.fileIds.length === 0
+        ? onSave(entry)
+        : onSave(entry, { evidenceFileIds: evidence.fileIds }));
       setShowPreview(false);
       if (isEdit) {
         // 編集はモーダルを閉じる（親が一覧を再取得する）。
@@ -604,6 +625,8 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
         // 翌月へ送れないとき（当月・算定期間の末月）は対象年月も含めて条件がそのまま残るので、
         // 今保存したレコードが履歴に加わっても条件を変えるまで重複警告は出さない。
         duplicate.markSaved();
+        // 帳票は記録ごとのものなので、次の入力に持ち越さない。
+        evidence.reset();
         setAmount('');
         // 戻す先も空にする（保存前の活動量が次の入力で復活しないように）。
         lastValidAmountRef.current = '';
@@ -1153,6 +1176,12 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
           </EntrySection>
         )}
 
+        {locations.length > 0 && !isBulk && (
+          <EntrySection step={5} title="帳票（請求書など）" titleId="manual-step-5" hint="(任意)">
+            <EvidenceField attachments={evidence} isEdit={isEdit} disabled={isSaving || isDeleting} />
+          </EntrySection>
+        )}
+
         {errorMessage && (
           <div
             role="alert"
@@ -1213,7 +1242,11 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
       {previewRows && (
         <ActivityEntryPreviewModal
           mode={mode}
-          rows={previewRows}
+          rows={
+            evidence.files.length > 0 && !isEdit
+              ? [...previewRows, { label: '帳票', value: evidence.files.map((file) => file.fileName).join('、') }]
+              : previewRows
+          }
           cautions={previewCautions}
           isSaving={isSaving}
           onClose={closePreview}

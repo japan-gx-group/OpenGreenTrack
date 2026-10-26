@@ -2,6 +2,7 @@
 // DB の EnergyType enum 全値にラベルを用意し、手動入力で選べるカテゴリは別途限定する。
 import type { EnergyType } from '@/features/calculation/types';
 import type { Region } from '@/types/region';
+import type { EvidenceFile } from '@/features/activity-evidence/types';
 
 // 公式係数が 1 件も無く、選んで入力しても未算定のままになる 4 種
 // （vehicle / logistics / purchased_goods_services / supplier_data）は選択肢から外す。
@@ -218,6 +219,8 @@ export interface ActivityEntryPrefill {
   factor: EntryFactorPrefill | null;
   /** フォームの先頭に出す、どこから入れた値かの案内（例: 請求書「4月分.pdf」から読み取った値です） */
   sourceLabel: string;
+  /** 帳票の欄に最初から入れておく帳票（読み取った請求書など）。保存した記録に紐づける */
+  evidenceFiles?: EvidenceFile[];
 }
 
 export interface SavedManualActivityRecord {
@@ -250,4 +253,6 @@ export interface SavedManualActivityRecord {
   ideaFactorId: string | null;
   /** 参照する IDEA 製品名（履歴表示用）。参照切れ・Scope3以外は null。 */
   ideaProductName: string | null;
+  /** 紐づいている帳票（請求書など）の数（activity_record_evidence）。 */
+  evidenceCount: number;
 }

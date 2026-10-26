@@ -20,6 +20,12 @@ import {
   type CandidateFactorRow,
 } from '../../services/factorSelectionService';
 import { getScope3CategoryMethod } from '../../services/scope3Adoption';
+import {
+  getRecordEvidence,
+  unlinkEvidence,
+  uploadEvidenceFile,
+} from '@/features/activity-evidence/services/evidenceClient';
+import type { EvidenceFile } from '@/features/activity-evidence/types';
 import type {
   ActivityEntryInitialValues,
   ManualEntryLocationOption,
@@ -67,6 +73,15 @@ const fiscalYearMock = vi.hoisted(() => ({
 }));
 
 vi.mock('@/hooks/useFiscalYear', () => ({ useFiscalYear: () => fiscalYearMock }));
+
+// 帳票の欄の I/O（Storage・紐づけ）。WebP への変換はしない（このブラウザに覚えた選択は既定で off）。
+vi.mock('@/features/activity-evidence/services/evidenceClient', () => ({
+  uploadEvidenceFile: vi.fn(),
+  getRecordEvidence: vi.fn(async () => []),
+  linkEvidence: vi.fn(),
+  unlinkEvidence: vi.fn(),
+  openEvidenceFile: vi.fn(),
+}));
 
 // ---- フィクスチャ ----
 
@@ -1324,6 +1339,7 @@ describe('ActivityEntryForm', () => {
     scope3CategoryId: null,
     ideaFactorId: null,
     ideaProductName: null,
+    evidenceCount: 0,
     ...overrides,
   });
 
@@ -1476,6 +1492,7 @@ describe('ActivityEntryForm', () => {
     scope3CategoryId: null,
     ideaFactorId: null,
     ideaProductName: null,
+    evidenceCount: 0,
     ...overrides,
   });
 
@@ -1747,6 +1764,90 @@ describe('ActivityEntryForm', () => {
     await flush();
     expect(amountInput(container).value).toBe('500');
     expect(container.textContent).not.toContain('請求書から読み取った値です。');
+  });
+
+  describe('帳票（請求書など）', () => {
+    const evidenceFile = (overrides: Partial<EvidenceFile> = {}): EvidenceFile => ({
+      id: 'file-1',
+      fileName: '11月分.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 2048,
+      convertedFrom: null,
+      storagePath: 'org/activity-evidence/file-1.pdf',
+      createdAt: '2024-12-01T00:00:00Z',
+      uploadedBy: 'user-1',
+      ...overrides,
+    });
+    const evidenceInput = (container: HTMLElement) => q<HTMLInputElement>(container, 'input[aria-label="帳票のファイル"]');
+    const chooseEvidence = async (container: HTMLElement, file: File) => {
+      const input = evidenceInput(container);
+      await act(async () => {
+        Object.defineProperty(input, 'files', { value: [file], configurable: true });
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+    };
+
+    it('新規: 上げた帳票をプレビューに出し、保存で ID を渡して欄を空にする', async () => {
+      vi.mocked(uploadEvidenceFile).mockResolvedValue(evidenceFile());
+      const { container, onSave } = renderForm();
+      await flush();
+
+      await chooseEvidence(container, new File([new Uint8Array(10)], '11月分.pdf', { type: 'application/pdf' }));
+      expect(uploadEvidenceFile).toHaveBeenCalledWith(expect.any(File), null);
+      expect(q(container, '[data-testid="evidence-field"]').textContent).toContain('11月分.pdf');
+
+      setSelectValue(monthInput(container), '2024-11');
+      setInputValue(amountInput(container), '10000');
+      openPreview(container);
+      expect(previewRowText(container, '帳票')).toBe('帳票11月分.pdf');
+      await saveFromPreview(container);
+
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ kind: 'scope12' }), { evidenceFileIds: ['file-1'] });
+      expect(q(container, '[data-testid="evidence-field"]').textContent).toContain('帳票はまだありません。');
+    });
+
+    it('新規: 帳票を保存している間はプレビューを押せない', async () => {
+      const pending = deferred<EvidenceFile>();
+      vi.mocked(uploadEvidenceFile).mockReturnValue(pending.promise);
+      const { container } = renderForm();
+      await flush();
+      setInputValue(amountInput(container), '10');
+
+      await chooseEvidence(container, new File([new Uint8Array(10)], 'a.pdf', { type: 'application/pdf' }));
+      expect(previewButton(container).disabled).toBe(true);
+      await act(async () => pending.resolve(evidenceFile()));
+      expect(previewButton(container).disabled).toBe(false);
+    });
+
+    it('送れない形式は上げずに理由を出す', async () => {
+      const { container } = renderForm();
+      await flush();
+      await chooseEvidence(container, new File(['x'], 'memo.txt', { type: 'text/plain' }));
+      expect(uploadEvidenceFile).not.toHaveBeenCalled();
+      expect(q(container, '[data-testid="evidence-field"]').textContent).toContain('memo.txt: PDF・PNG・JPEG・WebP のファイルを選んでください');
+    });
+
+    it('編集: 紐づいている帳票を読み、外すとその場で記録から外す', async () => {
+      vi.mocked(getRecordEvidence).mockResolvedValue([evidenceFile()]);
+      const onEvidenceChange = vi.fn();
+      const { container } = renderForm({ mode: 'edit', initialValues: editScope12(), recordId: 'rec-1', onEvidenceChange });
+      await flush();
+
+      expect(getRecordEvidence).toHaveBeenCalledWith('rec-1');
+      expect(q(container, '[data-testid="evidence-field"]').textContent).toContain('11月分.pdf');
+      await clickAsync(q(container, 'button[aria-label="11月分.pdf を外す"]'));
+
+      expect(unlinkEvidence).toHaveBeenCalledWith('rec-1', 'file-1');
+      expect(onEvidenceChange).toHaveBeenCalledTimes(1);
+      expect(q(container, '[data-testid="evidence-field"]').textContent).toContain('帳票はまだありません。');
+    });
+
+    it('一括入力では帳票の欄を出さない', async () => {
+      const { container } = renderBulkForm();
+      await flush();
+      await clickAsync(q(container, '#manual-entry-mode-bulk'));
+      expect(container.querySelector('[data-testid="evidence-field"]')).toBeNull();
+    });
   });
 
   describe('請求書から反映（拠点が決まらなかった）', () => {

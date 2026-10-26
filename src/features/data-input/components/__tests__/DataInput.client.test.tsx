@@ -80,11 +80,12 @@ const record = (overrides: Partial<SavedManualActivityRecord> & { id: string }):
   scope3CategoryId: null,
   ideaFactorId: null,
   ideaProductName: null,
+  evidenceCount: 0,
   ...overrides,
 });
 
 const HISTORY: SavedManualActivityRecord[] = [
-  record({ id: 'r1' }),
+  record({ id: 'r1', evidenceCount: 2 }),
   record({ id: 'r2', locationId: 'loc-2', locationName: '大阪支社', energyType: 'city_gas', amount: 30, unit: 'm³', emissions: null }),
 ];
 
@@ -125,6 +126,9 @@ describe('DataInput 入力履歴', () => {
     expect(view.container.textContent).toContain('登録済み 2 件');
     expect(view.container.textContent).toContain('未算定');
     expect(view.container.querySelector('[data-testid="entry-form"]')?.getAttribute('data-mode')).toBe('create');
+    // 帳票が紐づいている記録には件数を出す（紐づいていない記録には出さない）
+    expect(view.container.querySelectorAll('[aria-label="帳票 2 件"]')).toHaveLength(1);
+    expect(view.container.querySelectorAll('[aria-label="帳票なし"]')).toHaveLength(1);
   });
 
   it('キーワードで絞り込め、「絞り込みをクリア」で全件に戻る', async () => {

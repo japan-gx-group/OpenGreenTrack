@@ -213,6 +213,7 @@ describe('toActivityEntryInitialValues', () => {
     scope3CategoryId: null,
     ideaFactorId: null,
     ideaProductName: null,
+    evidenceCount: 0,
   };
 
   it('Scope1/2 行は記録の unit と係数 id をそのまま渡し、note は空文字にする', () => {

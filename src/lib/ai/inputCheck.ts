@@ -5,9 +5,13 @@
 
 import 'server-only';
 import { createHash } from 'node:crypto';
+import { detectFileMimeType, type DocumentMimeType } from '@/lib/files/fileSignature';
 import type { AiInputKind, AiPurpose } from './purposes';
 
-export type AiFileMimeType = 'application/pdf' | 'image/png' | 'image/jpeg' | 'image/webp';
+// 形式の判定は帳票の保存と共通（src/lib/files/fileSignature.ts）。この入口からも呼べるよう名前を残す。
+export { detectFileMimeType };
+
+export type AiFileMimeType = DocumentMimeType;
 
 /** 機能が共通の入口に渡す入力 */
 export type AiInputPart =
@@ -27,20 +31,6 @@ export interface AiInputSummary {
   /** ファイルの SHA-256（16 進）。文字には付けない */
   sha256?: string;
 }
-
-const startsWith = (data: Uint8Array, bytes: number[], offset = 0) =>
-  data.length >= offset + bytes.length && bytes.every((byte, i) => data[offset + i] === byte);
-
-/** 先頭のバイトから形式を判定する。対応していなければ null */
-export const detectFileMimeType = (data: Uint8Array): AiFileMimeType | null => {
-  if (startsWith(data, [0x25, 0x50, 0x44, 0x46, 0x2d])) return 'application/pdf'; // %PDF-
-  if (startsWith(data, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return 'image/png';
-  if (startsWith(data, [0xff, 0xd8, 0xff])) return 'image/jpeg';
-  if (startsWith(data, [0x52, 0x49, 0x46, 0x46]) && startsWith(data, [0x57, 0x45, 0x42, 0x50], 8)) {
-    return 'image/webp'; // RIFF....WEBP
-  }
-  return null;
-};
 
 export type PrepareInputsResult =
   | { ok: true; prepared: AiPreparedInput[]; summary: AiInputSummary[] }

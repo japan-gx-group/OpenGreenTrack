@@ -8,6 +8,7 @@ import { useFiscalYear } from '@/hooks/useFiscalYear';
 import { usePagination } from '@/hooks/usePagination';
 import { useToast } from '@/hooks/useToast';
 import { InvoiceReadingCard } from '@/features/invoice-reading/components/InvoiceReadingCard.client';
+import { EvidenceListModal } from '@/features/activity-evidence/components/EvidenceListModal.client';
 import type { ActivityEntryPrefill } from '../types';
 import { useActivityCalculation } from '../hooks/useActivityCalculation';
 import { useActivityEntrySave } from '../hooks/useActivityEntrySave';
@@ -87,6 +88,7 @@ export const DataInput = () => {
   const [entryFormKey, setEntryFormKey] = useState(0);
   const [entryPrefill, setEntryPrefill] = useState<ActivityEntryPrefill | undefined>(undefined);
   const entryFormRef = useRef<HTMLDivElement>(null);
+  const [isEvidenceListOpen, setIsEvidenceListOpen] = useState(false);
   const applyPrefill = (prefill: ActivityEntryPrefill) => {
     setEntryPrefill(prefill);
     setEntryFormKey((key) => key + 1);
@@ -124,8 +126,8 @@ export const DataInput = () => {
           <ActivityEntryForm
             key={entryFormKey}
             locations={manualEntryLocations}
-            onSave={async (entry) => {
-              await entrySave.save(entry);
+            onSave={async (entry, options) => {
+              await entrySave.save(entry, options);
               setEntryPrefill(undefined);
             }}
             onSaveBulk={entrySave.saveBulk}
@@ -142,6 +144,7 @@ export const DataInput = () => {
             totalCount={history.length}
             isRefreshing={isRefreshingHistory}
             onRefresh={refreshManualHistory}
+            onOpenEvidenceList={() => setIsEvidenceListOpen(true)}
           />
 
           <CalculationStatusBanner
@@ -202,7 +205,11 @@ export const DataInput = () => {
         editor={editor}
         locations={manualEntryLocations}
         historyRecords={historyRecords}
+        // 編集で帳票を足す・外すと、入力履歴の帳票の数を取り直す。
+        onEvidenceChange={refreshManualHistory}
       />
+
+      <EvidenceListModal isOpen={isEvidenceListOpen} onClose={() => setIsEvidenceListOpen(false)} />
     </>
   );
 };
