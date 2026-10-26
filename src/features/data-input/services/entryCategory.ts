@@ -161,7 +161,7 @@ const toOption = (category: EntryCategory): EntryCategoryOption => ({
 
 /**
  * カテゴリ選択肢を組み立てる。
- * 新規入力は手動カテゴリ（MANUAL_ACTIVITY_CATEGORIES の 7 件。定数の順序を保つ）を参照方式で 2 群に分け、
+ * 新規入力は手動カテゴリ（MANUAL_ACTIVITY_CATEGORIES の 12 件。定数の順序を保つ）を参照方式で 2 群に分け、
  * Scope3 積上げの 15 カテゴリを 3 群目に並べる。
  * 編集で手動カテゴリ外（燃料種別など取込レコード）を開いた場合は、その種別も選べるよう
  * 標準係数群の先頭に足す。編集では保存経路をまたぐ群を disabled にする（サービスに更新経路が無いため）。

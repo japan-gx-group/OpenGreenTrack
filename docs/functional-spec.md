@@ -115,9 +115,16 @@ erDiagram
 | `city_gas` | ガス | m³ |
 | `heat` | 熱（温水・冷水・蒸気） | GJ |
 | `waste` | 廃棄物 | t |
-| `fuel` | 燃料 | L |
+| `fuel_gasoline` | ガソリン | L |
+| `fuel_diesel` | 軽油 | L |
+| `fuel_kerosene` | 灯油 | L |
+| `fuel_heavy_oil` | 重油 | L |
+| `fuel_lpg` | LPG | t |
+| `fuel` | 燃料（その他） | L |
 | `business_travel` | 出張 | 人・日 |
 | `business_travel_commuting` | 通勤 | 人・日 |
+
+ガソリン・軽油・灯油・重油・LPG は、公式係数を細目の種別（`fuel_gasoline` など）で同梱している。係数候補は energyType の完全一致で絞るため、細目を選択肢に置かないと「燃料（その他）」（`fuel`。コークス・タール・廃プラスチック類など 17 種）を選んでもガソリンなどの係数が候補に出ない。重油は A重油と B・C重油が同じ優先度の候補になるため、候補から選ばないと `FACTOR_AMBIGUOUS` で未算定になる。LPG は公式係数が `tCO2/t` のため重さ（t）で入力する。
 
 出張（Scope 3 カテゴリ6）と通勤（カテゴリ7）は別カテゴリ。係数候補は energyType の完全一致で絞るため、1 本にまとめると通勤の係数だけが候補になり、出張の代表原単位（12 件）に到達できない（#381）。
 
@@ -128,13 +135,13 @@ erDiagram
 公式係数が 1 件も無く、選んでも未算定のままになる 4 種:
 `vehicle`（車両 km） `logistics`（物流 t-km） `purchased_goods_services`（購入した製品・サービス 円） `supplier_data`（サプライヤーデータ t-CO2e）
 
-> 物流・購入した製品・サービスは IDEA 原単位（Scope 3 積上げ）から入力する。車両は燃料（L）で入力する（距離ベースの推計は燃料との二重計上の入口になるため）。
+> 物流・購入した製品・サービスは IDEA 原単位（Scope 3 積上げ）から入力する。車両はガソリン・軽油（L）で入力する（距離ベースの推計は燃料との二重計上の入口になるため）。
 
 その他:
-`fuel_heavy_oil`（重油 L） `fuel_diesel`（軽油 L） `water`（水道 m3） `freight_transport`（輸送 t-km）
+`water`（水道 m3） `freight_transport`（輸送 t-km）
 
-温対法「算定方法・排出係数一覧」の主要燃料:
-`fuel_gasoline`（ガソリン L） `fuel_kerosene`（灯油 L） `fuel_crude_oil`（原油 L） `fuel_naphtha`（ナフサ L） `fuel_jet`（ジェット燃料油 L） `fuel_lpg`（LPG t） `fuel_lng`（LNG t） `fuel_natural_gas`（天然ガス m³） `fuel_coal`（石炭 t）
+温対法「算定方法・排出係数一覧」の燃料のうち、手動入力の選択肢に無い細目:
+`fuel_crude_oil`（原油 L） `fuel_naphtha`（ナフサ L） `fuel_jet`（ジェット燃料油 L） `fuel_lng`（LNG t） `fuel_natural_gas`（天然ガス m³） `fuel_coal`（石炭 t）
 
 **Scope 3 積上げ専用**
 

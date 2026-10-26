@@ -5,13 +5,21 @@ import type { Region } from '@/types/region';
 
 // 公式係数が 1 件も無く、選んで入力しても未算定のままになる 4 種
 // （vehicle / logistics / purchased_goods_services / supplier_data）は選択肢から外す。
-// 物流・購入した製品・サービスは IDEA 原単位（Scope 3 積上げ）から入力し、車両は燃料（L）で入力する
+// 物流・購入した製品・サービスは IDEA 原単位（Scope 3 積上げ）から入力し、車両はガソリン・軽油（L）で入力する
 // （距離ベースの推計は燃料との二重計上の入口になる）。ラベルは下の MAP に残し、既存レコードは履歴で表示し続ける。
 export const MANUAL_ACTIVITY_CATEGORIES = [
   'electricity',
   'city_gas',
   'heat',
   'waste',
+  // 主要燃料。公式係数は fuel_gasoline などの細目の種別で同梱しており、係数候補は energyType の完全一致で
+  // 絞るため、「燃料（その他）」（fuel）を選んでもガソリン・軽油などの係数は候補に出ない。
+  'fuel_gasoline',
+  'fuel_diesel',
+  'fuel_kerosene',
+  'fuel_heavy_oil',
+  'fuel_lpg',
+  // 上の 5 種以外の温対法の燃料（コークス・タール・廃プラスチック類など）。
   'fuel',
   // 出張（カテゴリ6）と通勤（カテゴリ7）は別カテゴリ。1 本の「出張・通勤」にまとめると係数候補が
   // energyType 完全一致で通勤 10 件だけになり、出張の代表原単位 12 件が新規入力から到達不能になる。
@@ -34,7 +42,8 @@ export const MANUAL_ACTIVITY_CATEGORY_MAP: Record<
   city_gas: { labelJP: 'ガス', unit: 'm³' },
   heat: { labelJP: '熱（温水・冷水・蒸気）', unit: 'GJ' },
   waste: { labelJP: '廃棄物', unit: 't' },
-  fuel: { labelJP: '燃料', unit: 'L' },
+  // 排出係数管理の種別表示（factorService の ENERGY_TYPE_LABELS）と同じ名前にする。
+  fuel: { labelJP: '燃料（その他）', unit: 'L' },
   // 公式係数が無いため手動入力の選択肢外。既存レコードの履歴表示・排出係数管理の種別表示用にラベルを残す。
   vehicle: { labelJP: '車両', unit: 'km' },
   logistics: { labelJP: '物流', unit: 't-km' },
@@ -60,20 +69,29 @@ export const MANUAL_ACTIVITY_CATEGORY_MAP: Record<
   // 同上（手動入力の選択肢外。Scope 3 カテゴリ1 は IDEA 原単位から入力する）。
   purchased_goods_services: { labelJP: '購入した製品・サービス', unit: '円' },
   supplier_data: { labelJP: 'サプライヤーデータ', unit: 't-CO2e' },
-  // 既存/インポート済みレコードは選択肢に出さないが、履歴で表示し続ける。
-  fuel_heavy_oil: { labelJP: '重油', unit: 'L' },
+  // 温対法「算定方法・排出係数一覧」の主要燃料（手動入力の選択肢）。
+  fuel_gasoline: { labelJP: 'ガソリン', unit: 'L' },
   fuel_diesel: { labelJP: '軽油', unit: 'L' },
+  fuel_kerosene: { labelJP: '灯油', unit: 'L' },
+  // A重油と B・C重油は同じ優先度の候補になり、自動では決められない（FACTOR_AMBIGUOUS）。
+  fuel_heavy_oil: {
+    labelJP: '重油',
+    unit: 'L',
+    amountGuide: 'A重油と B・C重油で係数が違います。排出係数の候補から、使った重油を選んでください。',
+  },
+  // 公式係数が tCO2/t のため重さ（t）で入力させる。
+  fuel_lpg: {
+    labelJP: 'LPG',
+    unit: 't',
+    amountGuide: '重さ（t）で入力します（例: 500 kg → 0.5 t）。請求書が体積（m³）の場合は、販売店に重さを確認してください。',
+  },
   water: { labelJP: '水道', unit: 'm3' },
   // 輸送も手動入力の選択肢外だが履歴表示のためラベルを用意する。
   freight_transport: { labelJP: '輸送', unit: 't-km' },
-  // 温対法「算定方法・排出係数一覧」の主要燃料。
-  // 手動入力の選択肢外だが、履歴表示のためラベルを用意する。
-  fuel_gasoline: { labelJP: 'ガソリン', unit: 'L' },
-  fuel_kerosene: { labelJP: '灯油', unit: 'L' },
+  // 温対法の燃料のうち、手動入力の選択肢外のもの。既存レコードの履歴表示のためラベルを用意する。
   fuel_crude_oil: { labelJP: '原油', unit: 'L' },
   fuel_naphtha: { labelJP: 'ナフサ', unit: 'L' },
   fuel_jet: { labelJP: 'ジェット燃料油', unit: 'L' },
-  fuel_lpg: { labelJP: 'LPG', unit: 't' },
   fuel_lng: { labelJP: 'LNG', unit: 't' },
   fuel_natural_gas: { labelJP: '天然ガス', unit: 'm³' },
   fuel_coal: { labelJP: '石炭', unit: 't' },

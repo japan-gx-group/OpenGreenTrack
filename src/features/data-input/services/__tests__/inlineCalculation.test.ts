@@ -94,4 +94,15 @@ describe('computeEstimatedEmissions', () => {
   it('換算できない単位の組み合わせは null を返す', () => {
     expect(computeEstimatedEmissions(100, 'kg', factor())).toBeNull();
   });
+
+  // 手動入力の主要燃料は L（LPG は t）で入れ、公式係数（tCO2/kL・tCO2/t）へ換算する。
+  it('主要燃料: ガソリン 1,000 L は 1 kL として揮発油の係数（2.29 tCO2/kL）を掛ける', () => {
+    const gasoline = factor({ id: 'gasoline', name: '燃料 揮発油', energyType: 'fuel_gasoline', scope: 'scope1', factorValue: 2.29, unit: 'tCO2/kL' });
+    expect(computeEstimatedEmissions(1000, 'L', gasoline)).toBe(2.29);
+  });
+
+  it('主要燃料: LPG は t のまま係数（2.99 tCO2/t）を掛ける', () => {
+    const lpg = factor({ id: 'lpg', name: '燃料 液化石油ガス（LPG）', energyType: 'fuel_lpg', scope: 'scope1', factorValue: 2.99, unit: 'tCO2/t' });
+    expect(computeEstimatedEmissions(0.5, 't', lpg)).toBe(1.495);
+  });
 });

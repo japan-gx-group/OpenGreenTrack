@@ -98,7 +98,7 @@ describe('buildEntryCategoryGroups', () => {
       .filter((category): category is Extract<EntryCategory, { kind: 'energy' }> => category.kind === 'energy')
       .map((category) => category.energyType);
 
-  it('新規入力: 手動カテゴリ 7 件が参照方式の 2 群に過不足なく現れ、Scope3 の 15 件が 3 群目に並ぶ', () => {
+  it('新規入力: 手動カテゴリ 12 件が参照方式の 2 群に過不足なく現れ、Scope3 の 15 件が 3 群目に並ぶ', () => {
     const groups = buildEntryCategoryGroups({ mode: 'create', initialCategory: null });
 
     expect(groups.map((group) => group.id)).toEqual(['provider', 'standard', 'idea']);
@@ -132,12 +132,12 @@ describe('buildEntryCategoryGroups', () => {
   it('編集（Scope1/2）: 取込レコードの種別を標準係数群の先頭に足し、IDEA 群を disabled にする', () => {
     const groups = buildEntryCategoryGroups({
       mode: 'edit',
-      initialCategory: { kind: 'energy', energyType: 'fuel_diesel' },
+      initialCategory: { kind: 'energy', energyType: 'fuel_jet' },
     });
     expect(groups[1].options[0]).toEqual({
-      value: 'energy:fuel_diesel',
-      label: '軽油',
-      category: { kind: 'energy', energyType: 'fuel_diesel' },
+      value: 'energy:fuel_jet',
+      label: 'ジェット燃料油',
+      category: { kind: 'energy', energyType: 'fuel_jet' },
     });
     expect(energyOptionsOf(groups)).toHaveLength(MANUAL_ACTIVITY_CATEGORIES.length + 1);
     expect(groups.map((group) => group.disabled)).toEqual([false, false, true]);
