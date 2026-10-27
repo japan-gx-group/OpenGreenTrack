@@ -15,6 +15,7 @@ import type { EnergyType } from '@/features/calculation/types';
 import type { ManualEntryLocationOption } from '../types';
 import { isProviderCategory } from './entryCategory';
 import {
+  isAmbiguousEntryChoice,
   listApplicableProviderFactors,
   listEntryFactorCandidates,
   listMenuOptions,
@@ -36,6 +37,8 @@ export interface BulkFactorSelectionState {
   providerSelection: ProviderSelection;
   /** 標準係数の候補セレクトでの上書き選択（null = 自動選択）。 */
   selectedFactorId: string | null;
+  /** 上書きした係数の名前。ID がその月の候補に無ければ、同じ名前の係数を使う（温対法の年度の境目をまたぐ月） */
+  selectedFactorName: string | null;
 }
 
 export interface BulkMonthFactor {
@@ -65,7 +68,8 @@ const defaultFetchers: BulkFactorFetchers = {
 /**
  * 対象月ごとの係数を解決する。戻り値は month（'YYYY-MM'）→ BulkMonthFactor。
  * 事業者・メニューは名前で月ごとに引き直す（年度が変われば同事業者の新年度係数へ自動追従）。
- * 標準係数の上書き選択（selectedFactorId）はその月の候補に無ければ候補先頭（自動選択）へ戻す。
+ * 標準係数の上書き選択（selectedFactorId）はその月の候補に無ければ同じ名前の係数、それも無ければ候補先頭
+ * （自動選択）へ戻す。候補先頭が当てずっぽうになる（同じ優先度で名前の違う候補がある）月は自動で選ばない。
  */
 export const resolveBulkMonthFactors = async (args: {
   months: string[];
@@ -124,6 +128,8 @@ export const resolveBulkMonthFactors = async (args: {
       providerFactor,
       candidates,
       selectedFactorId: args.selection.selectedFactorId,
+      selectedFactorName: args.selection.selectedFactorName,
+      ambiguous: isAmbiguousEntryChoice(scope, candidates),
     });
     const factorIdToSave = selectedFactor?.id ?? null;
 

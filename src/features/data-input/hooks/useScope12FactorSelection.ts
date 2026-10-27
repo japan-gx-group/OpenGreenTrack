@@ -17,6 +17,7 @@ import { isProviderCategory, type FactorTypeChoice } from '../services/entryCate
 import {
   DEFAULT_PROVIDER_SELECTION,
   listApplicableProviderFactors,
+  isAmbiguousEntryChoice,
   listEntryFactorCandidates,
   listMenuOptions,
   resolveAppliedFactor,
@@ -100,6 +101,11 @@ export interface Scope12FactorSelectionView {
   factorCandidates: CandidateFactorRow[];
   /** 候補セレクトの value（ユーザーの選択） */
   selectedFactor: CandidateFactorRow | null;
+  /**
+   * 標準係数の候補に、同じ優先度で名前の違う係数が並ぶ（自動では選ばない）。候補セレクトに「・自動選択」を付けず、
+   * 選ぶまで（selectedFactor が null の間）は「候補から選んでください」を出す。保存の可否は applied.ambiguous で決める。
+   */
+  factorChoiceAmbiguous: boolean;
   selectFactorId: (factorId: string) => void;
   factorTouched: boolean;
   factorIdToSave: string | null;
@@ -198,7 +204,16 @@ export const useScope12FactorSelection = (
     () => (scope ? listEntryFactorCandidates(scope, yearFactors) : EMPTY_FACTORS),
     [scope, yearFactors],
   );
-  const selectedFactor = resolveSelectedFactor({ providerFactor, candidates: factorCandidates, selectedFactorId });
+  const factorChoiceAmbiguous = useMemo(
+    () => (scope ? isAmbiguousEntryChoice(scope, factorCandidates) : false),
+    [scope, factorCandidates],
+  );
+  const selectedFactor = resolveSelectedFactor({
+    providerFactor,
+    candidates: factorCandidates,
+    selectedFactorId,
+    ambiguous: factorChoiceAmbiguous,
+  });
   const factorIdToSave = resolveFactorIdToSave({
     isEdit: args.isEdit,
     factorTouched,
@@ -262,6 +277,7 @@ export const useScope12FactorSelection = (
     },
     factorCandidates,
     selectedFactor,
+    factorChoiceAmbiguous: providerFactor === null && factorChoiceAmbiguous,
     selectFactorId: (factorId) => {
       setSelectedFactorId(factorId);
       touch();
