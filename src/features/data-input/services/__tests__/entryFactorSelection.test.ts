@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CandidateFactorRow } from '../factorSelectionService';
 import {
   DEFAULT_PROVIDER_SELECTION,
+  isAmbiguousEntryChoice,
   listApplicableProviderFactors,
   listEntryFactorCandidates,
   listMenuOptions,
@@ -173,16 +174,50 @@ describe('候補と選択係数', () => {
 
   it('選択係数は 事業者確定 > 上書き > 候補先頭 の順で、候補外の上書きは先頭へ戻る', () => {
     const candidates = [kanto, national];
+    const auto = { ambiguous: false };
     expect(
-      resolveSelectedFactor({ providerFactor: providerAdjusted, candidates, selectedFactorId: 'national' })?.id,
+      resolveSelectedFactor({ providerFactor: providerAdjusted, candidates, selectedFactorId: 'national', ...auto })?.id,
     ).toBe('tepco-adjusted');
-    expect(resolveSelectedFactor({ providerFactor: null, candidates, selectedFactorId: 'national' })?.id).toBe(
+    expect(resolveSelectedFactor({ providerFactor: null, candidates, selectedFactorId: 'national', ...auto })?.id).toBe(
       'national',
     );
-    expect(resolveSelectedFactor({ providerFactor: null, candidates, selectedFactorId: 'archived' })?.id).toBe(
+    expect(resolveSelectedFactor({ providerFactor: null, candidates, selectedFactorId: 'archived', ...auto })?.id).toBe(
       'kanto',
     );
-    expect(resolveSelectedFactor({ providerFactor: null, candidates: [], selectedFactorId: null })).toBeNull();
+    expect(resolveSelectedFactor({ providerFactor: null, candidates: [], selectedFactorId: null, ...auto })).toBeNull();
+  });
+
+  it('同じ優先度で名前の違う候補が並ぶときは先頭を自動で選ばず、選んだ係数だけを返す（ID が無ければ同じ名前）', () => {
+    const heavyScope = { ...scope, energyType: 'fuel_heavy_oil' as const };
+    const heavyFactor = (id: string, name: string, applicableYear = 2024) =>
+      factor({ id, name, energyType: 'fuel_heavy_oil', scope: 'scope1', unit: 'tCO2/kL', factorType: null, applicableYear });
+    const candidates = listEntryFactorCandidates(heavyScope, [heavyFactor('heavy-a', '燃料 A重油'), heavyFactor('heavy-bc', '燃料 B・C重油')]);
+    const ambiguous = isAmbiguousEntryChoice(heavyScope, candidates);
+    expect(ambiguous).toBe(true);
+
+    expect(resolveSelectedFactor({ providerFactor: null, candidates, selectedFactorId: null, ambiguous })).toBeNull();
+    expect(resolveSelectedFactor({ providerFactor: null, candidates, selectedFactorId: 'heavy-a', ambiguous })?.id).toBe('heavy-a');
+    // 別の年度の行を選んでいた（複数月まとめて入力で年度の境目をまたぐ月）ときは、同じ名前の係数を使う。
+    expect(
+      resolveSelectedFactor({
+        providerFactor: null,
+        candidates,
+        selectedFactorId: 'heavy-a-2025',
+        selectedFactorName: '燃料 A重油',
+        ambiguous,
+      })?.id,
+    ).toBe('heavy-a');
+    expect(
+      resolveSelectedFactor({ providerFactor: null, candidates, selectedFactorId: 'heavy-a-2025', selectedFactorName: '燃料 C重油', ambiguous }),
+    ).toBeNull();
+  });
+
+  it('候補が 1 つ、または名前まで同じ候補の重なりは当てずっぽうにならない（自動で選ぶ）', () => {
+    expect(isAmbiguousEntryChoice(scope, [national])).toBe(false);
+    expect(isAmbiguousEntryChoice(scope, [national, factor({ id: 'national-dup', name: national.name })])).toBe(false);
+    // 地域一致が全国より優先されるので、名前が違っても同じ優先度ではない。
+    expect(isAmbiguousEntryChoice(scope, listEntryFactorCandidates(scope, [national, kanto]))).toBe(false);
+    expect(isAmbiguousEntryChoice(scope, [])).toBe(false);
   });
 
   it('保存 id は編集で未タッチなら元の指定、それ以外は選択係数', () => {

@@ -7,6 +7,7 @@
 import { REGION_LABELS } from '@/types/region';
 import {
   filterApplicableFactors,
+  isAmbiguousChoice,
   listFactorCandidates,
   isProvisionalFactor,
   resolveEmissionFactorDetailed,
@@ -129,17 +130,39 @@ export const listEntryFactorCandidates = (
     toResolutionContext(scope),
   );
 
+/**
+ * 候補の先頭を自動で選ぶと当てずっぽうになるか（先頭と同じ優先度で名前の違う候補がある。例: A重油 / B・C重油、
+ * 燃料（その他）の 17 種、廃棄物の 12 種）。算定バッチと同じ isAmbiguousChoice で判定する。
+ * 当てずっぽうになるときは自動で選ばず、候補から人に選んでもらう（選ぶまで保存できない）。
+ */
+export const isAmbiguousEntryChoice = (
+  scope: FactorResolutionScope,
+  candidates: readonly CandidateFactorRow[],
+): boolean =>
+  isAmbiguousChoice(
+    candidates,
+    { locationId: scope.location.id, energyType: scope.energyType, periodStart: scope.periodStart },
+    toResolutionContext(scope),
+  );
+
 // 選択中の係数。供給事業者を選択済みならその係数を最優先し、そうでなければユーザーの上書き → 候補先頭
 // （自動選択）の順。上書きが候補内に無い場合（入力条件の変更後など）は自動選択へ戻す。
+// 複数月まとめて入力では、上書きの ID がその月の候補に無ければ同じ名前の係数を使う（温対法の年度の境目を
+// またいでも、選んだ係数（例: A重油）を使い続けるため）。候補の先頭が当てずっぽうになる（ambiguous）ときは
+// 自動で選ばず null を返す。
 export const resolveSelectedFactor = (args: {
   providerFactor: CandidateFactorRow | null;
   candidates: readonly CandidateFactorRow[];
   selectedFactorId: string | null;
+  /** 上書きした係数の名前。ID が候補に無いときに同じ名前の係数を探す（複数月まとめて入力） */
+  selectedFactorName?: string | null;
+  /** isAmbiguousEntryChoice の結果 */
+  ambiguous: boolean;
 }): CandidateFactorRow | null =>
   args.providerFactor ??
   args.candidates.find((factor) => factor.id === args.selectedFactorId) ??
-  args.candidates[0] ??
-  null;
+  (args.selectedFactorName ? args.candidates.find((factor) => factor.name === args.selectedFactorName) : undefined) ??
+  (args.ambiguous ? null : (args.candidates[0] ?? null));
 
 // 保存する係数 ID。編集時に係数 UI（および拠点・カテゴリ・年月）へ一度も触れていなければ、
 // 元の係数指定をそのまま維持する。触れずに保存したのに供給事業者係数が代替値へ勝手に置き換わるのを防ぐ
@@ -162,7 +185,8 @@ export const resolveFactorIdToSave = (args: {
  *             別年度行へ読み替えられた（事業者別係数が年度更新で入れ替わった）場合。remapped でなければ
  *             自動解決（候補先頭）に落ちる。
  *             ambiguous = 自動解決で同順位の候補が複数あり（例: A重油 / B・C重油）、算定バッチが
- *             FACTOR_AMBIGUOUS で未算定にする（factor は null。候補セレクトで選ぶと解消する）
+ *             FACTOR_AMBIGUOUS で未算定にする（factor は null。候補セレクトで選ぶと解消する）。
+ *             入力フォームは、この状態のままでは保存させない（候補から選んでもらう）
  */
 export type AppliedFactorResolution =
   | { status: 'pending' }
