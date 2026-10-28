@@ -14,8 +14,11 @@ export type WebpConversionResult =
 /** 画像を WebP の Blob にする（テストで差し替えられるよう分ける）。書き出せなければ null */
 export type WebpEncoder = (file: File, quality: number) => Promise<Blob | null>;
 
+// スマートフォンで撮った JPEG は、画素を横向きのまま持ち EXIF の向きで回して見せることがある。canvas に描くと
+// EXIF は捨てられるため、向きを反映した画素で描く（'from-image'。今の仕様の既定値だが、古い既定の 'none' の
+// ブラウザでも横倒しの請求書にしないよう明示する）。
 const canvasEncoder: WebpEncoder = async (file, quality) => {
-  const bitmap = await createImageBitmap(file);
+  const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
   try {
     const canvas = document.createElement('canvas');
     canvas.width = bitmap.width;

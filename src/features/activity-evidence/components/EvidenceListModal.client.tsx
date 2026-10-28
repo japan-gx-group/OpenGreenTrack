@@ -2,20 +2,36 @@
 
 // 「帳票の一覧」。組織の帳票（請求書など）を新しい順に並べ、開く・削除ができる。
 // 削除できるのは、どの記録にも紐づいていない帳票だけ（記録を削除しても帳票は残るため、その後始末に使う）。
+// 入力中のフォームに付けている帳票（まだ記録を保存していないので紐づけなし）は、保存で紐づけるので削除させない。
 // 削除は取り消せないので、ブラウザのダイアログは使わず、行の中で「削除する」をもう一度押してもらう。
 
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { ExternalLink, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import { Modal } from '@/components/ui/Modal.client';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatDateTime } from '@/lib/datetime';
 import { useEvidenceList } from '../hooks/useEvidenceList';
 import { openEvidenceFile } from '../services/evidenceClient';
 import { EVIDENCE_MIME_LABELS, formatEvidenceSize } from '../types';
 
-export const EvidenceListModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => {
+const NO_PENDING: readonly string[] = [];
+
+export const EvidenceListModal = ({
+  isOpen,
+  onClose,
+  pendingFileIds = NO_PENDING,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  /** 入力中のフォームに付けている帳票の ID（保存で記録に紐づけるので、ここでは削除させない） */
+  pendingFileIds?: readonly string[];
+}) => {
   const list = useEvidenceList(isOpen);
+  const unlinkedOnlyId = useId();
   const [unlinkedOnly, setUnlinkedOnly] = useState(false);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
@@ -30,10 +46,16 @@ export const EvidenceListModal = ({ isOpen, onClose }: { isOpen: boolean; onClos
           <p className="text-xs text-text-muted">
             記録を削除しても帳票は残ります。どの記録にも紐づいていない帳票は、ここから削除できます。
           </p>
-          <label className="flex items-center gap-2 text-sm text-text-main">
-            <input type="checkbox" checked={unlinkedOnly} onChange={(event) => setUnlinkedOnly(event.target.checked)} />
-            紐づいていない帳票だけ（{unlinkedCount} 件）
-          </label>
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id={unlinkedOnlyId}
+              checked={unlinkedOnly}
+              onCheckedChange={(checked) => setUnlinkedOnly(checked === true)}
+            />
+            <Label htmlFor={unlinkedOnlyId} className="font-normal text-text-main">
+              紐づいていない帳票だけ（{unlinkedCount} 件）
+            </Label>
+          </div>
         </div>
 
         {list.error && (
@@ -46,6 +68,7 @@ export const EvidenceListModal = ({ isOpen, onClose }: { isOpen: boolean; onClos
             {list.deleteError ?? openError}
           </p>
         )}
+        {list.uploaderError && <p className="text-xs text-text-muted">{list.uploaderError}（上げた人は「—」と表示します）</p>}
 
         {list.isLoading ? (
           <p className="text-sm text-text-muted">帳票を読み込んでいます...</p>
@@ -53,94 +76,107 @@ export const EvidenceListModal = ({ isOpen, onClose }: { isOpen: boolean; onClos
           <p className="text-sm text-text-muted">{unlinkedOnly ? '紐づいていない帳票はありません。' : '帳票はまだありません。'}</p>
         ) : (
           <div className="max-h-[60vh] overflow-auto">
-            <table className="gt-table">
-              <thead>
-                <tr>
-                  <th style={{ minWidth: '220px' }}>ファイル</th>
-                  <th className="whitespace-nowrap">上げた人</th>
-                  <th className="whitespace-nowrap">日時</th>
-                  <th className="whitespace-nowrap">記録</th>
-                  <th aria-label="操作" />
-                </tr>
-              </thead>
-              <tbody>
-                {files.map((file) => (
-                  <tr key={file.id}>
-                    <td>
-                      <div className="break-all text-sm text-text-main">{file.fileName}</div>
-                      <div className="text-xs text-text-muted">
-                        {EVIDENCE_MIME_LABELS[file.mimeType]}・{formatEvidenceSize(file.sizeBytes)}
-                        {file.convertedFrom && `（${EVIDENCE_MIME_LABELS[file.convertedFrom]} から変換）`}
-                      </div>
-                    </td>
-                    <td className="whitespace-nowrap text-sm">{(file.uploadedBy && list.uploaderNames.get(file.uploadedBy)) || '—'}</td>
-                    <td className="whitespace-nowrap text-sm">{formatDateTime(file.createdAt)}</td>
-                    <td className="whitespace-nowrap">
-                      {file.linkCount > 0 ? (
-                        <Badge variant="accent" size="sm">
-                          {file.linkCount} 件に紐づけ
-                        </Badge>
-                      ) : (
-                        <Badge variant="neutral" size="sm">
-                          紐づけなし
-                        </Badge>
-                      )}
-                    </td>
-                    <td>
-                      <div className="flex items-center justify-end gap-1 whitespace-nowrap">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setOpenError(null);
-                            openEvidenceFile(file.storagePath).catch((error: unknown) =>
-                              setOpenError(error instanceof Error ? error.message : '帳票を開けませんでした'),
-                            );
-                          }}
-                          aria-label={`${file.fileName} を開く`}
-                        >
-                          <ExternalLink />
-                          開く
-                        </Button>
-                        {confirmingId === file.id ? (
-                          <>
-                            <Button
-                              type="button"
-                              variant="destructive"
-                              size="sm"
-                              onClick={async () => {
-                                await list.remove(file.id);
-                                setConfirmingId(null);
-                              }}
-                              disabled={list.deletingId === file.id}
-                            >
-                              削除する
-                            </Button>
-                            <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmingId(null)}>
-                              やめる
-                            </Button>
-                          </>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="min-w-[220px]">ファイル</TableHead>
+                  <TableHead>上げた人</TableHead>
+                  <TableHead>日時</TableHead>
+                  <TableHead>記録</TableHead>
+                  <TableHead aria-label="操作" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {files.map((file) => {
+                  const isPending = file.linkCount === 0 && pendingFileIds.includes(file.id);
+                  return (
+                    <TableRow key={file.id}>
+                      <TableCell className="whitespace-normal">
+                        <div className="break-all text-sm text-text-main">{file.fileName}</div>
+                        <div className="text-xs text-text-muted">
+                          {EVIDENCE_MIME_LABELS[file.mimeType]}・{formatEvidenceSize(file.sizeBytes)}
+                          {file.convertedFrom && `（${EVIDENCE_MIME_LABELS[file.convertedFrom]} から変換）`}
+                        </div>
+                      </TableCell>
+                      <TableCell>{(file.uploadedBy && list.uploaderNames.get(file.uploadedBy)) || '—'}</TableCell>
+                      <TableCell>{formatDateTime(file.createdAt)}</TableCell>
+                      <TableCell>
+                        {file.linkCount > 0 ? (
+                          <Badge variant="accent" size="sm">
+                            {file.linkCount} 件に紐づけ
+                          </Badge>
+                        ) : isPending ? (
+                          <Badge variant="info" size="sm">
+                            入力中のフォーム
+                          </Badge>
                         ) : (
+                          <Badge variant="neutral" size="sm">
+                            紐づけなし
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-end gap-1">
                           <Button
                             type="button"
                             variant="ghost"
                             size="sm"
-                            onClick={() => setConfirmingId(file.id)}
-                            disabled={file.linkCount > 0}
-                            title={file.linkCount > 0 ? '記録から外してから削除できます' : undefined}
-                            aria-label={`${file.fileName} を削除`}
+                            onClick={() => {
+                              setOpenError(null);
+                              openEvidenceFile(file.storagePath).catch((error: unknown) =>
+                                setOpenError(error instanceof Error ? error.message : '帳票を開けませんでした'),
+                              );
+                            }}
+                            aria-label={`${file.fileName} を開く`}
                           >
-                            <Trash2 />
-                            削除
+                            <ExternalLink />
+                            開く
                           </Button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                          {confirmingId === file.id ? (
+                            <>
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                size="sm"
+                                onClick={async () => {
+                                  await list.remove(file.id);
+                                  setConfirmingId(null);
+                                }}
+                                disabled={list.deletingId === file.id}
+                              >
+                                削除する
+                              </Button>
+                              <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmingId(null)}>
+                                やめる
+                              </Button>
+                            </>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setConfirmingId(file.id)}
+                              disabled={file.linkCount > 0 || isPending}
+                              title={
+                                file.linkCount > 0
+                                  ? '記録から外してから削除できます'
+                                  : isPending
+                                    ? '入力中のフォームに付けている帳票です。フォームから外すか、記録を保存してください'
+                                    : undefined
+                              }
+                              aria-label={`${file.fileName} を削除`}
+                            >
+                              <Trash2 />
+                              削除
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           </div>
         )}
       </div>

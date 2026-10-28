@@ -3,9 +3,11 @@
 // データ入力フォームの「帳票（請求書など）」の欄。上げた帳票を並べ、開く・外すができる。
 // 状態は useEvidenceAttachments が持つ（新規は保存のあとに紐づけ、編集はその場で紐づけ・外す）。
 
-import React, { useRef } from 'react';
+import React, { useId, useRef } from 'react';
 import { ExternalLink, FileText, Loader2, Paperclip, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import type { EvidenceAttachments } from '../hooks/useEvidenceAttachments';
 import { EVIDENCE_FILE_ACCEPT, EVIDENCE_MIME_LABELS, formatEvidenceSize } from '../types';
 
@@ -19,13 +21,16 @@ export const EvidenceField = ({
   disabled?: boolean;
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
+  const convertId = useId();
   const busy = attachments.uploading.length > 0;
 
   return (
     <div className="flex flex-col gap-3" data-testid="evidence-field">
       <p className="text-xs text-text-muted">
         算定の根拠になる請求書・検針票・納品書などを残せます（PDF・PNG・JPEG・WebP、1 ファイル 10MB まで）。
-        {isEdit ? '足す・外すは、すぐにこの記録に反映されます。' : '記録を保存すると、その記録に紐づきます。'}
+        {isEdit
+          ? '足す・外すは、すぐにこの記録に反映されます。'
+          : '記録を保存すると、その記録に紐づきます。保存する前に外した帳票は削除します。'}
       </p>
 
       {attachments.isLoading ? (
@@ -101,15 +106,17 @@ export const EvidenceField = ({
           <Paperclip />
           帳票を追加
         </Button>
-        <label className="flex items-center gap-2 text-xs text-text-muted">
-          <input
-            type="checkbox"
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id={convertId}
             checked={attachments.convertToWebp}
-            onChange={(event) => attachments.setConvertToWebp(event.target.checked)}
+            onCheckedChange={(checked) => attachments.setConvertToWebp(checked === true)}
             disabled={disabled}
           />
-          画像（PNG・JPEG）を WebP に変換して容量を減らす
-        </label>
+          <Label htmlFor={convertId} className="text-xs font-normal text-text-muted">
+            画像（PNG・JPEG）を WebP に変換して容量を減らす
+          </Label>
+        </div>
       </div>
     </div>
   );

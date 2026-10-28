@@ -22,8 +22,23 @@ vi.mock('../../services/provisionalRecalculation', async (importOriginal) => ({
 }));
 
 vi.mock('../ActivityEntryForm.client', () => ({
-  ActivityEntryForm: ({ mode = 'create', prefill }: { mode?: 'create' | 'edit'; prefill?: { sourceLabel: string } }) => (
-    <div data-testid="entry-form" data-mode={mode} data-prefill={prefill?.sourceLabel ?? ''} />
+  ActivityEntryForm: ({
+    mode = 'create',
+    prefill,
+    onEvidenceChange,
+  }: {
+    mode?: 'create' | 'edit';
+    prefill?: { sourceLabel: string };
+    onEvidenceChange?: (delta: number) => void;
+  }) => (
+    <div data-testid="entry-form" data-mode={mode} data-prefill={prefill?.sourceLabel ?? ''}>
+      {/* 編集で帳票を 1 件足したことにする */}
+      {mode === 'edit' && (
+        <button type="button" onClick={() => onEvidenceChange?.(1)}>
+          帳票を足す（スタブ）
+        </button>
+      )}
+    </div>
   ),
 }));
 
@@ -161,6 +176,19 @@ describe('DataInput 入力履歴', () => {
 
     click(document.querySelector('.modal-overlay')!);
     expect(document.querySelector('[data-testid="entry-form"][data-mode="edit"]')).toBeNull();
+  });
+
+  it('編集で帳票を足すと、一覧を取り直さずにその記録の帳票の数を直す', async () => {
+    view = render(<DataInput />);
+    await flush();
+    expect(getActivityHistoryRecords).toHaveBeenCalledTimes(1);
+
+    click(view.container.querySelector<HTMLTableRowElement>('table.gt-table tbody tr')!);
+    const addButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === '帳票を足す（スタブ）')!;
+    click(addButton);
+
+    expect(view.container.querySelectorAll('[aria-label="帳票 3 件"]')).toHaveLength(1);
+    expect(getActivityHistoryRecords).toHaveBeenCalledTimes(1);
   });
 
   it('請求書の読取りの「フォームに反映」で、新規入力のフォームに読み取った値を渡す', async () => {

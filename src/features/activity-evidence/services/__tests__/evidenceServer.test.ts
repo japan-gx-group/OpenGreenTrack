@@ -27,6 +27,7 @@ const fakeAdmin = (options: {
   linkCount?: number;
   evidenceRow?: Record<string, unknown> | null;
   insertError?: unknown;
+  uploadError?: { statusCode?: string; message: string };
   deleteError?: unknown;
   listed?: Array<{ id: string | null; name: string; created_at: string | null }>;
 }) => {
@@ -40,7 +41,7 @@ const fakeAdmin = (options: {
       download: async () => ({ data: new Blob([options.quarantineFile ?? new Uint8Array()]), error: null }),
       upload: async (path: string, _bytes: Uint8Array, opts: { contentType: string }) => {
         calls.uploaded.push({ bucket, path, contentType: opts.contentType });
-        return { error: null };
+        return { error: options.uploadError ?? null };
       },
       remove: async (paths: string[]) => {
         calls.removed.push({ bucket, paths });
@@ -104,7 +105,17 @@ describe('validateEvidenceFileMeta', () => {
       ok: false,
       errorMessage: 'ファイルが大きすぎます。10MB 以下にしてください',
     });
-    expect(validateEvidenceFileMeta(`${'あ'.repeat(260)}.pdf`, 10)).toMatchObject({ ok: false });
+    expect(validateEvidenceFileMeta(`${'あ'.repeat(260)}.pdf`, 10)).toEqual({
+      ok: false,
+      errorMessage: 'ファイル名は 255 文字以内にしてください',
+    });
+  });
+
+  it('ファイル名が空なら、長さではなく名前が無いことを伝える', () => {
+    expect(validateEvidenceFileMeta('  ', 10)).toEqual({
+      ok: false,
+      errorMessage: 'ファイル名がありません。名前の付いたファイルを選んでください',
+    });
   });
 });
 
@@ -121,11 +132,13 @@ describe('finalizeEvidenceUpload', () => {
 
     expect(result.ok).toBe(true);
     // ファイル名の拡張子（.png）ではなく、中身（%PDF-）から形式と拡張子を決める
+    // 帳票の ID は一時ファイルのパスの UUID（同じアップロードの保存が 2 回届いても 1 件にするため）
     expect(calls.uploaded).toEqual([
-      { bucket: EVIDENCE_BUCKET, path: expect.stringMatching(new RegExp(`^${ORG}/activity-evidence/[0-9a-f-]{36}\\.pdf$`)), contentType: 'application/pdf' },
+      { bucket: EVIDENCE_BUCKET, path: `${ORG}/activity-evidence/${UPLOAD_ID}.pdf`, contentType: 'application/pdf' },
     ]);
     const row = calls.inserted.find((call) => call.table === 'activity_evidence_files')?.row;
     expect(row).toMatchObject({
+      id: UPLOAD_ID,
       organizationId: ORG,
       fileName: '9月分.png',
       mimeType: 'application/pdf',
@@ -161,6 +174,38 @@ describe('finalizeEvidenceUpload', () => {
     const { admin } = fakeAdmin({ quarantineFile: null });
     const result = await finalizeEvidenceUpload({ admin, caller, storagePath, fileName: 'a.pdf', convertedFrom: null, log });
     expect(result).toEqual({ ok: false, status: 400, errorMessage: 'アップロードしたファイルが見つかりません。もう一度選んでください' });
+  });
+
+  it('同じアップロードの保存が先に済んでいれば、置き直さずに先の帳票を返す', async () => {
+    const saved = { id: UPLOAD_ID, fileName: '9月分.pdf', storagePath: `${ORG}/activity-evidence/${UPLOAD_ID}.pdf` };
+    const { admin, calls } = fakeAdmin({
+      quarantineFile: PDF,
+      uploadError: { statusCode: '409', message: 'The resource already exists' },
+      evidenceRow: saved,
+    });
+    const result = await finalizeEvidenceUpload({ admin, caller, storagePath, fileName: 'a.pdf', convertedFrom: null, log });
+    expect(result).toEqual({ ok: true, file: saved });
+    expect(calls.inserted).toEqual([]);
+    // 置いてあるファイルは先の保存のものなので消さない（一時ファイルだけを消す）
+    expect(calls.removed).toEqual([{ bucket: EVIDENCE_QUARANTINE_BUCKET, paths: [storagePath] }]);
+  });
+
+  it('同じアップロードの保存が途中（ファイルはあるが行がまだ無い）なら 409', async () => {
+    const { admin, calls } = fakeAdmin({
+      quarantineFile: PDF,
+      uploadError: { statusCode: '409', message: 'The resource already exists' },
+      evidenceRow: null,
+    });
+    const result = await finalizeEvidenceUpload({ admin, caller, storagePath, fileName: 'a.pdf', convertedFrom: null, log });
+    expect(result).toMatchObject({ ok: false, status: 409 });
+    expect(calls.removed.some((call) => call.bucket === EVIDENCE_BUCKET)).toBe(false);
+  });
+
+  it('行の ID が重なった（同じアップロードを別の形式で置き直した）ときは、置いたファイルを消して 409', async () => {
+    const { admin, calls } = fakeAdmin({ quarantineFile: PDF, insertError: { code: '23505', message: 'duplicate key' } });
+    const result = await finalizeEvidenceUpload({ admin, caller, storagePath, fileName: 'a.pdf', convertedFrom: null, log });
+    expect(result).toMatchObject({ ok: false, status: 409 });
+    expect(calls.removed).toContainEqual({ bucket: EVIDENCE_BUCKET, paths: [`${ORG}/activity-evidence/${UPLOAD_ID}.pdf`] });
   });
 
   it('行を作れなければ、置いたファイルも消す', async () => {

@@ -86,12 +86,29 @@ describe('EvidenceListModal', () => {
   it('「紐づいていない帳票だけ」で絞り込める', async () => {
     view = render(<EvidenceListModal isOpen onClose={vi.fn()} />);
     await flush();
-    const checkbox = Array.from(document.body.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')).find((input) =>
-      input.parentElement?.textContent?.includes('紐づいていない帳票だけ'),
+    const checkbox = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button[role="checkbox"]')).find((element) =>
+      element.parentElement?.textContent?.includes('紐づいていない帳票だけ'),
     )!;
     click(checkbox);
     expect(document.body.textContent).toContain('9月分.pdf');
     expect(document.body.textContent).not.toContain('燃料.webp');
+  });
+
+  it('入力中のフォームに付けている帳票は、紐づけなしでも削除できない', async () => {
+    view = render(<EvidenceListModal isOpen onClose={vi.fn()} pendingFileIds={['file-1']} />);
+    await flush();
+    expect(document.body.textContent).toContain('入力中のフォーム');
+    expect(document.body.textContent).not.toContain('紐づけなし');
+    expect(buttonByLabel('9月分.pdf を削除')?.disabled).toBe(true);
+  });
+
+  it('上げた人の名前を読めなくても一覧は出し、名前を読めなかったと伝える', async () => {
+    vi.mocked(getUploaderNames).mockRejectedValue(new Error('上げた人の名前を読み込めませんでした'));
+    view = render(<EvidenceListModal isOpen onClose={vi.fn()} />);
+    await flush();
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('9月分.pdf');
+    expect(text).toContain('上げた人の名前を読み込めませんでした（上げた人は「—」と表示します）');
   });
 
   it('「開く」で帳票を新しいタブで開く', async () => {
