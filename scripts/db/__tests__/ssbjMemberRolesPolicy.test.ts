@@ -17,6 +17,7 @@ const migration = (suffix: string): string => {
     .split(/\r?\n/).filter(line => !line.trimStart().startsWith('--')).join(' ').replace(/\s+/g, ' ');
 };
 const roles = migration('_ssbj_member_roles.sql');
+const surrogateKey = migration('_ssbj_member_roles_surrogate_key.sql');
 
 describe('SSBJ のロールのテーブル', () => {
   it('ロールの値は types.ts と同じ', () => {
@@ -25,9 +26,15 @@ describe('SSBJ のロールのテーブル', () => {
   });
 
   it('組織×利用者で 1 行。組織・利用者の削除で消える', () => {
-    expect(roles).toContain('primary key ("organizationId", "userId")');
     expect(roles).toContain('"organizationId" uuid not null references organizations(id) on delete cascade');
     expect(roles).toContain('"userId" uuid not null references profiles(id) on delete cascade');
+    expect(surrogateKey).toContain('add constraint ssbj_member_roles_organization_user_key unique ("organizationId", "userId")');
+  });
+
+  it('主キーは id で、組織・利用者の列を主キーにしない（PostgREST が profiles ↔ organizations の中間テーブルとみなし、本体の埋め込みが壊れるため）', () => {
+    expect(surrogateKey).toContain('alter table ssbj_member_roles drop constraint ssbj_member_roles_pkey;');
+    expect(surrogateKey).toContain('alter table ssbj_member_roles add column id uuid not null default gen_random_uuid();');
+    expect(surrogateKey).toContain('alter table ssbj_member_roles add constraint ssbj_member_roles_pkey primary key (id);');
   });
 });
 

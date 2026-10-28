@@ -633,12 +633,16 @@ SSBJ の中だけで使うロールの割り当て。権限の規則の正本は
 
 | 物理名 | 論理名 | 型 | 制約 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `organizationId` | 組織ID | UUID | Primary Key（`userId` と組）, Foreign Key | 削除時: CASCADE |
-| `userId` | 利用者ID | UUID | Primary Key（`organizationId` と組）, Foreign Key（`profiles`） | 削除時: CASCADE |
+| `id` | 行ID | UUID | Primary Key, DEFAULT `gen_random_uuid()` | `20261029100000_ssbj_member_roles_surrogate_key.sql` で主キーにした |
+| `organizationId` | 組織ID | UUID | UNIQUE（`userId` と組）, Foreign Key | 削除時: CASCADE |
+| `userId` | 利用者ID | UUID | UNIQUE（`organizationId` と組）, Foreign Key（`profiles`） | 削除時: CASCADE |
 | `role` | SSBJ のロール | VARCHAR(20) | NOT NULL, CHECK(`editor` / `approver` / `viewer`) | 入力担当 / 承認担当 / 閲覧者。行が無い利用者は入力担当。OGT の管理者は割り当てに関係なく管理者 |
 | `createdByUserId` / `updatedByUserId` | 作成者 / 更新者 | UUID | NULL | `set_row_actor` |
 | `createdAt` / `updatedAt` | 作成日時 / 更新日時 | TIMESTAMPTZ | NOT NULL | |
 
+- **組織・利用者の列を主キーにしない。** 2 列がそれぞれ `organizations` と `profiles` への外部キーなので、主キーにすると PostgREST が
+  `profiles` ↔ `organizations` の中間テーブルとみなし、本体の `profiles` から `organizations` への埋め込み（ログイン中の利用者と組織名）が
+  「関係が 2 つある」（PGRST201）で失敗する。SSBJ のテーブルを足すときも、本体の 2 つのテーブルへの外部キーの列だけで主キーを作らない。
 - RLS は自組織の select（全員）と、管理者だけの insert / update / delete。割り当てられるのは同じ組織の利用者だけ。authenticated に GRANT する列は insert が `organizationId`・`userId`・`role`、update が `role` だけ。
 - 判定の関数: `ssbj_user_role(利用者, 組織)`・`ssbj_user_can_approve`（service_role 限定）、`ssbj_current_user_role()`・`ssbj_current_user_can_edit()`・`ssbj_current_user_can_view_working()`・`ssbj_current_user_is_admin()`（authenticated。RLS と画面の出し分けに使う）。
 - 割り当て・変更・解除はトリガー（`ssbj_audit_member_role_change`）が `ssbj_audit_logs` に記録する（`reportId` は空）。組織の削除に伴う連鎖削除では記録しない。

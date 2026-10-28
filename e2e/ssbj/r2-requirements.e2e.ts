@@ -245,6 +245,12 @@ test('4. 権限（PostgREST の直接呼び出し）: 画面を通さずに書�
   const demote = await editor.client.from('ssbj_member_roles').update({ role: 'editor' }).eq('userId', approver.userId).select('userId');
   expect(demote.data).toEqual([]);
   expect((await reportRow()).draftRevision).toBe(before.draftRevision);
+
+  // SSBJ のロールのテーブルが、OGT 本体の画面の問い合わせ（ログイン中の利用者と組織名。CurrentUserContext）を壊さない。
+  // 組織・利用者の列を主キーにすると、PostgREST が profiles ↔ organizations の中間テーブルとみなし、埋め込みが PGRST201 で失敗する。
+  const current = await admin.client.from('profiles').select('id, organizationId, role, organizations(name)').eq('id', admin.userId).maybeSingle();
+  expect(current.error).toBeNull();
+  expect(current.data?.organizations).toBeTruthy();
 });
 
 test('5. 数値（二重計上の防止）: OGT の採用値と重なる外部算定値は、画面からも直接の書き込みからも登録できない', async () => {
