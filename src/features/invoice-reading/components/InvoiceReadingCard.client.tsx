@@ -16,6 +16,7 @@ import { AiSendConfirmDialog } from '@/features/ai/components/AiSendConfirmDialo
 import { useAiStatus } from '@/features/ai/hooks/useAiStatus';
 import { AI_GENERATE_ERROR_MESSAGES } from '@/features/ai/messages';
 import { EVIDENCE_FILE_ACCEPT, formatEvidenceSize } from '@/features/activity-evidence/types';
+import { usePendingEvidenceReport } from '@/features/activity-evidence/hooks/usePendingEvidenceReport';
 import type { ActivityEntryPrefill, ManualEntryLocationOption, SavedManualActivityRecord } from '@/features/data-input/types';
 import type {
   ActivityEntrySaveManyItem,
@@ -45,16 +46,26 @@ export const InvoiceReadingCard = ({
   historyRecords,
   onApply,
   onSaveRows,
+  onPendingEvidenceChange,
 }: {
   locations: readonly ManualEntryLocationOption[];
   historyRecords: readonly SavedManualActivityRecord[];
   onApply: (prefill: ActivityEntryPrefill) => void;
   onSaveRows: (items: ActivityEntrySaveManyItem[]) => Promise<ActivityEntrySaveManyResult>;
+  /**
+   * このカードで保存した帳票（読み取った請求書）の ID が変わるたびに呼ぶ。表の明細を登録するまでは記録に
+   * 紐づいていないため、「帳票の一覧」で削除させない（登録して紐づいた帳票は、一覧でも紐づいているので消せない）。
+   */
+  onPendingEvidenceChange?: (fileIds: string[]) => void;
 }) => {
   const { status, error: statusError, isLoading: isStatusLoading } = useAiStatus();
   const { fiscalYears } = useFiscalYear();
   const batch = useInvoiceBatchReading();
   const review = useInvoiceReviewRows({ results: batch.results, locations, historyRecords, fiscalYears });
+  usePendingEvidenceReport(
+    batch.entries.flatMap((entry) => (entry.evidence ? [entry.evidence.id] : [])),
+    onPendingEvidenceChange,
+  );
   const [isSaveConfirmOpen, setIsSaveConfirmOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);

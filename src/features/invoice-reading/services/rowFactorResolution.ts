@@ -14,6 +14,7 @@ import type { ManualEntryLocationOption } from '@/features/data-input/types';
 import { isProviderCategory } from '@/features/data-input/services/entryCategory';
 import {
   DEFAULT_PROVIDER_SELECTION,
+  isAmbiguousEntryChoice,
   listApplicableProviderFactors,
   listEntryFactorCandidates,
   listMenuOptions,
@@ -82,7 +83,10 @@ export interface RowFactorView {
   candidates: CandidateFactorRow[];
   /** 事業者・メニューで決まった係数。決まらなければ null（代替値か、候補の先頭を使う） */
   providerFactor: CandidateFactorRow | null;
-  /** 候補セレクトで選ばれている係数 */
+  /**
+   * 候補セレクトで選ばれている係数。同じ優先度で名前の違う候補が並び（例: A重油・B・C重油）、まだ選んでいなければ
+   * null（候補の先頭を当てずっぽうに選ばない。単月入力と同じ）
+   */
   selectedFactor: CandidateFactorRow | null;
   factorIdToSave: string | null;
   applied: AppliedFactorResolution;
@@ -118,7 +122,12 @@ export const resolveRowFactor = async (args: {
   const selectedFactorId =
     args.choice.selectedFactorId ??
     (args.choice.factorName ? (candidates.find((factor) => factor.name === args.choice.factorName)?.id ?? null) : null);
-  const selectedFactor = resolveSelectedFactor({ providerFactor, candidates, selectedFactorId });
+  const selectedFactor = resolveSelectedFactor({
+    providerFactor,
+    candidates,
+    selectedFactorId,
+    ambiguous: isAmbiguousEntryChoice(scope, candidates),
+  });
   const factorIdToSave = selectedFactor?.id ?? null;
 
   return {

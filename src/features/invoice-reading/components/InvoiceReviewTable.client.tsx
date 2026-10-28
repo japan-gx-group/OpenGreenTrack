@@ -76,6 +76,12 @@ const FactorCell = ({
           disabled={disabled}
           onChange={(event) => review.setValue(key, { selectedFactorId: event.target.value, factorName: null })}
         >
+          {/* 同じ優先度の候補が並び、まだ選んでいない（自動では選ばない） */}
+          {view.selectedFactor === null && (
+            <option value="" disabled>
+              候補から選んでください
+            </option>
+          )}
           {view.candidates.map((factor) => (
             <option key={factor.id} value={factor.id}>
               {factor.name}（{factor.factorValue} {factor.unit}）

@@ -4,7 +4,8 @@ import type { ManualEntryLocationOption } from '@/features/data-input/types';
 import { createFactorCatalog, resolveRowFactor, type RowFactorChoice } from '../rowFactorResolution';
 
 // 一括登録の表の 1 行の排出係数: 事業者とメニューで決まればその係数、メニューが決まらなければ代替値（候補の先頭）、
-// 標準係数は読取りで決めた名前か、選び直した ID で選ぶ。係数マスタは年度ごとに 1 回だけ取得し、失敗したら取り直す。
+// 標準係数は読取りで決めた名前か、選び直した ID で選ぶ。同じ優先度の候補が並ぶときは自動では選ばない（単月入力と同じ）。
+// 係数マスタは年度ごとに 1 回だけ取得し、失敗したら取り直す。
 
 const TOKYO: ManualEntryLocationOption = { id: 'tokyo', name: '東京本社', region: 'Kanto' };
 const TEPCO = '東京電力エナジーパートナー(株)';
@@ -99,9 +100,21 @@ describe('resolveRowFactor', () => {
     const byId = await resolve(catalog, 'fuel_gasoline', { factorName: '燃料 揮発油（別の公表値）', selectedFactorId: 'gasoline' });
     expect(byId.factorIdToSave).toBe('gasoline');
 
-    // 名前が候補に無ければ、候補の先頭（自動選択）に戻す。
+    // 名前が候補に無く、同じ優先度の候補が並ぶ（揮発油が 2 つ）ときは、候補の先頭を当てずっぽうに選ばない。
     const unknown = await resolve(catalog, 'fuel_gasoline', { factorName: '燃料 軽油' });
-    expect(unknown.factorIdToSave).toBe(unknown.candidates[0].id);
+    expect(unknown.selectedFactor).toBeNull();
+    expect(unknown.factorIdToSave).toBeNull();
+    expect(unknown.applied).toMatchObject({ status: 'resolved', factor: null, ambiguous: true });
+  });
+
+  it('候補が 1 つに決まるときは、名前が候補に無くても自動で選ぶ', async () => {
+    const catalog = createFactorCatalog({
+      fetchYearFactors: vi.fn(async () => [GASOLINE]),
+      fetchProviderFactors: vi.fn(async () => []),
+    });
+    const view = await resolve(catalog, 'fuel_gasoline', { factorName: '燃料 軽油' });
+    expect(view.factorIdToSave).toBe('gasoline');
+    expect(view.applied).toMatchObject({ status: 'resolved', factor: { id: 'gasoline' }, ambiguous: false });
   });
 });
 

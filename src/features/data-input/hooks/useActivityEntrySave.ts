@@ -232,15 +232,9 @@ export function useActivityEntrySave({
         continue;
       }
       // 紐づけに失敗しても記録は保存済みなので、保存できた行として扱い、紐づけ直しを案内する。
-      if (item.evidenceFileIds.length > 0) {
-        try {
-          await linkEvidence(record.id, item.evidenceFileIds);
-          record = { ...record, evidenceCount: item.evidenceFileIds.length };
-        } catch {
-          linkFailed += 1;
-        }
-      }
-      saved.push(record);
+      const { record: linked, evidenceFailed } = await attachEvidence(record, item.evidenceFileIds);
+      if (evidenceFailed) linkFailed += 1;
+      saved.push(linked);
       savedKeys.push(item.key);
     }
 
@@ -251,9 +245,7 @@ export function useActivityEntrySave({
       onBulkSaved?.();
       const notices = [
         ...(failures.length > 0 ? [`${failures.length} 件は登録できませんでした。表の理由を確かめてください。`] : []),
-        ...(linkFailed > 0
-          ? [`${linkFailed} 件は記録を保存しましたが、帳票を紐づけられませんでした。入力履歴から記録を開いて、帳票を追加してください。`]
-          : []),
+        ...(linkFailed > 0 ? [`${linkFailed} 件は記録を登録しましたが、${EVIDENCE_LINK_FAILURE_MESSAGE}`] : []),
         ...calcMessages,
       ];
       if (notices.length > 0) {

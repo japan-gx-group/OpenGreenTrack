@@ -90,8 +90,14 @@ export const DataInput = () => {
   const [entryPrefill, setEntryPrefill] = useState<ActivityEntryPrefill | undefined>(undefined);
   const entryFormRef = useRef<HTMLDivElement>(null);
   const [isEvidenceListOpen, setIsEvidenceListOpen] = useState(false);
-  // 新規入力フォームに並べている（まだ記録に紐づけていない）帳票。「帳票の一覧」で削除させない。
-  const [pendingEvidenceIds, setPendingEvidenceIds] = useState<string[]>([]);
+  // 新規入力フォームに並べている帳票と、請求書の一括登録の表の帳票（どちらもまだ記録に紐づけていない）。
+  // 「帳票の一覧」で削除させない。
+  const [formPendingEvidenceIds, setFormPendingEvidenceIds] = useState<string[]>([]);
+  const [invoicePendingEvidenceIds, setInvoicePendingEvidenceIds] = useState<string[]>([]);
+  const pendingEvidenceIds = useMemo(
+    () => [...formPendingEvidenceIds, ...invoicePendingEvidenceIds],
+    [formPendingEvidenceIds, invoicePendingEvidenceIds],
+  );
   const applyPrefill = (prefill: ActivityEntryPrefill) => {
     setEntryPrefill(prefill);
     setEntryFormKey((key) => key + 1);
@@ -128,6 +134,7 @@ export const DataInput = () => {
           historyRecords={historyRecords}
           onApply={applyPrefill}
           onSaveRows={entrySave.saveMany}
+          onPendingEvidenceChange={setInvoicePendingEvidenceIds}
         />
 
         <div ref={entryFormRef} className="scroll-mt-4">
@@ -139,7 +146,7 @@ export const DataInput = () => {
               setEntryPrefill(undefined);
             }}
             onSaveBulk={entrySave.saveBulk}
-            onPendingEvidenceChange={setPendingEvidenceIds}
+            onPendingEvidenceChange={setFormPendingEvidenceIds}
             historyRecords={historyRecords}
             // 事前警告の「既存のレコードを開く」から編集モーダルを開き、合算入力へ直行できるようにする。
             onOpenDuplicateRecord={editor.open}

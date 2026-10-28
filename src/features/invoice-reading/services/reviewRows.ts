@@ -11,7 +11,7 @@ import {
   type SavedManualActivityRecord,
 } from '@/features/data-input/types';
 import { findDuplicateActivityRecord } from '@/features/data-input/services/activityRecordDuplicates';
-import { amountValidationMessage, validateAmount } from '@/features/data-input/services/entrySubmission';
+import { VALIDATION_MESSAGES, amountValidationMessage, validateAmount } from '@/features/data-input/services/entrySubmission';
 import { computeEstimatedEmissions } from '@/features/data-input/services/inlineCalculation';
 import { toPeriodDates, validateTargetMonth } from '@/features/data-input/services/manualEntryTargetMonth';
 import type { EvidenceFile } from '@/features/activity-evidence/types';
@@ -76,9 +76,12 @@ export interface ReviewRowCheck {
 const unitOf = (energyType: EnergyType) => MANUAL_ACTIVITY_CATEGORY_MAP[energyType].unit;
 
 /**
- * 行を確かめる。errors があれば登録できない（必須項目・同じ条件の記録が登録済み・表の中で同じ条件が重なる）。
+ * 行を確かめる。errors があれば登録できない（必須項目・同じ条件の記録が登録済み・表の中で同じ条件が重なる・
+ * 同じ優先度の係数が並んでいてまだ選んでいない）。
  * 同じ拠点・カテゴリ・対象年月の記録は DB の二重計上防止のトリガーで保存できないため、警告ではなく errors にする。
- * warnings は登録できるが確かめてほしいこと（メニューが決まっていない・係数が複数で決まらない など）。
+ * 同じ優先度の係数が並ぶとき（A重油・B・C重油など）は、単月入力と同じく選ぶまで登録させない（算定バッチが
+ * FACTOR_AMBIGUOUS で未算定にするため）。
+ * warnings は登録できるが確かめてほしいこと（メニューが決まっていない・適用できる係数が無い など）。
  * otherRows は表の中の、この行より前にある「登録する」行（表の中での重複を見つけるため）。
  */
 export const checkReviewRow = (args: {
@@ -127,9 +130,8 @@ export const checkReviewRow = (args: {
       );
     }
     if (view.applied.status === 'resolved' && view.applied.ambiguous) {
-      warnings.push('当てはまる排出係数が複数あります。候補から選んでください');
-    }
-    if (view.applied.status === 'resolved' && view.applied.factor === null) {
+      errors.push(VALIDATION_MESSAGES.factorChoice);
+    } else if (view.applied.status === 'resolved' && view.applied.factor === null) {
       warnings.push('この条件に適用できる排出係数が見つかりません。保存すると未算定になります');
     }
   }

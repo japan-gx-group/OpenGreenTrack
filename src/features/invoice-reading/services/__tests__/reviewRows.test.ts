@@ -244,7 +244,7 @@ describe('checkReviewRow', () => {
     expect(check(second, { locationId: 'osaka' }, { otherRows: [other] }).errors).toEqual([]);
   });
 
-  it('係数を確かめている間・メニューが決まらない・候補が複数・係数が無いときは warnings にする', () => {
+  it('係数を確かめている間・メニューが決まらない・係数が無いときは warnings にする', () => {
     expect(check(ELECTRICITY, {}, { view: null }).warnings).toEqual(['排出係数を確認しています']);
 
     const twoMenus = view({ menuOptions: [MENU_L, { ...MENU_L, id: 'tepco-a', menuName: 'メニューA' }], providerFactor: null });
@@ -255,16 +255,26 @@ describe('checkReviewRow', () => {
       'この年度の、選んだ事業者の係数が見つかりません。代替値で算定されます',
     ]);
 
-    const ambiguous = view({
-      applied: { status: 'resolved', factor: NATIONAL, fellBack: false, remapped: false, ambiguous: true, provisional: false },
-    });
-    expect(check(ELECTRICITY, {}, { view: ambiguous }).warnings).toEqual(['当てはまる排出係数が複数あります。候補から選んでください']);
-
     const none = view({
       applied: { status: 'resolved', factor: null, fellBack: false, remapped: false, ambiguous: false, provisional: false },
     });
     const result = check(ELECTRICITY, {}, { view: none });
     expect(result.warnings).toEqual(['この条件に適用できる排出係数が見つかりません。保存すると未算定になります']);
+    expect(result.emissions).toBeNull();
+  });
+
+  it('同じ優先度の係数が並んでまだ選んでいないときは、選ぶまで登録できない（errors。単月入力と同じ）', () => {
+    const ambiguous = view({
+      selectedFactor: null,
+      factorIdToSave: null,
+      applied: { status: 'resolved', factor: null, fellBack: false, remapped: false, ambiguous: true, provisional: false },
+    });
+    const result = check(ELECTRICITY, {}, { view: ambiguous });
+    expect(result.errors).toEqual([
+      '同じ優先度の排出係数が複数あるため、自動では選びません。排出係数の候補から、使った係数を選んでください。',
+    ]);
+    // 「適用できる係数が無い」とは言わない
+    expect(result.warnings).toEqual([]);
     expect(result.emissions).toBeNull();
   });
 

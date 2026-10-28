@@ -337,6 +337,50 @@ describe('InvoiceReadingCard', () => {
     expect(checkbox('電気 2025年9月分').disabled).toBe(false);
   });
 
+  it('同じ優先度の係数が並ぶ行（重油で A重油か B・C重油か読めなかった）は、候補を選ぶまで選べない', async () => {
+    const heavy = { energyType: 'fuel_heavy_oil' as const, scope: 'scope1' as const, unit: 't-CO2/kL' };
+    factorPool.year = [
+      ...YEAR_FACTORS,
+      factor({ id: 'heavy-a', name: '燃料 A重油', factorValue: 2.75, ...heavy }),
+      factor({ id: 'heavy-bc', name: '燃料 B・C重油', factorValue: 3.1, ...heavy }),
+    ];
+    const heavyOilItem: InvoiceReadingItem = {
+      ...gasolineItem,
+      index: 4,
+      energyType: 'fuel_heavy_oil',
+      title: '重油 2025年9月分',
+      factor: { status: 'not_found', reason: '重油の種類が書かれていません' },
+      prefill: { ...gasolineItem.prefill!, energyType: 'fuel_heavy_oil', factor: null },
+    };
+    vi.mocked(requestInvoiceReading).mockResolvedValue({ ok: true, result: { ...RESULT, items: [heavyOilItem] } });
+    renderCard();
+    await readAndReview();
+
+    expect(checkbox('重油 2025年9月分').disabled).toBe(true);
+    expect(document.body.textContent).toContain('同じ優先度の排出係数が複数あるため、自動では選びません。');
+    const factorSelect = document.body.querySelector<HTMLSelectElement>('select[aria-label="排出係数"]')!;
+    expect(factorSelect.value).toBe('');
+    expect(factorSelect.options[0].textContent).toBe('候補から選んでください');
+
+    act(() => {
+      factorSelect.value = 'heavy-a';
+      factorSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await settle();
+    expect(checkbox('重油 2025年9月分').disabled).toBe(false);
+    expect(checkbox('重油 2025年9月分').checked).toBe(true);
+  });
+
+  it('保存した帳票（読み取った請求書）の ID を親へ伝える（「帳票の一覧」で削除させないため）', async () => {
+    const onPendingEvidenceChange = vi.fn();
+    renderCard({ onPendingEvidenceChange });
+    await readAndReview();
+    expect(onPendingEvidenceChange).toHaveBeenLastCalledWith(['file-1']);
+    view?.unmount();
+    view = null;
+    expect(onPendingEvidenceChange).toHaveBeenLastCalledWith([]);
+  });
+
   it('「フォームで開く」で、表で直した値をフォームに渡す', async () => {
     const { onApply } = renderCard();
     await readAndReview();

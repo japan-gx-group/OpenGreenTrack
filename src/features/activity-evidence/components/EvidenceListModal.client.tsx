@@ -2,7 +2,8 @@
 
 // 「帳票の一覧」。組織の帳票（請求書など）を新しい順に並べ、開く・削除ができる。
 // 削除できるのは、どの記録にも紐づいていない帳票だけ（記録を削除しても帳票は残るため、その後始末に使う）。
-// 入力中のフォームに付けている帳票（まだ記録を保存していないので紐づけなし）は、保存で紐づけるので削除させない。
+// 入力中の帳票（新規入力のフォームの欄・請求書の一括登録の表にあり、まだ記録を保存していないので紐づけなし）は、
+// 保存で紐づけるので削除させない。
 // 削除は取り消せないので、ブラウザのダイアログは使わず、行の中で「削除する」をもう一度押してもらう。
 
 import React, { useId, useState } from 'react';
@@ -27,7 +28,7 @@ export const EvidenceListModal = ({
 }: {
   isOpen: boolean;
   onClose: () => void;
-  /** 入力中のフォームに付けている帳票の ID（保存で記録に紐づけるので、ここでは削除させない） */
+  /** 入力中の帳票の ID（フォームの欄・請求書の一括登録の表。保存で記録に紐づけるので、ここでは削除させない） */
   pendingFileIds?: readonly string[];
 }) => {
   const list = useEvidenceList(isOpen);
@@ -107,7 +108,7 @@ export const EvidenceListModal = ({
                           </Badge>
                         ) : isPending ? (
                           <Badge variant="info" size="sm">
-                            入力中のフォーム
+                            入力中
                           </Badge>
                         ) : (
                           <Badge variant="neutral" size="sm">
@@ -161,7 +162,7 @@ export const EvidenceListModal = ({
                                 file.linkCount > 0
                                   ? '記録から外してから削除できます'
                                   : isPending
-                                    ? '入力中のフォームに付けている帳票です。フォームから外すか、記録を保存してください'
+                                    ? '入力中のフォーム、または請求書の読取りの表にある帳票です。記録を保存すると紐づきます'
                                     : undefined
                               }
                               aria-label={`${file.fileName} を削除`}

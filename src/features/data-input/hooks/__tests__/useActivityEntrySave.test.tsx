@@ -288,7 +288,7 @@ describe('useActivityEntrySave.saveMany（請求書の一括登録）', () => {
 
     expect(result).toEqual({ savedKeys: ['a'], failures: [] });
     expect(params.showToast).toHaveBeenLastCalledWith(
-      '1 件は記録を保存しましたが、帳票を紐づけられませんでした。入力履歴から記録を開いて、帳票を追加してください。',
+      '1 件は記録を登録しましたが、帳票を紐づけられませんでした。入力履歴から記録を開いて、帳票を追加し直してください',
       'error',
     );
   });
