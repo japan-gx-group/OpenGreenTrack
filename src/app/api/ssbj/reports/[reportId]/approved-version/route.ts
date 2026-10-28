@@ -7,6 +7,7 @@
 // 承認した版が無いレポートは区別せず 404。
 
 import { NextResponse } from 'next/server';
+import { SIGNED_OUT_MESSAGE } from '@/lib/authz';
 import { getCurrentProfile } from '@/lib/currentProfile';
 import { getRequestLogger } from '@/lib/logging/requestLogger';
 import { fetchSsbjApprovedVersion } from '@/features/ssbj/services/approvedVersionServer';
@@ -26,7 +27,7 @@ export const GET = async (
   const log = await getRequestLogger();
   const profile = await getCurrentProfile();
   if (!profile) {
-    return NextResponse.json({ error: 'ログインが必要です' }, { status: 401 });
+    return NextResponse.json({ error: SIGNED_OUT_MESSAGE }, { status: 401 });
   }
 
   const { reportId } = await params;

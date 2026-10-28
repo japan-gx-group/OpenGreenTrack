@@ -83,7 +83,7 @@ export const SsbjReports = () => {
 
           {hasNoFiscalYear ? (
             <Card className="text-sm text-text-muted">
-              <p className="m-0">算定年度が登録されていません。企業設定から年度を追加してください。</p>
+              <p className="m-0">算定年度が登録されていません。企業・メンバー設定の「算定年度の管理」で年度を追加してください（追加は管理者が行います）。</p>
               <Link href="/settings/company" className="gt-btn mt-4">
                 企業設定へ
               </Link>

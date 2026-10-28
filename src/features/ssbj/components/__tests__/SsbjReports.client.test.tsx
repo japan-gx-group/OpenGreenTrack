@@ -118,6 +118,8 @@ describe('SsbjReports 一覧', () => {
     const { container } = await renderScreen();
 
     expect(container.textContent).toContain('算定年度が登録されていません');
+    // 年度の追加は管理者だけなので、ダッシュボードと同じく、誰が追加するかまで案内する。
+    expect(container.textContent).toContain('（追加は管理者が行います）');
     expect(findButton('新規作成').disabled).toBe(true);
     expect(listSsbjReports).not.toHaveBeenCalled();
   });
