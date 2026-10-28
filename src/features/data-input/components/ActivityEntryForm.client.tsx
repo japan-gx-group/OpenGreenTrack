@@ -12,7 +12,7 @@
 // の normalizeIdeaFactor と同一の scope3InlineCalculation）で行い、保存後の算定と同じ値を表示する。
 // 構造・バリデーション・未来月ガードは両経路で共有する。
 
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ClipboardList, Trash2, X } from 'lucide-react';
 import { Card } from '@/components/ui/card';
@@ -149,8 +149,13 @@ export interface ActivityEntryFormProps {
   prefill?: ActivityEntryPrefill;
   /** edit のときの記録 ID。帳票の欄が、この記録に紐づいている帳票を読み、足す・外すをその場で反映する。 */
   recordId?: string;
-  /** edit で帳票の紐づけを変えたあとに呼ぶ（入力履歴の帳票の数を取り直すため）。 */
-  onEvidenceChange?: () => void;
+  /** edit で帳票の紐づけを変えたあとに、増えた数（外したときは -1）を渡す（入力履歴の帳票の数をその場で直すため）。 */
+  onEvidenceChange?: (delta: number) => void;
+  /**
+   * create で帳票の欄に並べている帳票（まだ記録に紐づけていない）の ID が変わるたびに呼ぶ。
+   * 「帳票の一覧」で、保存で紐づける予定の帳票を削除させないため。
+   */
+  onPendingEvidenceChange?: (fileIds: string[]) => void;
 }
 
 // historyRecords 未指定時の既定値。毎レンダー新しい [] を作ると useMemo の依存が毎回変わるため共有する。
@@ -171,6 +176,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   prefill: prefillProp,
   recordId,
   onEvidenceChange,
+  onPendingEvidenceChange,
 }) => {
   const isEdit = mode === 'edit';
   const initialCategory = useMemo(() => entryCategoryFromInitialValues(initialValues), [initialValues]);
@@ -205,8 +211,18 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   const evidence = useEvidenceAttachments({
     recordId: isEdit ? (recordId ?? null) : null,
     initialFiles: prefill?.evidenceFiles,
-    onChanged: onEvidenceChange,
+    onLinkedCountChange: onEvidenceChange,
   });
+  // 新規入力で並べている帳票を親へ伝える（フォームを外したら空にする）。
+  const evidenceFiles = evidence.files;
+  useEffect(() => {
+    if (isEdit || onPendingEvidenceChange === undefined) return;
+    onPendingEvidenceChange(evidenceFiles.map((file) => file.id));
+  }, [isEdit, evidenceFiles, onPendingEvidenceChange]);
+  useEffect(() => {
+    if (isEdit || onPendingEvidenceChange === undefined) return;
+    return () => onPendingEvidenceChange([]);
+  }, [isEdit, onPendingEvidenceChange]);
 
   // 請求書の読取りから入れた値で拠点が決まらなかった（住所が拠点と一致しない）ときは、先頭の拠点に倒さず未選択にし、
   // 拠点を選ぶまでプレビューを開けないようにする。請求書と関係のない拠点の活動量として黙って保存しないため。
@@ -464,6 +480,10 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
           ? computeEstimatedEmissions(validAmount, currentUnit, appliedFactor)
           : null;
 
+  // 同じ優先度で名前の違う係数の候補が並ぶ（重油・燃料（その他）・廃棄物など）ときは自動で選ばないので、
+  // 候補から選ぶまでプレビューを開けない（未算定のまま保存されないように）。
+  const isFactorChoicePending = !isIdea && scope12.applied.status === 'resolved' && scope12.applied.ambiguous;
+
   const calculationView = buildCalculationResultView({
     factorSource,
     hasPeriod: period !== null,
@@ -471,7 +491,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     unit: currentUnit,
     factorsReady: isIdea || (scope12.isFactorsReady && scope12.applied.status === 'resolved'),
     appliedFactor,
-    factorAmbiguous: scope12.applied.status === 'resolved' && scope12.applied.ambiguous,
+    factorAmbiguous: isFactorChoicePending,
     productDetail: idea.productDetail,
     estimatedEmissions,
   });
@@ -492,6 +512,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     : period !== null && (!fiscalYearsReady || scope12.isLoadingFactors || scope12.applied.status === 'pending');
   const isPreviewBlocked =
     locations.length === 0 ||
+    isFactorChoicePending ||
     initialLocationMissing ||
     awaitingLocationChoice ||
     isSaving ||
@@ -560,7 +581,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
               isFactorMissing: idea.isFactorMissing,
               detailError: idea.detailError,
             }
-          : { source: factorSource },
+          : { source: factorSource, choicePending: isFactorChoicePending },
       },
       { factorMissing: SCOPE3_FACTOR_MISSING_MESSAGE },
     );
@@ -651,8 +672,12 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
 
   // ---- 複数月まとめて入力（一括入力） ----
 
+  // 複数月まとめて入力では帳票を紐づけない（対象外）。帳票を付けたまま切り替えると、まとめて保存した記録に
+  // 付かないうえ、単月入力に戻すと次に保存した記録に付いてしまうため、帳票を付けている間は切り替えさせない。
+  const bulkBlockedByEvidence = evidence.files.length > 0 || evidence.uploading.length > 0;
+
   const switchEntryMode = (nextMode: EntryInputMode) => {
-    if (!bulkAvailable || bulk.mode === nextMode) {
+    if (!bulkAvailable || bulk.mode === nextMode || (nextMode === 'bulk' && bulkBlockedByEvidence)) {
       return;
     }
     bulk.setMode(nextMode);
@@ -678,6 +703,8 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
       if (idea.selectedProductId === null || idea.productDetail === null) {
         return idea.isFactorMissing ? SCOPE3_FACTOR_MISSING_MESSAGE : VALIDATION_MESSAGES.product;
       }
+    } else if (isFactorChoicePending) {
+      return VALIDATION_MESSAGES.factorChoice;
     }
     if (note.length > NOTE_MAX_LENGTH) {
       return VALIDATION_MESSAGES.note;
@@ -710,6 +737,8 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
         // 事業者係数を選択中は候補セレクトの上書きは使われない。自動選択（候補先頭）の場合も
         // 代表月の係数 ID を渡し、他の月でも適用可能ならその係数、不可なら各月の自動選択に落とす。
         selectedFactorId: scope12.providerFactor !== null ? null : (scope12.selectedFactor?.id ?? null),
+        // 温対法の年度の境目をまたぐ月では ID が変わるため、名前でも引き直す（選んだ A重油を全月で使う）。
+        selectedFactorName: scope12.providerFactor !== null ? null : (scope12.selectedFactor?.name ?? null),
       },
       productDetail: idea.productDetail,
     });
@@ -909,12 +938,19 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
                     id="manual-entry-mode-bulk"
                     type="button"
                     aria-pressed={isBulk}
+                    aria-describedby={!isBulk && bulkBlockedByEvidence ? 'manual-entry-mode-bulk-evidence' : undefined}
                     onClick={() => switchEntryMode('bulk')}
+                    disabled={!isBulk && bulkBlockedByEvidence}
                     className={isBulk ? 'gt-btn-primary' : 'gt-btn'}
                   >
                     複数月まとめて入力
                   </button>
                 </div>
+                {!isBulk && bulkBlockedByEvidence && (
+                  <p id="manual-entry-mode-bulk-evidence" className="mt-1.5 text-xs text-text-muted">
+                    複数月まとめて入力では帳票を紐づけられません。切り替えるときは、⑤ 帳票の欄から帳票を外してください。
+                  </p>
+                )}
               </div>
             )}
 

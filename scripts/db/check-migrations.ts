@@ -13,7 +13,8 @@
 //   データ訂正を migration に書かない。本番でも投入する共通マスタは supabase/seeds/production/、
 //   テスト・デモ用は supabase/seeds/demo/ に置き、冪等な seed の再投入で反映する。
 //   唯一の例外は storage.buckets の定義と設定変更（insert / update。バケットはインフラ設定であり、
-//   Supabase 公式の作成手段が SQL のため）。該当するのは 20260831000003_storage.sql の 1 本だけ。
+//   Supabase 公式の作成手段が SQL のため）。該当するのは 20260831000003_storage.sql と
+//   20261026120000_activity_evidence.sql（import-files に image/webp を足す update）の 2 本だけ（AGENTS.md R12）。
 //   delete / truncate / merge / copy は storage.buckets に対しても例外にしない。
 //
 // 検出できるもの:

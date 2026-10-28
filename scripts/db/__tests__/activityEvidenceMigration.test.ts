@@ -6,7 +6,9 @@
 // - 帳票の行はサーバだけが作る・消す（authenticated には select だけ）
 // - 紐づけは、記録と帳票の両方が自組織のときだけ作れる
 // - 記録を消すと紐づけだけが消え、紐づいている帳票は消せない
-// - バケットの設定変更は update だけ（R12 の例外）
+// - 紐づけた人はトリガでログイン中のユーザーにし、紐づけ・外したことを監査ログに残す
+// - 帳票のファイルはブラウザから Storage を直接消せない
+// - バケットの設定変更は update だけ（R12 の例外）。今の許可形式に WebP を足すだけで、狭めない
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -57,6 +59,21 @@ describe('activity_record_evidence（紐づけ）', () => {
     expect(insert).toMatch(/select 1 from activity_evidence_files f where f\.id = "evidenceFileId" and f\."organizationId" = \(select current_user_organization_id\(\)\)/);
   });
 
+  it('紐づけた人は、ブラウザの申告値ではなくログイン中のユーザーにする', () => {
+    expect(body).toContain('new."createdBy" := coalesce(auth.uid(), new."createdBy");');
+    expect(body).toMatch(
+      /create trigger set_activity_record_evidence_actor before insert on activity_record_evidence for each row execute function set_activity_record_evidence_actor\(\);/,
+    );
+  });
+
+  it('紐づけた・外したことを、ログイン中のユーザーのときだけ監査ログに残す', () => {
+    expect(body).toMatch(
+      /create trigger log_activity_record_evidence_change after insert or delete on activity_record_evidence for each row execute function log_activity_record_evidence_change\(\);/,
+    );
+    expect(body).toContain("case when tg_op = 'INSERT' then 'activity_evidence.link' else 'activity_evidence.unlink' end");
+    expect(body).toMatch(/if v_user_id is null then return null; end if;/);
+  });
+
   it('authenticated は select・insert・delete だけ（update は無い）', () => {
     expect(body).toContain('grant select, insert, delete on activity_record_evidence to authenticated;');
     expect(policiesOn('activity_record_evidence').some((policy) => /for update/.test(policy))).toBe(false);
@@ -64,8 +81,19 @@ describe('activity_record_evidence（紐づけ）', () => {
 });
 
 describe('Storage', () => {
-  it('import-files に WebP を足す設定変更は、DML の確認（R12）を通る', () => {
-    expect(body).toContain("update storage.buckets set allowed_mime_types = array['text/csv', 'application/pdf', 'image/png', 'image/jpeg', 'image/webp'] where id = 'import-files';");
+  it('帳票のフォルダ（activity-evidence）は、ブラウザから Storage を直接消せない', () => {
+    expect(body).toContain(
+      "alter policy \"import_files_delete_own_organization\" on storage.objects using ( bucket_id = 'import-files' and (storage.foldername(name))[1] = (select public.current_user_organization_id())::text and (storage.foldername(name))[2] is distinct from 'activity-evidence' );",
+    );
+  });
+
+  it('import-files に WebP を足すだけで、Dashboard で変えた許可形式を狭めない', () => {
+    expect(body).toContain(
+      "update storage.buckets set allowed_mime_types = array_append(allowed_mime_types, 'image/webp') where id = 'import-files' and allowed_mime_types is not null and not ('image/webp' = any (allowed_mime_types));",
+    );
+  });
+
+  it('DML の確認（R12）を通る', () => {
     expect(findViolations(migrationSql)).toEqual([]);
   });
 });

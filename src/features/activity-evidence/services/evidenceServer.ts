@@ -7,6 +7,7 @@
 //
 // - service_role は RLS を越えるため、受け取ったパス・帳票 ID がログイン中の組織のものかを必ずここで確かめる
 // - 保存先のパス・拡張子は判定した形式から決める（利用者の入力したファイル名はパスに使わない）
+// - 帳票の ID は一時ファイルのパスの UUID にする（同じアップロードの保存が 2 回届いても、帳票は 1 件にする）
 // - 確かめた後は、成功・失敗のどの経路でも upload-quarantine のファイルを消す
 // - 帳票の削除は、どの記録にも紐づいていないものだけ（紐づけは on delete restrict でも止まる）
 // - 上げた・消したことは system_audit_logs に残す（ファイル名・大きさ・SHA-256。中身は残さない）
@@ -19,6 +20,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Logger } from 'pino';
 import { DOCUMENT_EXTENSIONS, detectFileMimeType } from '@/lib/files/fileSignature';
 import { createFixedWindowRateLimiter } from '@/lib/security/rateLimit';
+import {
+  UPLOAD_QUARANTINE_BUCKET,
+  isStorageNotFound,
+  removeStaleQuarantineFiles,
+} from '@/lib/files/uploadQuarantine';
 import type { CurrentProfile } from '@/lib/currentProfile';
 import {
   EVIDENCE_FILE_NAME_MAX_LENGTH,
@@ -28,7 +34,7 @@ import {
 } from '../types';
 
 export const EVIDENCE_BUCKET = 'import-files';
-export const EVIDENCE_QUARANTINE_BUCKET = 'upload-quarantine';
+export const EVIDENCE_QUARANTINE_BUCKET = UPLOAD_QUARANTINE_BUCKET;
 const EVIDENCE_FOLDER = 'activity-evidence';
 
 const UUID_PATTERN = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
@@ -57,7 +63,10 @@ export const validateEvidenceFileMeta = (
   fileName: string,
   fileSize: number,
 ): { ok: true } | { ok: false; errorMessage: string } => {
-  if (fileName.trim() === '' || fileName.length > EVIDENCE_FILE_NAME_MAX_LENGTH) {
+  if (fileName.trim() === '') {
+    return { ok: false, errorMessage: 'ファイル名がありません。名前の付いたファイルを選んでください' };
+  }
+  if (fileName.length > EVIDENCE_FILE_NAME_MAX_LENGTH) {
     return { ok: false, errorMessage: `ファイル名は ${EVIDENCE_FILE_NAME_MAX_LENGTH} 文字以内にしてください` };
   }
   if (!ALLOWED_EXTENSIONS.test(fileName)) {
@@ -87,8 +96,9 @@ export const consumeEvidenceUploadUrlQuota = (organizationId: string): boolean =
 /** テスト用。上限の状態を消す */
 export const resetEvidenceUploadUrlQuota = (): void => uploadUrlRateLimiter.reset();
 
-const isStorageNotFound = (error: { message?: string; statusCode?: string } | null): boolean =>
-  error?.statusCode === '404' || /not found/i.test(error?.message ?? '');
+/** Storage のエラーが「同じパスに既にある」か（upsert: false で置いたとき） */
+const isStorageDuplicate = (error: { message?: string; statusCode?: string } | null): boolean =>
+  error?.statusCode === '409' || /already exists/i.test(error?.message ?? '');
 
 /** 署名付き URL を発行する。取り残された古い一時ファイルの掃除は呼び出し側が after() で行う */
 export const createEvidenceUploadUrl = async (
@@ -102,47 +112,37 @@ export const createEvidenceUploadUrl = async (
   return { ok: true, storagePath: data.path, token: data.token };
 };
 
-/**
- * 取り残された一時ファイル（アップロードの後に POST /api/activity-evidence が呼ばれなかったもの）とみなす経過時間。
- * 署名付き URL の有効期限（既定 2 時間）より十分長くする。
- */
-export const EVIDENCE_UPLOAD_STALE_MS = 24 * 60 * 60 * 1000;
-
-/** 組織の一時フォルダから、EVIDENCE_UPLOAD_STALE_MS を過ぎたファイルを消す（URL 発行のついでの掃除。失敗はログだけ） */
-export const removeStaleEvidenceUploads = async (
+/** 組織の一時フォルダから、取り残された古いファイルを消す（URL 発行のついでの掃除。失敗はログだけ） */
+export const removeStaleEvidenceUploads = (
   admin: SupabaseClient,
   organizationId: string,
   log: Logger,
   now: number = Date.now(),
-): Promise<string[]> => {
-  const folder = `${organizationId}/${EVIDENCE_FOLDER}`;
-  const { data, error } = await admin.storage.from(EVIDENCE_QUARANTINE_BUCKET).list(folder, { limit: 1000 });
-  if (error) {
-    log.warn({ error, folder }, '帳票の一時ファイルの一覧に失敗しました');
-    return [];
-  }
-  const stale = (data ?? [])
-    .filter((object) => object.id !== null && object.created_at !== null)
-    .filter((object) => new Date(object.created_at!).getTime() < now - EVIDENCE_UPLOAD_STALE_MS)
-    .map((object) => `${folder}/${object.name}`);
-  if (stale.length === 0) return [];
-  const { error: removeError } = await admin.storage.from(EVIDENCE_QUARANTINE_BUCKET).remove(stale);
-  if (removeError) {
-    log.warn({ error: removeError }, '取り残された帳票の一時ファイルの削除に失敗しました');
-    return [];
-  }
-  return stale;
-};
+): Promise<string[]> => removeStaleQuarantineFiles(admin, `${organizationId}/${EVIDENCE_FOLDER}`, log, now);
 
 export type FinalizeEvidenceResult =
   | { ok: true; file: EvidenceFile }
-  | { ok: false; status: 400 | 500; errorMessage: string };
+  | { ok: false; status: 400 | 409 | 500; errorMessage: string };
 
 const INTERNAL_ERROR_MESSAGE = '帳票を保存できませんでした。時間をおいて再度お試しください';
+const ALREADY_SAVING_MESSAGE = 'この帳票は保存の途中です。しばらく待ってから「帳票の一覧」を確かめてください';
+
+/** 既に保存した帳票（同じアップロードの保存が 2 回届いたとき、2 回目は 1 回目の帳票を返す） */
+const findSavedEvidence = async (admin: SupabaseClient, caller: Caller, id: string): Promise<EvidenceFile | null> => {
+  const { data } = await admin
+    .from('activity_evidence_files')
+    .select(EVIDENCE_SELECT)
+    .eq('id', id)
+    .eq('organizationId', caller.organizationId)
+    .maybeSingle();
+  return (data as EvidenceFile | null) ?? null;
+};
 
 /**
  * upload-quarantine に置かれたファイルを確かめ、帳票として保存する。どの経路で終わっても一時ファイルは消す。
  * convertedFrom はブラウザで WebP に変換したときの元の形式（申告値。保存した形式が WebP のときだけ記録する）。
+ * storagePath は isEvidenceUploadPathForOrganization で確かめたもの（末尾の UUID を帳票の ID にする）。
+ * 同じアップロードの保存が続けて・同時に届いても、保存先のパスと行の ID が同じになるので帳票は 1 件にとどまる。
  */
 export const finalizeEvidenceUpload = async (args: {
   admin: SupabaseClient;
@@ -179,12 +179,17 @@ export const finalizeEvidenceUpload = async (args: {
       return { ok: false, status: 400, errorMessage: 'PDF・PNG・JPEG・WebP のファイルではありません' };
     }
 
-    const id = randomUUID();
+    const id = storagePath.slice(storagePath.lastIndexOf('/') + 1).toLowerCase();
     const finalPath = `${caller.organizationId}/${EVIDENCE_FOLDER}/${id}.${DOCUMENT_EXTENSIONS[mimeType]}`;
     const { error: uploadError } = await admin.storage
       .from(EVIDENCE_BUCKET)
       .upload(finalPath, bytes, { contentType: mimeType, upsert: false });
     if (uploadError) {
+      // 同じアップロードの保存が先に置いている。置いたファイルは先の保存のものなので消さない。
+      if (isStorageDuplicate(uploadError)) {
+        const saved = await findSavedEvidence(admin, caller, id);
+        return saved ? { ok: true, file: saved } : { ok: false, status: 409, errorMessage: ALREADY_SAVING_MESSAGE };
+      }
       log.error({ error: uploadError }, '帳票を保存先に置けませんでした');
       return { ok: false, status: 500, errorMessage: INTERNAL_ERROR_MESSAGE };
     }
@@ -207,9 +212,12 @@ export const finalizeEvidenceUpload = async (args: {
       .select(EVIDENCE_SELECT)
       .single();
     if (insertError || !inserted) {
-      log.error({ error: insertError }, '帳票の行を作れませんでした');
-      // 行が無いファイルは一覧から消せないため、置いたファイルも消す。
+      // 行が無いファイルは一覧から消せないため、置いたファイルも消す（行の ID が重なったときも、置いたのはこの保存）。
       await admin.storage.from(EVIDENCE_BUCKET).remove([finalPath]);
+      if ((insertError as { code?: string } | null)?.code === '23505') {
+        return { ok: false, status: 409, errorMessage: 'この帳票は既に保存されています。もう一度選び直してください' };
+      }
+      log.error({ error: insertError }, '帳票の行を作れませんでした');
       return { ok: false, status: 500, errorMessage: INTERNAL_ERROR_MESSAGE };
     }
 

@@ -371,7 +371,7 @@ GHG プロトコルのロケーション基準／マーケット基準それぞ�
 
 | 物理名 | 論理名 | 型 | 制約 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `id` | 帳票ID | UUID | Primary Key | |
+| `id` | 帳票ID | UUID | Primary Key | 一時ファイルのパスの UUID（同じアップロードの保存が 2 回届いても 1 件にする） |
 | `organizationId` | 組織ID | UUID | NOT NULL, FK → `organizations` | 削除時: CASCADE |
 | `storagePath` | 保存先 | TEXT | NOT NULL, UNIQUE | `{organizationId}/activity-evidence/{id}.{拡張子}`。拡張子は中身から決める |
 | `fileName` | ファイル名 | VARCHAR(255) | NOT NULL | 表示用（保存先のパスには使わない） |
@@ -384,6 +384,7 @@ GHG プロトコルのロケーション基準／マーケット基準それぞ�
 
 - 行はサーバ（`POST /api/activity-evidence`）が中身を確かめてから service_role で作る。`authenticated` には自組織の select だけを許す。
 - 削除もサーバ（`DELETE /api/activity-evidence/[id]`）が、どの記録にも紐づいていないことを確かめて Storage のファイルと一緒に行う。上げた・消したことは `system_audit_logs` に `activity_evidence.upload` / `activity_evidence.delete` として残す（ファイル名・大きさ・SHA-256）。
+- Storage の `import_files_delete_own_organization` から `activity-evidence/` のフォルダを外し、ブラウザから帳票のファイルを直接消せないようにする（紐づいている帳票を消せない確認と監査ログを通らずに消せてしまうため）。
 
 ### 3.18 記録と帳票の紐づけ (`activity_record_evidence`)（同上）
 
@@ -392,11 +393,12 @@ GHG プロトコルのロケーション基準／マーケット基準それぞ�
 | `activityRecordId` | 記録ID | UUID | Primary Key（複合）, FK → `activity_records` | 削除時: CASCADE（記録を消すと紐づけだけが消える） |
 | `evidenceFileId` | 帳票ID | UUID | Primary Key（複合）, FK → `activity_evidence_files` | 削除時: RESTRICT（紐づいている帳票は消せない） |
 | `organizationId` | 組織ID | UUID | NOT NULL, FK → `organizations` | 削除時: CASCADE |
-| `createdBy` | 紐づけた人 | UUID | NULL 可 | |
+| `createdBy` | 紐づけた人 | UUID | NULL 可 | ブラウザから作るときは、トリガ（`set_activity_record_evidence_actor`）がログイン中のユーザーにする |
 | `createdAt` | 日時 | TIMESTAMPTZ | NOT NULL | |
 
 - 1 枚の帳票を複数の記録に（燃料の種類ごとなど）、1 件の記録に複数の帳票を（複数メーターなど）紐づけられる。
 - `authenticated` は自組織の select・insert・delete ができる。insert は、記録と帳票の両方が自組織のものであることを exists で確かめる（FK は行の存在しか見ないため）。
+- 紐づけた・外したことは、トリガ（`log_activity_record_evidence_change`）が `system_audit_logs` に `activity_evidence.link` / `activity_evidence.unlink` として残す（記録の ID・ファイル名）。紐づけはブラウザから直接作る・外すため、アプリの処理ではなくトリガで残す。記録の削除で紐づけが消えたときも `unlink` が残る。ログイン中のユーザーがいない書き込み（service_role・seed）は残さない。
 
 ---
 

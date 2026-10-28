@@ -9,20 +9,34 @@ import { deleteEvidenceFile, getUploaderNames, listEvidenceFiles } from '../serv
 interface EvidenceListState {
   files: EvidenceFileListItem[];
   uploaderNames: Map<string, string>;
+  /** 上げた人の名前を読めなかったときの案内（一覧は出し、名前は「—」にする） */
+  uploaderError: string | null;
   /** 一度でも読み終えたか（読み終えるまでは「読み込んでいます」を出す） */
   loaded: boolean;
   error: string | null;
 }
 
-const INITIAL_STATE: EvidenceListState = { files: [], uploaderNames: new Map(), loaded: false, error: null };
+const INITIAL_STATE: EvidenceListState = {
+  files: [],
+  uploaderNames: new Map(),
+  uploaderError: null,
+  loaded: false,
+  error: null,
+};
+
+const messageOf = (error: unknown, fallback: string) => (error instanceof Error ? error.message : fallback);
 
 const load = async (): Promise<EvidenceListState> => {
   try {
     const files = await listEvidenceFiles();
-    const uploaderNames = await getUploaderNames(files.flatMap((file) => (file.uploadedBy ? [file.uploadedBy] : [])));
-    return { files, uploaderNames, loaded: true, error: null };
+    // 名前を読めなくても一覧は出す（名前は表示のためだけで、開く・削除には要らない）。
+    const names = await getUploaderNames(files.flatMap((file) => (file.uploadedBy ? [file.uploadedBy] : []))).then(
+      (uploaderNames) => ({ uploaderNames, uploaderError: null }),
+      (error: unknown) => ({ uploaderNames: new Map<string, string>(), uploaderError: messageOf(error, '上げた人の名前を読み込めませんでした') }),
+    );
+    return { files, ...names, loaded: true, error: null };
   } catch (error) {
-    return { ...INITIAL_STATE, loaded: true, error: error instanceof Error ? error.message : '帳票の一覧を取得できませんでした' };
+    return { ...INITIAL_STATE, loaded: true, error: messageOf(error, '帳票の一覧を取得できませんでした') };
   }
 };
 
@@ -52,7 +66,7 @@ export const useEvidenceList = (isOpen: boolean) => {
       await deleteEvidenceFile(id);
       setState((current) => ({ ...current, files: current.files.filter((file) => file.id !== id) }));
     } catch (error) {
-      setDeleteError(error instanceof Error ? error.message : '帳票を削除できませんでした');
+      setDeleteError(messageOf(error, '帳票を削除できませんでした'));
     } finally {
       setDeletingId(null);
     }

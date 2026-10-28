@@ -206,17 +206,29 @@ describe('useActivityEntrySave.save（帳票の紐づけ）', () => {
     expect(linkEvidence).not.toHaveBeenCalled();
   });
 
-  it('紐づけに失敗しても記録の保存は成功として進め、紐づけ直しを案内する', async () => {
+  it('紐づけに失敗しても記録の保存は成功として進め、保存の通知の中で紐づけ直しを案内する（成功の通知で上書きしない）', async () => {
     vi.mocked(linkEvidence).mockRejectedValue(new Error('boom'));
     const { params } = setup();
     await latest!.save(entry, { evidenceFileIds: ['file-1'] });
 
     expect(params.onSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 'rec-1', evidenceCount: 0 }));
-    expect(params.showToast).toHaveBeenCalledWith(
-      '記録は保存しましたが、帳票を紐づけられませんでした。入力履歴から記録を開いて、帳票を追加してください',
+    expect(params.showToast).toHaveBeenCalledTimes(1);
+    const [message, type] = vi.mocked(params.showToast).mock.calls[0];
+    expect(message).toMatch(/を登録しましたが、帳票を紐づけられませんでした。入力履歴から記録を開いて、帳票を追加し直してください$/);
+    expect(type).toBe('error');
+    expect(params.runAutoCalculation).toHaveBeenCalledWith(['2024-11-01']);
+  });
+
+  it('紐づけに失敗したあとに計算結果を通知するときも、紐づけられなかったことを残す', async () => {
+    vi.mocked(linkEvidence).mockRejectedValue(new Error('boom'));
+    const { params } = setup();
+    vi.mocked(params.runAutoCalculation).mockResolvedValue(['2024年11月の排出量を計算しました']);
+    await latest!.save(entry, { evidenceFileIds: ['file-1'] });
+
+    expect(params.showToast).toHaveBeenLastCalledWith(
+      '記録は登録しましたが、帳票を紐づけられませんでした。入力履歴から記録を開いて、帳票を追加し直してください\n2024年11月の排出量を計算しました',
       'error',
     );
-    expect(params.runAutoCalculation).toHaveBeenCalledWith(['2024-11-01']);
   });
 });
 

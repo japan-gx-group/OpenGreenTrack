@@ -21,6 +21,7 @@ import {
 } from '../../services/factorSelectionService';
 import { getScope3CategoryMethod } from '../../services/scope3Adoption';
 import {
+  deleteEvidenceFile,
   getRecordEvidence,
   unlinkEvidence,
   uploadEvidenceFile,
@@ -81,6 +82,7 @@ vi.mock('@/features/activity-evidence/services/evidenceClient', () => ({
   linkEvidence: vi.fn(),
   unlinkEvidence: vi.fn(),
   openEvidenceFile: vi.fn(),
+  deleteEvidenceFile: vi.fn(),
 }));
 
 // ---- フィクスチャ ----
@@ -401,6 +403,49 @@ describe('ActivityEntryForm', () => {
     mounted = null;
     document.body.innerHTML = '';
     vi.useRealTimers();
+  });
+
+  it('重油: 同じ優先度の候補（A重油・B・C重油）は自動で選ばず、選ぶまでプレビューを開けない', async () => {
+    const heavy = { energyType: 'fuel_heavy_oil' as const, scope: 'scope1' as const, unit: 'tCO2/kL', factorType: null };
+    const heavyA = factor({ id: 'heavy-a', name: '燃料 A重油', factorValue: 2.75, ...heavy });
+    const heavyBC = factor({ id: 'heavy-bc', name: '燃料 B・C重油', factorValue: 3.1, ...heavy });
+    vi.mocked(getActiveScope12Factors).mockResolvedValue([national, heavyA, heavyBC]);
+    const { container, onSave } = renderForm();
+    await act(async () => {});
+
+    setSelectValue(categorySelect(container), 'energy:fuel_heavy_oil');
+    await act(async () => {});
+    setSelectValue(monthInput(container), '2024-11');
+    setInputValue(amountInput(container), '1000');
+
+    const factorSelect = q<HTMLSelectElement>(container, '#manual-factor-select');
+    expect(factorSelect.value).toBe('');
+    expect([...factorSelect.options].map((option) => option.textContent)).toEqual([
+      '候補から選んでください',
+      '燃料 A重油（2.75 tCO2/kL）',
+      '燃料 B・C重油（3.1 tCO2/kL）',
+    ]);
+    expect(container.textContent).toContain('同じ優先度の排出係数が複数あるため、自動では選びません');
+    expect(container.textContent).toContain('候補から排出係数を選択すると計算結果を表示します');
+    expect(previewButton(container).disabled).toBe(true);
+
+    setSelectValue(factorSelect, 'heavy-a');
+    expect(previewButton(container).disabled).toBe(false);
+    // 選んだ後も、並びの先頭を「自動選択」とは表示しない。
+    expect([...factorSelect.options].map((option) => option.textContent)).toEqual([
+      '燃料 A重油（2.75 tCO2/kL）',
+      '燃料 B・C重油（3.1 tCO2/kL）',
+    ]);
+    expect(resultEmissionsText(container)).toBe('2.75 t-CO2e');
+
+    openPreview(container);
+    await saveFromPreview(container);
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'scope12',
+        input: expect.objectContaining({ energyType: 'fuel_heavy_oil', amount: 1000, unit: 'L', emissionFactorId: 'heavy-a' }),
+      }),
+    );
   });
 
   it('新規・電気: 係数取得中はプレビュー不可、取得後は代替値で概算しプレビューから保存できる', async () => {
@@ -1839,6 +1884,7 @@ describe('ActivityEntryForm', () => {
 
       expect(unlinkEvidence).toHaveBeenCalledWith('rec-1', 'file-1');
       expect(onEvidenceChange).toHaveBeenCalledTimes(1);
+      expect(deleteEvidenceFile).not.toHaveBeenCalled();
       expect(q(container, '[data-testid="evidence-field"]').textContent).toContain('帳票はまだありません。');
     });
 
@@ -1847,6 +1893,47 @@ describe('ActivityEntryForm', () => {
       await flush();
       await clickAsync(q(container, '#manual-entry-mode-bulk'));
       expect(container.querySelector('[data-testid="evidence-field"]')).toBeNull();
+    });
+
+    it('帳票を付けている間は、複数月まとめて入力に切り替えられない（外すと切り替えられる）', async () => {
+      vi.mocked(uploadEvidenceFile).mockResolvedValue(evidenceFile());
+      const { container } = renderBulkForm();
+      await flush();
+      await chooseEvidence(container, new File([new Uint8Array(10)], '11月分.pdf', { type: 'application/pdf' }));
+
+      const bulkButton = q<HTMLButtonElement>(container, '#manual-entry-mode-bulk');
+      expect(bulkButton.disabled).toBe(true);
+      expect(container.textContent).toContain('複数月まとめて入力では帳票を紐づけられません。');
+      await clickAsync(bulkButton);
+      expect(container.querySelector('[data-testid="evidence-field"]')).not.toBeNull();
+
+      await clickAsync(q(container, 'button[aria-label="11月分.pdf を外す"]'));
+      expect(bulkButton.disabled).toBe(false);
+      expect(container.textContent).not.toContain('複数月まとめて入力では帳票を紐づけられません。');
+    });
+
+    it('新規: 並べている帳票の ID を親へ伝え、保存して欄を空にしたら空で伝える', async () => {
+      vi.mocked(uploadEvidenceFile).mockResolvedValue(evidenceFile());
+      const onPendingEvidenceChange = vi.fn();
+      const { container } = renderForm({ onPendingEvidenceChange });
+      await flush();
+      await chooseEvidence(container, new File([new Uint8Array(10)], '11月分.pdf', { type: 'application/pdf' }));
+      expect(onPendingEvidenceChange).toHaveBeenLastCalledWith(['file-1']);
+
+      setSelectValue(monthInput(container), '2024-11');
+      setInputValue(amountInput(container), '10000');
+      openPreview(container);
+      await saveFromPreview(container);
+      expect(onPendingEvidenceChange).toHaveBeenLastCalledWith([]);
+    });
+
+    it('編集: 帳票を外すと、帳票の数の増減（-1）を伝える', async () => {
+      vi.mocked(getRecordEvidence).mockResolvedValue([evidenceFile()]);
+      const onEvidenceChange = vi.fn();
+      const { container } = renderForm({ mode: 'edit', initialValues: editScope12(), recordId: 'rec-1', onEvidenceChange });
+      await flush();
+      await clickAsync(q(container, 'button[aria-label="11月分.pdf を外す"]'));
+      expect(onEvidenceChange).toHaveBeenCalledWith(-1);
     });
   });
 

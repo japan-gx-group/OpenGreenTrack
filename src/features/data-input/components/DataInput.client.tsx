@@ -43,6 +43,7 @@ export const DataInput = () => {
     isRefreshing: isRefreshingHistory,
     refresh: refreshManualHistory,
     prepend: prependManualHistory,
+    adjustEvidenceCount,
     uncalculatedItems,
   } = useActivityHistory(showToast);
   const historyFilters = useHistoryFilters(history);
@@ -89,6 +90,8 @@ export const DataInput = () => {
   const [entryPrefill, setEntryPrefill] = useState<ActivityEntryPrefill | undefined>(undefined);
   const entryFormRef = useRef<HTMLDivElement>(null);
   const [isEvidenceListOpen, setIsEvidenceListOpen] = useState(false);
+  // 新規入力フォームに並べている（まだ記録に紐づけていない）帳票。「帳票の一覧」で削除させない。
+  const [pendingEvidenceIds, setPendingEvidenceIds] = useState<string[]>([]);
   const applyPrefill = (prefill: ActivityEntryPrefill) => {
     setEntryPrefill(prefill);
     setEntryFormKey((key) => key + 1);
@@ -136,6 +139,7 @@ export const DataInput = () => {
               setEntryPrefill(undefined);
             }}
             onSaveBulk={entrySave.saveBulk}
+            onPendingEvidenceChange={setPendingEvidenceIds}
             historyRecords={historyRecords}
             // 事前警告の「既存のレコードを開く」から編集モーダルを開き、合算入力へ直行できるようにする。
             onOpenDuplicateRecord={editor.open}
@@ -210,11 +214,15 @@ export const DataInput = () => {
         editor={editor}
         locations={manualEntryLocations}
         historyRecords={historyRecords}
-        // 編集で帳票を足す・外すと、入力履歴の帳票の数を取り直す。
-        onEvidenceChange={refreshManualHistory}
+        // 編集で帳票を足す・外すと、入力履歴の帳票の数をその場で直す（帳票 1 件ごとに一覧を取り直さない）。
+        onEvidenceChange={adjustEvidenceCount}
       />
 
-      <EvidenceListModal isOpen={isEvidenceListOpen} onClose={() => setIsEvidenceListOpen(false)} />
+      <EvidenceListModal
+        isOpen={isEvidenceListOpen}
+        onClose={() => setIsEvidenceListOpen(false)}
+        pendingFileIds={pendingEvidenceIds}
+      />
     </>
   );
 };

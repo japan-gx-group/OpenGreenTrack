@@ -17,6 +17,7 @@ import { isProviderCategory, type FactorTypeChoice } from '../services/entryCate
 import {
   DEFAULT_PROVIDER_SELECTION,
   listApplicableProviderFactors,
+  isAmbiguousEntryChoice,
   listEntryFactorCandidates,
   listMenuOptions,
   resolveAppliedFactor,
@@ -105,6 +106,11 @@ export interface Scope12FactorSelectionView {
   factorCandidates: CandidateFactorRow[];
   /** 候補セレクトの value（ユーザーの選択） */
   selectedFactor: CandidateFactorRow | null;
+  /**
+   * 標準係数の候補に、同じ優先度で名前の違う係数が並ぶ（自動では選ばない）。候補セレクトに「・自動選択」を付けず、
+   * 選ぶまで（selectedFactor が null の間）は「候補から選んでください」を出す。保存の可否は applied.ambiguous で決める。
+   */
+  factorChoiceAmbiguous: boolean;
   selectFactorId: (factorId: string) => void;
   factorTouched: boolean;
   factorIdToSave: string | null;
@@ -216,12 +222,19 @@ export const useScope12FactorSelection = (
     () => (scope ? listEntryFactorCandidates(scope, yearFactors) : EMPTY_FACTORS),
     [scope, yearFactors],
   );
+  const factorChoiceAmbiguous = useMemo(
+    () => (scope ? isAmbiguousEntryChoice(scope, factorCandidates) : false),
+    [scope, factorCandidates],
+  );
+  // フォームの外（請求書の読取りなど）で決めた係数は、選んだ係数として扱う（同じ優先度の候補が並んでいても、
+  // 読み取った係数を使う。人が候補から選び直せる）。
   const prefillFactorId =
     prefillFactorName !== null ? (factorCandidates.find((factor) => factor.name === prefillFactorName)?.id ?? null) : null;
   const selectedFactor = resolveSelectedFactor({
     providerFactor,
     candidates: factorCandidates,
     selectedFactorId: selectedFactorId ?? prefillFactorId,
+    ambiguous: factorChoiceAmbiguous,
   });
   const factorIdToSave = resolveFactorIdToSave({
     isEdit: args.isEdit,
@@ -286,6 +299,7 @@ export const useScope12FactorSelection = (
     },
     factorCandidates,
     selectedFactor,
+    factorChoiceAmbiguous: providerFactor === null && factorChoiceAmbiguous,
     selectFactorId: (factorId) => {
       setSelectedFactorId(factorId);
       setPrefillFactorName(null);

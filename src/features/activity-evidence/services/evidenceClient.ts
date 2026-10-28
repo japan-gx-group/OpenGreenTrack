@@ -6,7 +6,7 @@
 // - 削除: DELETE /api/activity-evidence/[id]（どの記録にも紐づいていないものだけ。Storage のファイルも消す）
 
 import { createClient } from '@/lib/supabase/client';
-import { fetchAllRows } from '@/lib/supabaseRows';
+import { IN_CHUNK_SIZE, chunk, fetchAllRows } from '@/lib/supabaseRows';
 import {
   type ConvertibleImageType,
   type EvidenceFile,
@@ -155,13 +155,20 @@ export const openEvidenceFile = async (storagePath: string): Promise<void> => {
   }
 };
 
-/** 上げた人の名前（自組織のメンバー。見つからなければ含めない） */
+/**
+ * 上げた人の名前（自組織のメンバー。見つからなければ含めない）。読めなければ Error を投げる。
+ * 人数が多いと .in() の URL が長くなりすぎる（414）ため、ID を分けて引く。
+ */
 export const getUploaderNames = async (userIds: string[]): Promise<Map<string, string>> => {
   const ids = [...new Set(userIds)];
-  if (ids.length === 0) return new Map();
-  const { data, error } = await createClient().from('profiles').select('id, fullName').in('id', ids);
-  if (error) return new Map();
-  return new Map(((data ?? []) as Array<{ id: string; fullName: string | null }>).map((row) => [row.id, row.fullName ?? '']));
+  const supabase = createClient();
+  const names = new Map<string, string>();
+  for (const part of chunk(ids, IN_CHUNK_SIZE)) {
+    const { data, error } = await supabase.from('profiles').select('id, fullName').in('id', part);
+    if (error) throw new Error('上げた人の名前を読み込めませんでした');
+    for (const row of (data ?? []) as Array<{ id: string; fullName: string | null }>) names.set(row.id, row.fullName ?? '');
+  }
+  return names;
 };
 
 /** 帳票を削除する（どの記録にも紐づいていないものだけ。紐づいていれば理由の文で Error を投げる） */
