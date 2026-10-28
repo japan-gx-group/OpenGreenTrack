@@ -5,7 +5,7 @@
 //   この欄で上げた帳票を保存前に外したときは、どの記録にも紐づかないまま残らないよう帳票ごと削除する
 //   （請求書の読取りなどから最初に入れた帳票は、ほかの記録にも使うことがあるので消さない）
 // - 編集: 記録に紐づいている帳票を読み、足す・外すをその場で記録に反映する（記録の保存を待たない）
-// 「WebP に変換して容量を減らす」の選択は、このブラウザに覚えておく（services/convertPreference.ts）。
+// 「WebP に変換して容量を減らす」の選択は、このブラウザに覚えておき、同じ画面の請求書のカードと共有する（useConvertPreference）。
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -22,7 +22,7 @@ import {
   uploadEvidenceFile,
 } from '../services/evidenceClient';
 import { convertImageToWebp } from '../services/webpConversion';
-import { readConvertPreference, writeConvertPreference } from '../services/convertPreference';
+import { useConvertPreference } from './useConvertPreference';
 
 /** 上げる前に分かる理由で断る。送れるなら null */
 export const evidenceFileProblem = (file: File): string | null => {
@@ -50,19 +50,7 @@ export const useEvidenceAttachments = ({ recordId = null, initialFiles, onLinked
   const [isLoading, setIsLoading] = useState(recordId !== null);
   const [uploading, setUploading] = useState<string[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
-  const [convertToWebp, setConvertToWebpState] = useState(false);
-
-  // 覚えておいた選択は描画の後に読む（サーバの描画と食い違わないように）。読み取りと反映を分け、
-  // .then で反映する（react-hooks/set-state-in-effect 対応。useAiStatus と同じ方針）。
-  useEffect(() => {
-    let active = true;
-    Promise.resolve(readConvertPreference()).then((value) => {
-      if (active) setConvertToWebpState(value);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
+  const { convertToWebp, setConvertToWebp } = useConvertPreference();
 
   useEffect(() => {
     if (recordId === null) return;
@@ -81,11 +69,6 @@ export const useEvidenceAttachments = ({ recordId = null, initialFiles, onLinked
       cancelled = true;
     };
   }, [recordId]);
-
-  const setConvertToWebp = useCallback((value: boolean) => {
-    setConvertToWebpState(value);
-    writeConvertPreference(value);
-  }, []);
 
   const addFiles = useCallback(
     async (selected: File[]) => {

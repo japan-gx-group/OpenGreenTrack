@@ -3,12 +3,11 @@
 // データ入力フォームの「帳票（請求書など）」の欄。上げた帳票を並べ、開く・外すができる。
 // 状態は useEvidenceAttachments が持つ（新規は保存のあとに紐づけ、編集はその場で紐づけ・外す）。
 
-import React, { useId, useRef } from 'react';
+import React, { useRef } from 'react';
 import { ExternalLink, FileText, Loader2, Paperclip, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
 import type { EvidenceAttachments } from '../hooks/useEvidenceAttachments';
+import { ConvertToWebpCheckbox } from './ConvertToWebpCheckbox.client';
 import { EVIDENCE_FILE_ACCEPT, EVIDENCE_MIME_LABELS, formatEvidenceSize } from '../types';
 
 export const EvidenceField = ({
@@ -21,7 +20,6 @@ export const EvidenceField = ({
   disabled?: boolean;
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
-  const convertId = useId();
   const busy = attachments.uploading.length > 0;
 
   return (
@@ -106,17 +104,11 @@ export const EvidenceField = ({
           <Paperclip />
           帳票を追加
         </Button>
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id={convertId}
-            checked={attachments.convertToWebp}
-            onCheckedChange={(checked) => attachments.setConvertToWebp(checked === true)}
-            disabled={disabled}
-          />
-          <Label htmlFor={convertId} className="text-xs font-normal text-text-muted">
-            画像（PNG・JPEG）を WebP に変換して容量を減らす
-          </Label>
-        </div>
+        <ConvertToWebpCheckbox
+          checked={attachments.convertToWebp}
+          onCheckedChange={attachments.setConvertToWebp}
+          disabled={disabled}
+        />
       </div>
     </div>
   );

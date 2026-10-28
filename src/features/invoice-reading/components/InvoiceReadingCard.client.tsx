@@ -15,6 +15,7 @@ import { useFiscalYear } from '@/hooks/useFiscalYear';
 import { AiSendConfirmDialog } from '@/features/ai/components/AiSendConfirmDialog.client';
 import { useAiStatus } from '@/features/ai/hooks/useAiStatus';
 import { AI_GENERATE_ERROR_MESSAGES } from '@/features/ai/messages';
+import { ConvertToWebpCheckbox } from '@/features/activity-evidence/components/ConvertToWebpCheckbox.client';
 import { EVIDENCE_FILE_ACCEPT, formatEvidenceSize } from '@/features/activity-evidence/types';
 import { usePendingEvidenceReport } from '@/features/activity-evidence/hooks/usePendingEvidenceReport';
 import type { ActivityEntryPrefill, ManualEntryLocationOption, SavedManualActivityRecord } from '@/features/data-input/types';
@@ -121,15 +122,11 @@ export const InvoiceReadingCard = ({
             <FileText />
             ファイルを選ぶ
           </Button>
-          <label className="flex items-center gap-2 text-xs text-text-muted">
-            <input
-              type="checkbox"
-              checked={batch.convertToWebp}
-              onChange={(event) => batch.setConvertToWebp(event.target.checked)}
-              disabled={isRunning}
-            />
-            画像（PNG・JPEG）を WebP に変換して容量を減らす
-          </label>
+          <ConvertToWebpCheckbox
+            checked={batch.convertToWebp}
+            onCheckedChange={batch.setConvertToWebp}
+            disabled={!canUse || isRunning || isSaving}
+          />
         </div>
       </div>
 
