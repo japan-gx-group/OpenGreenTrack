@@ -7,6 +7,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SSBJ_MEMBER_ROLES } from '@/features/ssbj/types';
+import { isAdmin } from '@/types/role';
 
 const migrationsDir = path.join(process.cwd(), 'supabase/migrations');
 const migration = (suffix: string): string => {
@@ -99,6 +100,30 @@ describe('操作履歴', () => {
     expect(deleteBranch).toContain("jsonb_build_object('reason', 'member_deleted')");
     expect(latest).toContain('values (v_row."organizationId", null, v_actor, v_action, \'member_role\'');
     expect(latest).toContain('if not exists (select 1 from public.organizations o where o.id = v_row."organizationId") then return null;');
+  });
+});
+
+describe('SSBJ の管理者は、OGT 本体の管理者と同じ条件で決める', () => {
+  // 本体の管理者の判定（DB の current_user_is_admin()・画面とサーバの isAdmin()）が「role が admin か」から変わったら、
+  // SSBJ の ssbj_user_role（と utils/memberRole.ts の effectiveSsbjRole）も同じ条件に直す。このテストはその合図にする。
+  const allMigrations = readdirSync(migrationsDir).sort()
+    .map(name => readFileSync(path.join(migrationsDir, name), 'utf8'))
+    .join('\n').split(/\r?\n/).filter(line => !line.trimStart().startsWith('--')).join(' ').replace(/\s+/g, ' ');
+  const latestBody = (fn: string): string => {
+    const definitions = [...allMigrations.matchAll(new RegExp(`create (?:or replace )?function (?:public\\.)?${fn}\\(\\)[^$]*\\$\\$(.*?)\\$\\$`, 'g'))];
+    if (definitions.length === 0) throw new Error(`${fn} の定義が見つかりません`);
+    return definitions[definitions.length - 1][1];
+  };
+
+  it('本体の current_user_is_admin() は「role が admin か」で判定している（SSBJ の ssbj_user_role と同じ条件）', () => {
+    expect(latestBody('current_user_is_admin')).toContain("p.role = 'admin'");
+    expect(roles).toContain("case when p.role = 'admin' then 'admin'");
+  });
+
+  it('本体の isAdmin() も「role が admin か」だけで判定している（logger・viewer はメンバー）', () => {
+    expect(isAdmin('admin')).toBe(true);
+    expect(isAdmin('logger')).toBe(false);
+    expect(isAdmin('viewer')).toBe(false);
   });
 });
 

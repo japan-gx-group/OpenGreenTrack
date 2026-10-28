@@ -2,7 +2,7 @@
 // 判定の正本は DB（ssbj_user_role と RLS・RPC）で、ここは画面の出し分けのための写し。
 // 画面が出し間違えても、DB と Route Handler が拒否する。
 
-import type { MemberRole } from '@/types/role';
+import { isAdmin, type MemberRole } from '@/types/role';
 import {
   SSBJ_MEMBER_ROLES,
   SSBJ_ROLE_LABELS,
@@ -20,10 +20,11 @@ export const isSsbjEffectiveRole = (value: unknown): value is SsbjEffectiveRole 
 
 /**
  * 利用者の SSBJ のロール（DB の ssbj_user_role と同じ規則）。OGT の管理者は割り当てに関係なく管理者、
- * それ以外は割り当てたロールで、割り当てが無ければ入力担当。
+ * それ以外（OGT のメンバー）は割り当てたロールで、割り当てが無ければ入力担当。
+ * OGT の管理者かどうかは、OGT 本体と同じ isAdmin で決める（role が admin か）。
  */
 export const effectiveSsbjRole = (ogtRole: MemberRole | null, assigned: SsbjMemberRole | null): SsbjEffectiveRole =>
-  ogtRole === 'admin' ? 'admin' : assigned ?? 'editor';
+  isAdmin(ogtRole) ? 'admin' : assigned ?? 'editor';
 
 /** 作業中データを編集できるか（入力担当か管理者）。 */
 export const canEditSsbj = (role: SsbjEffectiveRole | null): boolean => role === 'admin' || role === 'editor';

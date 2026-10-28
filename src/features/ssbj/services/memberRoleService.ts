@@ -44,7 +44,7 @@ export const throwIfSsbjEditForbidden = async (): Promise<void> => {
 
 const assignErrorMessage = (error: { code?: string } | null): string =>
   error?.code === RLS_DENIED_SQLSTATE
-    ? 'SSBJ のロールを変えられるのは管理者だけです'
+    ? 'SSBJ のロールは管理者のみ変更できます'
     : 'SSBJ のロールの保存に失敗しました';
 
 /** 利用者に SSBJ のロールを割り当てる（更新して、無ければ作る）。 */

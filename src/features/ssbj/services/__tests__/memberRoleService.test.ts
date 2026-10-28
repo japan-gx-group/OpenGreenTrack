@@ -92,7 +92,7 @@ describe('assignSsbjMemberRole', () => {
     mocks.updateSelect.mockResolvedValue({ data: [], error: null });
     mocks.rpc.mockResolvedValue({ data: 'org-1', error: null });
     mocks.insert.mockResolvedValue({ error: { code: '42501', message: 'new row violates row-level security policy' } });
-    await expect(assignSsbjMemberRole('u1', 'approver')).rejects.toThrow('管理者だけです');
+    await expect(assignSsbjMemberRole('u1', 'approver')).rejects.toThrow('管理者のみ変更できます');
   });
 
   it('別の画面で同時に最初の割り当てが作られたときは、開き直しを促す', async () => {
