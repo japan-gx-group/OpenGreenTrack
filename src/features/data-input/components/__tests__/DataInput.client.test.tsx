@@ -42,7 +42,7 @@ vi.mock('../ActivityEntryForm.client', () => ({
   ),
 }));
 
-// 請求書の読取り（AI）は自分のテストを持つので、「フォームに反映」を押したことにするボタンだけのスタブにする。
+// 請求書の読取り（AI）は自分のテストを持つので、「フォームで開く」を押したことにするボタンだけのスタブにする。
 vi.mock('@/features/invoice-reading/components/InvoiceReadingCard.client', () => ({
   InvoiceReadingCard: ({ onApply }: { onApply: (prefill: unknown) => void }) => (
     <button
@@ -191,7 +191,7 @@ describe('DataInput 入力履歴', () => {
     expect(getActivityHistoryRecords).toHaveBeenCalledTimes(1);
   });
 
-  it('請求書の読取りの「フォームに反映」で、新規入力のフォームに読み取った値を渡す', async () => {
+  it('請求書の読取りの「フォームで開く」で、新規入力のフォームに読み取った値を渡す', async () => {
     // jsdom は scrollIntoView を持たないため、呼ばれたことだけを見る。
     const scrollIntoView = vi.fn();
     Element.prototype.scrollIntoView = scrollIntoView;

@@ -5,7 +5,7 @@
 //   この欄で上げた帳票を保存前に外したときは、どの記録にも紐づかないまま残らないよう帳票ごと削除する
 //   （請求書の読取りなどから最初に入れた帳票は、ほかの記録にも使うことがあるので消さない）
 // - 編集: 記録に紐づいている帳票を読み、足す・外すをその場で記録に反映する（記録の保存を待たない）
-// 「WebP に変換して容量を減らす」の選択は使う人ごとの好みなので、このブラウザに覚えておく（読めなくても動く）。
+// 「WebP に変換して容量を減らす」の選択は、このブラウザに覚えておく（services/convertPreference.ts）。
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -22,24 +22,7 @@ import {
   uploadEvidenceFile,
 } from '../services/evidenceClient';
 import { convertImageToWebp } from '../services/webpConversion';
-
-const CONVERT_PREFERENCE_KEY = 'ogt.activityEvidence.convertToWebp';
-
-const readConvertPreference = (): boolean => {
-  try {
-    return window.localStorage.getItem(CONVERT_PREFERENCE_KEY) === 'true';
-  } catch {
-    return false;
-  }
-};
-
-const writeConvertPreference = (value: boolean) => {
-  try {
-    window.localStorage.setItem(CONVERT_PREFERENCE_KEY, String(value));
-  } catch {
-    // 保存できない環境（プライベートブラウズなど）では、この画面を開いている間だけ覚える。
-  }
-};
+import { readConvertPreference, writeConvertPreference } from '../services/convertPreference';
 
 /** 上げる前に分かる理由で断る。送れるなら null */
 export const evidenceFileProblem = (file: File): string | null => {
@@ -54,7 +37,7 @@ export const evidenceFileProblem = (file: File): string | null => {
 export interface UseEvidenceAttachmentsArgs {
   /** 編集中の記録。指定すると紐づいている帳票を読み、足す・外すをその場で反映する */
   recordId?: string | null;
-  /** 新規入力で最初から入れておく帳票（請求書の読取りの「フォームに反映」など） */
+  /** 新規入力で最初から入れておく帳票（請求書の読取りの「フォームで開く」など） */
   initialFiles?: EvidenceFile[];
   /** 編集で紐づけを変えたあとに、増えた数（外したときは -1）を渡す（入力履歴の帳票の数をその場で直すため） */
   onLinkedCountChange?: (delta: number) => void;
@@ -69,9 +52,16 @@ export const useEvidenceAttachments = ({ recordId = null, initialFiles, onLinked
   const [errors, setErrors] = useState<string[]>([]);
   const [convertToWebp, setConvertToWebpState] = useState(false);
 
+  // 覚えておいた選択は描画の後に読む（サーバの描画と食い違わないように）。読み取りと反映を分け、
+  // .then で反映する（react-hooks/set-state-in-effect 対応。useAiStatus と同じ方針）。
   useEffect(() => {
-    // 覚えておいた選択は描画の後に読む（サーバの描画と食い違わないように）。
-    setConvertToWebpState(readConvertPreference());
+    let active = true;
+    Promise.resolve(readConvertPreference()).then((value) => {
+      if (active) setConvertToWebpState(value);
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {

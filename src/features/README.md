@@ -10,7 +10,7 @@
 | `dashboard/` | ダッシュボード |
 | `data-input/` | 活動量のデータ入力 |
 | `factors/` | 排出係数管理・IDEA データベース取込 |
-| `invoice-reading/` | 請求書の AI 読取り（データ入力のフォームに候補を入れる） |
+| `invoice-reading/` | 請求書の AI 読取り（まとめて読み、表で確かめて登録するか、データ入力のフォームに候補を入れる） |
 | `locations/` | 拠点管理・拠点詳細 |
 | `notifications/` | ヘッダーのベルに出すお知らせ |
 | `reports/` | レポート出力・印刷 |

@@ -40,8 +40,27 @@ export interface ActivityEntrySaveOptions {
   evidenceFileIds?: string[];
 }
 
+/** まとめて登録する 1 件（請求書の一括登録の表の 1 行） */
+export interface ActivityEntrySaveManyItem {
+  /** 呼び出し側の行の識別子（結果の対応付けに使う） */
+  key: string;
+  entry: ActivityEntryInput;
+  evidenceFileIds: string[];
+}
+
+/** まとめて登録した結果。保存できた行と、保存できなかった行・理由 */
+export interface ActivityEntrySaveManyResult {
+  savedKeys: string[];
+  failures: Array<{ key: string; reason: string }>;
+}
+
 export interface ActivityEntrySave {
   save: (entry: ActivityEntryInput, options?: ActivityEntrySaveOptions) => Promise<void>;
+  /**
+   * 拠点・カテゴリ・月がまちまちの記録をまとめて登録する（請求書の一括登録）。1 件ずつ保存して帳票を紐づけ、
+   * 失敗した行があっても残りは続ける。算定は最後に 1 回だけ行う。
+   */
+  saveMany: (items: ActivityEntrySaveManyItem[]) => Promise<ActivityEntrySaveManyResult>;
   /** 一括入力（複数月まとめて入力）の保存。月ごとに順に保存し、算定は 1 回で行う */
   saveBulk: (items: BulkSaveItem[]) => Promise<void>;
 }
@@ -196,5 +215,47 @@ export function useActivityEntrySave({
     }
   };
 
-  return { save, saveBulk };
+  const saveMany = async (items: ActivityEntrySaveManyItem[]): Promise<ActivityEntrySaveManyResult> => {
+    const saved: SavedManualActivityRecord[] = [];
+    const savedKeys: string[] = [];
+    const failures: Array<{ key: string; reason: string }> = [];
+    let linkFailed = 0;
+    for (const item of items) {
+      let record: SavedManualActivityRecord;
+      try {
+        record =
+          item.entry.kind === 'scope3'
+            ? await addScope3ActivityRecord(item.entry.input)
+            : await addManualActivityRecord(item.entry.input);
+      } catch (error) {
+        failures.push({ key: item.key, reason: error instanceof Error ? error.message : '活動量レコードの保存に失敗しました' });
+        continue;
+      }
+      // 紐づけに失敗しても記録は保存済みなので、保存できた行として扱い、紐づけ直しを案内する。
+      const { record: linked, evidenceFailed } = await attachEvidence(record, item.evidenceFileIds);
+      if (evidenceFailed) linkFailed += 1;
+      saved.push(linked);
+      savedKeys.push(item.key);
+    }
+
+    if (saved.length > 0) {
+      showToast(`請求書から ${saved.length} 件の活動量を登録しました。排出量を計算しています...`, 'success');
+      const calcMessages = await runAutoCalculation([...new Set(saved.map((record) => record.periodStart))]);
+      await refreshHistory();
+      onBulkSaved?.();
+      const notices = [
+        ...(failures.length > 0 ? [`${failures.length} 件は登録できませんでした。表の理由を確かめてください。`] : []),
+        ...(linkFailed > 0 ? [`${linkFailed} 件は記録を登録しましたが、${EVIDENCE_LINK_FAILURE_MESSAGE}`] : []),
+        ...calcMessages,
+      ];
+      if (notices.length > 0) {
+        showToast(notices.join('\n'), failures.length > 0 || linkFailed > 0 ? 'error' : 'success');
+      }
+    } else if (failures.length > 0) {
+      showToast(`選んだ明細を登録できませんでした（${failures.length} 件）。表の理由を確かめてください。`, 'error');
+    }
+    return { savedKeys, failures };
+  };
+
+  return { save, saveBulk, saveMany };
 }

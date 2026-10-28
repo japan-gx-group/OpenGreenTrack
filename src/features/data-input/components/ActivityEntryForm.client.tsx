@@ -12,7 +12,7 @@
 // の normalizeIdeaFactor と同一の scope3InlineCalculation）で行い、保存後の算定と同じ値を表示する。
 // 構造・バリデーション・未来月ガードは両経路で共有する。
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ClipboardList, Trash2, X } from 'lucide-react';
 import { Card } from '@/components/ui/card';
@@ -109,6 +109,7 @@ import { EntryCalculationResult } from './EntryCalculationResult';
 import { EntryField, EntryNotice, EntrySection, FactorSourceChip, UnitBadge } from './EntryFormPrimitives';
 import { EvidenceField } from '@/features/activity-evidence/components/EvidenceField.client';
 import { useEvidenceAttachments } from '@/features/activity-evidence/hooks/useEvidenceAttachments';
+import { usePendingEvidenceReport } from '@/features/activity-evidence/hooks/usePendingEvidenceReport';
 
 export interface ActivityEntryFormProps {
   locations: ManualEntryLocationOption[];
@@ -143,7 +144,7 @@ export interface ActivityEntryFormProps {
   /** 事前警告から重複レコードの編集を開く操作。指定時のみ「既存のレコードを開く」を表示する（新規入力用）。 */
   onOpenDuplicateRecord?: (record: SavedManualActivityRecord) => void;
   /**
-   * 新規入力のフォームに入れておく値（請求書の読取りの「フォームに反映」）。create のときだけ使う。
+   * 新規入力のフォームに入れておく値（請求書の読取りの「フォームで開く」）。create のときだけ使う。
    * 初期値として読むだけなので、別の値を入れ直すときは呼び出し側が key を替えてフォームを作り直す。
    */
   prefill?: ActivityEntryPrefill;
@@ -214,15 +215,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     onLinkedCountChange: onEvidenceChange,
   });
   // 新規入力で並べている帳票を親へ伝える（フォームを外したら空にする）。
-  const evidenceFiles = evidence.files;
-  useEffect(() => {
-    if (isEdit || onPendingEvidenceChange === undefined) return;
-    onPendingEvidenceChange(evidenceFiles.map((file) => file.id));
-  }, [isEdit, evidenceFiles, onPendingEvidenceChange]);
-  useEffect(() => {
-    if (isEdit || onPendingEvidenceChange === undefined) return;
-    return () => onPendingEvidenceChange([]);
-  }, [isEdit, onPendingEvidenceChange]);
+  usePendingEvidenceReport(evidence.fileIds, isEdit ? undefined : onPendingEvidenceChange);
 
   // 請求書の読取りから入れた値で拠点が決まらなかった（住所が拠点と一致しない）ときは、先頭の拠点に倒さず未選択にし、
   // 拠点を選ぶまでプレビューを開けないようにする。請求書と関係のない拠点の活動量として黙って保存しないため。

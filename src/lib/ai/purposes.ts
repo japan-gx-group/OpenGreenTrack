@@ -34,7 +34,8 @@ export const AI_PURPOSES = {
     label: '請求書の読取り',
     inputs: ['pdf', 'image'],
     maxInputBytes: DEFAULT_MAX_INPUT_BYTES,
-    limits: { perMinute: 5, perDay: 100 },
+    // 複数の請求書をまとめて読むとき（1 回に最大 10 ファイル）に、1 分で読み終えられる回数にする。
+    limits: { perMinute: 10, perDay: 200 },
     maxOutputTokens: 2_000,
   },
   // 読み取った事業者名・料金メニュー・燃料の名称に当てはまる排出係数を、候補の一覧（公表値）から選ぶ。

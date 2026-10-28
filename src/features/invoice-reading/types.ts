@@ -4,6 +4,7 @@
 
 import type { AiProviderId } from '@/types/ai';
 import type { ActivityEntryPrefill, EntryFactorPrefill } from '@/features/data-input/types';
+import type { EvidenceFile } from '@/features/activity-evidence/types';
 
 /** 読み取る請求書の種類。other は対象外（熱・水道・電話など） */
 export const INVOICE_KINDS = ['electricity', 'city_gas', 'fuel', 'other'] as const;
@@ -25,11 +26,11 @@ export type InvoiceEnergyType = 'electricity' | 'city_gas' | InvoiceFuelEnergyTy
 /** 1 回に読み取る明細の上限（燃料の種類が複数ある請求書など） */
 export const MAX_INVOICE_ITEMS = 10;
 
-/** 1 回に送れるファイルの大きさの上限（共通の入口の既定の上限と同じ 4MB） */
+/** AI で読める帳票の大きさの上限（共通の入口の既定の上限と同じ 4MB）。これを超える帳票は保存だけする */
 export const MAX_INVOICE_FILE_BYTES = 4 * 1024 * 1024;
 
-/** 送れるファイルの種類（共通の入口が先頭のバイトで確かめる形式と同じ） */
-export const INVOICE_FILE_ACCEPT = 'application/pdf,image/png,image/jpeg,image/webp';
+/** 1 回にまとめて読める請求書のファイルの数 */
+export const MAX_INVOICE_FILES = 10;
 
 /** 読み取った明細（AI の出力を検証したもの。読めない値は null） */
 export interface InvoiceExtractedItem {
@@ -96,12 +97,14 @@ export interface InvoiceReadingItem {
   location: { id: string; name: string } | null;
   /** フォームに入れるときに確かめてほしいこと（拠点が決まらない、単位を換算できない、など） */
   notices: string[];
-  /** 「フォームに反映」で入れる値。対象外の明細は null */
+  /** 「フォームで開く」で入れる値。対象外の明細は null */
   prefill: ActivityEntryPrefill | null;
 }
 
 /** POST /api/ai/invoice-reading の応答 */
 export interface InvoiceReadingResult {
+  /** 読み取った帳票（保存済み。フォームや登録した記録に紐づける） */
+  evidence: EvidenceFile;
   supplierName: string | null;
   supplyAddress: string | null;
   warnings: string[];

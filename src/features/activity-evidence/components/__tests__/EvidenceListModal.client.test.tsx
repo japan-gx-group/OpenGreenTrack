@@ -94,10 +94,10 @@ describe('EvidenceListModal', () => {
     expect(document.body.textContent).not.toContain('燃料.webp');
   });
 
-  it('入力中のフォームに付けている帳票は、紐づけなしでも削除できない', async () => {
+  it('入力中の帳票（フォームの欄・請求書の一括登録の表）は、紐づけなしでも削除できない', async () => {
     view = render(<EvidenceListModal isOpen onClose={vi.fn()} pendingFileIds={['file-1']} />);
     await flush();
-    expect(document.body.textContent).toContain('入力中のフォーム');
+    expect(document.body.textContent).toContain('入力中');
     expect(document.body.textContent).not.toContain('紐づけなし');
     expect(buttonByLabel('9月分.pdf を削除')?.disabled).toBe(true);
   });
