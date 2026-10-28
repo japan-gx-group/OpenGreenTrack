@@ -62,12 +62,13 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
   )
 }
 
+// 見出し・セルの文字の大きさ・色・余白は、既存の表（globals.css の .gt-table）にそろえてある（R14）。
 function TableHead({ className, ...props }: React.ComponentProps<"th">) {
   return (
     <th
       data-slot="table-head"
       className={cn(
-        "h-10 px-2 text-left align-middle font-medium whitespace-nowrap text-foreground [&:has([role=checkbox])]:pr-0",
+        "px-3 py-2.5 text-left align-middle text-xs font-normal whitespace-nowrap text-text-subtle [&:has([role=checkbox])]:pr-0",
         className
       )}
       {...props}
@@ -80,7 +81,7 @@ function TableCell({ className, ...props }: React.ComponentProps<"td">) {
     <td
       data-slot="table-cell"
       className={cn(
-        "p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0",
+        "px-3 py-[11px] align-middle text-[13.5px] whitespace-nowrap text-text-heading [&:has([role=checkbox])]:pr-0",
         className
       )}
       {...props}

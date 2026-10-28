@@ -2,6 +2,7 @@
 
 // 標準係数の候補セレクトと、確定した係数の詳細（係数値 / 出典 / 事業者 or 地域）。
 // 候補は算定エンジンと同じ純関数（listFactorCandidates）で並び、先頭が優先順位による自動選択。
+// 同じ優先度で名前の違う候補が並ぶとき（A重油 / B・C重油 など）は自動で選ばず、「候補から選んでください」を出す。
 
 import React from 'react';
 import type { CandidateFactorRow } from '../services/factorSelectionService';
@@ -17,16 +18,24 @@ export interface StandardFactorFieldsProps {
   candidates: CandidateFactorRow[];
   /** 候補セレクトの value（ユーザーの選択） */
   selectedFactor: CandidateFactorRow | null;
+  /** 同じ優先度で名前の違う候補が並ぶ（自動では選ばない）。選ぶまでは selectedFactor が null */
+  ambiguous: boolean;
   /** 供給事業者別モードで事業者未選択のとき true。ラベルを「代替値」表記にする */
   asFallback: boolean;
   onSelect: (factorId: string) => void;
 }
 
-export const StandardFactorFields = ({ candidates, selectedFactor, asFallback, onSelect }: StandardFactorFieldsProps) => (
+export const StandardFactorFields = ({
+  candidates,
+  selectedFactor,
+  ambiguous,
+  asFallback,
+  onSelect,
+}: StandardFactorFieldsProps) => (
   <EntryField
     htmlFor="manual-factor-select"
     label={asFallback ? '代替値（標準係数）' : '排出係数'}
-    hint="(優先順位で自動選択・変更可)"
+    hint={ambiguous ? '(使った係数を選んでください)' : '(優先順位で自動選択・変更可)'}
   >
     <select
       id="manual-factor-select"
@@ -34,10 +43,15 @@ export const StandardFactorFields = ({ candidates, selectedFactor, asFallback, o
       onChange={(event) => onSelect(event.target.value)}
       className="gt-field"
     >
+      {ambiguous && selectedFactor === null && (
+        <option value="" disabled>
+          候補から選んでください
+        </option>
+      )}
       {candidates.map((candidate, index) => (
         <option key={candidate.id} value={candidate.id}>
           {factorNameWithValue(candidate)}
-          {index === 0 ? ' ・自動選択' : ''}
+          {index === 0 && !ambiguous ? ' ・自動選択' : ''}
         </option>
       ))}
     </select>

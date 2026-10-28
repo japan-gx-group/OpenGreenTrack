@@ -1,12 +1,14 @@
 'use client';
 
-// メンバー管理: 自組織メンバーの一覧・削除（下書き→保存で確定）と、
+// メンバー管理: 自組織メンバーの一覧と、ロールの変更・削除（下書き→保存で確定）、
 // 招待リンクの発行・コピー・取り消しを行う。招待発行時はサーバ側で招待メールを送信し、
 // その結果（送信済み / メール未設定 / 送信失敗）をモーダル内で案内する。
 // メンバー・招待の読み取りは RLS 前提でブラウザから直接行い、書き込みは Server Action 経由で行う。
-// ロールによる出し分けは行わない（ロール判定は無効）。ロールを変更する UI も持たない。
+// メンバーの招待・削除・ロールの変更は管理者にだけ出す（サーバの requireAdmin と、RLS・DB の RPC・トリガーでも確かめる）。
+// 招待中の一覧（招待リンクの秘密を含む）は RLS で管理者にしか返らないため、管理者のときだけ取得する。
 
 import React, { useCallback, useEffect, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Modal } from '@/components/ui/Modal.client';
 import { Plus, Trash2, Send, Copy, Check, Loader2, AlertTriangle } from 'lucide-react';
@@ -16,14 +18,48 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { saveMemberChanges } from '@/features/settings/services/members';
 import { createInvite, revokeInvite } from '@/features/settings/services/invites';
 import { isLocalOnlyInviteUrl } from '@/features/settings/services/inviteLink';
+import type { MemberRoleChange } from '@/features/settings/services/memberChangePlan';
 // 型のみの import（実体はサーバ専用モジュールのためバンドルされない）
 import type { InviteEmailStatus } from '@/features/settings/services/inviteEmail';
+import {
+  ADMIN_ROLE,
+  MEMBER_ROLE,
+  isAdmin,
+  isMemberRole,
+  memberRoleLabel,
+  type AssignableMemberRole,
+  type MemberRole,
+} from '@/types/role';
 
 interface Member {
   id: string;
   name: string;
   email: string;
+  role: MemberRole;
 }
+
+// 下書きと現状の差分。削除と、管理者かどうかが変わったロールの変更だけを送る
+// （'viewer' のメンバーを「メンバー」のまま保存しても変更にしない）。
+const diffMemberDraft = (members: Member[], draftMembers: Member[]) => {
+  const draftById = new Map(draftMembers.map(m => [m.id, m]));
+  const removedMemberIds = members.filter(m => !draftById.has(m.id)).map(m => m.id);
+  const roleChanges: MemberRoleChange[] = members.flatMap(m => {
+    const draft = draftById.get(m.id);
+    if (!draft || isAdmin(draft.role) === isAdmin(m.role)) return [];
+    return [{ memberId: m.id, role: isAdmin(draft.role) ? ADMIN_ROLE : MEMBER_ROLE }];
+  });
+  return { removedMemberIds, roleChanges };
+};
+
+// 保存の確認モーダルの文。
+const describePendingChanges = ({ removedMemberIds, roleChanges }: ReturnType<typeof diffMemberDraft>) => {
+  const parts: string[] = [];
+  if (roleChanges.length > 0) parts.push(`ロールの変更 ${roleChanges.length} 件`);
+  if (removedMemberIds.length > 0) parts.push(`メンバーの削除 ${removedMemberIds.length} 件`);
+  if (parts.length === 0) return '変更はありません。';
+  const removalNote = removedMemberIds.length > 0 ? '削除したメンバーはログインできなくなります。' : '';
+  return `${parts.join('・')}を保存しますか？${removalNote}`;
+};
 
 // 発行直後の招待（モーダルに結果を表示するための情報）。
 // emailStatus により「送信済み / メール未設定 / 送信失敗」の案内を出し分ける。
@@ -48,6 +84,10 @@ const buildInviteUrl = (token: string) => `${window.location.origin}/invite/${to
 const INVITE_EMAIL_SETUP_DOC_URL =
   'https://github.com/japan-gx-group/OpenGreenTrack/blob/main/docs/setup-guide.md#2-c-招待メールの設定任意';
 
+// 管理者が 0 人の組織の復旧手順（セットアップガイドの「2-H」の「H-2」）。運用担当が SQL で管理者を決め直す。
+const ADMIN_RECOVERY_DOC_URL =
+  'https://github.com/japan-gx-group/OpenGreenTrack/blob/main/docs/setup-guide.md#h-2-管理者がいなくなったときの復旧';
+
 // 一覧の取得はコンポーネント外の純粋な fetch 関数に分け、state 反映は呼び出し側の
 // コールバックで行う（react-hooks/set-state-in-effect 対応。Locations.tsx と同じ方針）。
 const fetchMembers = async (): Promise<Member[] | null> => {
@@ -55,13 +95,15 @@ const fetchMembers = async (): Promise<Member[] | null> => {
   // RLS により自組織の profiles のみ返る。
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, fullName, email')
+    .select('id, fullName, email, role')
     .order('createdAt', { ascending: true });
   if (error) return null;
   return (data ?? []).map((row) => ({
     id: row.id as string,
     name: (row.fullName as string | null) ?? '(未設定)',
     email: row.email as string,
+    // 想定外の値は安全側（メンバー）に倒す。
+    role: isMemberRole(row.role) ? row.role : MEMBER_ROLE,
   }));
 };
 
@@ -90,7 +132,9 @@ const formatExpiry = (expiresAt: string) => {
 };
 
 export const MemberList = ({ showToast }: { showToast: (message: string, type: 'success' | 'error') => void }) => {
-  const { profile } = useCurrentUser();
+  const { profile, refresh: refreshCurrentUser } = useCurrentUser();
+  // 画面の出し分けだけに使う。権限の正しさはサーバと DB で確かめている。
+  const canManageMembers = isAdmin(profile?.role);
 
   const [members, setMembers] = useState<Member[]>([]);
   const [draftMembers, setDraftMembers] = useState<Member[]>([]);
@@ -101,7 +145,10 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
   const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
 
   const [isInviteOpen, setIsInviteOpen] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteForm, setInviteForm] = useState<{ email: string; role: AssignableMemberRole }>({
+    email: '',
+    role: MEMBER_ROLE,
+  });
   const [issuedInvite, setIssuedInvite] = useState<IssuedInviteView | null>(null);
   const [isInviting, setIsInviting] = useState(false);
 
@@ -138,8 +185,9 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
   }, [applyMembers]);
 
   useEffect(() => {
+    if (!canManageMembers) return;
     fetchPendingInvites().then(setPendingInvites);
-  }, []);
+  }, [canManageMembers]);
 
   const handleRemove = (id: string) => {
     setMemberToDelete(id);
@@ -155,20 +203,30 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
     setMemberToDelete(null);
   };
 
+  const handleRoleChange = (id: string, role: MemberRole) => {
+    setDraftMembers(prev => prev.map(m => (m.id === id ? { ...m, role } : m)));
+    setHasDraft(true);
+  };
+
   const handleSaveClick = () => {
     setIsSaveModalOpen(true);
   };
+
+  // 保存の確認と保存の両方で使う、下書きと現状の差分。
+  const pendingChanges = diffMemberDraft(members, draftMembers);
+  const demotesSelf = pendingChanges.roleChanges.some(
+    change => change.memberId === profile?.id && !isAdmin(change.role),
+  );
+  const savedAdminCount = members.filter(m => isAdmin(m.role)).length;
+  // 管理者が 0 人になる下書きは保存させない（サーバと DB のトリガーでも拒否される）。
+  const draftLeavesNoAdmin = !draftMembers.some(m => isAdmin(m.role));
 
   const confirmSaveChanges = async () => {
     if (isSaving) return;
     setIsSaving(true);
 
-    // 下書きと現状の差分から「削除」を組み立てる。
-    const draftIds = new Set(draftMembers.map(m => m.id));
-    const removedMemberIds = members.filter(m => !draftIds.has(m.id)).map(m => m.id);
-
     try {
-      const result = await saveMemberChanges({ removedMemberIds });
+      const result = await saveMemberChanges(pendingChanges);
       if (!result.ok) {
         showToast(result.error, 'error');
       } else {
@@ -178,7 +236,11 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
       showToast('通信に失敗しました。時間をおいて再度お試しください', 'error');
     } finally {
       // 成否にかかわらず一覧を取り直し、実データと画面を一致させる。
+      // 自分のロールが変わった場合に出し分けを合わせるため、ログイン中の人の情報も取り直す。
       await loadMembers();
+      if (pendingChanges.roleChanges.some(change => change.memberId === profile?.id)) {
+        await refreshCurrentUser();
+      }
       setIsSaving(false);
       setIsSaveModalOpen(false);
     }
@@ -191,14 +253,14 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
 
   const handleSendInvite = async () => {
     if (isInviting) return;
-    if (!isValidEmail(inviteEmail)) {
+    if (!isValidEmail(inviteForm.email)) {
       showToast('有効なメールアドレスを入力してください', 'error');
       return;
     }
 
     setIsInviting(true);
     try {
-      const result = await createInvite({ email: inviteEmail });
+      const result = await createInvite({ email: inviteForm.email, role: inviteForm.role });
       if (!result.ok) {
         showToast(result.error, 'error');
         return;
@@ -225,7 +287,7 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
 
   const closeInviteModal = () => {
     setIsInviteOpen(false);
-    setInviteEmail('');
+    setInviteForm({ email: '', role: MEMBER_ROLE });
     setIssuedInvite(null);
   };
 
@@ -258,15 +320,46 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
     <Card className="flex flex-col gap-4 relative">
       <div className="flex justify-between items-center">
         <h2 className="font-serif font-semibold text-lg text-text-heading flex items-center gap-2">メンバー管理</h2>
-        <button
-          type="button"
-          onClick={() => setIsInviteOpen(true)}
-          className="gt-btn-primary flex items-center gap-1 text-xs"
-        >
-          <Plus size={16} /> メンバーを招待
-        </button>
+        {canManageMembers && (
+          <button
+            type="button"
+            onClick={() => setIsInviteOpen(true)}
+            className="gt-btn-primary flex items-center gap-1 text-xs"
+          >
+            <Plus size={16} /> メンバーを招待
+          </button>
+        )}
       </div>
       <hr className="border-border" />
+
+      {/* 管理者が 0 人の組織（この仕組みを入れる前に、組織を作った人のアカウントを削除していた場合など）。
+          画面からは直せないため、運用担当による復旧（setup-guide の手順）へ案内する。 */}
+      {!isLoading && !loadError && members.length > 0 && savedAdminCount === 0 && (
+        <div className="flex items-start gap-2 rounded-lg border border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger" role="alert">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <span>
+            この組織には管理者がいません。組織の設定を変えられる人がいないため、運用担当に連絡してください（
+            <a
+              href={ADMIN_RECOVERY_DOC_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2"
+            >
+              セットアップガイド「管理者がいなくなったときの復旧」
+            </a>
+            ）。
+          </span>
+        </div>
+      )}
+
+      {canManageMembers && !isLoading && !loadError && savedAdminCount === 1 && (
+        <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <span>
+            管理者が 1 人だけです。休職・退職などでロールの変更やメンバーの削除ができなくなるのを防ぐため、管理者を 2 人以上にしておくことを勧めます。
+          </span>
+        </div>
+      )}
 
       <div>
         <table className="w-full text-left border-collapse">
@@ -274,6 +367,7 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
             <tr className="border-b border-border text-text-muted text-sm">
               <th className="font-semibold px-4 py-2">氏名</th>
               <th className="font-semibold px-4 py-2">メールアドレス</th>
+              <th className="font-semibold px-4 py-2">ロール</th>
               <th className="font-semibold px-4 py-2 text-right">操作</th>
             </tr>
           </thead>
@@ -287,9 +381,26 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
                     {isSelf && <span className="text-xs text-text-muted font-normal">（自分）</span>}
                   </td>
                   <td className="px-4 py-3 text-sm text-text-muted break-all">{member.email}</td>
+                  <td className="px-4 py-3 text-sm">
+                    {canManageMembers ? (
+                      <select
+                        aria-label={`${member.name} のロール`}
+                        value={isAdmin(member.role) ? ADMIN_ROLE : MEMBER_ROLE}
+                        onChange={e => handleRoleChange(member.id, isAdmin(e.target.value as MemberRole) ? ADMIN_ROLE : MEMBER_ROLE)}
+                        className="gt-field"
+                      >
+                        <option value={ADMIN_ROLE}>{memberRoleLabel(ADMIN_ROLE)}</option>
+                        <option value={MEMBER_ROLE}>{memberRoleLabel(MEMBER_ROLE)}</option>
+                      </select>
+                    ) : (
+                      <Badge variant={isAdmin(member.role) ? 'accent' : 'neutral'}>
+                        {memberRoleLabel(member.role)}
+                      </Badge>
+                    )}
+                  </td>
                   <td className="px-4 py-3 flex justify-end">
-                    {/* 自分自身の削除はサーバ側でも拒否されるが、UIでも塞いでおく */}
-                    {!isSelf && (
+                    {/* 自分自身の削除・管理者でない人の削除はサーバ側でも拒否されるが、UIでも塞いでおく */}
+                    {canManageMembers && !isSelf && (
                       <button
                         type="button"
                         onClick={() => handleRemove(member.id)}
@@ -304,7 +415,7 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
             })}
             {isLoading && (
               <tr>
-                <td colSpan={3} className="text-text-muted text-sm px-4 py-8 text-center">
+                <td colSpan={4} className="text-text-muted text-sm px-4 py-8 text-center">
                   <Loader2 size={16} className="animate-spin inline-block mr-2" />
                   メンバーを読み込んでいます...
                 </td>
@@ -312,14 +423,14 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
             )}
             {!isLoading && loadError && (
               <tr>
-                <td colSpan={3} className="text-danger text-sm px-4 py-8 text-center">
+                <td colSpan={4} className="text-danger text-sm px-4 py-8 text-center">
                   {loadError}
                 </td>
               </tr>
             )}
             {!isLoading && !loadError && draftMembers.length === 0 && (
               <tr>
-                <td colSpan={3} className="text-text-muted text-sm px-4 py-8 text-center">
+                <td colSpan={4} className="text-text-muted text-sm px-4 py-8 text-center">
                   メンバーが見つかりません。
                 </td>
               </tr>
@@ -328,15 +439,33 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
         </table>
       </div>
 
+      {!canManageMembers && !isLoading && !loadError && (
+        <p className="text-xs text-text-muted">メンバーの招待・削除・ロールの変更は、管理者のみできます。</p>
+      )}
+
       {hasDraft && (
-        <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-border">
-          <button type="button" onClick={cancelChanges} className="gt-btn">キャンセル</button>
-          <button type="button" onClick={handleSaveClick} className="gt-btn-primary">変更を保存</button>
+        <div className="flex flex-col items-end gap-2 mt-4 pt-4 border-t border-border">
+          {draftLeavesNoAdmin && (
+            <p className="text-xs text-danger" role="alert">
+              管理者が 1 人もいなくなるため保存できません。だれか 1 人を管理者にしてください。
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={cancelChanges} className="gt-btn">キャンセル</button>
+            <button
+              type="button"
+              onClick={handleSaveClick}
+              className="gt-btn-primary"
+              disabled={draftLeavesNoAdmin}
+            >
+              変更を保存
+            </button>
+          </div>
         </div>
       )}
 
-      {/* 未受諾の招待一覧。リンクの再コピーと取り消しができる */}
-      {pendingInvites.length > 0 && (
+      {/* 未受諾の招待一覧。リンクの再コピーと取り消しができる（管理者だけ） */}
+      {canManageMembers && pendingInvites.length > 0 && (
         <div className="flex flex-col gap-2 mt-2">
           <h3 className="font-serif font-semibold text-sm text-text-heading">招待中</h3>
           <table className="w-full text-left border-collapse">
@@ -463,11 +592,31 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
               <input
                 id="inviteEmail"
                 type="email"
-                value={inviteEmail}
-                onChange={e => setInviteEmail(e.target.value)}
+                value={inviteForm.email}
+                onChange={e => setInviteForm(prev => ({ ...prev, email: e.target.value }))}
                 className="gt-field"
                 placeholder="例: name@abc.com"
               />
+            </div>
+            <div className="flex flex-col gap-2">
+              <label htmlFor="inviteRole" className="text-sm font-semibold text-text-muted">ロール</label>
+              <select
+                id="inviteRole"
+                value={inviteForm.role}
+                onChange={e =>
+                  setInviteForm(prev => ({
+                    ...prev,
+                    role: isAdmin(e.target.value as MemberRole) ? ADMIN_ROLE : MEMBER_ROLE,
+                  }))
+                }
+                className="gt-field"
+              >
+                <option value={MEMBER_ROLE}>{memberRoleLabel(MEMBER_ROLE)}</option>
+                <option value={ADMIN_ROLE}>{memberRoleLabel(ADMIN_ROLE)}</option>
+              </select>
+              <p className="text-xs text-text-muted">
+                招待を受けた人は、ここで選んだロールになります。管理者は、組織の設定（企業情報・算定年度・メンバー）を変えられます。
+              </p>
             </div>
             <div className="flex justify-end gap-2 mt-6 pt-6">
               <button
@@ -492,8 +641,13 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
       >
         <div className="flex flex-col gap-6">
           <p className="text-sm text-text-main">
-            メンバーの削除を保存しますか？削除したメンバーはログインできなくなります。
+            {describePendingChanges(pendingChanges)}
           </p>
+          {demotesSelf && (
+            <p className="text-sm text-warning" role="alert">
+              あなたは管理者でなくなり、ロールの変更やメンバーの削除ができなくなります。
+            </p>
+          )}
           <div className="flex justify-end gap-2">
             <button type="button" onClick={() => setIsSaveModalOpen(false)} className="gt-btn" disabled={isSaving}>
               キャンセル

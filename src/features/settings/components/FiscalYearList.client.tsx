@@ -1,7 +1,7 @@
 'use client';
 
 // 会計年度（fiscal_years）の管理 UI（年度の追加/削除）。
-// ロールによる出し分けは行わず、認証済みメンバー全員が操作できる（ロール判定は無効）。
+// 一覧は全員に見せ、追加・削除は管理者だけに出す（Server Action の requireAdmin でも管理者に限られる）。
 // 一覧・追加・削除はすべて Server Action（service_role）経由で行い、対象は呼び出し元の
 // 組織の年度に限定される（src/features/settings/services/fiscalYears.ts）。
 // fiscal_years は組織別マスタのため、ここでの操作は自組織の年度セレクタに影響する（反映は再読込後）。
@@ -9,7 +9,9 @@
 // 破壊的削除を防ぐガード。判定・実削除ともサーバ側で行う）。
 
 import React, { useCallback, useEffect, useState } from 'react';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useFiscalYear } from '@/hooks/useFiscalYear';
+import { isAdmin } from '@/types/role';
 import { Card } from '@/components/ui/card';
 import { Modal } from '@/components/ui/Modal.client';
 import { Plus, Loader2, CalendarDays, Trash2 } from 'lucide-react';
@@ -42,6 +44,9 @@ export const FiscalYearList = ({
   const [yearToDelete, setYearToDelete] = useState<FiscalYearUsage | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const { refresh: refreshFiscalYears } = useFiscalYear();
+  const { profile } = useCurrentUser();
+  // 画面の出し分けだけに使う。権限の正しさは Server Action（requireAdmin）で確かめている。
+  const canManageYears = isAdmin(profile?.role);
 
   // fetch 結果を state へ反映する（effect 本体での同期 setState を避けるため、取得と反映を分離し
   // .then(applyYears) の形で呼ぶ。MemberList と同じ react-hooks/set-state-in-effect 対応）。
@@ -159,19 +164,21 @@ export const FiscalYearList = ({
               </td>
               <td className="px-4 py-3 text-right">
                 {/* 参照データがある年度は削除不可（cascade でデータごと消えるのを防ぐ） */}
-                <button
-                  type="button"
-                  onClick={() => setYearToDelete(year)}
-                  disabled={year.hasData}
-                  title={
-                    year.hasData
-                      ? 'この年度の算定結果や目標などが登録されているため削除できません'
-                      : 'この年度を削除'
-                  }
-                  className="text-danger hover:brightness-75 disabled:text-text-subtle disabled:cursor-not-allowed p-1"
-                >
-                  <Trash2 size={16} />
-                </button>
+                {canManageYears && (
+                  <button
+                    type="button"
+                    onClick={() => setYearToDelete(year)}
+                    disabled={year.hasData}
+                    title={
+                      year.hasData
+                        ? 'この年度の算定結果や目標などが登録されているため削除できません'
+                        : 'この年度を削除'
+                    }
+                    className="text-danger hover:brightness-75 disabled:text-text-subtle disabled:cursor-not-allowed p-1"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                )}
               </td>
             </tr>
           ))}
@@ -200,37 +207,45 @@ export const FiscalYearList = ({
         </tbody>
       </table>
 
+      {!canManageYears && (
+        <p className="text-xs text-text-muted border-t border-border pt-4">
+          年度の追加・削除は管理者のみできます。
+        </p>
+      )}
+
       {/* 年度の追加 */}
-      <div className="flex flex-col gap-2 border-t border-border pt-4">
-        <label htmlFor="fiscal-year-input" className="text-xs font-semibold text-text-muted">
-          年度を追加（年度が始まる年を西暦で入力）
-        </label>
-        <div className="flex items-center gap-2">
-          <input
-            id="fiscal-year-input"
-            type="number"
-            inputMode="numeric"
-            className="gt-field w-[140px]"
-            placeholder="例: 2026"
-            value={startYearInput}
-            onChange={(e) => setStartYearInput(e.target.value)}
-          />
-          <button
-            type="button"
-            onClick={handleAdd}
-            disabled={isAdding || parsedYear === null}
-            className="gt-btn-primary flex items-center gap-1 text-xs disabled:opacity-60"
-          >
-            {isAdding ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-            追加
-          </button>
-          {preview && (
-            <span className="text-xs text-text-muted">
-              {preview.label}（{formatFiscalYearPeriod(preview.startDate, preview.endDate)}）
-            </span>
-          )}
+      {canManageYears && (
+        <div className="flex flex-col gap-2 border-t border-border pt-4">
+          <label htmlFor="fiscal-year-input" className="text-xs font-semibold text-text-muted">
+            年度を追加（年度が始まる年を西暦で入力）
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              id="fiscal-year-input"
+              type="number"
+              inputMode="numeric"
+              className="gt-field w-[140px]"
+              placeholder="例: 2026"
+              value={startYearInput}
+              onChange={(e) => setStartYearInput(e.target.value)}
+            />
+            <button
+              type="button"
+              onClick={handleAdd}
+              disabled={isAdding || parsedYear === null}
+              className="gt-btn-primary flex items-center gap-1 text-xs disabled:opacity-60"
+            >
+              {isAdding ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+              追加
+            </button>
+            {preview && (
+              <span className="text-xs text-text-muted">
+                {preview.label}（{formatFiscalYearPeriod(preview.startDate, preview.endDate)}）
+              </span>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 削除確認モーダル */}
       <Modal

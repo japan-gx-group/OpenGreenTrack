@@ -24,7 +24,7 @@ const NO_CANDIDATE_MESSAGE =
 // 保存する係数指定が無く（編集で触れていない・取込レコード）、同順位の候補が複数ある。算定バッチは
 // 当てずっぽうを避けて FACTOR_AMBIGUOUS で未算定にするため、候補セレクトからの選択を促す。
 const AMBIGUOUS_MESSAGE =
-  '該当する排出係数が複数あり自動では決められません。候補から排出係数を選択してください。このまま保存した場合、排出量は未算定として記録されます。';
+  '同じ優先度の排出係数が複数あるため、自動では選びません。候補から、使った排出係数を選んでください（選ぶまで保存できません）。';
 // 対象年度の公式係数がまだ公表されていないため、直近の過年度の係数で暫定的に計算している。
 // 公表後に新しい係数を登録しても、暫定適用で算定済みの結果は自動では置き換わらない
 // （算定バッチは未算定レコードしか処理しない）。データ入力画面のバナーから
@@ -38,6 +38,8 @@ const REMAPPED_MESSAGE =
 
 export interface ActivityEntryFactorSectionProps {
   factorSource: FactorSource;
+  /** 拠点が選ばれている。Scope1/2 の係数は拠点（地域・拠点固有のカスタム係数）で決まるため、未選択の間は判定しない */
+  hasLocation: boolean;
   /** 対象年月が検証を通っている（係数を引ける） */
   hasPeriod: boolean;
   /** 会計年度マスタが確定している。未確定の間は Scope1/2 の係数を取得しない */
@@ -49,6 +51,7 @@ export interface ActivityEntryFactorSectionProps {
 
 export const ActivityEntryFactorSection = ({
   factorSource,
+  hasLocation,
   hasPeriod,
   fiscalYearsReady,
   isEdit,
@@ -76,6 +79,9 @@ export const ActivityEntryFactorSection = ({
 
       {isIdea ? (
         <IdeaFactorFields idea={idea} />
+      ) : !hasLocation ? (
+        // 拠点が未選択（請求書の読取りで拠点が決まらなかった）の間は、取得中・候補なしの表示を出さない。
+        <p className="text-sm text-text-muted">拠点を選ぶと適用係数を表示します。</p>
       ) : !hasPeriod ? (
         // 対象年月が確定していない間は係数を引けない。エラー本文は入力直下に出すため、
         // ここでは何を直せば表示されるかだけを案内する。
@@ -114,6 +120,7 @@ export const ActivityEntryFactorSection = ({
               <StandardFactorFields
                 candidates={scope12.factorCandidates}
                 selectedFactor={scope12.selectedFactor}
+                ambiguous={scope12.factorChoiceAmbiguous}
                 asFallback={factorSource === 'provider'}
                 onSelect={scope12.selectFactorId}
               />

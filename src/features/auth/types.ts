@@ -42,7 +42,7 @@ export interface AcceptInviteInput {
 }
 
 // 招待画面に表示する情報（メール・組織名は改変不可なので読み取り専用で見せる）。
-// 権限は扱わない（ロール判定は無効）。
+// 招待のロールはここでは扱わない（受諾時にサーバが招待の role を profiles に写す）。
 export interface InviteInfo {
   email: string;
   organizationName: string;

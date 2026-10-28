@@ -22,6 +22,7 @@ import { scopeAnalysisHref } from '@/features/scope-analysis/utils/scopeAnalysis
 import {
   MANUAL_ACTIVITY_CATEGORY_MAP,
   type ActivityEntryInitialValues,
+  type ActivityEntryPrefill,
   type ActivityEntryInput,
   type ManualEntryLocationOption,
   type SavedManualActivityRecord,
@@ -106,11 +107,17 @@ import { ActivityEntryPreviewModal } from './ActivityEntryPreviewModal.client';
 import { BulkEntryPreviewModal } from './BulkEntryPreviewModal.client';
 import { EntryCalculationResult } from './EntryCalculationResult';
 import { EntryField, EntryNotice, EntrySection, FactorSourceChip, UnitBadge } from './EntryFormPrimitives';
+import { EvidenceField } from '@/features/activity-evidence/components/EvidenceField.client';
+import { useEvidenceAttachments } from '@/features/activity-evidence/hooks/useEvidenceAttachments';
+import { usePendingEvidenceReport } from '@/features/activity-evidence/hooks/usePendingEvidenceReport';
 
 export interface ActivityEntryFormProps {
   locations: ManualEntryLocationOption[];
-  /** Scope1/2・Scope3 のどちらでも 1 本で受ける。reject 時は error.message をフォーム内に表示する。 */
-  onSave: (entry: ActivityEntryInput) => Promise<void>;
+  /**
+   * Scope1/2・Scope3 のどちらでも 1 本で受ける。reject 時は error.message をフォーム内に表示する。
+   * 新規入力では、帳票の欄に並べた帳票の ID を options.evidenceFileIds で渡す（保存した記録に紐づけるのは呼び出し側）。
+   */
+  onSave: (entry: ActivityEntryInput, options?: { evidenceFileIds: string[] }) => Promise<void>;
   /** 'create'（新規入力・既定）または 'edit'（履歴編集）。edit ではモーダル内に埋め込む。 */
   mode?: EntryMode;
   /** edit のときの初期値。kind でカテゴリ選択肢の保存経路を固定する。 */
@@ -136,6 +143,20 @@ export interface ActivityEntryFormProps {
   excludeRecordId?: string;
   /** 事前警告から重複レコードの編集を開く操作。指定時のみ「既存のレコードを開く」を表示する（新規入力用）。 */
   onOpenDuplicateRecord?: (record: SavedManualActivityRecord) => void;
+  /**
+   * 新規入力のフォームに入れておく値（請求書の読取りの「フォームで開く」）。create のときだけ使う。
+   * 初期値として読むだけなので、別の値を入れ直すときは呼び出し側が key を替えてフォームを作り直す。
+   */
+  prefill?: ActivityEntryPrefill;
+  /** edit のときの記録 ID。帳票の欄が、この記録に紐づいている帳票を読み、足す・外すをその場で反映する。 */
+  recordId?: string;
+  /** edit で帳票の紐づけを変えたあとに、増えた数（外したときは -1）を渡す（入力履歴の帳票の数をその場で直すため）。 */
+  onEvidenceChange?: (delta: number) => void;
+  /**
+   * create で帳票の欄に並べている帳票（まだ記録に紐づけていない）の ID が変わるたびに呼ぶ。
+   * 「帳票の一覧」で、保存で紐づける予定の帳票を削除させないため。
+   */
+  onPendingEvidenceChange?: (fileIds: string[]) => void;
 }
 
 // historyRecords 未指定時の既定値。毎レンダー新しい [] を作ると useMemo の依存が毎回変わるため共有する。
@@ -153,14 +174,23 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   historyRecords = NO_HISTORY_RECORDS,
   excludeRecordId,
   onOpenDuplicateRecord,
+  prefill: prefillProp,
+  recordId,
+  onEvidenceChange,
+  onPendingEvidenceChange,
 }) => {
   const isEdit = mode === 'edit';
   const initialCategory = useMemo(() => entryCategoryFromInitialValues(initialValues), [initialValues]);
+  const prefill = isEdit ? undefined : prefillProp;
 
-  const [selectedLocationId, setSelectedLocationId] = useState(initialValues?.locationId ?? '');
-  const [category, setCategory] = useState<EntryCategory>(initialCategory ?? DEFAULT_ENTRY_CATEGORY);
-  const [targetMonth, setTargetMonth] = useState(() => initialValues?.targetMonth ?? getCurrentYearMonth());
-  const [amount, setAmount] = useState(initialValues?.amount ?? '');
+  const [selectedLocationId, setSelectedLocationId] = useState(initialValues?.locationId ?? prefill?.locationId ?? '');
+  const [category, setCategory] = useState<EntryCategory>(
+    initialCategory ?? (prefill ? { kind: 'energy', energyType: prefill.energyType } : DEFAULT_ENTRY_CATEGORY),
+  );
+  const [targetMonth, setTargetMonth] = useState(
+    () => initialValues?.targetMonth ?? prefill?.targetMonth ?? getCurrentYearMonth(),
+  );
+  const [amount, setAmount] = useState(initialValues?.amount ?? prefill?.amount ?? '');
   // 入力時フィルタで弾いたことの案内（正規化しても数字にならなかったとき）。無言で無視しない。
   const [amountRejected, setAmountRejected] = useState(false);
   // IME 変換中フラグ。変換中の値（全角数字など）を controlled input が巻き戻すと
@@ -171,19 +201,33 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   // 変換開始のたびに取り直し、保存で欄を空にしたときも空に戻す。
   // 保存前の値を持ったままにすると、空欄に数字以外を入れた瞬間に古い活動量が復活し、
   // 翌月分として再保存できてしまう。
-  const lastValidAmountRef = useRef(initialValues?.amount ?? '');
-  const [note, setNote] = useState(initialValues?.note ?? '');
+  const lastValidAmountRef = useRef(initialValues?.amount ?? prefill?.amount ?? '');
+  const [note, setNote] = useState(initialValues?.note ?? prefill?.note ?? '');
   const [showPreview, setShowPreview] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // 削除は誤操作防止のため2段階（1回目で確認表示、2回目で実行）。ダイアログは使わない。
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // 帳票（請求書など）。新規は保存のあとに紐づけ（onSave の options）、編集はその場で紐づけ・外す。
+  const evidence = useEvidenceAttachments({
+    recordId: isEdit ? (recordId ?? null) : null,
+    initialFiles: prefill?.evidenceFiles,
+    onLinkedCountChange: onEvidenceChange,
+  });
+  // 新規入力で並べている帳票を親へ伝える（フォームを外したら空にする）。
+  usePendingEvidenceReport(evidence.fileIds, isEdit ? undefined : onPendingEvidenceChange);
 
+  // 請求書の読取りから入れた値で拠点が決まらなかった（住所が拠点と一致しない）ときは、先頭の拠点に倒さず未選択にし、
+  // 拠点を選ぶまでプレビューを開けないようにする。請求書と関係のない拠点の活動量として黙って保存しないため。
+  const awaitingLocationChoice =
+    prefill !== undefined && !locations.some((location) => location.id === selectedLocationId);
   // 選択肢に無い id（稼働中・一時停止でなくなった拠点の記録を編集中）は採用せず先頭拠点へ倒す。
   // ネイティブ select は一致する option が無いと先頭を表示するため、表示・係数判定・保存内容を一致させる。
-  const effectiveSelectedLocationId = locations.some((location) => location.id === selectedLocationId)
-    ? selectedLocationId
-    : (locations[0]?.id ?? '');
+  const effectiveSelectedLocationId = awaitingLocationChoice
+    ? ''
+    : locations.some((location) => location.id === selectedLocationId)
+      ? selectedLocationId
+      : (locations[0]?.id ?? '');
   const selectedLocation = useMemo(
     () => locations.find((location) => location.id === effectiveSelectedLocationId),
     [locations, effectiveSelectedLocationId],
@@ -248,6 +292,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     applicableYear: factorYear,
     isEdit,
     initialFactorId: isEdit && initialValues?.kind === 'scope12' ? initialValues.emissionFactorId : null,
+    prefillFactor: prefill?.factor ?? null,
   });
   // 対象年月が属する会計年度（画面上部で選択中の年度ではなく、この記録の帰属先）。
   // Scope 3 の算定方法の注記と、IDEA 製品を検索する版（その年度に割り当てた版）の決定に使う。
@@ -428,6 +473,10 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
           ? computeEstimatedEmissions(validAmount, currentUnit, appliedFactor)
           : null;
 
+  // 同じ優先度で名前の違う係数の候補が並ぶ（重油・燃料（その他）・廃棄物など）ときは自動で選ばないので、
+  // 候補から選ぶまでプレビューを開けない（未算定のまま保存されないように）。
+  const isFactorChoicePending = !isIdea && scope12.applied.status === 'resolved' && scope12.applied.ambiguous;
+
   const calculationView = buildCalculationResultView({
     factorSource,
     hasPeriod: period !== null,
@@ -435,7 +484,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     unit: currentUnit,
     factorsReady: isIdea || (scope12.isFactorsReady && scope12.applied.status === 'resolved'),
     appliedFactor,
-    factorAmbiguous: scope12.applied.status === 'resolved' && scope12.applied.ambiguous,
+    factorAmbiguous: isFactorChoicePending,
     productDetail: idea.productDetail,
     estimatedEmissions,
   });
@@ -456,9 +505,12 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     : period !== null && (!fiscalYearsReady || scope12.isLoadingFactors || scope12.applied.status === 'pending');
   const isPreviewBlocked =
     locations.length === 0 ||
+    isFactorChoicePending ||
     initialLocationMissing ||
+    awaitingLocationChoice ||
     isSaving ||
     isDeleting ||
+    evidence.uploading.length > 0 ||
     isFactorLoading ||
     bulkPreview.isResolving;
 
@@ -522,7 +574,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
               isFactorMissing: idea.isFactorMissing,
               detailError: idea.detailError,
             }
-          : { source: factorSource },
+          : { source: factorSource, choicePending: isFactorChoicePending },
       },
       { factorMissing: SCOPE3_FACTOR_MISSING_MESSAGE },
     );
@@ -574,7 +626,10 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     setIsSaving(true);
     setErrorMessage(null);
     try {
-      await onSave(entry);
+      // 帳票を並べたときだけ、保存した記録に紐づける ID を渡す（編集は欄の中で紐づけ済み）。
+      await (isEdit || evidence.fileIds.length === 0
+        ? onSave(entry)
+        : onSave(entry, { evidenceFileIds: evidence.fileIds }));
       setShowPreview(false);
       if (isEdit) {
         // 編集はモーダルを閉じる（親が一覧を再取得する）。
@@ -584,6 +639,8 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
         // 翌月へ送れないとき（当月・算定期間の末月）は対象年月も含めて条件がそのまま残るので、
         // 今保存したレコードが履歴に加わっても条件を変えるまで重複警告は出さない。
         duplicate.markSaved();
+        // 帳票は記録ごとのものなので、次の入力に持ち越さない。
+        evidence.reset();
         setAmount('');
         // 戻す先も空にする（保存前の活動量が次の入力で復活しないように）。
         lastValidAmountRef.current = '';
@@ -608,8 +665,12 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
 
   // ---- 複数月まとめて入力（一括入力） ----
 
+  // 複数月まとめて入力では帳票を紐づけない（対象外）。帳票を付けたまま切り替えると、まとめて保存した記録に
+  // 付かないうえ、単月入力に戻すと次に保存した記録に付いてしまうため、帳票を付けている間は切り替えさせない。
+  const bulkBlockedByEvidence = evidence.files.length > 0 || evidence.uploading.length > 0;
+
   const switchEntryMode = (nextMode: EntryInputMode) => {
-    if (!bulkAvailable || bulk.mode === nextMode) {
+    if (!bulkAvailable || bulk.mode === nextMode || (nextMode === 'bulk' && bulkBlockedByEvidence)) {
       return;
     }
     bulk.setMode(nextMode);
@@ -635,6 +696,8 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
       if (idea.selectedProductId === null || idea.productDetail === null) {
         return idea.isFactorMissing ? SCOPE3_FACTOR_MISSING_MESSAGE : VALIDATION_MESSAGES.product;
       }
+    } else if (isFactorChoicePending) {
+      return VALIDATION_MESSAGES.factorChoice;
     }
     if (note.length > NOTE_MAX_LENGTH) {
       return VALIDATION_MESSAGES.note;
@@ -667,6 +730,8 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
         // 事業者係数を選択中は候補セレクトの上書きは使われない。自動選択（候補先頭）の場合も
         // 代表月の係数 ID を渡し、他の月でも適用可能ならその係数、不可なら各月の自動選択に落とす。
         selectedFactorId: scope12.providerFactor !== null ? null : (scope12.selectedFactor?.id ?? null),
+        // 温対法の年度の境目をまたぐ月では ID が変わるため、名前でも引き直す（選んだ A重油を全月で使う）。
+        selectedFactorName: scope12.providerFactor !== null ? null : (scope12.selectedFactor?.name ?? null),
       },
       productDetail: idea.productDetail,
     });
@@ -785,6 +850,11 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
             データ入力に使用できる拠点がありません。稼働中または一時停止の拠点を登録してください。
           </EntryNotice>
         )}
+        {prefill && (
+          <EntryNotice variant="info">
+            {prefill.sourceLabel}拠点・対象年月・活動量・排出係数を確かめてから「入力プレビュー」で保存してください。
+          </EntryNotice>
+        )}
         {initialLocationMissing && initialValues && (
           <EntryNotice variant="warning">
             この記録の拠点「{initialValues.locationName}」は稼働中・一時停止ではないため、この記録は編集できません（削除は可能です）。拠点管理で状態を変更してから編集してください。
@@ -861,16 +931,33 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
                     id="manual-entry-mode-bulk"
                     type="button"
                     aria-pressed={isBulk}
+                    aria-describedby={!isBulk && bulkBlockedByEvidence ? 'manual-entry-mode-bulk-evidence' : undefined}
                     onClick={() => switchEntryMode('bulk')}
+                    disabled={!isBulk && bulkBlockedByEvidence}
                     className={isBulk ? 'gt-btn-primary' : 'gt-btn'}
                   >
                     複数月まとめて入力
                   </button>
                 </div>
+                {!isBulk && bulkBlockedByEvidence && (
+                  <p id="manual-entry-mode-bulk-evidence" className="mt-1.5 text-xs text-text-muted">
+                    複数月まとめて入力では帳票を紐づけられません。切り替えるときは、⑤ 帳票の欄から帳票を外してください。
+                  </p>
+                )}
               </div>
             )}
 
-            <EntryField htmlFor="manual-location-select" label="拠点">
+            <EntryField
+              htmlFor="manual-location-select"
+              label="拠点"
+              error={
+                awaitingLocationChoice && locations.length > 0
+                  ? prefill?.supplyAddress
+                    ? `請求書の住所（${prefill.supplyAddress}）から拠点を決められませんでした。拠点を選んでください`
+                    : '請求書から需要場所の住所を読み取れなかったため、拠点を決められませんでした。拠点を選んでください'
+                  : null
+              }
+            >
               <select
                 id="manual-location-select"
                 value={effectiveSelectedLocationId}
@@ -880,8 +967,14 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
                   scope12.onConditionChanged('location');
                 }}
                 disabled={isConditionLocked}
+                aria-describedby={awaitingLocationChoice ? 'manual-location-select-error' : undefined}
                 className="gt-field"
               >
+                {awaitingLocationChoice && (
+                  <option value="" disabled>
+                    拠点を選んでください
+                  </option>
+                )}
                 {locations.map((location) => (
                   <option key={location.id} value={location.id}>
                     {location.name}
@@ -993,6 +1086,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
           <EntrySection step={2} title="排出係数の参照" titleId="manual-step-2">
             <ActivityEntryFactorSection
               factorSource={factorSource}
+              hasLocation={selectedLocation !== undefined}
               hasPeriod={period !== null}
               fiscalYearsReady={fiscalYearsReady}
               isEdit={isEdit}
@@ -1111,6 +1205,12 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
           </EntrySection>
         )}
 
+        {locations.length > 0 && !isBulk && (
+          <EntrySection step={5} title="帳票（請求書など）" titleId="manual-step-5" hint="(任意)">
+            <EvidenceField attachments={evidence} isEdit={isEdit} disabled={isSaving || isDeleting} />
+          </EntrySection>
+        )}
+
         {errorMessage && (
           <div
             role="alert"
@@ -1171,7 +1271,11 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
       {previewRows && (
         <ActivityEntryPreviewModal
           mode={mode}
-          rows={previewRows}
+          rows={
+            evidence.files.length > 0 && !isEdit
+              ? [...previewRows, { label: '帳票', value: evidence.files.map((file) => file.fileName).join('、') }]
+              : previewRows
+          }
           cautions={previewCautions}
           isSaving={isSaving}
           onClose={closePreview}

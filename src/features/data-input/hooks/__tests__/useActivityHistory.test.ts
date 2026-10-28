@@ -29,6 +29,7 @@ const record = (
   scope3CategoryId: null,
   ideaFactorId: null,
   ideaProductName: null,
+  evidenceCount: 0,
   ...overrides,
 });
 

@@ -12,9 +12,10 @@
 //
 // service_role は RLS も認証も越えるため、更新対象は必ず Cookie セッションのユーザー自身に固定する。
 
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+// 現在のパスワードの検証（使い捨てのクライアントで signInWithPassword）は、AI の鍵の登録と共通の処理にした。
+import { verifyCurrentPassword } from '@/lib/reauth';
 import type { ActionResult } from '@/types/actionResult';
 
 const MIN_PASSWORD_LENGTH = 8;
@@ -23,28 +24,6 @@ export interface ChangePasswordInput {
   currentPassword: string;
   newPassword: string;
 }
-
-// 現在のパスワードが正しいかを signInWithPassword で検証する。
-// Cookie セッション用のクライアント（@/lib/supabase/server）で呼ぶと、検証で発行された
-// 新しいセッションが Cookie に書き戻されて操作者のセッションが差し替わってしまうため、
-// セッションを永続化しない使い捨てクライアント（anon key）で行う。
-const verifyCurrentPassword = async (email: string, password: string): Promise<boolean> => {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) return false;
-
-  const throwaway = createSupabaseClient(url, anonKey, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-  });
-  const { data, error } = await throwaway.auth.signInWithPassword({ email, password });
-  if (error || !data.session) return false;
-
-  // 検証用に発行したセッションはこのクライアントのメモリから捨てる（scope: 'local'。
-  // 'global' にすると操作者本人のブラウザセッションまで失効する）。GoTrue 側のセッション行は
-  // 有効期限で自然に消えるため、ここでは追加の失効処理をしない。失敗しても検証結果には影響しない。
-  await throwaway.auth.signOut({ scope: 'local' }).catch(() => undefined);
-  return true;
-};
 
 export const changePassword = async (input: ChangePasswordInput): Promise<ActionResult> => {
   const currentPassword = String(input.currentPassword ?? '');

@@ -24,6 +24,12 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { logger as baseLogger } from '@/lib/logging/logger';
 import { createFixedWindowRateLimiter } from '@/lib/security/rateLimit';
+import {
+  UPLOAD_QUARANTINE_BUCKET,
+  UPLOAD_QUARANTINE_STALE_MS,
+  isStorageNotFound,
+  removeStaleQuarantineFiles,
+} from '@/lib/files/uploadQuarantine';
 import type { Logger } from 'pino';
 import { formatIdeaParseErrors, type IdeaParsedMeta, type IdeaParsedRow } from './ideaImport';
 import { readIdeaWorkbookStream } from './ideaImportReader';
@@ -54,7 +60,7 @@ export const IDEA_IMPORT_SQLSTATE = {
 export const IDEA_IMPORT_MAX_FILE_SIZE_BYTES = 52_428_800;
 
 /** ブラウザが直接アップロードする一時置き場のバケット（20260831000003_storage.sql §1） */
-export const IDEA_UPLOAD_BUCKET = 'upload-quarantine';
+export const IDEA_UPLOAD_BUCKET = UPLOAD_QUARANTINE_BUCKET;
 
 /** 組織フォルダ直下のサブフォルダ。他の取込機能を再導入したときにパスが衝突しないようにする */
 const IDEA_UPLOAD_FOLDER = 'idea-imports';
@@ -202,10 +208,6 @@ export const consumeIdeaUploadUrlQuota = (organizationId: string): boolean =>
 /** テスト用。レート制限の状態を破棄する */
 export const resetIdeaUploadUrlQuota = (): void => uploadUrlRateLimiter.reset();
 
-/** Storage のエラーが「オブジェクトが無い」か（storage-js は HTTP 400 + statusCode '404' で返す） */
-const isStorageNotFound = (error: { message?: string; statusCode?: string } | null): boolean =>
-  error?.statusCode === '404' || /not found/i.test(error?.message ?? '');
-
 export type IdeaUploadDownloadResult =
   | { ok: true; buffer: Buffer }
   | {
@@ -260,63 +262,20 @@ export const removeIdeaUploadFile = async (
   }
 };
 
-/**
- * quarantine に取り残されたファイルとみなす経過時間。
- * アップロード後にタブを閉じる等で取込 API が呼ばれないとファイルが残るため、署名付き URL の
- * 有効期限（既定 2 時間）より十分長い時間を過ぎたものを、次の URL 発行時に掃除する。
- * 進行中の取込が使うファイル（数分で消える）を巻き込まない長さにしてある。
- */
-export const IDEA_UPLOAD_STALE_MS = 24 * 60 * 60 * 1000;
-
-/** 1 ページの一覧件数と、1 回の掃除で読むページ数の上限（最大 1,000 件。通常は 0〜数件） */
-const IDEA_UPLOAD_CLEANUP_PAGE_SIZE = 100;
-const IDEA_UPLOAD_CLEANUP_MAX_PAGES = 10;
+/** quarantine に取り残されたファイルとみなす経過時間（帳票の一時ファイルと同じ。src/lib/files/uploadQuarantine.ts） */
+export const IDEA_UPLOAD_STALE_MS = UPLOAD_QUARANTINE_STALE_MS;
 
 /**
- * 組織の quarantine フォルダから、IDEA_UPLOAD_STALE_MS を過ぎたファイルを削除する。
- * 署名付き URL の発行時に呼ぶ「ついでの掃除」で、スケジューラ無しにホスティングを問わず動かす
- * ためこの形にしている。一覧はページングして全件を見る（名前順で返るため、1 ページ目が新しい
- * ファイルで埋まっていても古いものを取り残さない）。一覧・削除の失敗は URL 発行を止めず、ログにだけ残す。
+ * 組織の quarantine フォルダから、IDEA_UPLOAD_STALE_MS を過ぎたファイルを削除する（署名付き URL の発行時の
+ * 「ついでの掃除」。一覧はページングして全件を見る。失敗は URL 発行を止めずログにだけ残す）。
  * 戻り値は削除したパス（テスト・ログ用）。
  */
-export const removeStaleIdeaUploadFiles = async (
+export const removeStaleIdeaUploadFiles = (
   supabase: SupabaseClient,
   organizationId: string,
   log: Logger,
   now: number = Date.now(),
-): Promise<string[]> => {
-  const folder = `${organizationId}/${IDEA_UPLOAD_FOLDER}`;
-  const threshold = now - IDEA_UPLOAD_STALE_MS;
-  const stalePaths: string[] = [];
-  for (let page = 0; page < IDEA_UPLOAD_CLEANUP_MAX_PAGES; page++) {
-    const { data, error } = await supabase.storage.from(IDEA_UPLOAD_BUCKET).list(folder, {
-      limit: IDEA_UPLOAD_CLEANUP_PAGE_SIZE,
-      offset: page * IDEA_UPLOAD_CLEANUP_PAGE_SIZE,
-    });
-    if (error) {
-      log.warn({ error, folder }, 'アップロード一時ファイルの一覧に失敗しました');
-      return [];
-    }
-    const objects = data ?? [];
-    stalePaths.push(
-      ...objects
-        // id が null の要素はフォルダ。created_at が読めないものは安全側（残す）に倒す
-        .filter((object) => object.id !== null && object.created_at !== null)
-        .filter((object) => new Date(object.created_at!).getTime() < threshold)
-        .map((object) => `${folder}/${object.name}`),
-    );
-    if (objects.length < IDEA_UPLOAD_CLEANUP_PAGE_SIZE) break;
-  }
-  if (stalePaths.length === 0) return [];
-
-  const { error: removeError } = await supabase.storage.from(IDEA_UPLOAD_BUCKET).remove(stalePaths);
-  if (removeError) {
-    log.warn({ error: removeError, stalePaths }, '取り残されたアップロード一時ファイルの削除に失敗しました');
-    return [];
-  }
-  log.info({ count: stalePaths.length }, '取り残されたアップロード一時ファイルを削除しました');
-  return stalePaths;
-};
+): Promise<string[]> => removeStaleQuarantineFiles(supabase, `${organizationId}/${IDEA_UPLOAD_FOLDER}`, log, now);
 
 /** 配列を size 件ずつに分割する（純関数。チャンク挿入用） */
 export const chunkArray = <T>(items: readonly T[], size: number): T[][] => {

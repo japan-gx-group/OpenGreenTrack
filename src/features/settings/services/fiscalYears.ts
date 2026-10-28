@@ -7,13 +7,14 @@
 //   書き込み GRANT が無い（supabase/migrations/20260831000001_rls.sql の fiscal_years は
 //   grant select のみ・書き込みポリシー無し）ため、追加・削除は service_role 経由になる。
 //
-// ロールによる絞り込みは行わない（認証済みユーザーは同一権限として扱う）。ただし service_role は
-// RLS を越えるため、対象を Cookie セッションから引いた caller.organizationId の年度に
-// 限定する処理（各クエリの organizationId 条件）はここでしか担保できない。消さないこと。
+// 年度の追加・削除は管理者だけに許す（requireAdmin）。一覧はメンバーも見られる（画面の表示と削除の可否の判定に使う）。
+// service_role は RLS を越えるため、管理者の確認と、対象を Cookie セッションから引いた
+// caller.organizationId の年度に限定する処理（各クエリの organizationId 条件）はここでしか担保できない。消さないこと。
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getCurrentProfile } from '@/lib/currentProfile';
+import { requireAdmin } from '@/lib/authz';
 import {
   deriveFiscalYearPeriod,
   formatFiscalYearPeriod,
@@ -110,10 +111,11 @@ const getOrganizationFiscalYearStartMonth = async (
 export const addFiscalYear = async (
   input: AddFiscalYearInput,
 ): Promise<ActionResult<FiscalYearCreated>> => {
-  const caller = await getCurrentProfile();
-  if (!caller) {
-    return { ok: false, error: 'セッションが確認できません。ログインし直してください' };
+  const check = await requireAdmin();
+  if (!check.ok) {
+    return { ok: false, error: check.error };
   }
+  const caller = check.profile;
 
   const startYear = Number(input.startYear);
   if (!Number.isInteger(startYear) || startYear < 2000 || startYear > 2100) {
@@ -250,10 +252,11 @@ export const listFiscalYearsWithUsage = async (): Promise<ActionResult<FiscalYea
 // 年度の削除。参照データ（算定・目標・供給者データ等）が1件でもあれば削除しない（ガード）。
 // 破壊的な cascade 削除を防ぐため、削除直前にサーバ側で再チェックする（画面の状態は信用しない）。
 export const deleteFiscalYear = async (id: string): Promise<ActionResult> => {
-  const caller = await getCurrentProfile();
-  if (!caller) {
-    return { ok: false, error: 'セッションが確認できません。ログインし直してください' };
+  const check = await requireAdmin();
+  if (!check.ok) {
+    return { ok: false, error: check.error };
   }
+  const caller = check.profile;
   if (!id) {
     return { ok: false, error: '対象の年度が指定されていません' };
   }

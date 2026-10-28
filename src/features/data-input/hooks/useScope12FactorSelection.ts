@@ -12,11 +12,12 @@ import {
   deriveApplicableYear,
 } from '@/features/calculation/engine/resolveEmissionFactor';
 import type { EnergyType } from '@/features/calculation/types';
-import type { ManualEntryLocationOption } from '../types';
+import type { EntryFactorPrefill, ManualEntryLocationOption } from '../types';
 import { isProviderCategory, type FactorTypeChoice } from '../services/entryCategory';
 import {
   DEFAULT_PROVIDER_SELECTION,
   listApplicableProviderFactors,
+  isAmbiguousEntryChoice,
   listEntryFactorCandidates,
   listMenuOptions,
   resolveAppliedFactor,
@@ -34,7 +35,7 @@ import {
   type CandidateFactorRow,
 } from '../services/factorSelectionService';
 import type { ManualEntryPeriodDates } from '../services/manualEntryTargetMonth';
-import { buildProviderOptions, type ProviderOption } from '../services/providerOptions';
+import { buildProviderOptions, normalizeProviderName, type ProviderOption } from '../services/providerOptions';
 import { useKeyedLoader } from './useKeyedLoader';
 
 export const FACTOR_LOAD_ERROR_MESSAGE = '排出係数の取得に失敗しました。時間をおいて再度お試しください。';
@@ -70,6 +71,11 @@ export interface UseScope12FactorSelectionArgs {
   isEdit: boolean;
   /** 編集で開いたレコードの emissionFactorId（Scope3 レコード・新規は null）。 */
   initialFactorId: string | null;
+  /**
+   * 新規入力に入れておく係数の選択（請求書の読取りの「フォームで開く」）。事業者別係数は事業者名・メニュー名を
+   * ユーザーの選択として持ち、標準係数は同じ名前の候補を選ぶ。どちらもユーザーが選び直せば上書きされる。
+   */
+  prefillFactor?: EntryFactorPrefill | null;
 }
 
 export interface Scope12FactorSelectionView {
@@ -100,6 +106,11 @@ export interface Scope12FactorSelectionView {
   factorCandidates: CandidateFactorRow[];
   /** 候補セレクトの value（ユーザーの選択） */
   selectedFactor: CandidateFactorRow | null;
+  /**
+   * 標準係数の候補に、同じ優先度で名前の違う係数が並ぶ（自動では選ばない）。候補セレクトに「・自動選択」を付けず、
+   * 選ぶまで（selectedFactor が null の間）は「候補から選んでください」を出す。保存の可否は applied.ambiguous で決める。
+   */
+  factorChoiceAmbiguous: boolean;
   selectFactorId: (factorId: string) => void;
   factorTouched: boolean;
   factorIdToSave: string | null;
@@ -135,7 +146,20 @@ export const useScope12FactorSelection = (
   // 供給事業者別係数の選択状態（電気・都市ガス・熱のみ）。事業者別係数は自動解決の対象外のため、
   // ここで選択した係数を明示指定として保存する。事業者未選択のままなら従来どおり自動解決（代替値）。
   // null = ユーザー未操作。その間は取得済みの事業者係数行から復元した値（派生）を使う。
-  const [providerSelection, setProviderSelection] = useState<ProviderSelection | null>(null);
+  // フォームの外で決めた候補（prefillFactor）があれば、それをユーザーの選択として始める（計算方法は既定のまま）。
+  const [providerSelection, setProviderSelection] = useState<ProviderSelection | null>(() =>
+    args.prefillFactor?.kind === 'provider'
+      ? {
+          ...DEFAULT_PROVIDER_SELECTION,
+          providerName: normalizeProviderName(args.prefillFactor.providerName),
+          menuName: args.prefillFactor.menuName,
+        }
+      : null,
+  );
+  // フォームの外で決めた標準係数の名前。候補セレクトで選び直す・カテゴリを変えるまで、同じ名前の候補を選ぶ。
+  const [prefillFactorName, setPrefillFactorName] = useState<string | null>(
+    args.prefillFactor?.kind === 'standard' ? args.prefillFactor.factorName : null,
+  );
 
   const yearFactors = yearLoader.state?.status === 'ready' ? yearLoader.state.value : EMPTY_FACTORS;
   const factorLoadError = yearLoader.state?.status === 'error' ? yearLoader.state.message : null;
@@ -198,7 +222,20 @@ export const useScope12FactorSelection = (
     () => (scope ? listEntryFactorCandidates(scope, yearFactors) : EMPTY_FACTORS),
     [scope, yearFactors],
   );
-  const selectedFactor = resolveSelectedFactor({ providerFactor, candidates: factorCandidates, selectedFactorId });
+  const factorChoiceAmbiguous = useMemo(
+    () => (scope ? isAmbiguousEntryChoice(scope, factorCandidates) : false),
+    [scope, factorCandidates],
+  );
+  // フォームの外（請求書の読取りなど）で決めた係数は、選んだ係数として扱う（同じ優先度の候補が並んでいても、
+  // 読み取った係数を使う。人が候補から選び直せる）。
+  const prefillFactorId =
+    prefillFactorName !== null ? (factorCandidates.find((factor) => factor.name === prefillFactorName)?.id ?? null) : null;
+  const selectedFactor = resolveSelectedFactor({
+    providerFactor,
+    candidates: factorCandidates,
+    selectedFactorId: selectedFactorId ?? prefillFactorId,
+    ambiguous: factorChoiceAmbiguous,
+  });
   const factorIdToSave = resolveFactorIdToSave({
     isEdit: args.isEdit,
     factorTouched,
@@ -262,8 +299,10 @@ export const useScope12FactorSelection = (
     },
     factorCandidates,
     selectedFactor,
+    factorChoiceAmbiguous: providerFactor === null && factorChoiceAmbiguous,
     selectFactorId: (factorId) => {
       setSelectedFactorId(factorId);
+      setPrefillFactorName(null);
       touch();
     },
     factorTouched,
@@ -277,6 +316,7 @@ export const useScope12FactorSelection = (
       touch();
       if (change === 'category') {
         setProviderSelection({ ...effectiveSelection, providerName: null, menuName: null });
+        setPrefillFactorName(null);
       } else if (providerSelection === null && restoredSelection !== null) {
         // 復元した事業者選択は取得済みの行から導く派生値なので、年度が変わって行が入れ替わると失われる。
         // 拠点・対象年月の変更時点で state に固定し、新年度の同事業者係数へ追従できるようにする。

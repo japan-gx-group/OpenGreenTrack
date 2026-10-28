@@ -39,10 +39,10 @@ OpenGreenTrack は **Next.js（App Router）+ Supabase** で構成します。
 
 ## Supabase の責務
 
-- **Database（Postgres）**: スキーマは `supabase/migrations/*.sql` で管理する（**DDL のみ**。v1.0 初期スキーマは `schema` / `rls` / `rpc` / `storage` の 4 ファイルで、データは一切置かない — `AGENTS.md` R12。唯一の例外が `storage` の `storage.buckets` への `insert`（バケットはインフラ設定のため））。データは `supabase/seeds/` で管理する（`production/` = 本番でも投入する公式排出係数マスタ、`demo/` = デモ・テスト用データ）。テーブル設計の説明は `docs/database-design.md` を参照
+- **Database（Postgres）**: スキーマは `supabase/migrations/*.sql` で管理する（**DDL のみ**。v1.0 初期スキーマは `schema` / `rls` / `rpc` / `storage` の 4 ファイルで、データは一切置かない — `AGENTS.md` R12。例外は `storage.buckets` への `insert` / `update` だけで、`storage` と `activity_evidence`（`import-files` に WebP を足す）の 2 本が当たる（バケットはインフラ設定のため））。データは `supabase/seeds/` で管理する（`production/` = 本番でも投入する公式排出係数マスタ、`demo/` = デモ・テスト用データ）。テーブル設計の説明は `docs/database-design.md` を参照
 - **Auth**: メール+パスワード等でログイン。ユーザーは必ずいずれかの組織（organization）に属する
 - **RLS（Row Level Security）**: すべてのテーブルで有効化する
-- **Storage**: IDEA データベースの Excel（数十MB）の一時置き場として `upload-quarantine` バケットを使う。ブラウザは `POST /api/idea-imports/upload-url`（`service_role`）が発行した署名付き URL でのみ書き込め、サーバがパスを検証してから取得・解析し、取込の完了・失敗のいずれでも削除する（原本は保存しない。ブラウザからの直接 select / delete ポリシーは置かない）。`import-files` バケットは現在使っておらず、取込原本の保存を導入するときの受け皿として定義だけを `20260831000003_storage.sql` に残している
+- **Storage**: IDEA データベースの Excel（数十MB）の一時置き場として `upload-quarantine` バケットを使う。ブラウザは `POST /api/idea-imports/upload-url`（`service_role`）が発行した署名付き URL でのみ書き込め、サーバがパスを検証してから取得・解析し、取込の完了・失敗のいずれでも削除する（原本は保存しない。ブラウザからの直接 select / delete ポリシーは置かない）。`import-files` バケットには、活動量の帳票（請求書など）を `{organizationId}/activity-evidence/{id}.{拡張子}` に置く（`20261026120000_activity_evidence.sql`。PDF・PNG・JPEG・WebP、10MB まで）。帳票も同じく、`POST /api/activity-evidence/upload-url` が発行した署名付き URL で `upload-quarantine` に上げ、`POST /api/activity-evidence` が中身（先頭のバイト・大きさ）を確かめてから置き直す。読み出しは `import_files_select_own_organization` で自組織のフォルダに限った署名付き URL で行う。帳票のフォルダはブラウザから直接消せない（`import_files_delete_own_organization` から外す。削除は `DELETE /api/activity-evidence/[id]` だけ）
 
 ## RLS の考え方（マルチテナントの肝）
 
@@ -61,6 +61,11 @@ OpenGreenTrack は複数企業（organization）が同居するマルチテナ�
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ブラウザに公開される | 匿名キー。**RLS前提で公開してよい**キー |
 | `SUPABASE_SERVICE_ROLE_KEY` | **サーバのみ。絶対に公開しない** | RLSをバイパスする管理者キー。バッチ等の限定用途 |
 | `LOG_LEVEL` | サーバのみ | Pino ロガーの最小ログレベル (`info`, `debug`, `error` など。デフォルト: `info`) |
+| `AI_PROVIDER` | サーバのみ | AI の提供元（`anthropic` / `google` / `openai`）。任意 |
+| `AI_API_KEY` | **サーバのみ。絶対に公開しない** | AI の提供元の API キー。`src/lib/ai/config.ts` だけが読み、ブラウザ・ログへは出さない。任意 |
+| `AI_ALLOW_KEY_REGISTRATION` | サーバのみ | `true` で、管理者が画面から API キーを登録する方式（方式B）にする。任意（既定は方式A） |
+| `AI_ENCRYPTION_KEY` | **サーバのみ。絶対に公開しない** | 方式B で登録した API キーを暗号化する鍵（32 バイトの base64）。`SUPABASE_SERVICE_ROLE_KEY` とは別の値にする |
+| `AI_ALLOWED_PROVIDERS` | サーバのみ | 方式B で登録してよい提供元（カンマ区切り）。未設定なら 3 社すべて |
 
 `.env.example` をコピーして `.env.local` を作成する（`.env.local` はコミット禁止）。
 
@@ -87,6 +92,39 @@ OpenGreenTrack ではセルフホスト・単一テナント運用を前提と�
    - 未認証で叩ける唯一の API です（`src/proxy.ts` の matcher から除外）。監視ツールはログイン不要でアクセスできます。
    - 接続確認は `service_role` クライアントで行います。RLS ポリシーがすべて `to authenticated` のため、anon では DB が正常でも `permission denied` になり疎通を判定できないためです。レスポンスは `ok` / `error` の2値のみで、DB のエラー詳細やデータは一切返さずサーバーログにのみ残します。
 
+
+## AI 連携（`src/lib/ai/`）
+
+AI を使う機能（請求書の読取り・開示文の下書きなど）は、提供元の API を直接呼ばず、共通の入口 `generateStructured`（`src/lib/ai/generate.ts`）だけを通す。鍵・提供元・モデルの解決、回数の上限、監査ログ、エラーの分類を 1 か所にまとめるため。`src/lib/ai/` はすべてサーバ専用（`import 'server-only'`）。
+
+| ファイル | 役割 |
+|---|---|
+| `config.ts` | 環境変数の読み取りと検証。方式A（`AI_PROVIDER` / `AI_API_KEY`）か方式B（`AI_ALLOW_KEY_REGISTRATION=true`）かもここで決める。足りない・不正なら AI を使えない状態にする |
+| `credentials.ts` | 鍵の取り出し。方式A は環境変数、方式B は `ai_credentials` の暗号文を復号する。呼び出し側は方式の違いを知らずに済む |
+| `crypto.ts` | 方式B の鍵の暗号化と復号（AES-256-GCM。追加認証データに組織 ID と提供元）。暗号化の鍵は環境変数 `AI_ENCRYPTION_KEY` |
+| `providers/` | 3 社（Anthropic・Google（Gemini API）・OpenAI）の呼び出し。SDK を使わず `fetch`。送信先の URL は固定し、リダイレクトは追わない。HTTP のエラーは共通の分類（`AiErrorCode`）にそろえ、提供元のエラー本文は出さない |
+| `purposes.ts` | 用途の一覧。AI を使う機能は、ここに用途（送ってよい入力の種類・量、回数の上限、出力の上限）を登録してから呼ぶ |
+| `inputCheck.ts` | 入力の確認。ファイルの形式は先頭のバイトで判定する（PDF・PNG・JPEG・WebP） |
+| `schema.ts` | 出力の形（JSON スキーマ）が 3 社で使える書き方かの確認 |
+| `rateLimit.ts` | 回数の上限（用途ごとの 1 分・24 時間、組織全体の 24 時間）。監査ログの件数で数える |
+| `auditLog.ts` | 監査ログ（`system_audit_logs` の `ai.request`）。鍵・送った内容・出力は残さない |
+| `models.ts` | 使えるモデルの一覧（AI の設定のプルダウン） |
+
+AI を使う機能が守ること:
+
+- 用途を登録し、`generateStructured` だけを使う。機能の Route Handler でログインと組織を確かめ、`getCurrentProfile()` の結果を `profile` に渡す。
+- 送る前に、共通の確認ダイアログ（`src/features/ai/components/AiSendConfirmDialog.client.tsx`）で送り先と送る内容を見せる。
+- 送るのは必要なものだけにする。利用者が入力した文は `instructions` に混ぜず、`input` の `text` として渡す。送るためだけにファイルを保存しない（記録の根拠として残すファイルは、その機能の保存の流れで保存してから読む。例: 請求書の読取りは帳票として保存した請求書を読む）。
+- 出力の形を決め、`validate` で値の範囲まで確かめる（範囲の指定は JSON スキーマに書かない）。
+- AI の出力はそのまま確定データにしない。画面で「候補」として見せ、保存は人が行う。出力は文字として表示する（HTML として解釈しない）。
+- テストでは鍵らしい文字列を書かない（CI の Secret Scan に当たる）。ダミーの鍵は `'x'.repeat(24)` のように作る。
+
+登録済みの用途（`purposes.ts`）:
+
+| 用途 | 機能 | 送るもの | 1 分 / 24 時間 |
+|---|---|---|---|
+| `invoice_reading` | 請求書の読取り（データ入力。`src/features/invoice-reading/`） | 請求書の PDF・画像（保存済みの帳票） | 10 / 200 回 |
+| `invoice_factor_matching` | 請求書の排出係数の判定（同上） | 読み取った事業者名・料金メニュー・燃料の名称と、排出係数の候補（公表値）の文字 | 10 / 200 回 |
 
 ## Supabaseクライアントの使い分け（`src/lib/supabase/`）
 

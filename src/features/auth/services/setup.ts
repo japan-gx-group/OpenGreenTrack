@@ -175,8 +175,7 @@ export const setupOrganization = async (
     await deleteUserQuiet();
   };
 
-  // 3) プロフィール作成。初回登録者の role は 'admin' のまま記録する。
-  //    ロール無効化中のため権限は付与されない（DB 値の互換のための保存）。
+  // 3) プロフィール作成。初回登録者（組織を作った人）は管理者（role = 'admin'）にする。
   const { error: profileError } = await admin.from('profiles').insert({
     id: userId,
     organizationId,
