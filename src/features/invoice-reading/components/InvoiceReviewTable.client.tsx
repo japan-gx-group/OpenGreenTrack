@@ -7,6 +7,8 @@
 import React from 'react';
 import { ArrowDownToLine, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { MANUAL_ACTIVITY_CATEGORY_MAP, type ActivityEntryPrefill, type ManualEntryLocationOption } from '@/features/data-input/types';
 import { normalizeAmountInput } from '@/features/data-input/services/entrySubmission';
 import { openEvidenceFile } from '@/features/activity-evidence/services/evidenceClient';
@@ -110,53 +112,53 @@ export const InvoiceReviewTable = ({
   onApply: (prefill: ActivityEntryPrefill) => void;
   disabled?: boolean;
 }) => (
-  <div className="overflow-x-auto" data-testid="invoice-review-table">
-    <table className="gt-table">
-      <thead>
-        <tr>
-          <th style={{ width: '56px' }}>登録</th>
-          <th style={{ minWidth: '160px' }}>帳票</th>
-          <th style={{ minWidth: '150px' }}>拠点</th>
-          <th style={{ minWidth: '140px' }}>対象年月</th>
-          <th style={{ minWidth: '150px' }}>活動量</th>
-          <th style={{ minWidth: '240px' }}>排出係数</th>
-          <th className="gt-num" style={{ minWidth: '110px' }}>
-            排出量
-          </th>
-          <th style={{ minWidth: '220px' }}>判定・確かめること</th>
-          <th aria-label="操作" />
-        </tr>
-      </thead>
-      <tbody>
+  <div data-testid="invoice-review-table">
+    {/* 横に長いときは Table の入れ物（overflow-x-auto）が横にスクロールする */}
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-14">登録</TableHead>
+          <TableHead className="min-w-[160px]">帳票</TableHead>
+          <TableHead className="min-w-[150px]">拠点</TableHead>
+          <TableHead className="min-w-[140px]">対象年月</TableHead>
+          <TableHead className="min-w-[150px]">活動量</TableHead>
+          <TableHead className="min-w-[240px]">排出係数</TableHead>
+          <TableHead className="min-w-[110px] text-right">排出量</TableHead>
+          <TableHead className="min-w-[220px]">判定・確かめること</TableHead>
+          <TableHead aria-label="操作" />
+        </TableRow>
+      </TableHeader>
+      <TableBody>
         {review.rows.map((row) => {
           const key = row.source.key;
           const unit = MANUAL_ACTIVITY_CATEGORY_MAP[row.source.energyType].unit;
           return (
-            <tr key={key} data-testid="invoice-review-row">
-              <td>
-                <input
-                  type="checkbox"
+            <TableRow key={key} data-testid="invoice-review-row">
+              <TableCell>
+                <Checkbox
                   aria-label={`${row.source.item.title} を登録する`}
                   checked={row.include}
                   disabled={disabled || !row.canInclude}
-                  onChange={(event) => review.setInclude(key, event.target.checked)}
+                  onCheckedChange={(checked) => review.setInclude(key, checked === true)}
                 />
-              </td>
-              <td>
+              </TableCell>
+              <TableCell className="whitespace-normal">
                 <div className="text-sm font-medium text-text-heading">{row.source.item.title}</div>
-                <button
+                <Button
                   type="button"
-                  className="inline-flex items-center gap-1 break-all text-left text-xs text-primary underline underline-offset-2"
+                  variant="link"
+                  size="xs"
+                  className="h-auto justify-start whitespace-normal break-all p-0 text-left"
                   onClick={() => void openEvidenceFile(row.source.evidence.storagePath).catch(() => undefined)}
                 >
-                  <ExternalLink size={12} aria-hidden="true" />
+                  <ExternalLink aria-hidden="true" />
                   {row.source.evidence.fileName}
-                </button>
+                </Button>
                 {row.source.item.planOrFuelName && (
                   <div className="text-xs text-text-muted">{row.source.item.planOrFuelName}</div>
                 )}
-              </td>
-              <td>
+              </TableCell>
+              <TableCell>
                 <select
                   aria-label="拠点"
                   className="gt-field h-8 text-xs"
@@ -173,8 +175,8 @@ export const InvoiceReviewTable = ({
                     </option>
                   ))}
                 </select>
-              </td>
-              <td>
+              </TableCell>
+              <TableCell>
                 <input
                   type="month"
                   aria-label="対象年月"
@@ -183,8 +185,8 @@ export const InvoiceReviewTable = ({
                   disabled={disabled}
                   onChange={(event) => review.setValue(key, { targetMonth: event.target.value })}
                 />
-              </td>
-              <td>
+              </TableCell>
+              <TableCell className="whitespace-normal">
                 <span className="flex items-center gap-1">
                   <input
                     type="text"
@@ -200,12 +202,12 @@ export const InvoiceReviewTable = ({
                 {row.source.item.printedAmount && (
                   <span className="text-xs text-text-muted">請求書: {row.source.item.printedAmount}</span>
                 )}
-              </td>
-              <td>
+              </TableCell>
+              <TableCell className="whitespace-normal">
                 <FactorCell row={row} review={review} disabled={disabled} />
-              </td>
-              <td className="gt-num text-sm">{formatEmissions(row.check.emissions)}</td>
-              <td>
+              </TableCell>
+              <TableCell className="text-right text-sm tabular-nums">{formatEmissions(row.check.emissions)}</TableCell>
+              <TableCell className="whitespace-normal">
                 <InvoiceJudgementBadge judgement={row.source.item.factor} />
                 {[...(row.saveError ? [row.saveError] : []), ...row.check.errors].map((message) => (
                   <p key={message} className="text-xs text-danger">
@@ -217,17 +219,17 @@ export const InvoiceReviewTable = ({
                     {message}
                   </p>
                 ))}
-              </td>
-              <td>
+              </TableCell>
+              <TableCell>
                 <Button type="button" variant="ghost" size="sm" disabled={disabled} onClick={() => onApply(review.prefillOf(row))}>
                   <ArrowDownToLine />
                   フォームで開く
                 </Button>
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           );
         })}
-      </tbody>
-    </table>
+      </TableBody>
+    </Table>
   </div>
 );

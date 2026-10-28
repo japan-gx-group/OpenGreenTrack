@@ -214,7 +214,10 @@ const settle = async () => {
   for (let index = 0; index < 5; index += 1) await act(async () => {});
 };
 
-const checkbox = (title: string) => document.body.querySelector<HTMLInputElement>(`input[aria-label="${title} を登録する"]`)!;
+// 行の「登録する」は shadcn の Checkbox（role="checkbox" のボタン。状態は aria-checked）。
+const checkbox = (title: string) =>
+  document.body.querySelector<HTMLButtonElement>(`button[role="checkbox"][aria-label="${title} を登録する"]`)!;
+const isChecked = (title: string) => checkbox(title).getAttribute('aria-checked') === 'true';
 
 const readAndReview = async () => {
   chooseFiles([pdf('9月分.pdf')]);
@@ -276,12 +279,19 @@ describe('InvoiceReadingCard', () => {
     await readAndReview();
 
     expect(document.body.querySelectorAll('[data-testid="invoice-review-row"]')).toHaveLength(2);
-    expect(checkbox('電気 2025年9月分').checked).toBe(true);
-    expect(checkbox('ガソリン 2025年9月分').checked).toBe(true);
+    expect(isChecked('電気 2025年9月分')).toBe(true);
+    expect(isChecked('ガソリン 2025年9月分')).toBe(true);
     expect(document.body.textContent).toContain('0.4 t-CO2e');
     expect(document.body.textContent).toContain('0.229 t-CO2e');
     // フォームに入れられない明細は、理由と一緒に表の下に出す。
     expect(document.body.textContent).toContain('9月分.pdf「水道 2025年9月分」: 対象外の請求書です');
+
+    // チェックを外すと件数から抜け、付け直すと戻る。
+    click(checkbox('ガソリン 2025年9月分'));
+    expect(isChecked('ガソリン 2025年9月分')).toBe(false);
+    expect(buttonByText('選んだ明細を登録（1 件）')).toBeDefined();
+    click(checkbox('ガソリン 2025年9月分'));
+    expect(isChecked('ガソリン 2025年9月分')).toBe(true);
 
     click(buttonByText('選んだ明細を登録（2 件）')!);
     const dialog = document.body.querySelector('[role="dialog"]')!;
@@ -368,7 +378,7 @@ describe('InvoiceReadingCard', () => {
     });
     await settle();
     expect(checkbox('重油 2025年9月分').disabled).toBe(false);
-    expect(checkbox('重油 2025年9月分').checked).toBe(true);
+    expect(isChecked('重油 2025年9月分')).toBe(true);
   });
 
   it('保存した帳票（読み取った請求書）の ID を親へ伝える（「帳票の一覧」で削除させないため）', async () => {
@@ -385,7 +395,8 @@ describe('InvoiceReadingCard', () => {
     const { onApply } = renderCard();
     await readAndReview();
 
-    click(document.body.querySelectorAll<HTMLButtonElement>('[data-testid="invoice-review-row"] button')[1]);
+    const firstRow = document.body.querySelector('[data-testid="invoice-review-row"]')!;
+    click(Array.from(firstRow.querySelectorAll('button')).find((button) => button.textContent?.trim() === 'フォームで開く')!);
     expect(onApply).toHaveBeenCalledWith(
       expect.objectContaining({
         locationId: 'tokyo',

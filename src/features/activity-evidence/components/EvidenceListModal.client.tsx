@@ -80,7 +80,7 @@ export const EvidenceListModal = ({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="min-w-[220px]">ファイル</TableHead>
+                  <TableHead className="min-w-[160px]">ファイル</TableHead>
                   <TableHead>上げた人</TableHead>
                   <TableHead>日時</TableHead>
                   <TableHead>記録</TableHead>
@@ -100,7 +100,7 @@ export const EvidenceListModal = ({
                         </div>
                       </TableCell>
                       <TableCell>{(file.uploadedBy && list.uploaderNames.get(file.uploadedBy)) || '—'}</TableCell>
-                      <TableCell>{formatDateTime(file.createdAt)}</TableCell>
+                      <TableCell className="whitespace-normal">{formatDateTime(file.createdAt)}</TableCell>
                       <TableCell>
                         {file.linkCount > 0 ? (
                           <Badge variant="accent" size="sm">
@@ -117,11 +117,11 @@ export const EvidenceListModal = ({
                         )}
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center justify-end gap-1">
+                        <div className="flex flex-wrap items-center justify-end gap-1">
                           <Button
                             type="button"
                             variant="ghost"
-                            size="sm"
+                            size="xs"
                             onClick={() => {
                               setOpenError(null);
                               openEvidenceFile(file.storagePath).catch((error: unknown) =>
@@ -138,7 +138,7 @@ export const EvidenceListModal = ({
                               <Button
                                 type="button"
                                 variant="destructive"
-                                size="sm"
+                                size="xs"
                                 onClick={async () => {
                                   await list.remove(file.id);
                                   setConfirmingId(null);
@@ -147,7 +147,7 @@ export const EvidenceListModal = ({
                               >
                                 削除する
                               </Button>
-                              <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmingId(null)}>
+                              <Button type="button" variant="ghost" size="xs" onClick={() => setConfirmingId(null)}>
                                 やめる
                               </Button>
                             </>
@@ -155,7 +155,7 @@ export const EvidenceListModal = ({
                             <Button
                               type="button"
                               variant="ghost"
-                              size="sm"
+                              size="xs"
                               onClick={() => setConfirmingId(file.id)}
                               disabled={file.linkCount > 0 || isPending}
                               title={
