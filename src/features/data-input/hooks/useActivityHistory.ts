@@ -4,7 +4,7 @@
 // 画面を開いたときと、ヘッダーの更新ボタン（refreshToken）で取り直す。
 // 保存直後の行は prepend で先頭に足し、しばらく「NEW」を出す。
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppRefresh } from '@/hooks/useAppRefresh';
 import type { ShowToast } from '@/hooks/useToast';
 import { formatDateTime } from '@/lib/datetime';
@@ -129,6 +129,8 @@ export interface ActivityHistory {
   refresh: () => Promise<void>;
   /** 保存した行を先頭に足し、しばらく「NEW」を出す。1 ページ目へ戻すのは呼び出し側の責務 */
   prepend: (record: SavedManualActivityRecord) => void;
+  /** 編集で帳票を足した・外したときに、その記録の帳票の数をその場で直す（一覧の取り直しはしない） */
+  adjustEvidenceCount: (recordId: string, delta: number) => void;
   /**
    * 未算定（emission_results が無い）レコード。「未算定分を再計算」の対象と件数表示に使う。
    * 係数未解決で残った分も含む（係数を登録した後にここから再計算できる）。
@@ -202,7 +204,17 @@ export function useActivityHistory(showToast: ShowToast): ActivityHistory {
     highlightTimersRef.current.add(timer);
   };
 
+  const adjustEvidenceCount = useCallback((recordId: string, delta: number) => {
+    setHistory((current) =>
+      current.map((item) =>
+        item.record?.id === recordId
+          ? { ...item, record: { ...item.record, evidenceCount: Math.max(0, item.record.evidenceCount + delta) } }
+          : item,
+      ),
+    );
+  }, []);
+
   const uncalculatedItems = useMemo(() => history.filter((item) => item.emissions === null), [history]);
 
-  return { history, manualEntryLocations, isRefreshing, refresh, prepend, uncalculatedItems };
+  return { history, manualEntryLocations, isRefreshing, refresh, prepend, adjustEvidenceCount, uncalculatedItems };
 }

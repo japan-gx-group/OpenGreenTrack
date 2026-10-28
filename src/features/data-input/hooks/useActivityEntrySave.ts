@@ -10,6 +10,7 @@ import {
   updateManualActivityRecord,
   updateScope3ActivityRecord,
 } from '../services/activityRecordService';
+import { linkEvidence } from '@/features/activity-evidence/services/evidenceClient';
 import type { BulkSaveItem } from '../services/bulkEntry';
 import {
   MANUAL_ACTIVITY_CATEGORY_MAP,
@@ -29,8 +30,18 @@ export interface UseActivityEntrySaveParams {
   showToast: ShowToast;
 }
 
+/** 帳票を紐づけられなかったときの案内（記録の保存の通知に続けて出す） */
+export const EVIDENCE_LINK_FAILURE_MESSAGE =
+  '帳票を紐づけられませんでした。入力履歴から記録を開いて、帳票を追加し直してください';
+
+/** 保存のときに一緒に行うこと（新規入力の帳票の紐づけ） */
+export interface ActivityEntrySaveOptions {
+  /** 保存した記録に紐づける帳票の ID */
+  evidenceFileIds?: string[];
+}
+
 export interface ActivityEntrySave {
-  save: (entry: ActivityEntryInput) => Promise<void>;
+  save: (entry: ActivityEntryInput, options?: ActivityEntrySaveOptions) => Promise<void>;
   /** 一括入力（複数月まとめて入力）の保存。月ごとに順に保存し、算定は 1 回で行う */
   saveBulk: (items: BulkSaveItem[]) => Promise<void>;
 }
@@ -42,39 +53,74 @@ export function useActivityEntrySave({
   refreshHistory,
   showToast,
 }: UseActivityEntrySaveParams): ActivityEntrySave {
-  const saveManual = async (input: Parameters<typeof addManualActivityRecord>[0]) => {
-    const savedRecord = await addManualActivityRecord(input);
-    onSaved(savedRecord);
+  // 記録は保存できたのに帳票を紐づけられなかったときは、保存の失敗にはせず（記録は残る）、紐づけ直しを案内する。
+  const attachEvidence = async (
+    record: SavedManualActivityRecord,
+    evidenceFileIds: string[] = [],
+  ): Promise<{ record: SavedManualActivityRecord; evidenceFailed: boolean }> => {
+    if (evidenceFileIds.length === 0) return { record, evidenceFailed: false };
+    try {
+      await linkEvidence(record.id, evidenceFileIds);
+      return { record: { ...record, evidenceCount: evidenceFileIds.length }, evidenceFailed: false };
+    } catch {
+      return { record, evidenceFailed: true };
+    }
+  };
+
+  // 保存の通知と、続けて行う排出量の計算。トーストは 1 件しか出せず後の通知で上書きされるため、帳票を紐づけられ
+  // なかったことは保存の通知にも計算結果の通知にも入れ、最後に残る通知から消えないようにする。
+  const announceSavedAndCalculate = async (
+    savedRecord: SavedManualActivityRecord,
+    savedLabel: string,
+    evidenceFailed: boolean,
+  ) => {
     showToast(
-      `『${savedRecord.locationName}』の${MANUAL_ACTIVITY_CATEGORY_MAP[savedRecord.energyType].labelJP}データ（${savedRecord.amount.toLocaleString()} ${savedRecord.unit}）を登録しました。排出量を計算しています...`,
-      'success',
+      evidenceFailed
+        ? `${savedLabel}を登録しましたが、${EVIDENCE_LINK_FAILURE_MESSAGE}`
+        : `${savedLabel}を登録しました。排出量を計算しています...`,
+      evidenceFailed ? 'error' : 'success',
     );
     // 保存後にそのまま排出量の計算まで実行して結果を反映する。
     // 計算失敗はメッセージ通知のみ（保存済みデータには影響しない）。
     const calcMessages = await runAutoCalculation([savedRecord.periodStart]);
     await refreshHistory();
     if (calcMessages.length > 0) {
-      showToast(calcMessages.join('\n'), 'success');
+      showToast(
+        [...(evidenceFailed ? [`記録は登録しましたが、${EVIDENCE_LINK_FAILURE_MESSAGE}`] : []), ...calcMessages].join('\n'),
+        evidenceFailed ? 'error' : 'success',
+      );
     }
   };
 
-  const saveScope3 = async (input: Scope3ActivityRecordInput) => {
-    const savedRecord = await addScope3ActivityRecord(input);
+  const saveManual = async (input: Parameters<typeof addManualActivityRecord>[0], options?: ActivityEntrySaveOptions) => {
+    const { record: savedRecord, evidenceFailed } = await attachEvidence(
+      await addManualActivityRecord(input),
+      options?.evidenceFileIds,
+    );
+    onSaved(savedRecord);
+    await announceSavedAndCalculate(
+      savedRecord,
+      `『${savedRecord.locationName}』の${MANUAL_ACTIVITY_CATEGORY_MAP[savedRecord.energyType].labelJP}データ（${savedRecord.amount.toLocaleString()} ${savedRecord.unit}）`,
+      evidenceFailed,
+    );
+  };
+
+  const saveScope3 = async (input: Scope3ActivityRecordInput, options?: ActivityEntrySaveOptions) => {
+    const { record: savedRecord, evidenceFailed } = await attachEvidence(
+      await addScope3ActivityRecord(input),
+      options?.evidenceFileIds,
+    );
     onSaved(savedRecord);
     const productLabel = savedRecord.ideaProductName ? `「${savedRecord.ideaProductName}」` : '';
-    showToast(
-      `『${savedRecord.locationName}』のScope3積上げデータ（カテゴリ${savedRecord.scope3CategoryId ?? '—'}・${productLabel}${savedRecord.amount.toLocaleString()} ${savedRecord.unit}）を登録しました。排出量を計算しています...`,
-      'success',
+    await announceSavedAndCalculate(
+      savedRecord,
+      `『${savedRecord.locationName}』のScope3積上げデータ（カテゴリ${savedRecord.scope3CategoryId ?? '—'}・${productLabel}${savedRecord.amount.toLocaleString()} ${savedRecord.unit}）`,
+      evidenceFailed,
     );
-    const calcMessages = await runAutoCalculation([savedRecord.periodStart]);
-    await refreshHistory();
-    if (calcMessages.length > 0) {
-      showToast(calcMessages.join('\n'), 'success');
-    }
   };
 
-  const save = async (entry: ActivityEntryInput) =>
-    entry.kind === 'scope3' ? saveScope3(entry.input) : saveManual(entry.input);
+  const save = async (entry: ActivityEntryInput, options?: ActivityEntrySaveOptions) =>
+    entry.kind === 'scope3' ? saveScope3(entry.input, options) : saveManual(entry.input, options);
 
   // 一括保存の 1 件分。新規は登録、上書きは既存レコードの更新（isCalculated=false へ戻り再算定対象になる）。
   const saveBulkItem = (item: BulkSaveItem): Promise<SavedManualActivityRecord> => {

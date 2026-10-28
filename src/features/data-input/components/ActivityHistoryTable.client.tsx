@@ -3,7 +3,7 @@
 // 入力履歴の一覧表。履歴 0 件と絞り込み 0 件の空状態もここで持つ。
 // 行クリックで編集モーダルを開く（編集できるのは元レコードを保持する行だけ）。
 
-import { Search } from 'lucide-react';
+import { Paperclip, Search } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import type { HistoryItem } from '../hooks/useActivityHistory';
 import type { SavedManualActivityRecord } from '../types';
@@ -43,19 +43,20 @@ export const ActivityHistoryTable = ({
           <th style={{ width: '110px' }}>対象期間</th>
           <th style={{ width: '100px' }}>ステータス</th>
           <th style={{ width: '150px' }}>登録日時</th>
+          <th style={{ width: '64px' }}>帳票</th>
         </tr>
       </thead>
       <tbody>
         {totalCount === 0 && (
           <tr>
-            <td className="gt-table-empty" colSpan={9}>
+            <td className="gt-table-empty" colSpan={10}>
               入力履歴はまだありません。
             </td>
           </tr>
         )}
         {totalCount > 0 && filteredCount === 0 && (
           <tr>
-            <td colSpan={9} className="py-10">
+            <td colSpan={10} className="py-10">
               <div className="flex flex-col items-center justify-center gap-3 text-center">
                 <Search size={36} aria-hidden="true" className="text-text-muted opacity-50" />
                 <p className="font-semibold text-text-muted">条件に一致する入力履歴が見つかりません</p>
@@ -144,6 +145,21 @@ export const ActivityHistoryTable = ({
               <Badge variant="success">{row.status}</Badge>
             </td>
             <td style={{ color: 'var(--color-text-muted)', fontSize: '12.5px' }}>{row.date}</td>
+            <td>
+              {/* 帳票（請求書など）が紐づいている記録には、件数を出す。 */}
+              {(editableRecord?.evidenceCount ?? 0) > 0 ? (
+                <span
+                  className="inline-flex items-center gap-0.5 text-xs text-text-muted"
+                  title={`帳票 ${editableRecord?.evidenceCount} 件`}
+                  aria-label={`帳票 ${editableRecord?.evidenceCount} 件`}
+                >
+                  <Paperclip size={12} aria-hidden="true" />
+                  {editableRecord?.evidenceCount}
+                </span>
+              ) : (
+                <span className="text-xs text-text-muted" aria-label="帳票なし">—</span>
+              )}
+            </td>
           </tr>
           );
         })}

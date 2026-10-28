@@ -57,12 +57,14 @@ interface ActivityRecordRow {
   createdAt: string;
   locations: LocationOptionRow | LocationOptionRow[] | null;
   idea_factors: IdeaFactorEmbedRow | IdeaFactorEmbedRow[] | null;
+  // 紐づいている帳票の数（PostgREST の埋め込みの count。activity_record_evidence の RLS で自組織だけを数える）。
+  activity_record_evidence?: Array<{ count: number }> | null;
 }
 
 // 取得・保存後の返却で共通に使う select 列。Scope3積上げ列と IDEA 製品名の
 // 埋め込みを追加した（Scope1/2 レコードでは null が返るだけで挙動は変わらない）。
 const ACTIVITY_RECORD_SELECT =
-  'id, locationId, energyType, amount, unit, periodStart, periodEnd, note, emissionFactorId, scope3CategoryId, ideaFactorId, createdAt, locations(id, name), idea_factors(id, productName)';
+  'id, locationId, energyType, amount, unit, periodStart, periodEnd, note, emissionFactorId, scope3CategoryId, ideaFactorId, createdAt, locations(id, name), idea_factors(id, productName), activity_record_evidence(count)';
 
 type ActivityRecordDuplicateKeyRow = ActivityRecordDuplicateKeyFields;
 
@@ -142,6 +144,7 @@ const toSavedManualActivityRecord = (
     scope3CategoryId: row.scope3CategoryId ?? null,
     ideaFactorId: row.ideaFactorId ?? null,
     ideaProductName: ideaFactor?.productName ?? null,
+    evidenceCount: Number(row.activity_record_evidence?.[0]?.count ?? 0),
   };
 };
 

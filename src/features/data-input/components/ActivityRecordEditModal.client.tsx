@@ -12,14 +12,18 @@ interface ActivityRecordEditModalProps {
   locations: ManualEntryLocationOption[];
   /** 対象年月などの変更が別レコードと重複するときの事前警告に使う入力履歴。 */
   historyRecords: SavedManualActivityRecord[];
+  /** 帳票を足す・外したあとに、記録と増えた数（外したときは -1）を渡す（入力履歴の帳票の数をその場で直す）。 */
+  onEvidenceChange?: (recordId: string, delta: number) => void;
 }
 
 export const ActivityRecordEditModal = ({
   editor,
   locations,
   historyRecords,
+  onEvidenceChange,
 }: ActivityRecordEditModalProps) => {
   if (!editor.editingRecord || !editor.initialValues) return null;
+  const recordId = editor.editingRecord.id;
 
   return (
     <div
@@ -47,6 +51,9 @@ export const ActivityRecordEditModal = ({
           // 編集中のレコード自身は重複に数えない。モーダル内から別レコードへ乗り換えると
           // 編集中の内容が黙って消えるため「既存のレコードを開く」導線は出さない。
           excludeRecordId={editor.editingRecord.id}
+          // 帳票の欄は、この記録に紐づいている帳票を読み、足す・外すをその場で反映する。
+          recordId={editor.editingRecord.id}
+          onEvidenceChange={onEvidenceChange && ((delta) => onEvidenceChange(recordId, delta))}
         />
       </div>
     </div>

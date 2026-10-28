@@ -12,7 +12,7 @@
 // の normalizeIdeaFactor と同一の scope3InlineCalculation）で行い、保存後の算定と同じ値を表示する。
 // 構造・バリデーション・未来月ガードは両経路で共有する。
 
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ClipboardList, Trash2, X } from 'lucide-react';
 import { Card } from '@/components/ui/card';
@@ -107,11 +107,16 @@ import { ActivityEntryPreviewModal } from './ActivityEntryPreviewModal.client';
 import { BulkEntryPreviewModal } from './BulkEntryPreviewModal.client';
 import { EntryCalculationResult } from './EntryCalculationResult';
 import { EntryField, EntryNotice, EntrySection, FactorSourceChip, UnitBadge } from './EntryFormPrimitives';
+import { EvidenceField } from '@/features/activity-evidence/components/EvidenceField.client';
+import { useEvidenceAttachments } from '@/features/activity-evidence/hooks/useEvidenceAttachments';
 
 export interface ActivityEntryFormProps {
   locations: ManualEntryLocationOption[];
-  /** Scope1/2・Scope3 のどちらでも 1 本で受ける。reject 時は error.message をフォーム内に表示する。 */
-  onSave: (entry: ActivityEntryInput) => Promise<void>;
+  /**
+   * Scope1/2・Scope3 のどちらでも 1 本で受ける。reject 時は error.message をフォーム内に表示する。
+   * 新規入力では、帳票の欄に並べた帳票の ID を options.evidenceFileIds で渡す（保存した記録に紐づけるのは呼び出し側）。
+   */
+  onSave: (entry: ActivityEntryInput, options?: { evidenceFileIds: string[] }) => Promise<void>;
   /** 'create'（新規入力・既定）または 'edit'（履歴編集）。edit ではモーダル内に埋め込む。 */
   mode?: EntryMode;
   /** edit のときの初期値。kind でカテゴリ選択肢の保存経路を固定する。 */
@@ -142,6 +147,15 @@ export interface ActivityEntryFormProps {
    * 初期値として読むだけなので、別の値を入れ直すときは呼び出し側が key を替えてフォームを作り直す。
    */
   prefill?: ActivityEntryPrefill;
+  /** edit のときの記録 ID。帳票の欄が、この記録に紐づいている帳票を読み、足す・外すをその場で反映する。 */
+  recordId?: string;
+  /** edit で帳票の紐づけを変えたあとに、増えた数（外したときは -1）を渡す（入力履歴の帳票の数をその場で直すため）。 */
+  onEvidenceChange?: (delta: number) => void;
+  /**
+   * create で帳票の欄に並べている帳票（まだ記録に紐づけていない）の ID が変わるたびに呼ぶ。
+   * 「帳票の一覧」で、保存で紐づける予定の帳票を削除させないため。
+   */
+  onPendingEvidenceChange?: (fileIds: string[]) => void;
 }
 
 // historyRecords 未指定時の既定値。毎レンダー新しい [] を作ると useMemo の依存が毎回変わるため共有する。
@@ -160,6 +174,9 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   excludeRecordId,
   onOpenDuplicateRecord,
   prefill: prefillProp,
+  recordId,
+  onEvidenceChange,
+  onPendingEvidenceChange,
 }) => {
   const isEdit = mode === 'edit';
   const initialCategory = useMemo(() => entryCategoryFromInitialValues(initialValues), [initialValues]);
@@ -190,6 +207,22 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // 削除は誤操作防止のため2段階（1回目で確認表示、2回目で実行）。ダイアログは使わない。
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // 帳票（請求書など）。新規は保存のあとに紐づけ（onSave の options）、編集はその場で紐づけ・外す。
+  const evidence = useEvidenceAttachments({
+    recordId: isEdit ? (recordId ?? null) : null,
+    initialFiles: prefill?.evidenceFiles,
+    onLinkedCountChange: onEvidenceChange,
+  });
+  // 新規入力で並べている帳票を親へ伝える（フォームを外したら空にする）。
+  const evidenceFiles = evidence.files;
+  useEffect(() => {
+    if (isEdit || onPendingEvidenceChange === undefined) return;
+    onPendingEvidenceChange(evidenceFiles.map((file) => file.id));
+  }, [isEdit, evidenceFiles, onPendingEvidenceChange]);
+  useEffect(() => {
+    if (isEdit || onPendingEvidenceChange === undefined) return;
+    return () => onPendingEvidenceChange([]);
+  }, [isEdit, onPendingEvidenceChange]);
 
   // 請求書の読取りから入れた値で拠点が決まらなかった（住所が拠点と一致しない）ときは、先頭の拠点に倒さず未選択にし、
   // 拠点を選ぶまでプレビューを開けないようにする。請求書と関係のない拠点の活動量として黙って保存しないため。
@@ -484,6 +517,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     awaitingLocationChoice ||
     isSaving ||
     isDeleting ||
+    evidence.uploading.length > 0 ||
     isFactorLoading ||
     bulkPreview.isResolving;
 
@@ -599,7 +633,10 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     setIsSaving(true);
     setErrorMessage(null);
     try {
-      await onSave(entry);
+      // 帳票を並べたときだけ、保存した記録に紐づける ID を渡す（編集は欄の中で紐づけ済み）。
+      await (isEdit || evidence.fileIds.length === 0
+        ? onSave(entry)
+        : onSave(entry, { evidenceFileIds: evidence.fileIds }));
       setShowPreview(false);
       if (isEdit) {
         // 編集はモーダルを閉じる（親が一覧を再取得する）。
@@ -609,6 +646,8 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
         // 翌月へ送れないとき（当月・算定期間の末月）は対象年月も含めて条件がそのまま残るので、
         // 今保存したレコードが履歴に加わっても条件を変えるまで重複警告は出さない。
         duplicate.markSaved();
+        // 帳票は記録ごとのものなので、次の入力に持ち越さない。
+        evidence.reset();
         setAmount('');
         // 戻す先も空にする（保存前の活動量が次の入力で復活しないように）。
         lastValidAmountRef.current = '';
@@ -633,8 +672,12 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
 
   // ---- 複数月まとめて入力（一括入力） ----
 
+  // 複数月まとめて入力では帳票を紐づけない（対象外）。帳票を付けたまま切り替えると、まとめて保存した記録に
+  // 付かないうえ、単月入力に戻すと次に保存した記録に付いてしまうため、帳票を付けている間は切り替えさせない。
+  const bulkBlockedByEvidence = evidence.files.length > 0 || evidence.uploading.length > 0;
+
   const switchEntryMode = (nextMode: EntryInputMode) => {
-    if (!bulkAvailable || bulk.mode === nextMode) {
+    if (!bulkAvailable || bulk.mode === nextMode || (nextMode === 'bulk' && bulkBlockedByEvidence)) {
       return;
     }
     bulk.setMode(nextMode);
@@ -895,12 +938,19 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
                     id="manual-entry-mode-bulk"
                     type="button"
                     aria-pressed={isBulk}
+                    aria-describedby={!isBulk && bulkBlockedByEvidence ? 'manual-entry-mode-bulk-evidence' : undefined}
                     onClick={() => switchEntryMode('bulk')}
+                    disabled={!isBulk && bulkBlockedByEvidence}
                     className={isBulk ? 'gt-btn-primary' : 'gt-btn'}
                   >
                     複数月まとめて入力
                   </button>
                 </div>
+                {!isBulk && bulkBlockedByEvidence && (
+                  <p id="manual-entry-mode-bulk-evidence" className="mt-1.5 text-xs text-text-muted">
+                    複数月まとめて入力では帳票を紐づけられません。切り替えるときは、⑤ 帳票の欄から帳票を外してください。
+                  </p>
+                )}
               </div>
             )}
 
@@ -1162,6 +1212,12 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
           </EntrySection>
         )}
 
+        {locations.length > 0 && !isBulk && (
+          <EntrySection step={5} title="帳票（請求書など）" titleId="manual-step-5" hint="(任意)">
+            <EvidenceField attachments={evidence} isEdit={isEdit} disabled={isSaving || isDeleting} />
+          </EntrySection>
+        )}
+
         {errorMessage && (
           <div
             role="alert"
@@ -1222,7 +1278,11 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
       {previewRows && (
         <ActivityEntryPreviewModal
           mode={mode}
-          rows={previewRows}
+          rows={
+            evidence.files.length > 0 && !isEdit
+              ? [...previewRows, { label: '帳票', value: evidence.files.map((file) => file.fileName).join('、') }]
+              : previewRows
+          }
           cautions={previewCautions}
           isSaving={isSaving}
           onClose={closePreview}

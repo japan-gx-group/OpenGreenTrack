@@ -62,7 +62,7 @@ npm run db:reset:demo                # DB を作り直し、スキーマ + 公�
 | `db push` で運用しているクラウド（検証用） | DB をリセットして `npx supabase db push --include-seed` で入れ直す。これが唯一の確実な手順 |
 | 上記のうち、DB を作り直せない場合 | ① 削除済みバージョンを `npx supabase migration repair --status reverted <version>` で履歴から消す（これをしないと push 自体が止まる）。② 現在の 4 本と DB の実態との差分を、Supabase ダッシュボードの SQL Editor から**手で適用する**（差分の把握には `npx supabase db diff --linked` が使える。ただし出力は remote 側を基準にした SQL で向きが逆になり得るため、そのまま流さず読み替える）。③ `…_storage.sql` のバージョンが remote 履歴に無ければ、次の push でそれだけが新規適用される。**書き換えた 3 本のバージョンは applied のまま触らない**（上記のとおり再実行はできない）。差分の内容は DB を最後に更新した時点で決まり、3 本はリリースまで編集され続けているため、「旧構成を全部適用済みなら差分は無い」とは限らない |
 
-マイグレーションに **データを書くことは禁止** です。`insert` / `update` / `delete` / `copy` / `truncate` / `merge` は、排出係数マスタでも、組織・ユーザーでも、既存行の訂正（バックフィル）でも `migrations/` には置かず、`seeds/` に置きます（例外は `storage.buckets` への `insert` / `update`（バケットの定義と設定変更）だけ。バケットはインフラ設定であり、Supabase 公式の作成手段が SQL のためです。`20260831000003_storage.sql` がこの例外に当たります）。`npm run check:migrations` が機械的に検出します。
+マイグレーションに **データを書くことは禁止** です。`insert` / `update` / `delete` / `copy` / `truncate` / `merge` は、排出係数マスタでも、組織・ユーザーでも、既存行の訂正（バックフィル）でも `migrations/` には置かず、`seeds/` に置きます（例外は `storage.buckets` への `insert` / `update`（バケットの定義と設定変更）だけ。バケットはインフラ設定であり、Supabase 公式の作成手段が SQL のためです。`20260831000003_storage.sql` と、`import-files` に `image/webp` を足す `20261026120000_activity_evidence.sql` の `update` がこの例外に当たります）。`npm run check:migrations` が機械的に検出します。
 
 ## seeds/ — データ
 

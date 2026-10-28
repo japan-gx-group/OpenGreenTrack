@@ -365,6 +365,41 @@ GHG プロトコルのロケーション基準／マーケット基準それぞ�
 - RLS を有効にしてポリシーを置かず、`anon`・`authenticated` の権限はすべて外す（ブラウザ側からは一切読めない）。読み書きは、管理者であることと本人確認（ログインパスワードの再入力）をサーバで確かめたうえで service_role から行う。
 - 暗号化の鍵（`AI_ENCRYPTION_KEY`）は DB の外（環境変数）に置く。DB やバックアップだけが漏れても鍵は読めない。`pgcrypto` や Supabase Vault は使わない（鍵の平文が SQL 文に乗り、DB のログに残りうるため）。
 
+### 3.17 活動量の帳票 (`activity_evidence_files`)（`supabase/migrations/20261026120000_activity_evidence.sql`）
+
+活動量の記録の根拠になる帳票（請求書・検針票・納品書など）のファイルの情報。本体は Storage の `import-files` に置く。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | 帳票ID | UUID | Primary Key | 一時ファイルのパスの UUID（同じアップロードの保存が 2 回届いても 1 件にする） |
+| `organizationId` | 組織ID | UUID | NOT NULL, FK → `organizations` | 削除時: CASCADE |
+| `storagePath` | 保存先 | TEXT | NOT NULL, UNIQUE | `{organizationId}/activity-evidence/{id}.{拡張子}`。拡張子は中身から決める |
+| `fileName` | ファイル名 | VARCHAR(255) | NOT NULL | 表示用（保存先のパスには使わない） |
+| `mimeType` | 形式 | VARCHAR(50) | NOT NULL, CHECK（PDF・PNG・JPEG・WebP） | 先頭のバイトで判定した形式 |
+| `sizeBytes` | 大きさ | INTEGER | NOT NULL, CHECK（1〜10,485,760） | |
+| `sha256` | SHA-256 | CHAR(64) | NOT NULL | 同じファイルか・改ざんの確認に使う |
+| `convertedFrom` | 変換前の形式 | VARCHAR(50) | NULL 可, CHECK（PNG・JPEG、`mimeType` が WebP のときだけ） | 容量を減らすため WebP に変換して保存したときの元の形式 |
+| `uploadedBy` | 上げた人 | UUID | NULL 可 | |
+| `createdAt` | 日時 | TIMESTAMPTZ | NOT NULL | |
+
+- 行はサーバ（`POST /api/activity-evidence`）が中身を確かめてから service_role で作る。`authenticated` には自組織の select だけを許す。
+- 削除もサーバ（`DELETE /api/activity-evidence/[id]`）が、どの記録にも紐づいていないことを確かめて Storage のファイルと一緒に行う。上げた・消したことは `system_audit_logs` に `activity_evidence.upload` / `activity_evidence.delete` として残す（ファイル名・大きさ・SHA-256）。
+- Storage の `import_files_delete_own_organization` から `activity-evidence/` のフォルダを外し、ブラウザから帳票のファイルを直接消せないようにする（紐づいている帳票を消せない確認と監査ログを通らずに消せてしまうため）。
+
+### 3.18 記録と帳票の紐づけ (`activity_record_evidence`)（同上）
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `activityRecordId` | 記録ID | UUID | Primary Key（複合）, FK → `activity_records` | 削除時: CASCADE（記録を消すと紐づけだけが消える） |
+| `evidenceFileId` | 帳票ID | UUID | Primary Key（複合）, FK → `activity_evidence_files` | 削除時: RESTRICT（紐づいている帳票は消せない） |
+| `organizationId` | 組織ID | UUID | NOT NULL, FK → `organizations` | 削除時: CASCADE |
+| `createdBy` | 紐づけた人 | UUID | NULL 可 | ブラウザから作るときは、トリガ（`set_activity_record_evidence_actor`）がログイン中のユーザーにする |
+| `createdAt` | 日時 | TIMESTAMPTZ | NOT NULL | |
+
+- 1 枚の帳票を複数の記録に（燃料の種類ごとなど）、1 件の記録に複数の帳票を（複数メーターなど）紐づけられる。
+- `authenticated` は自組織の select・insert・delete ができる。insert は、記録と帳票の両方が自組織のものであることを exists で確かめる（FK は行の存在しか見ないため）。
+- 紐づけた・外したことは、トリガ（`log_activity_record_evidence_change`）が `system_audit_logs` に `activity_evidence.link` / `activity_evidence.unlink` として残す（記録の ID・ファイル名）。紐づけはブラウザから直接作る・外すため、アプリの処理ではなくトリガで残す。記録の削除で紐づけが消えたときも `unlink` が残る。ログイン中のユーザーがいない書き込み（service_role・seed）は残さない。
+
 ---
 
 ## 4. 計算の整合性・業務ルール
