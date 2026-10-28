@@ -6,11 +6,11 @@
 // - 回数の上限（429）に当たったら、Retry-After の秒数だけ待って同じファイルを読み直す（最大 3 回）
 // - 「ここで止める」で、読み取り中のファイルが終わったところで止める
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { evidenceFileProblem } from '@/features/activity-evidence/hooks/useEvidenceAttachments';
 import { uploadEvidenceFile } from '@/features/activity-evidence/services/evidenceClient';
 import { convertImageToWebp } from '@/features/activity-evidence/services/webpConversion';
-import { readConvertPreference, writeConvertPreference } from '@/features/activity-evidence/services/convertPreference';
+import { useConvertPreference } from '@/features/activity-evidence/hooks/useConvertPreference';
 import type { EvidenceFile } from '@/features/activity-evidence/types';
 import { requestInvoiceReading } from '../services/invoiceReadingClient';
 import { MAX_INVOICE_FILE_BYTES, MAX_INVOICE_FILES, type InvoiceReadingResult } from '../types';
@@ -52,26 +52,10 @@ export const useInvoiceBatchReading = () => {
   const [phase, setPhase] = useState<BatchPhase>('idle');
   const [entries, setEntries] = useState<BatchEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [convertToWebp, setConvertToWebpState] = useState(false);
+  // 「WebP に変換して容量を減らす」は、同じ画面の帳票の欄と同じ選択（このブラウザに覚える）
+  const { convertToWebp, setConvertToWebp } = useConvertPreference();
   const stopRequestedRef = useRef(false);
   const runIdRef = useRef(0);
-
-  // 覚えておいた選択は描画の後に読む（サーバの描画と食い違わないように）。読み取りと反映を分け、
-  // .then で反映する（react-hooks/set-state-in-effect 対応。useAiStatus と同じ方針）。
-  useEffect(() => {
-    let active = true;
-    Promise.resolve(readConvertPreference()).then((value) => {
-      if (active) setConvertToWebpState(value);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const setConvertToWebp = useCallback((value: boolean) => {
-    setConvertToWebpState(value);
-    writeConvertPreference(value);
-  }, []);
 
   const update = (key: string, patch: Partial<BatchEntry>) =>
     setEntries((current) => current.map((entry) => (entry.key === key ? { ...entry, ...patch } : entry)));

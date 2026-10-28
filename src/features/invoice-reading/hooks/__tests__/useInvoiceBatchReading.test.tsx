@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from '@/lib/testing/render';
 import { uploadEvidenceFile } from '@/features/activity-evidence/services/evidenceClient';
 import { convertImageToWebp } from '@/features/activity-evidence/services/webpConversion';
-import { readConvertPreference, writeConvertPreference } from '@/features/activity-evidence/services/convertPreference';
 import type { EvidenceFile } from '@/features/activity-evidence/types';
 import { requestInvoiceReading } from '../../services/invoiceReadingClient';
 import type { InvoiceReadingResult } from '../../types';
@@ -15,10 +14,6 @@ import { MAX_LIMIT_RETRIES, useInvoiceBatchReading, type InvoiceBatchReading } f
 
 vi.mock('@/features/activity-evidence/services/evidenceClient', () => ({ uploadEvidenceFile: vi.fn() }));
 vi.mock('@/features/activity-evidence/services/webpConversion', () => ({ convertImageToWebp: vi.fn() }));
-vi.mock('@/features/activity-evidence/services/convertPreference', () => ({
-  readConvertPreference: vi.fn(() => false),
-  writeConvertPreference: vi.fn(),
-}));
 vi.mock('../../services/invoiceReadingClient', () => ({ requestInvoiceReading: vi.fn() }));
 
 const evidence = (id: string, overrides: Partial<EvidenceFile> = {}): EvidenceFile => ({
@@ -70,8 +65,7 @@ describe('useInvoiceBatchReading', () => {
   beforeEach(() => {
     vi.mocked(uploadEvidenceFile).mockReset().mockImplementation(async (file) => evidence(file.name));
     vi.mocked(convertImageToWebp).mockReset();
-    vi.mocked(readConvertPreference).mockReturnValue(false);
-    vi.mocked(writeConvertPreference).mockReset();
+    window.localStorage.clear();
     vi.mocked(requestInvoiceReading)
       .mockReset()
       .mockImplementation(async (id) => ({ ok: true, result: result(evidence(id)) }));
@@ -121,7 +115,7 @@ describe('useInvoiceBatchReading', () => {
   });
 
   it('WebP に変換する選択なら、変換できた画像は変換後のファイルと元の形式で保存し、選択を覚える', async () => {
-    vi.mocked(readConvertPreference).mockReturnValue(true);
+    window.localStorage.setItem('ogt.activityEvidence.convertToWebp', 'true');
     const converted = new File([new Uint8Array(8)], 'scan.webp', { type: 'image/webp' });
     vi.mocked(convertImageToWebp).mockResolvedValue({ converted: true, file: converted, convertedFrom: 'image/png' });
     const view = await setup();
@@ -132,7 +126,8 @@ describe('useInvoiceBatchReading', () => {
     expect(uploadEvidenceFile).toHaveBeenCalledWith(converted, 'image/png');
 
     act(() => view().setConvertToWebp(false));
-    expect(writeConvertPreference).toHaveBeenCalledWith(false);
+    expect(view().convertToWebp).toBe(false);
+    expect(window.localStorage.getItem('ogt.activityEvidence.convertToWebp')).toBe('false');
   });
 
   it('4MB を超える帳票は保存だけして読まない。保存に失敗したファイルは理由を出して、次のファイルへ進む', async () => {

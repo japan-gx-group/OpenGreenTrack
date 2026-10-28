@@ -6,17 +6,16 @@
 // 送る前に共通の確認ダイアログ（AiSendConfirmDialog）で送り先と送る内容を見せる。登録の前にも件数と排出量を見せる。
 // AI が使えない（未設定・モデル未選択）ときは理由を出して、ファイルを選べないようにする。
 
-import React, { useId, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { FileText, ListChecks, ScanText, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
 import { Modal } from '@/components/ui/Modal.client';
 import { useFiscalYear } from '@/hooks/useFiscalYear';
 import { AiSendConfirmDialog } from '@/features/ai/components/AiSendConfirmDialog.client';
 import { useAiStatus } from '@/features/ai/hooks/useAiStatus';
 import { AI_GENERATE_ERROR_MESSAGES } from '@/features/ai/messages';
+import { ConvertToWebpCheckbox } from '@/features/activity-evidence/components/ConvertToWebpCheckbox.client';
 import { EVIDENCE_FILE_ACCEPT, formatEvidenceSize } from '@/features/activity-evidence/types';
 import { usePendingEvidenceReport } from '@/features/activity-evidence/hooks/usePendingEvidenceReport';
 import type { ActivityEntryPrefill, ManualEntryLocationOption, SavedManualActivityRecord } from '@/features/data-input/types';
@@ -71,7 +70,6 @@ export const InvoiceReadingCard = ({
   const [isSaveConfirmOpen, setIsSaveConfirmOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const convertId = useId();
 
   const reason = unavailableReason(status, statusError);
   const canUse = !isStatusLoading && reason === null;
@@ -124,17 +122,11 @@ export const InvoiceReadingCard = ({
             <FileText />
             ファイルを選ぶ
           </Button>
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id={convertId}
-              checked={batch.convertToWebp}
-              onCheckedChange={(checked) => batch.setConvertToWebp(checked === true)}
-              disabled={isRunning}
-            />
-            <Label htmlFor={convertId} className="text-xs font-normal text-text-muted">
-              画像（PNG・JPEG）を WebP に変換して容量を減らす
-            </Label>
-          </div>
+          <ConvertToWebpCheckbox
+            checked={batch.convertToWebp}
+            onCheckedChange={batch.setConvertToWebp}
+            disabled={!canUse || isRunning || isSaving}
+          />
         </div>
       </div>
 

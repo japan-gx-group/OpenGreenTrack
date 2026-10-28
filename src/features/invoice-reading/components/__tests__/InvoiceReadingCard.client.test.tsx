@@ -3,7 +3,6 @@ import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { click, render, type RenderResult } from '@/lib/testing/render';
 import { uploadEvidenceFile } from '@/features/activity-evidence/services/evidenceClient';
-import { writeConvertPreference } from '@/features/activity-evidence/services/convertPreference';
 import type { EvidenceFile } from '@/features/activity-evidence/types';
 import type { CandidateFactorRow } from '@/features/data-input/services/factorSelectionService';
 import type { ManualEntryLocationOption, SavedManualActivityRecord } from '@/features/data-input/types';
@@ -27,10 +26,6 @@ vi.mock('@/hooks/useFiscalYear', () => ({
 vi.mock('@/features/activity-evidence/services/evidenceClient', () => ({
   uploadEvidenceFile: vi.fn(),
   openEvidenceFile: vi.fn(async () => {}),
-}));
-vi.mock('@/features/activity-evidence/services/convertPreference', () => ({
-  readConvertPreference: () => false,
-  writeConvertPreference: vi.fn(),
 }));
 vi.mock('../../services/invoiceReadingClient', () => ({ requestInvoiceReading: vi.fn() }));
 
@@ -220,6 +215,14 @@ const checkbox = (title: string) =>
   document.body.querySelector<HTMLButtonElement>(`button[role="checkbox"][aria-label="${title} を登録する"]`)!;
 const isChecked = (title: string) => checkbox(title).getAttribute('aria-checked') === 'true';
 
+// 「WebP に変換して容量を減らす」は文言（Label）から引く（行の「登録する」の Checkbox と取り違えない）。
+const CONVERT_LABEL = '画像（PNG・JPEG）を WebP に変換して容量を減らす';
+const CONVERT_PREFERENCE_KEY = 'ogt.activityEvidence.convertToWebp';
+const convertControl = () => {
+  const label = Array.from(document.body.querySelectorAll('label')).find((element) => element.textContent === CONVERT_LABEL)!;
+  return { label, checkbox: document.getElementById(label.htmlFor) as HTMLButtonElement };
+};
+
 const readAndReview = async () => {
   chooseFiles([pdf('9月分.pdf')]);
   click(buttonByText('送信する')!);
@@ -228,6 +231,7 @@ const readAndReview = async () => {
 
 describe('InvoiceReadingCard', () => {
   beforeEach(() => {
+    window.localStorage.clear();
     statusMock.value = { status: STATUS, error: null, isLoading: false };
     factorPool.year = YEAR_FACTORS;
     factorPool.provider = PROVIDER_FACTORS;
@@ -246,6 +250,7 @@ describe('InvoiceReadingCard', () => {
     renderCard();
     expect(document.body.textContent).toContain('AI のモデルが選ばれていません');
     expect((buttonByText('ファイルを選ぶ') as HTMLButtonElement).disabled).toBe(true);
+    expect(convertControl().checkbox.disabled).toBe(true);
   });
 
   it('ファイルを選ぶと、送る内容と「請求書は帳票として保存する」ことを確認に出し、「やめる」では保存も送信もしない', () => {
@@ -265,15 +270,30 @@ describe('InvoiceReadingCard', () => {
     expect(requestInvoiceReading).not.toHaveBeenCalled();
   });
 
-  it('「WebP に変換して容量を減らす」は Checkbox で切り替え、選択をこのブラウザに覚える', async () => {
+  it('「WebP に変換して容量を減らす」は Checkbox でも文言でも切り替わり、選択をこのブラウザに覚える', async () => {
     renderCard();
     await settle();
-    const convert = document.body.querySelector<HTMLButtonElement>('button[role="checkbox"][id]')!;
-    expect(document.body.querySelector(`label[for="${convert.id}"]`)?.textContent).toBe('画像（PNG・JPEG）を WebP に変換して容量を減らす');
+    const { label, checkbox: convert } = convertControl();
+    expect(convert.getAttribute('role')).toBe('checkbox');
     expect(convert.getAttribute('aria-checked')).toBe('false');
     click(convert);
     expect(convert.getAttribute('aria-checked')).toBe('true');
-    expect(writeConvertPreference).toHaveBeenLastCalledWith(true);
+    expect(window.localStorage.getItem(CONVERT_PREFERENCE_KEY)).toBe('true');
+    click(label);
+    expect(convert.getAttribute('aria-checked')).toBe('false');
+    expect(window.localStorage.getItem(CONVERT_PREFERENCE_KEY)).toBe('false');
+  });
+
+  it('読み取りの途中は「WebP に変換して容量を減らす」を押せない', async () => {
+    let finish: (value: Awaited<ReturnType<typeof requestInvoiceReading>>) => void = () => {};
+    vi.mocked(requestInvoiceReading).mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    renderCard();
+    await readAndReview();
+    expect(convertControl().checkbox.disabled).toBe(true);
+
+    await act(async () => finish({ ok: true, result: RESULT }));
+    await settle();
+    expect(convertControl().checkbox.disabled).toBe(false);
   });
 
   it('一度に選べる数を超えたら、確認を出さずに理由を出す', () => {
