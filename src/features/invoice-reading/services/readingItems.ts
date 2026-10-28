@@ -87,8 +87,6 @@ const judgeFactor = (
   judgement: InvoiceFactorJudgement;
   energyType: InvoiceEnergyType | null;
   factor: ActivityEntryPrefill['factor'];
-  /** 係数について確かめてほしいこと（明細の notices の先頭に足す） */
-  notices?: string[];
 } => {
   const { item, candidates, answer } = context;
   const fallbackEnergyType: InvoiceEnergyType | null =
@@ -143,23 +141,20 @@ const judgeFactor = (
     RESIDUAL_MENU_PATTERN.test(chosenMenu) &&
     residualMenus.length > 1;
   const menuName = ambiguousResidual ? null : (chosenMenu ?? resolveFallbackMenu(provider));
-  const notices = ambiguousResidual
-    ? [
-        `「残差」のメニューが複数あります（${residualMenus.map((menu) => menu.menuName).join('・')}）。契約がどれに当たるかを確かめて、メニューを選んでください`,
-      ]
-    : [];
+  // AI の判断の文は AI が選んだメニューを名前で書くため、採らなかったときは理由を判定に添える（表の判定の列に出す）
+  const note = ambiguousResidual
+    ? `「残差」のメニューが複数あるため（${residualMenus.map((menu) => menu.menuName).join('・')}）、AI が選んだメニューは使わず、事業者だけを入れました`
+    : undefined;
   return menuName
     ? {
         judgement: { status: 'matched', label: `${provider.providerName} / ${menuName}`, reason: answer.reason },
         energyType: candidates.energyType,
         factor: { kind: 'provider', providerName: provider.providerName, menuName },
-        notices,
       }
     : {
-        judgement: { status: 'provider_only', label: provider.providerName, reason: answer.reason },
+        judgement: { status: 'provider_only', label: provider.providerName, reason: answer.reason, note },
         energyType: candidates.energyType,
         factor: { kind: 'provider', providerName: provider.providerName, menuName: null },
-        notices,
       };
 };
 
@@ -194,8 +189,8 @@ export const buildReadingItem = (args: {
     };
   }
 
-  const { judgement, energyType, factor, notices: factorNotices } = judgeFactor(context);
-  const notices: string[] = [...(factorNotices ?? [])];
+  const { judgement, energyType, factor } = judgeFactor(context);
+  const notices: string[] = [];
   let amount: InvoiceReadingItem['amount'] = null;
   if (energyType) {
     if (item.amount === null) {

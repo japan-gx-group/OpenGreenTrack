@@ -6,7 +6,7 @@
 
 import { MANUAL_ACTIVITY_CATEGORY_MAP } from '@/features/data-input/types';
 import type { InvoiceExtractedItem, InvoiceExtraction } from '../types';
-import { candidateKeysOf, formatCandidateLines, type FactorCandidateSet } from './factorCandidates';
+import { candidateLabelsOf, formatCandidateLines, type FactorCandidateSet } from './factorCandidates';
 
 export const FACTOR_MATCHING_INSTRUCTIONS = `あなたは、請求書から読み取った値に当てはまる排出係数を、候補の一覧から選ぶ係です。
 入力の「明細」ごとに、その明細の候補の中から当てはまるものを 1 つ選び、その key を返してください。当てはまるものが無ければ key は null にします。その明細の候補に無い key は返さないでください。
@@ -25,7 +25,7 @@ export const FACTOR_MATCHING_INSTRUCTIONS = `あなたは、請求書から読�
 燃料:
 - 燃料の名称から、当てはまる燃料の候補を選ぶ（例: レギュラー・ハイオクのガソリン → 揮発油、プロパンガス → 液化石油ガス（LPG））。A重油と B・C重油のように候補が分かれ、請求書から分からなければ null。
 
-reason には、選んだ（または選ばなかった）理由を日本語で 1 文、60 字程度で書く。`;
+reason には、選んだ（または選ばなかった）理由を日本語で 1 文、60 字程度で書く。reason は画面にそのまま出るので、key（p1・p1-m1・f1 など）や「key」「null」という言葉は書かず、事業者名・メニュー名・燃料の名前で書く。`;
 
 export const FACTOR_MATCHING_SCHEMA = {
   type: 'object',
@@ -88,6 +88,27 @@ export type MatchingAnswer = { answered: true; key: string | null; reason: strin
 
 const MAX_REASON_LENGTH = 120;
 
+// 候補のキーの形（p1・p1-m2・f1）。大文字・全角で書かれても拾い、英数字の途中（cf1・A0269 など）では拾わない。
+// キーの前後の括弧も拾い、「揮発油（f1）」のように名前に添えたキーかを見分ける
+const CANDIDATE_KEY_PATTERN =
+  /([（(]\s*)?(?<![A-Za-z0-9Ａ-Ｚａ-ｚ０-９_])([pfｐｆ][0-9０-９]+(?:[-－][mｍ][0-9０-９]+)?)(?![A-Za-z0-9Ａ-Ｚａ-ｚ０-９_])(\s*[）)])?/giu;
+
+/**
+ * 判断の文に残った候補のキー（指示に従わない応答）を、その候補の名前に置き換える。キーは画面の外の値で、
+ * 使う人には何か分からないため。名前に括弧で添えたキーは、名前が二重にならないよう括弧ごと消す。
+ * 候補に無いキーの形の文字は、請求書の文字（料金メニューの名前など）かもしれないので変えない。
+ */
+export const replaceCandidateKeys = (reason: string, labels: ReadonlyMap<string, string>): string =>
+  reason
+    .replace(CANDIDATE_KEY_PATTERN, (match, open: string | undefined, key: string, close: string | undefined) => {
+      const label = labels.get(key.normalize('NFKC').toLowerCase());
+      if (label === undefined) return match;
+      if (open && close) return '';
+      return `${open ?? ''}${label}${close ?? ''}`;
+    })
+    .replace(/\s+/g, ' ')
+    .trim();
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -95,20 +116,24 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
  * AI の出力を検証する（共通の入口の validate に渡す）。いちばん外側の形が違えば null（bad_response）。
  * 明細ごとに、その明細の候補にある key か null だけを答えとして採り、それ以外は答えなし（answered: false）にする。
  */
-export const validateFactorMatching =
-  (targets: readonly MatchingTarget[]) =>
-  (value: unknown): Map<number, MatchingAnswer> | null => {
+export const validateFactorMatching = (targets: readonly MatchingTarget[]) => {
+  const labelsByIndex = new Map(targets.map((target) => [target.index, candidateLabelsOf(target.candidates)]));
+  return (value: unknown): Map<number, MatchingAnswer> | null => {
     if (!isRecord(value) || !Array.isArray(value.items)) return null;
     const answers = new Map<number, MatchingAnswer>(targets.map((target) => [target.index, { answered: false }]));
     for (const entry of value.items) {
       if (!isRecord(entry) || typeof entry.index !== 'number') continue;
-      const target = targets.find((candidate) => candidate.index === entry.index);
-      if (!target || answers.get(target.index)?.answered) continue;
+      const labels = labelsByIndex.get(entry.index);
+      if (!labels || answers.get(entry.index)?.answered) continue;
       const key = entry.key;
-      if (key !== null && (typeof key !== 'string' || !candidateKeysOf(target.candidates).includes(key))) continue;
+      if (key !== null && (typeof key !== 'string' || !labels.has(key))) continue;
+      // 長さは AI が書いた文で切る（名前に置き換えてから切ると、名前の途中で切れる）
       const reason =
-        typeof entry.reason === 'string' ? entry.reason.replace(/\s+/g, ' ').trim().slice(0, MAX_REASON_LENGTH) : '';
-      answers.set(target.index, { answered: true, key, reason });
+        typeof entry.reason === 'string'
+          ? replaceCandidateKeys(entry.reason.replace(/\s+/g, ' ').trim().slice(0, MAX_REASON_LENGTH), labels)
+          : '';
+      answers.set(entry.index, { answered: true, key, reason });
     }
     return answers;
   };
+};

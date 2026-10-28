@@ -142,11 +142,15 @@ describe('buildReadingItem（電気・都市ガス）', () => {
   it('電気で「残差」のメニューが複数あれば、AI が 1 つを選んでも採らず、人に選んでもらう', () => {
     const item = build({
       candidates: providerCandidates(['メニューA', 'メニューL(残差)', 'メニューM(残差)']),
-      answer: answered('p1-m2'),
+      answer: answered('p1-m2', '残差を選んだ'),
     });
     expect(item.factor.status).toBe('provider_only');
     expect(item.prefill?.factor).toMatchObject({ menuName: null });
-    expect(item.notices[0]).toContain('「残差」のメニューが複数あります（メニューL(残差)・メニューM(残差)）');
+    // AI の判断の文は AI が選んだメニューを書くので、採らなかった理由を判定に添える（表の判定の列に出す）
+    expect(item.factor).toMatchObject({ status: 'provider_only', reason: '残差を選んだ' });
+    expect(item.factor.status === 'provider_only' && item.factor.note).toBe(
+      '「残差」のメニューが複数あるため（メニューL(残差)・メニューM(残差)）、AI が選んだメニューは使わず、事業者だけを入れました',
+    );
   });
 
   it('当てはまる係数が無ければ、事業者は選ばずに入れる（代替値で算定される）', () => {
