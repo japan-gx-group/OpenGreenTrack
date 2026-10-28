@@ -6,7 +6,7 @@
 
 import { MANUAL_ACTIVITY_CATEGORY_MAP } from '@/features/data-input/types';
 import type { InvoiceExtractedItem, InvoiceExtraction } from '../types';
-import { candidateKeysOf, formatCandidateLines, type FactorCandidateSet } from './factorCandidates';
+import { candidateKeysOf, candidateLabelsOf, formatCandidateLines, type FactorCandidateSet } from './factorCandidates';
 
 export const FACTOR_MATCHING_INSTRUCTIONS = `あなたは、請求書から読み取った値に当てはまる排出係数を、候補の一覧から選ぶ係です。
 入力の「明細」ごとに、その明細の候補の中から当てはまるものを 1 つ選び、その key を返してください。当てはまるものが無ければ key は null にします。その明細の候補に無い key は返さないでください。
@@ -25,7 +25,7 @@ export const FACTOR_MATCHING_INSTRUCTIONS = `あなたは、請求書から読�
 燃料:
 - 燃料の名称から、当てはまる燃料の候補を選ぶ（例: レギュラー・ハイオクのガソリン → 揮発油、プロパンガス → 液化石油ガス（LPG））。A重油と B・C重油のように候補が分かれ、請求書から分からなければ null。
 
-reason には、選んだ（または選ばなかった）理由を日本語で 1 文、60 字程度で書く。`;
+reason には、選んだ（または選ばなかった）理由を日本語で 1 文、60 字程度で書く。reason は画面にそのまま出るので、key（p1・p1-m1・f1 など）は書かず、事業者名・メニュー名・燃料の名前で書く。`;
 
 export const FACTOR_MATCHING_SCHEMA = {
   type: 'object',
@@ -88,6 +88,19 @@ export type MatchingAnswer = { answered: true; key: string | null; reason: strin
 
 const MAX_REASON_LENGTH = 120;
 
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * 判断の文に残った候補のキー（指示に従わない応答）を、その候補の名前に置き換える。キーは画面の外の値で、
+ * 使う人には何か分からないため。長いキー（p1-m2）を短いキー（p1）より先に当て、英数字・ハイフンの途中では当てない。
+ */
+export const replaceCandidateKeys = (reason: string, labels: ReadonlyMap<string, string>): string => {
+  if (labels.size === 0) return reason;
+  const keys = [...labels.keys()].sort((a, b) => b.length - a.length).map(escapeRegExp);
+  const pattern = new RegExp(`(?<![A-Za-z0-9-])(${keys.join('|')})(?![A-Za-z0-9-])`, 'g');
+  return reason.replace(pattern, (key) => labels.get(key) ?? key);
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -107,7 +120,12 @@ export const validateFactorMatching =
       const key = entry.key;
       if (key !== null && (typeof key !== 'string' || !candidateKeysOf(target.candidates).includes(key))) continue;
       const reason =
-        typeof entry.reason === 'string' ? entry.reason.replace(/\s+/g, ' ').trim().slice(0, MAX_REASON_LENGTH) : '';
+        typeof entry.reason === 'string'
+          ? replaceCandidateKeys(entry.reason.replace(/\s+/g, ' ').trim(), candidateLabelsOf(target.candidates)).slice(
+              0,
+              MAX_REASON_LENGTH,
+            )
+          : '';
       answers.set(target.index, { answered: true, key, reason });
     }
     return answers;

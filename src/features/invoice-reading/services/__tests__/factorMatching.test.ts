@@ -3,8 +3,10 @@ import { findPortableSchemaProblems } from '@/lib/ai/schema';
 import type { InvoiceExtraction } from '../../types';
 import { buildFuelCandidates, buildProviderCandidates } from '../factorCandidates';
 import {
+  FACTOR_MATCHING_INSTRUCTIONS,
   FACTOR_MATCHING_SCHEMA,
   buildMatchingInput,
+  replaceCandidateKeys,
   validateFactorMatching,
   type MatchingTarget,
 } from '../factorMatching';
@@ -116,9 +118,42 @@ describe('validateFactorMatching', () => {
     expect(validate({ items: 'x' })).toBeNull();
   });
 
+  it('理由に残った候補のキーは、その候補の名前に置き換える（画面の外の値を出さない）', () => {
+    const answers = validate({
+      items: [
+        { index: 1, key: 'p1-m1', reason: '登録番号が一致したため p1-m1 を選択（p1 のメニュー）。' },
+        { index: 2, key: 'f1', reason: 'レギュラーガソリンは揮発油に該当するため、候補の中からf1を選択。' },
+      ],
+    });
+    expect(answers?.get(1)).toMatchObject({
+      reason: '登録番号が一致したため 東京電力エナジーパートナー(株)の「メニューL(残差)」 を選択（東京電力エナジーパートナー(株) のメニュー）。',
+    });
+    expect(answers?.get(2)).toMatchObject({ reason: 'レギュラーガソリンは揮発油に該当するため、候補の中から燃料 揮発油を選択。' });
+  });
+
   it('理由は空白をそろえ、長すぎれば切る', () => {
     const answers = validate({ items: [{ index: 2, key: 'f1', reason: ` ${'あ'.repeat(200)}\n` }] });
     const answer = answers?.get(2);
     expect(answer?.answered && answer.reason).toHaveLength(120);
+  });
+});
+
+describe('replaceCandidateKeys', () => {
+  const labels = new Map([
+    ['p1', '東京ガス(株)'],
+    ['p1-m2', '東京ガス(株)の「メニューB」'],
+    ['f1', '燃料 揮発油'],
+  ]);
+
+  it('長いキー（p1-m2）を短いキー（p1）より先に置き換える', () => {
+    expect(replaceCandidateKeys('p1-m2 を選んだ', labels)).toBe('東京ガス(株)の「メニューB」 を選んだ');
+  });
+
+  it('候補に無いキーや、英数字の途中にある文字はそのまま', () => {
+    expect(replaceCandidateKeys('f2 と f10、cf1・A0269 はそのまま', labels)).toBe('f2 と f10、cf1・A0269 はそのまま');
+  });
+
+  it('指示文で、理由にキーを書かないよう伝える', () => {
+    expect(FACTOR_MATCHING_INSTRUCTIONS).toContain('key（p1・p1-m1・f1 など）は書かず');
   });
 });
