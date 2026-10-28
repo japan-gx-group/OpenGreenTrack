@@ -3,6 +3,7 @@ import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { click, render, type RenderResult } from '@/lib/testing/render';
 import { uploadEvidenceFile } from '@/features/activity-evidence/services/evidenceClient';
+import { writeConvertPreference } from '@/features/activity-evidence/services/convertPreference';
 import type { EvidenceFile } from '@/features/activity-evidence/types';
 import type { CandidateFactorRow } from '@/features/data-input/services/factorSelectionService';
 import type { ManualEntryLocationOption, SavedManualActivityRecord } from '@/features/data-input/types';
@@ -262,6 +263,17 @@ describe('InvoiceReadingCard', () => {
     click(buttonByText('やめる')!);
     expect(uploadEvidenceFile).not.toHaveBeenCalled();
     expect(requestInvoiceReading).not.toHaveBeenCalled();
+  });
+
+  it('「WebP に変換して容量を減らす」は Checkbox で切り替え、選択をこのブラウザに覚える', async () => {
+    renderCard();
+    await settle();
+    const convert = document.body.querySelector<HTMLButtonElement>('button[role="checkbox"][id]')!;
+    expect(document.body.querySelector(`label[for="${convert.id}"]`)?.textContent).toBe('画像（PNG・JPEG）を WebP に変換して容量を減らす');
+    expect(convert.getAttribute('aria-checked')).toBe('false');
+    click(convert);
+    expect(convert.getAttribute('aria-checked')).toBe('true');
+    expect(writeConvertPreference).toHaveBeenLastCalledWith(true);
   });
 
   it('一度に選べる数を超えたら、確認を出さずに理由を出す', () => {
