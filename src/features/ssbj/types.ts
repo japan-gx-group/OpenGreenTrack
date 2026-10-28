@@ -7,6 +7,8 @@
 //
 // R1 は社内確認用の試行版であり、SSBJ 基準への準拠や対外提出を保証するものではない。
 
+import type { Scope2Basis } from '@/features/calculation/types';
+
 // ---------------------------------------------------------------------------
 // 識別子
 // ---------------------------------------------------------------------------
@@ -361,7 +363,11 @@ export const SSBJ_GHG_GASES = ['CO2', 'CH4', 'N2O', 'HFCs', 'PFCs', 'SF6', 'NF3'
 
 export type SsbjGhgGas = (typeof SSBJ_GHG_GASES)[number];
 
-/** Scope 2 の基準。location = ロケーション基準、market = マーケット基準。 */
+/**
+ * 外部算定値の Scope 2 の基準。location = ロケーション基準、market = マーケット基準。
+ * DB（ssbj_external_emissions."scope2Basis" の check 制約）と保存版に入る値で、OGT 本体の Scope2Basis
+ * （location_based / market_based）と同じ基準を指す（書き方だけが違う。保存済みの行と保存版を書き換えないため、このままにする）。
+ */
 export const SSBJ_SCOPE2_BASES = ['location', 'market'] as const;
 
 export type SsbjScope2Basis = (typeof SSBJ_SCOPE2_BASES)[number];
@@ -464,10 +470,10 @@ export type OgtBoundary =
 /**
  * Scope 2 の値（OgtCandidateValue.value）の算定基準。値は OGT の温対法の係数区分（基礎 / 調整後）による
  * 単一の合計で、ロケーション基準・マーケット基準のどちらでもないため、OGT 由来の値は常に `unknown`。
- * 基準別の値は別に basisTotals で持つ。location_based / market_based は型にだけ用意しており、
+ * 基準別の値は別に basisTotals で持つ。location_based / market_based（OGT 本体の Scope2Basis）は型にだけ用意しており、
  * OGT の値から自動で設定してはならない。
  */
-export type Scope2Basis = 'unknown' | 'location_based' | 'market_based';
+export type OgtScope2ValueBasis = 'unknown' | Scope2Basis;
 
 /**
  * Scope 2 の GHG プロトコルの基準別の年度合計（t-CO2e。dashboard_aggregates の基準別の列）。
@@ -505,7 +511,7 @@ export type OgtScope1Method = { kind: 'activity_based' };
 /** Scope 2: 活動量 × 係数。値は基準の区別のない合計のため scope2Basis を必ず添える。 */
 export type OgtScope2Method = {
   kind: 'activity_based';
-  scope2Basis: Scope2Basis;
+  scope2Basis: OgtScope2ValueBasis;
   factorTypeBreakdown: OgtFactorTypeBreakdown | null;
   /** 基準別の合計。基準別の値を取り込む前に採用した値（保存版）には無い。 */
   basisTotals?: OgtScope2BasisTotals;
