@@ -98,6 +98,7 @@ describe('resolveBulkMonthFactors', () => {
           menuName: null,
         },
         selectedFactorId: null,
+        selectedFactorName: null,
       },
       fetchers: fetchers(),
     });
@@ -123,6 +124,7 @@ describe('resolveBulkMonthFactors', () => {
           menuName: null,
         },
         selectedFactorId: null,
+        selectedFactorName: null,
       },
       fetchers: fetchers(),
     });
@@ -143,12 +145,52 @@ describe('resolveBulkMonthFactors', () => {
       selection: {
         providerSelection: { factorType: 'adjusted', providerName: null, menuName: null },
         selectedFactorId: 'national-2024',
+        selectedFactorName: '電気（代替値）',
       },
       fetchers: fetchers(),
     });
     expect(result.get('2025-02')?.factorIdToSave).toBe('national-2024');
-    // 2025-04 の候補に national-2024 は無い（有効期間外）ため、その月の自動選択（候補先頭）へ。
+    // 2025-04 の候補に national-2024 は無い（有効期間外）ため、同じ名前の national-2025 を使う。
     expect(result.get('2025-04')?.factorIdToSave).toBe('national-2025');
+  });
+
+  it('同じ優先度で名前の違う候補（A重油・B・C重油）は自動で選ばず、選んだ係数を年度の境目の後も名前で使い続ける', async () => {
+    const heavy = (id: string, name: string, applicableYear: number) =>
+      factor({ id, name, applicableYear, energyType: 'fuel_heavy_oil', scope: 'scope1', unit: 'tCO2/kL', factorValue: 2.75 });
+    const pool = [
+      heavy('heavy-a-2024', '燃料 A重油', 2024),
+      heavy('heavy-bc-2024', '燃料 B・C重油', 2024),
+      heavy('heavy-a-2025', '燃料 A重油', 2025),
+      heavy('heavy-bc-2025', '燃料 B・C重油', 2025),
+    ];
+    const heavyFetchers = {
+      fetchYearFactors: vi.fn(async (years: number[]) => pool.filter((row) => years.includes(row.applicableYear))),
+      fetchProviderFactors: vi.fn(async () => []),
+    };
+    const resolve = (selectedFactorId: string | null, selectedFactorName: string | null) =>
+      resolveBulkMonthFactors({
+        months: ['2025-02', '2025-04'],
+        location: LOCATION,
+        energyType: 'fuel_heavy_oil',
+        fiscalYears: FISCAL_YEARS,
+        selection: {
+          providerSelection: { factorType: 'adjusted', providerName: null, menuName: null },
+          selectedFactorId,
+          selectedFactorName,
+        },
+        fetchers: heavyFetchers,
+      });
+
+    const unselected = await resolve(null, null);
+    for (const month of ['2025-02', '2025-04']) {
+      expect(unselected.get(month)?.factorIdToSave).toBeNull();
+      expect(unselected.get(month)?.applied).toMatchObject({ status: 'resolved', factor: null, ambiguous: true });
+    }
+
+    const selected = await resolve('heavy-a-2024', '燃料 A重油');
+    expect(selected.get('2025-02')?.factorIdToSave).toBe('heavy-a-2024');
+    expect(selected.get('2025-04')?.factorIdToSave).toBe('heavy-a-2025');
+    expect(selected.get('2025-04')?.applied).toMatchObject({ status: 'resolved', ambiguous: false, factor: { id: 'heavy-a-2025' } });
   });
 
   it('同じ年度集合の月は係数マスタの取得を共有する', async () => {
@@ -161,6 +203,7 @@ describe('resolveBulkMonthFactors', () => {
       selection: {
         providerSelection: { factorType: 'adjusted', providerName: null, menuName: null },
         selectedFactorId: null,
+        selectedFactorName: null,
       },
       fetchers: injected,
     });

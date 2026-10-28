@@ -91,7 +91,7 @@ describe('validateEntry', () => {
     targetMonthError: null,
     amount: '10',
     note: '',
-    factor: { source: 'standard' as const },
+    factor: { source: 'standard' as const, choicePending: false },
   };
 
   it('拠点 → 対象年月 → 活動量 → 備考 の順に最初のエラーを返す', () => {
@@ -117,6 +117,15 @@ describe('validateEntry', () => {
       '備考は500文字以内で入力してください。',
     );
     expect(validateEntry({ ...base, note: 'x'.repeat(500) }, { factorMissing: MISSING })).toBeNull();
+  });
+
+  it('同じ優先度の係数がまだ選ばれていなければ、対象年月の後・活動量の前に選ぶよう返す', () => {
+    const pending = { ...base, factor: { source: 'standard' as const, choicePending: true } };
+    expect(validateEntry(pending, { factorMissing: MISSING })).toBe(VALIDATION_MESSAGES.factorChoice);
+    expect(validateEntry({ ...pending, targetMonthError: '対象年月を選択してください。' }, { factorMissing: MISSING })).toBe(
+      '対象年月を選択してください。',
+    );
+    expect(validateEntry({ ...pending, amount: '' }, { factorMissing: MISSING })).toBe(VALIDATION_MESSAGES.factorChoice);
   });
 
   it('IDEA は製品の選択・詳細取得を活動量より先に検証し、参照切れなら専用文言を返す', () => {
