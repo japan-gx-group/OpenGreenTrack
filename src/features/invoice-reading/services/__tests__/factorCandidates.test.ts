@@ -3,7 +3,7 @@ import {
   MAX_PROVIDERS_WITH_MENUS,
   buildFuelCandidates,
   buildProviderCandidates,
-  candidateKeysOf,
+  candidateLabelsOf,
   comparableProviderName,
   formatCandidateLines,
   resolveFallbackMenu,
@@ -94,7 +94,7 @@ describe('buildProviderCandidates', () => {
     const set = buildProviderCandidates({ energyType: 'electricity', rows: many, registrationNumber: null, supplierName: null });
     expect(set.includeMenus).toBe(false);
     expect(formatCandidateLines(set)[0]).toBe('p1: 事業者0（登録番号 A0000）');
-    expect(candidateKeysOf(set)).not.toContain('p1-m1');
+    expect(candidateLabelsOf(set).has('p1-m1')).toBe(false);
   });
 
   it('AI に見せる文は、事業者の行の下にメニューの行を並べる', () => {
@@ -104,7 +104,13 @@ describe('buildProviderCandidates', () => {
       '  p1-m1: メニュー「メニューA」',
       '  p1-m2: メニュー「メニューL(残差)」',
     ]);
-    expect(candidateKeysOf(set)).toEqual(['p1', 'p1-m1', 'p1-m2']);
+    expect(candidateLabelsOf(set)).toEqual(
+      new Map([
+        ['p1', '東京電力エナジーパートナー(株)'],
+        ['p1-m1', '東京電力エナジーパートナー(株)の「メニューA」'],
+        ['p1-m2', '東京電力エナジーパートナー(株)の「メニューL(残差)」'],
+      ]),
+    );
   });
 });
 

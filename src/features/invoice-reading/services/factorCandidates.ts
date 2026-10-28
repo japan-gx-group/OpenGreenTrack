@@ -186,8 +186,8 @@ export const formatCandidateLines = (set: FactorCandidateSet): string[] => {
 };
 
 /**
- * 候補のキーと、画面に出せる名前の対応（AI の判断の文に残ったキーを名前に置き換えるため）。
- * 燃料は係数の名前、事業者は事業者名、メニューは事業者名とメニュー名。AI に見せたキーだけを入れる。
+ * 候補のキーと、画面に出せる名前の対応。AI に見せたキーだけを入れる（AI が返したキーの確認と、
+ * 判断の文に残ったキーを名前に置き換えるのに使う）。燃料は係数の名前、事業者は事業者名、メニューは事業者名とメニュー名。
  */
 export const candidateLabelsOf = (set: FactorCandidateSet): Map<string, string> =>
   new Map(
@@ -200,15 +200,6 @@ export const candidateLabelsOf = (set: FactorCandidateSet): Map<string, string> 
             : []),
         ]),
   );
-
-/** 候補のキーの一覧（AI が返したキーの確認に使う） */
-export const candidateKeysOf = (set: FactorCandidateSet): string[] =>
-  set.kind === 'fuel'
-    ? set.fuels.map((fuel) => fuel.key)
-    : set.providers.flatMap((provider) => [
-        provider.key,
-        ...(set.includeMenus ? provider.menus.map((menu) => menu.key) : []),
-      ]);
 
 /**
  * メニューを AI に見せなかった（事業者が多い）か、AI が事業者だけを選んだときのメニュー。

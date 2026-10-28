@@ -118,16 +118,14 @@ describe('validateFactorMatching', () => {
     expect(validate({ items: 'x' })).toBeNull();
   });
 
-  it('理由に残った候補のキーは、その候補の名前に置き換える（画面の外の値を出さない）', () => {
+  it('理由に残った候補のキーは、その明細の候補の名前に置き換える（画面の外の値を出さない）', () => {
     const answers = validate({
       items: [
-        { index: 1, key: 'p1-m1', reason: '登録番号が一致したため p1-m1 を選択（p1 のメニュー）。' },
+        { index: 1, key: 'p1-m1', reason: '登録番号が一致したため p1-m1 を選択。' },
         { index: 2, key: 'f1', reason: 'レギュラーガソリンは揮発油に該当するため、候補の中からf1を選択。' },
       ],
     });
-    expect(answers?.get(1)).toMatchObject({
-      reason: '登録番号が一致したため 東京電力エナジーパートナー(株)の「メニューL(残差)」 を選択（東京電力エナジーパートナー(株) のメニュー）。',
-    });
+    expect(answers?.get(1)).toMatchObject({ reason: '登録番号が一致したため 東京電力エナジーパートナー(株)の「メニューL(残差)」 を選択。' });
     expect(answers?.get(2)).toMatchObject({ reason: 'レギュラーガソリンは揮発油に該当するため、候補の中から燃料 揮発油を選択。' });
   });
 
@@ -135,6 +133,12 @@ describe('validateFactorMatching', () => {
     const answers = validate({ items: [{ index: 2, key: 'f1', reason: ` ${'あ'.repeat(200)}\n` }] });
     const answer = answers?.get(2);
     expect(answer?.answered && answer.reason).toHaveLength(120);
+  });
+
+  it('長さは AI が書いた文で切り、キーを名前にしたことで文の終わりが切れないようにする', () => {
+    const reason = `${'あ'.repeat(100)} p1-m1 を選択。`;
+    const answers = validate({ items: [{ index: 1, key: 'p1-m1', reason }] });
+    expect(answers?.get(1)).toMatchObject({ reason: `${'あ'.repeat(100)} 東京電力エナジーパートナー(株)の「メニューL(残差)」 を選択。` });
   });
 });
 
@@ -145,15 +149,34 @@ describe('replaceCandidateKeys', () => {
     ['f1', '燃料 揮発油'],
   ]);
 
-  it('長いキー（p1-m2）を短いキー（p1）より先に置き換える', () => {
+  it('メニューのキー（p1-m2）は、事業者のキー（p1）とメニューの名前に分けずに置き換える', () => {
     expect(replaceCandidateKeys('p1-m2 を選んだ', labels)).toBe('東京ガス(株)の「メニューB」 を選んだ');
   });
 
-  it('候補に無いキーや、英数字の途中にある文字はそのまま', () => {
-    expect(replaceCandidateKeys('f2 と f10、cf1・A0269 はそのまま', labels)).toBe('f2 と f10、cf1・A0269 はそのまま');
+  it('大文字・全角のキーや、ハイフンでつないだキーも置き換える', () => {
+    expect(replaceCandidateKeys('P1・ｆ１・Ｐ１－Ｍ２・残差-p1', labels)).toBe(
+      '東京ガス(株)・燃料 揮発油・東京ガス(株)の「メニューB」・残差-東京ガス(株)',
+    );
   });
 
-  it('指示文で、理由にキーを書かないよう伝える', () => {
-    expect(FACTOR_MATCHING_INSTRUCTIONS).toContain('key（p1・p1-m1・f1 など）は書かず');
+  it('名前に括弧で添えたキーは、名前が二重にならないよう括弧ごと消す', () => {
+    expect(replaceCandidateKeys('揮発油（f1）を選択', labels)).toBe('揮発油を選択');
+    expect(replaceCandidateKeys('東京ガス(株) (p1) を選んだ', labels)).toBe('東京ガス(株) を選んだ');
+    expect(replaceCandidateKeys('（p1 のメニュー）', labels)).toBe('（東京ガス(株) のメニュー）');
+  });
+
+  it('候補に無いキーや、英数字の途中にある文字はそのまま', () => {
+    expect(replaceCandidateKeys('f2 と f10、cf1・A0269・（p9） はそのまま', labels)).toBe(
+      'f2 と f10、cf1・A0269・（p9） はそのまま',
+    );
+  });
+});
+
+describe('FACTOR_MATCHING_INSTRUCTIONS', () => {
+  it('理由は画面に出るので、キーや key・null の言葉を書かないよう伝える', () => {
+    const rule = FACTOR_MATCHING_INSTRUCTIONS.split('\n').find((line) => line.startsWith('reason'));
+    expect(rule).toMatch(/p1/);
+    expect(rule).toMatch(/null/);
+    expect(rule).toMatch(/書かず/);
   });
 });
