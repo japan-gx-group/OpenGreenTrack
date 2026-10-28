@@ -27,7 +27,8 @@
 //   - 削除の記録は、削除を始める前に status: started（確定したかまだ分からない）で作る（作れなければ何も消さない）。
 //     確定の後に status: committed で書き直し、書き直せなければ記録の JSON を画面に出す（削除したのに記録が無い、を起こさないため）
 //   - OGT 本体の監査ログ（system_audit_logs）は、組織への外部キーが意図的に on delete restrict。消してよいかを本体のメンテナーと
-//     合意するまで既定では消さず、監査ログのある組織は何も消さずに止まる。--delete-audit-logs を明示したときだけ、先に消す
+//     合意するまで既定では消さず、監査ログのある組織は何も消さずに止まる。--delete-audit-logs を明示したときだけ、先に消す。
+//     SSBJ の操作履歴（ssbj_audit_logs）も同じ監査ログとして扱う（連鎖削除で消えるので、既定では、あれば止まる）
 //
 // 出力: 結果の表（summary は --json で JSON）。終了コード: 0 = 成功 / 1 = 引数エラー・実行環境エラー・SQL エラー・確認の失敗
 // 単体テスト: scripts/ops/__tests__/org-data.test.ts（純粋関数だけを対象にし、docker / psql / DB には触れない）
@@ -56,7 +57,7 @@ export const USAGE = `使い方: node scripts/ops/org-data.ts <summary|export|de
     --execute                実際に削除する
     --confirm-name <組織名>  実際に削除するとき、DB の組織名と同じ名前を指定する（取り違え防止）
     --record <ファイル>      実際に削除するとき、削除の記録（JSON）の保存先。リポジトリの外に限る
-    --delete-audit-logs      OGT 本体の監査ログ（system_audit_logs）も消す（Issue #160 で合意するまで使わない）
+    --delete-audit-logs      監査ログ（OGT 本体の system_audit_logs・SSBJ の ssbj_audit_logs）も消す（Issue #160 で合意するまで使わない）
   共通
     --org <組織ID>           対象の組織（UUID）
     --db-url-from-env        ホストの psql で、環境変数 OGT_DB_URL の DB に接続する（既定: ローカル Supabase の DB コンテナ）
@@ -239,6 +240,13 @@ export const exportRowExpression = (table: OrgDataTable): string => {
 const authUserFilter = (organizationId: string): string =>
   `u.id in (select p.id from public.profiles p where p."organizationId" = ${literal(organizationId)}::uuid)`;
 
+/**
+ * 削除で消す組織のユーザーの ID を控える一時表。組織を消すと profiles が連鎖削除で消え、authUserFilter では選べなくなるため、
+ * 消す前に控えて、ユーザーの削除と削除の後の確認に使う。
+ */
+const DELETED_USERS_TABLE = 'ogt_org_data_users';
+const deletedUserFilter = `u.id in (select id from ${DELETED_USERS_TABLE})`;
+
 /** Storage にあるこの組織のファイル（パスの先頭のフォルダが組織 ID）を選ぶ条件。 */
 const storageFilter = (organizationId: string): string =>
   `(storage.foldername(o.name))[1] = ${literal(organizationId)}`;
@@ -339,7 +347,7 @@ export const buildExportSql = (organizationId: string): string => {
  * 削除の前後で比べる値（テーブルごとに、この組織の行数・ほかの組織の行数・ほかの組織の行のチェックサム）。
  * auth.users はログインのたびに行が変わるため、チェックサムは比べない（件数だけ）。
  */
-const snapshotSql = (organizationId: string, tempTable: string): string => {
+const snapshotSql = (organizationId: string, tempTable: string, userFilter: string): string => {
   const rows = ORG_DATA_TABLES.map(table => {
     const own = organizationFilter(table, organizationId);
     return `select ${literal(table.name)} as name, count(*) filter (where ${own}) as target_rows, ` +
@@ -347,18 +355,21 @@ const snapshotSql = (organizationId: string, tempTable: string): string => {
       `coalesce(md5(string_agg(md5(to_jsonb(t)::text), '' order by ${orderBy(table)}) filter (where (${own}) is not true)), '') as other_checksum ` +
       `from public.${ident(table.name)} t`;
   });
-  const authUsers = `select 'auth.users', count(*) filter (where ${authUserFilter(organizationId)}), ` +
-    `count(*) filter (where not (${authUserFilter(organizationId)})), '' from auth.users u`;
+  const authUsers = `select 'auth.users', count(*) filter (where ${userFilter}), ` +
+    `count(*) filter (where not (${userFilter})), '' from auth.users u`;
   return `create temp table ${tempTable} on commit drop as\n${[...rows, authUsers].join('\nunion all\n')};`;
 };
 
 /**
  * delete の SQL。repeatable read の 1 つのトランザクションで、消す前の値を取り、消し、確定の前に確かめる。
  * 試行（execute = false）は最後に rollback し、実際の削除（execute = true）は commit する。
- * 消す順番: （deleteAuditLogs のときだけ）system_audit_logs → 組織のユーザー（auth.users。profiles は連鎖削除）→
- * organizations（ほかのテーブルは連鎖削除）。
+ * 消す順番: 組織のユーザーの ID を控える →（deleteAuditLogs のときだけ）system_audit_logs → organizations（profiles と
+ * ほかのテーブルは連鎖削除）→ 控えた ID のユーザー（auth.users）。
+ * ユーザーを組織より先に消すと、最後の管理者の profiles が消えるところで、組織の管理者を 0 人にしないトリガー
+ * （ensure_organization_keeps_admin）に止められる。組織ごと消すときは、このトリガーは止めない。
  * system_audit_logs は organizations への外部キーが意図的に on delete restrict（スキーマの §7）。消してよいかを本体のメンテナーと
  * 合意するまで、既定では消さずに、監査ログがあれば何も消さずに止める（本体の設計判断をこのスクリプトで変えないため）。
+ * SSBJ の操作履歴（ssbj_audit_logs）は連鎖削除で消えるが、同じ監査ログなので、system_audit_logs と同じく既定では止める。
  * commit は最後の区切りの行（end）の後に置く。psql が失敗したとき、出力に end が無ければ確定していないと分かる（psqlFailure）。
  */
 export const buildDeleteSql = (organizationId: string, execute: boolean, deleteAuditLogs = false): string => {
@@ -379,16 +390,18 @@ end
 $$;`),
     deleteAuditLogs ? '' : `do $$
 begin
-  if exists (select 1 from public.system_audit_logs where "organizationId" = ${org}) then
-    raise exception 'この組織には OGT 本体の監査ログ（system_audit_logs）があります。監査ログを消してよいかは Issue #160 で合意してから進めてください（合意前は何も消しません）';
+  if exists (select 1 from public.system_audit_logs where "organizationId" = ${org})
+    or exists (select 1 from public.ssbj_audit_logs where "organizationId" = ${org}) then
+    raise exception 'この組織には監査ログ（OGT 本体の system_audit_logs か SSBJ の操作履歴 ssbj_audit_logs）があります。監査ログを消してよいかは Issue #160 で合意してから進めてください（合意前は何も消しません）';
   end if;
 end
 $$;`,
-    snapshotSql(organizationId, 'ogt_org_data_before'),
+    `create temp table ${DELETED_USERS_TABLE} on commit drop as select p.id from public.profiles p where p."organizationId" = ${org};`,
+    snapshotSql(organizationId, 'ogt_org_data_before', deletedUserFilter),
     deleteAuditLogs ? `delete from public.system_audit_logs where "organizationId" = ${org};` : '',
-    `delete from auth.users u where ${authUserFilter(organizationId)};`,
     `delete from public.organizations where id = ${org};`,
-    snapshotSql(organizationId, 'ogt_org_data_after'),
+    `delete from auth.users u where ${deletedUserFilter};`,
+    snapshotSql(organizationId, 'ogt_org_data_after', deletedUserFilter),
     `do $$
 declare
   r record;

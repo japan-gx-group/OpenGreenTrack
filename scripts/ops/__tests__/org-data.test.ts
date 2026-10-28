@@ -136,10 +136,12 @@ describe('SQL の組み立て', () => {
     }
   });
 
-  it('監査ログ（system_audit_logs）は、明示したときだけ消す。既定では、監査ログがあれば何も消さずに止める', () => {
+  it('監査ログ（system_audit_logs・ssbj_audit_logs）は、明示したときだけ消す。既定では、監査ログがあれば何も消さずに止める', () => {
     const keep = buildDeleteSql(ORG, true);
     expect(keep).not.toContain('delete from public.system_audit_logs');
     expect(keep).toContain('Issue #160');
+    // SSBJ の操作履歴は連鎖削除で消えるので、既定では、あれば止める（OGT 本体の監査ログと同じ扱い）。
+    expect(keep).toContain(`exists (select 1 from public.ssbj_audit_logs where "organizationId" = '${ORG}'::uuid)`);
     // 止める確認は、何かを消す前に行う。
     expect(keep.indexOf('Issue #160')).toBeLessThan(keep.indexOf('delete from'));
     expect(buildDeleteSql(ORG, true, true)).toContain(`delete from public.system_audit_logs where "organizationId" = '${ORG}'::uuid;`);
@@ -150,9 +152,21 @@ describe('SQL の組み立て', () => {
     const deletes = buildDeleteSql(ORG, true, true).match(/delete from [^;]+;/g) ?? [];
     expect(deletes).toEqual([
       `delete from public.system_audit_logs where "organizationId" = '${ORG}'::uuid;`,
-      `delete from auth.users u where u.id in (select p.id from public.profiles p where p."organizationId" = '${ORG}'::uuid);`,
       `delete from public.organizations where id = '${ORG}'::uuid;`,
+      'delete from auth.users u where u.id in (select id from ogt_org_data_users);',
     ]);
+  });
+
+  it('組織のユーザーは、消す前に ID を控え、組織を消した後に消す（最後の管理者を守るトリガーに止められないように）', () => {
+    const sql = buildDeleteSql(ORG, true);
+    const captured = sql.indexOf(
+      `create temp table ogt_org_data_users on commit drop as select p.id from public.profiles p where p."organizationId" = '${ORG}'::uuid;`);
+    expect(captured).toBeGreaterThan(-1);
+    expect(captured).toBeLessThan(sql.indexOf('create temp table ogt_org_data_before'));
+    expect(sql.indexOf('delete from public.organizations')).toBeLessThan(sql.indexOf('delete from auth.users'));
+    // 削除の後の確認も、控えた ID で数える（組織を消すと profiles からは辿れない）。
+    const after = sql.slice(sql.indexOf('create temp table ogt_org_data_after'));
+    expect(after).toContain("select 'auth.users', count(*) filter (where u.id in (select id from ogt_org_data_users))");
   });
 
   it('削除の前後で、すべてのテーブルの件数とほかの組織のチェックサムを取る', () => {

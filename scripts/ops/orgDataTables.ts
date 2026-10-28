@@ -5,8 +5,7 @@
 // scripts/ops/__tests__/orgDataTables.test.ts が supabase/migrations の create table と照らし合わせ、漏れを検出する。
 //
 // 削除は organizations の行を消し、外部キーの連鎖削除（on delete cascade）で各テーブルの行を消す。
-// 連鎖削除で消えない行（on delete restrict の system_audit_logs）は、org-data.ts が先に消す。
-// どのテーブルも削除の後に「この組織の行が 0 件」「ほかの組織の行が変わっていない」を確かめる。
+// 連鎖削除で消えない行（on delete restrict の system_audit_logs）は、org-data.ts が先に消す。// どのテーブルも削除の後に「この組織の行が 0 件」「ほかの組織の行が変わっていない」を確かめる。
 
 export type OrgDataTable = {
   /** public スキーマのテーブル名。 */
@@ -34,6 +33,8 @@ export const ORG_DATA_TABLES: readonly OrgDataTable[] = [
   { name: 'idea_factors', organizationColumn: 'organizationId', primaryKey: ['id'] },
   { name: 'idea_fiscal_year_imports', organizationColumn: 'organizationId', primaryKey: ['fiscalYearId'] },
   { name: 'activity_records', organizationColumn: 'organizationId', primaryKey: ['id'] },
+  { name: 'activity_evidence_files', organizationColumn: 'organizationId', primaryKey: ['id'] },
+  { name: 'activity_record_evidence', organizationColumn: 'organizationId', primaryKey: ['activityRecordId', 'evidenceFileId'] },
   { name: 'calculation_batches', organizationColumn: 'organizationId', primaryKey: ['id'] },
   { name: 'emission_results', organizationColumn: 'organizationId', primaryKey: ['id'] },
   { name: 'scope2_basis_results', organizationColumn: 'organizationId', primaryKey: ['id'] },
@@ -43,6 +44,12 @@ export const ORG_DATA_TABLES: readonly OrgDataTable[] = [
   { name: 'supplier_emissions', organizationColumn: 'organizationId', primaryKey: ['id'] },
   { name: 'reduction_targets', organizationColumn: 'organizationId', primaryKey: ['id'] },
   { name: 'reduction_target_years', organizationColumn: 'organizationId', primaryKey: ['id'] },
+  { name: 'ai_settings', organizationColumn: 'organizationId', primaryKey: ['organizationId'] },
+  // API キーの暗号文と、暗号化の鍵の指紋は書き出さない（鍵はサーバの環境変数にあり、組織に返しても使えず、渡すと危ない）。
+  {
+    name: 'ai_credentials', organizationColumn: 'organizationId', primaryKey: ['organizationId'],
+    omitColumns: ['ciphertext', 'iv', 'authTag', 'keyId'],
+  },
   { name: 'system_audit_logs', organizationColumn: 'organizationId', primaryKey: ['id'] },
   // SSBJ
   { name: 'ssbj_reports', organizationColumn: 'organizationId', primaryKey: ['id'] },
