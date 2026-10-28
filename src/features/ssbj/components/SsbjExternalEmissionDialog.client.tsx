@@ -40,7 +40,7 @@ export const SsbjExternalEmissionDialog = ({ form, evidence, members, onSubmit }
           <DialogHeader>
             <DialogTitle>{form.editing === 'new' ? '外部算定値の登録' : '外部算定値の編集'}</DialogTitle>
             <DialogDescription>
-              Scope 1・Scope 3 では、OGT の採用値と同じ区分の CO2 は登録できません（二重計上を防ぐため）。Scope 2 は基準ごとの値として、OGT の値（基準不明）とは別に示します。変更は作業中の内容です。
+              OGT の採用値で同じ区分（Scope 2 は同じ基準）の値が算定済みなら、その区分の CO2 は登録できません（二重計上を防ぐため）。Scope 2 で OGT が算定していない基準の値は登録できます。変更は作業中の内容です。
             </DialogDescription>
           </DialogHeader>
 

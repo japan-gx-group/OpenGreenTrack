@@ -64,7 +64,7 @@ export const SsbjPreviewGhg = ({ ghg }: { ghg: SsbjGhgAdoption | null | undefine
         出典: OGT 算定値。OGT から採用した値（採用日時 {formatDateTime(ghg.adoptedAt)}）。集計範囲は組織全体、単位は t-CO2e。
       </p>
       <ValueTable values={totals} />
-      {basisTotals ? (
+      {basisTotals && scope2 ? (
         <>
           <h4 className="m-0 text-sm font-bold">Scope 2 の基準別</h4>
           <Table>
@@ -72,21 +72,22 @@ export const SsbjPreviewGhg = ({ ghg }: { ghg: SsbjGhgAdoption | null | undefine
               <TableRow>
                 <TableHead>基準</TableHead>
                 <TableHead className="text-right">排出量</TableHead>
+                <TableHead>算定状態</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow>
-                <TableCell>ロケーション基準</TableCell>
-                <TableCell className="text-right tabular-nums">{formatScope2BasisTotal(basisTotals.locationBased)}</TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell>マーケット基準</TableCell>
-                <TableCell className="text-right tabular-nums">{formatScope2BasisTotal(basisTotals.marketBased)}</TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell className="whitespace-normal">うち契約したメニューの係数による分</TableCell>
-                <TableCell className="text-right tabular-nums">{formatScope2BasisTotal(basisTotals.marketContract)}</TableCell>
-              </TableRow>
+              {([
+                ['ロケーション基準', basisTotals.locationBased],
+                ['マーケット基準', basisTotals.marketBased],
+                ['うち契約したメニューの係数による分', basisTotals.marketContract],
+              ] as const).map(([label, total]) => (
+                <TableRow key={label}>
+                  <TableCell className="whitespace-normal">{label}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatScope2BasisTotal(total)}</TableCell>
+                  {/* 算定状態は Scope 2 全体のもの（基準別の値も、同じ活動量から算定している）。CSV と同じ出し方。 */}
+                  <TableCell>{total.state === 'answered' ? OGT_DATA_QUALITY_LABELS[scope2.dataQuality] : '未算定'}</TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
           <p className="m-0 text-sm text-text-muted">

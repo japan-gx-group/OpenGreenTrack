@@ -373,8 +373,8 @@ export const SSBJ_SCOPE2_BASIS_LABELS: Record<SsbjScope2Basis, string> = {
 
 /**
  * 外部で算定した排出量（ssbj_external_emissions の 1 行）。出典（算定した者・方法・根拠文書）と確認者を必ず持つ。
- * Scope 1・Scope 3 で OGT の採用値（実質 CO2 のみ）と同じ区分の CO2 は採用できない（DB が拒否する）。
- * Scope 2 は基準ごとの値で、OGT の採用値（基準不明）とは別の値として扱う。
+ * OGT の採用値（実質 CO2 のみ）で同じ区分（Scope 2 は同じ基準の合計）が算定済みなら、その区分の CO2 は採用できない（DB が拒否する）。
+ * Scope 2 は基準ごとの値で、OGT の基準の区別のない値とは別の値として扱う。
  */
 export type SsbjExternalEmission = {
   id: string;

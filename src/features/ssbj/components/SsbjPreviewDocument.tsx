@@ -51,6 +51,7 @@ export const SsbjPreviewDocument = ({
 }) => {
   const { report, sections } = source.snapshot;
   const unsupported = unsupportedPreviewSections(source.snapshot);
+  const scope2WithBasis = !!sections.ghg && scope2BasisTotalsOf(sections.ghg.values) !== null;
 
   return (
     <article className="flex flex-col gap-2">
@@ -91,7 +92,11 @@ export const SsbjPreviewDocument = ({
         <h3 className="m-0 text-sm font-bold">温室効果ガス排出</h3>
         <SsbjPreviewGhg ghg={sections.ghg} />
         <h3 className="m-0 mt-2 text-sm font-bold">外部で算定した排出量</h3>
-        <SsbjPreviewExternalEmissions items={sections.external_emissions} showInternalNotes={showInternalNotes} />
+        <SsbjPreviewExternalEmissions
+          items={sections.external_emissions}
+          showInternalNotes={showInternalNotes}
+          scope2WithBasis={scope2WithBasis}
+        />
         <h3 className="m-0 mt-2 text-sm font-bold">そのほかの指標・目標・測定方法の説明</h3>
         <SsbjPreviewNarratives sectionId="metrics_targets" narratives={sections.narratives} showInternalNotes={showInternalNotes} />
       </Section>
@@ -116,7 +121,8 @@ export const SsbjPreviewDocument = ({
       <Section title="注記">
         <ul className="m-0 flex list-disc flex-col gap-1 pl-5 text-sm">
           {NOTES.map(note => <li key={note}>{note}</li>)}
-          <li>{sections.ghg && scope2BasisTotalsOf(sections.ghg.values) ? SCOPE2_NOTE_WITH_BASIS : SCOPE2_NOTE_WITHOUT_BASIS}</li>
+          {/* OGT の値を採用していない版には、OGT の Scope 2 の注記を出さない（今の OGT は基準別の値を持つので、「基準不明」は事実と違う）。 */}
+          {sections.ghg && <li>{scope2WithBasis ? SCOPE2_NOTE_WITH_BASIS : SCOPE2_NOTE_WITHOUT_BASIS}</li>}
           {NOTES_AFTER_SCOPE2.map(note => <li key={note}>{note}</li>)}
           {sections.ghg && sections.ghg.supplierReferences.length > 0 && (
             <li>サプライヤー別排出量は参考値であり、Scope 3 の合計には含めていません。</li>

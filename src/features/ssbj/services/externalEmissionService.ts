@@ -36,9 +36,9 @@ const SELECT_COLUMNS =
   'id, scope, scope3CategoryId, scope2Basis, gases, value::text, unit, periodStart, periodEnd, calculatedBy, ' +
   'calculationMethod, evidenceId, confirmedByUserId, confirmedAt, internalNote';
 
-/** 外部算定値に固有の SQLSTATE（supabase/migrations/20261023110000_ssbj_external_emissions.sql）。 */
+/** 外部算定値に固有の SQLSTATE（supabase/migrations/20261023110000_ssbj_external_emissions.sql・20261023130000_ssbj_scope2_basis_overlap.sql）。 */
 export const SSBJ_EXTERNAL_EMISSION_SQLSTATE = {
-  /** OGT の採用値と重なる（同じ Scope・カテゴリの CO2） */
+  /** OGT の採用値と重なる（同じ Scope・カテゴリの CO2。Scope 2 は同じ基準） */
   overlapsOgt: 'P2071',
   /** ほかの外部算定値と重なる（同じ Scope・カテゴリ・基準で同じガス） */
   overlapsExternal: 'P2072',

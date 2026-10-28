@@ -8,10 +8,18 @@ import type { SsbjExternalEmissionSnapshot } from '../types';
 import { formatDecimalForDisplay } from '../utils/decimal';
 import { externalEmissionGasesLabel, externalEmissionLabel } from '../utils/externalEmission';
 
-/** items が undefined は「この版に外部算定値の項目が無い」。 */
-export const SsbjPreviewExternalEmissions = ({ items, showInternalNotes }: {
+// OGT の採用値が基準別の値を持つ版では、Scope 2 も同じ基準の CO2 を DB が止めている。持たない版（基準別の値を取り込む前）は、
+// Scope 2 を止めていなかったので、注記をその時の決まりのままにする。
+const SOURCE_NOTE_WITH_BASIS =
+  '出典: 外部算定値（OGT の算定値ではない）。OGT の採用値に含まれる CO2（Scope 2 は同じ基準の値）を含まない。Scope 2 は基準ごとの値で、OGT の基準の区別のない値とは足し合わせない。単位は t-CO2e。';
+const SOURCE_NOTE_WITHOUT_BASIS =
+  '出典: 外部算定値（OGT の算定値ではない）。Scope 1・Scope 3 では、OGT の採用値に含まれる CO2 を含まない。Scope 2 は基準ごとの値で、OGT の採用値（基準不明）とは足し合わせない。単位は t-CO2e。';
+
+/** items が undefined は「この版に外部算定値の項目が無い」。scope2WithBasis は、OGT の採用値が Scope 2 の基準別の値を持つか。 */
+export const SsbjPreviewExternalEmissions = ({ items, showInternalNotes, scope2WithBasis }: {
   items: SsbjExternalEmissionSnapshot[] | undefined;
   showInternalNotes: boolean;
+  scope2WithBasis: boolean;
 }) => {
   // 外部算定値の項目を足す前の保存版にはキーが無い（ほかのセクションと同じく「この版には含まれていません」と出す）。
   if (items === undefined) return <p className="m-0 text-sm text-text-muted">この版には含まれていません。</p>;
@@ -21,7 +29,7 @@ export const SsbjPreviewExternalEmissions = ({ items, showInternalNotes }: {
   return (
     <div className="flex flex-col gap-2" data-testid="ssbj-preview-external-emissions">
       <p className="m-0 text-xs text-text-muted">
-        出典: 外部算定値（OGT の算定値ではない）。Scope 1・Scope 3 では、OGT の採用値に含まれる CO2 を含まない。Scope 2 は基準ごとの値で、OGT の採用値（基準不明）とは足し合わせない。単位は t-CO2e。
+        {scope2WithBasis ? SOURCE_NOTE_WITH_BASIS : SOURCE_NOTE_WITHOUT_BASIS}
       </p>
       <Table>
         <TableHeader>

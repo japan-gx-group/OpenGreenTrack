@@ -329,9 +329,11 @@ test('11. 二重加算が無い（採用し直しても 1 件、サプライヤ�
     expect(sameDecimal(scope3Total.value.value, addDecimals([categorySum, supplierSum]))).toBe(false);
   }
 
-  // 保存版の CSV でも、採用値は 1 区分 1 行で、参考値は別の章に分かれている。
+  // 保存版の CSV でも、採用値は 1 区分 1 行（Scope 2 は基準別の 2 行が加わる）で、参考値は別の章に分かれている。
   const adoptedRows = version1Csv.filter(row => row[COLUMN.group] === 'GHG排出量' && row[COLUMN.item] !== '採用日時');
-  expect(adoptedRows).toHaveLength(18);
+  const version1Scope2 = version1!.snapshot.sections.ghg!.values.find(value => value.scope === 2);
+  const basisRowCount = version1Scope2?.scope === 2 && version1Scope2.method.basisTotals ? 2 : 0;
+  expect(adoptedRows).toHaveLength(18 + basisRowCount);
   expect(version1Csv.filter(row => row[COLUMN.group] === 'GHG排出量（参考値）'))
     .toHaveLength(version1!.snapshot.sections.ghg!.supplierReferences.length);
 });
