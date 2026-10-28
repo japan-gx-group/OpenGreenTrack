@@ -12,6 +12,7 @@ import {
   type OgtCalculationCoverage,
   type OgtCandidateValue,
   type OgtDataQuality,
+  type OgtScope2BasisTotals,
   type OgtSupplierReference,
   type OgtValueSource,
   type SsbjReportRecord,
@@ -20,7 +21,11 @@ import { isDecimalString } from '../utils/decimal';
 import { checkOgtCandidateValue, deriveDirectInputDataQuality, deriveOgtDataQuality } from '../utils/ogtValue';
 
 type NumericValues = {
-  aggregate: { scope1: string; scope2: string; scope3: string; updatedAt: string } | null;
+  aggregate: {
+    scope1: string; scope2: string; scope3: string; updatedAt: string;
+    // Scope 2 の基準別の合計。null は基準別の明細が揃っていない（未算定）。
+    scope2LocationBased: string | null; scope2MarketBased: string | null; scope2MarketContract: string | null;
+  } | null;
   scope2Breakdown: { basic: string; adjusted: string; unclassified: string } | null;
   categories: { categoryId: number; emissions: string }[];
   suppliers: { categoryId: number; supplierId: string; supplierName: string; emissions: string }[];
@@ -107,12 +112,21 @@ export const buildOgtCandidates = (input: {
     quality === 'not_calculated' ? { state: 'unanswered' as const } : { state: 'answered' as const, value: decimal(value) };
   const scope1Quality = deriveOgtDataQuality({ hasAggregate: !!numeric.aggregate, coverage: coverage1 });
   const scope2Quality = deriveOgtDataQuality({ hasAggregate: !!numeric.aggregate, coverage: coverage2 });
+  // 基準別の値は、基準の区別のない値と同じ充足状態を持つ。区別のない値が未算定なら基準別も未算定にする。
+  const basisValue = (value: string | null | undefined) =>
+    scope2Quality === 'not_calculated' || value === null || value === undefined
+      ? { state: 'unanswered' as const } : { state: 'answered' as const, value: decimal(value) };
+  const basisTotals: OgtScope2BasisTotals = {
+    locationBased: basisValue(numeric.aggregate?.scope2LocationBased),
+    marketBased: basisValue(numeric.aggregate?.scope2MarketBased),
+    marketContract: basisValue(numeric.aggregate?.scope2MarketContract),
+  };
   const candidates: OgtCandidateValue[] = [
     { ...common, scope: 1, scope3CategoryId: null, method: { kind: 'activity_based' },
       value: activityValue(scope1Quality, numeric.aggregate?.scope1 ?? '0'), dataQuality: scope1Quality,
       coverage: coverage1, source: aggregateSource },
     { ...common, scope: 2, scope3CategoryId: null,
-      method: { kind: 'activity_based', scope2Basis: 'unknown', factorTypeBreakdown: numeric.scope2Breakdown },
+      method: { kind: 'activity_based', scope2Basis: 'unknown', factorTypeBreakdown: numeric.scope2Breakdown, basisTotals },
       value: activityValue(scope2Quality, numeric.aggregate?.scope2 ?? '0'), dataQuality: scope2Quality,
       coverage: coverage2, source: aggregateSource },
   ];

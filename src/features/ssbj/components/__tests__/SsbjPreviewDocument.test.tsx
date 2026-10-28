@@ -63,7 +63,6 @@ describe('SsbjPreviewDocument', () => {
     rendered = render(<SsbjPreviewDocument source={working()} showInternalNotes={false} />);
     expect(text()).toContain('812.345 t-CO2e');
     expect(text()).toContain('未算定');
-    expect(text()).toContain('OGT の Scope 2 算定値は、ロケーション基準・マーケット基準の区別がありません（基準不明）');
     expect(text()).toContain('サプライヤー別排出量は参考値であり、Scope 3 の合計には含めていません');
   });
 
@@ -80,13 +79,21 @@ describe('SsbjPreviewDocument', () => {
   });
 
   it('外部算定値にロケーション基準の Scope 2 があっても、文書全体にロケーション基準の値が無いとは書かない', () => {
+    // OGT のロケーション基準の値が算定済みなら CO2 の外部算定値は二重計上で入れられないので、基準別の値を取り込む前の版で確かめる。
+    const ghg = fictionalSnapshot.sections.ghg!;
+    const values = ghg.values.map(value => {
+      if (value.scope !== 2) return value;
+      const method = { ...value.method };
+      delete method.basisTotals;
+      return { ...value, method };
+    });
     const locationBased = {
       ...fictionalExternalEmissions[0],
       id: '5b1f0000-1111-4000-8000-000000000502', scope: 2 as const, scope2Basis: 'location' as const, gases: ['CO2' as const], value: '300.000',
     };
     const snapshot = {
       ...fictionalSnapshot,
-      sections: { ...fictionalSnapshot.sections, external_emissions: [...fictionalExternalEmissions, locationBased] },
+      sections: { ...fictionalSnapshot.sections, ghg: { ...ghg, values }, external_emissions: [...fictionalExternalEmissions, locationBased] },
     };
     rendered = render(<SsbjPreviewDocument source={working(snapshot)} showInternalNotes={false} />);
     expect(text()).toContain('Scope 2（ロケーション基準）');
@@ -97,6 +104,31 @@ describe('SsbjPreviewDocument', () => {
     expect(notes).toContain(
       'OGT の Scope 2 算定値は、ロケーション基準・マーケット基準を区別していません（基準不明）。基準ごとの Scope 2 は、「外部で算定した排出量」に示したものだけです。',
     );
+  });
+
+  it('Scope 2 の基準別の値を出し、注記を含まれる内容に合わせる', () => {
+    rendered = render(<SsbjPreviewDocument source={working()} showInternalNotes={false} />);
+    expect(text()).toContain('ロケーション基準1,150.000 t-CO2e');
+    expect(text()).toContain('マーケット基準1,172.400 t-CO2e');
+    expect(text()).toContain('うち契約したメニューの係数による分1,045.250 t-CO2e');
+    expect(text()).toContain('ロケーション基準・マーケット基準の値と、温対法の係数区分による基準の区別のない値を併記しています');
+    expect(text()).toContain('「外部で算定した排出量」の Scope 2 は、OGT の値とは別に示しています');
+    expect(text()).not.toContain('ロケーション基準の値は含みません');
+  });
+
+  it('基準別の値を取り込む前の保存版は、OGT の値に基準の区別が無く、基準別の値は外部算定値だけと注記する', () => {
+    const ghg = fictionalSnapshot.sections.ghg!;
+    const values = ghg.values.map(value => {
+      if (value.scope !== 2) return value;
+      const method = { ...value.method };
+      delete method.basisTotals;
+      return { ...value, method };
+    });
+    rendered = render(<SsbjPreviewDocument
+      source={working({ ...fictionalSnapshot, sections: { ...fictionalSnapshot.sections, ghg: { ...ghg, values } } })}
+      showInternalNotes={false} />);
+    expect(text()).toContain('基準ごとの Scope 2 は、「外部で算定した排出量」に示したものだけです');
+    expect(text()).not.toContain('Scope 2 の基準別');
   });
 
   it('GHG を採用していない（null）場合と、GHG の項目が無い古い版を区別する', () => {

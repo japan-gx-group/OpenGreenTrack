@@ -45,7 +45,14 @@ const BY_SECTION: { [K in keyof SsbjSnapshotSections]: (section: SsbjSnapshotSec
     ...none,
     ghgValues: ghg === null
       ? []
-      : [...ghg.values.flatMap(value => answered(value.value)), ...ghg.supplierReferences.map(supplier => supplier.emissions)],
+      : [
+        ...ghg.values.flatMap(value => answered(value.value)),
+        // Scope 2 の基準別（ロケーション基準・マーケット基準）も、それぞれ 1 つの値として出す。
+        ...ghg.values.flatMap(value => value.scope === 2 && value.method.basisTotals
+          ? [...answered(value.method.basisTotals.locationBased), ...answered(value.method.basisTotals.marketBased)]
+          : []),
+        ...ghg.supplierReferences.map(supplier => supplier.emissions),
+      ],
   }),
   narratives: items => ({
     ...none,

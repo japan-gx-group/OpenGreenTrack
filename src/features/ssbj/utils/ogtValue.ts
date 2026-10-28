@@ -8,9 +8,10 @@ import {
   type OgtCalculationCoverage,
   type OgtCandidateValue,
   type OgtDataQuality,
+  type OgtScope2BasisTotals,
   type OgtValueSource,
 } from '../types';
-import { isDecimalString } from './decimal';
+import { formatDecimalForDisplay, isDecimalString } from './decimal';
 
 export const OGT_DATA_QUALITY_LABELS: Record<OgtDataQuality, string> = {
   all_calculated: '算定済み',
@@ -27,6 +28,25 @@ export const OGT_SOURCE_LABELS: Record<OgtValueSource['aggregate'], string> = {
 };
 
 type OgtValueTarget = Pick<OgtCandidateValue, 'scope' | 'scope3CategoryId'>;
+
+/** Scope 2 の値の基準の表示名。basis は基準の区別のない値（OgtCandidateValue.value）。 */
+export const SCOPE2_BASIS_VIEW_LABELS = {
+  basis: '基準の区別なし（温対法の係数区分）',
+  locationBased: 'ロケーション基準',
+  marketBased: 'マーケット基準',
+} as const;
+
+export type Scope2BasisView = keyof typeof SCOPE2_BASIS_VIEW_LABELS;
+
+/** 基準別の合計の表示（例「1,150.000 t-CO2e」。未算定は「未算定」で、0 にしない）。 */
+export const formatScope2BasisTotal = (total: OgtScope2BasisTotals[keyof OgtScope2BasisTotals]): string =>
+  total.state === 'answered' ? `${formatDecimalForDisplay(total.value)} ${OGT_EMISSION_UNIT}` : '未算定';
+
+/** Scope 2 の基準別の合計。候補値・採用値に無ければ（基準別の値を取り込む前の保存版）null。 */
+export const scope2BasisTotalsOf = (values: readonly OgtCandidateValue[]): OgtScope2BasisTotals | null => {
+  const scope2 = values.find(value => value.scope === 2);
+  return scope2?.scope === 2 ? scope2.method.basisTotals ?? null : null;
+};
 
 /** 区分名（例「Scope 1」「カテゴリ 1：購入した製品・サービス」）。 */
 export const ogtValueLabel = (value: OgtValueTarget): string =>
@@ -112,6 +132,22 @@ export const checkOgtCandidateValue = (candidate: OgtCandidateValue): string[] =
     const { basic, adjusted, unclassified } = candidate.method.factorTypeBreakdown;
     if (![basic, adjusted, unclassified].every(isDecimalString)) {
       errors.push('係数種別の内訳が十進表記の文字列ではありません');
+    }
+  }
+  if (candidate.scope === 2 && candidate.method.basisTotals) {
+    const { locationBased, marketBased, marketContract } = candidate.method.basisTotals;
+    const totals = [locationBased, marketBased, marketContract];
+    if (totals.some(total => total.state !== 'answered' && total.state !== 'unanswered')) {
+      errors.push('基準別の合計は算定済みか未算定のどちらかにしてください');
+    }
+    if (totals.some(total => total.state === 'answered' && !isDecimalString(total.value))) {
+      errors.push('基準別の合計が十進表記の文字列ではありません');
+    }
+    if (candidate.dataQuality === 'not_calculated' && totals.some(total => total.state !== 'unanswered')) {
+      errors.push('未算定の Scope 2 では、基準別の合計も未算定にしてください');
+    }
+    if ((marketBased.state === 'answered') !== (marketContract.state === 'answered')) {
+      errors.push('マーケット基準の合計と、そのうち契約に基づく分は、両方そろえて出してください');
     }
   }
 

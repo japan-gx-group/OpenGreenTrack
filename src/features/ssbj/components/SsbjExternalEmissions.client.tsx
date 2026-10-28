@@ -124,7 +124,7 @@ export const SsbjExternalEmissions = ({ reportId }: { reportId: string }) => {
             <Card>
               <p className="m-0 mb-3 text-sm text-text-muted">
                 OGT で算定できない排出量（CO2 以外のガス、対応していない排出源、子会社から届いた値など）を、出典と確認者を付けてレポートに使います。
-                Scope 1・Scope 3 で OGT の採用値と同じ区分の CO2 と、同じ区分・基準で同じガスの外部算定値は、二重に計上しないよう登録できません。Scope 2 は基準（ロケーション基準・マーケット基準）ごとの値として、OGT の値（基準不明）とは別に示します。
+                OGT の採用値で同じ区分（Scope 2 は同じ基準）の値が算定済みの CO2 と、同じ区分・基準で同じガスの外部算定値は、二重に計上しないよう登録できません。Scope 2 は基準（ロケーション基準・マーケット基準）ごとの値で、OGT の基準の区別のない値とは足し合わせません。
               </p>
               {!readOnly && evidence.items.length === 0 && (
                 <p className="m-0 mb-3 text-sm text-text-muted">

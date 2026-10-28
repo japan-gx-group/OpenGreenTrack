@@ -24,7 +24,7 @@ export const SSBJ_OGT_ADOPTION_SQLSTATE = {
   reportInvalid: 'P2041',
   /** 候補値の形式・年度が不正 */
   candidatesInvalid: 'P2042',
-  /** 外部算定値と重なる（同じ Scope・カテゴリの CO2。supabase/migrations/20261023110000_ssbj_external_emissions.sql） */
+  /** 外部算定値と重なる（同じ Scope・カテゴリの CO2。Scope 2 は同じ基準。supabase/migrations/20261023130000_ssbj_scope2_basis_overlap.sql） */
   overlapsExternal: 'P2071',
 } as const;
 

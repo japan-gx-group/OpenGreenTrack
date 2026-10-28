@@ -48,6 +48,15 @@ const comparableValue = (value: OgtCandidateValue) => ({
   coverage: value.coverage,
 });
 
+// Scope 2 の基準別の合計（method.basisTotals）を除いた比較の項目。基準別の値だけが変わったかを見分けるのに使う。
+const comparableWithoutBasisTotals = (value: OgtCandidateValue) => {
+  const comparable = comparableValue(value);
+  return { ...comparable, method: { ...comparable.method, basisTotals: undefined } };
+};
+
+/** Scope 2 で、基準別の合計だけが変わったときの名前（基準の区別のない値・算定状態は変わっていない）。 */
+export const SCOPE2_BASIS_CHANGED_LABEL = 'Scope 2 の基準別の値';
+
 const valueKey = (value: Pick<OgtCandidateValue, 'scope' | 'scope3CategoryId'>) =>
   `${value.scope}:${value.scope3CategoryId ?? 'total'}`;
 
@@ -65,7 +74,11 @@ export const changedOgtValueLabels = (
   for (const candidate of candidates) {
     const before = adopted.get(valueKey(candidate));
     if (!before || canonicalJson(comparableValue(before)) !== canonicalJson(comparableValue(candidate))) {
-      labels.push(ogtValueLabel(candidate));
+      // 基準別の値を取り込む前に採用したレポートなど、基準別の値だけが違うときは、それと分かる名前にする
+      // （「Scope 2」と出すと、画面の「採用した値」と「最新」が同じ数字なので、何が変わったか分からない）。
+      const basisOnly = !!before && candidate.scope === 2 &&
+        canonicalJson(comparableWithoutBasisTotals(before)) === canonicalJson(comparableWithoutBasisTotals(candidate));
+      labels.push(basisOnly ? SCOPE2_BASIS_CHANGED_LABEL : ogtValueLabel(candidate));
     }
   }
   const supplierKey = (supplier: OgtSupplierReference) =>

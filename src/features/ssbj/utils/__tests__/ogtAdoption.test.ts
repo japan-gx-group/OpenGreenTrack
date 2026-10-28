@@ -5,7 +5,9 @@ import {
   fictionalSupplierReferences,
 } from '../../__fixtures__/fictionalReport';
 import type { OgtCandidateValue } from '../../types';
-import { changedOgtValueLabels, hasAdoptableOgtValue, ogtCandidateFingerprint } from '../ogtAdoption';
+import {
+  changedOgtValueLabels, hasAdoptableOgtValue, ogtCandidateFingerprint, SCOPE2_BASIS_CHANGED_LABEL,
+} from '../ogtAdoption';
 
 const withValue = (candidates: OgtCandidateValue[], index: number, value: string): OgtCandidateValue[] =>
   candidates.map((candidate, i) => (i === index ? { ...candidate, value: { state: 'answered', value } } : candidate));
@@ -40,6 +42,22 @@ describe('changedOgtValueLabels', () => {
       source: { ...candidate.source, aggregateUpdatedAt: '2030-01-01T00:00:00Z' },
     }));
     expect(changedOgtValueLabels(fictionalGhgAdoption, current, [])).toEqual(['Scope 1', 'サプライヤー別排出量（参考値）']);
+  });
+
+  it('Scope 2 で基準別の値だけが違うときは、基準別の値が変わったと分かる名前を返す', () => {
+    // 基準別の値を取り込む前に採用したレポート（採用値に basisTotals が無い）。
+    const adoptedWithoutBasis = {
+      ...fictionalGhgAdoption,
+      values: fictionalGhgAdoption.values.map(value =>
+        value.scope === 2 ? { ...value, method: { ...value.method, basisTotals: undefined } } : value),
+    };
+    expect(changedOgtValueLabels(adoptedWithoutBasis, fictionalOgtCandidates, fictionalSupplierReferences))
+      .toEqual([SCOPE2_BASIS_CHANGED_LABEL]);
+
+    // 基準の区別のない値も変わったら、これまでどおり「Scope 2」。
+    const scope2Index = fictionalOgtCandidates.findIndex(candidate => candidate.scope === 2);
+    expect(changedOgtValueLabels(adoptedWithoutBasis, withValue(fictionalOgtCandidates, scope2Index, '1200.000'), fictionalSupplierReferences))
+      .toEqual(['Scope 2']);
   });
 });
 
