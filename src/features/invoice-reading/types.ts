@@ -72,7 +72,13 @@ export interface InvoiceExtraction {
  */
 export type InvoiceFactorJudgement =
   | { status: 'matched'; label: string; reason: string }
-  | { status: 'provider_only'; label: string; reason: string }
+  | {
+      status: 'provider_only';
+      label: string;
+      reason: string;
+      /** AI の判断とは別に、アプリが添える説明（AI が選んだメニューを採らなかった理由など） */
+      note?: string;
+    }
   | { status: 'not_found'; reason: string }
   | { status: 'unavailable'; reason: string };
 
