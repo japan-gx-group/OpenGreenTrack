@@ -76,7 +76,11 @@ export const parseValidAmount = (amount: string): number | null => {
 };
 
 export type EntryFactorValidationState =
-  | { source: 'provider' | 'standard' }
+  | {
+      source: 'provider' | 'standard';
+      /** 同じ優先度で名前の違う候補が並び、係数がまだ選ばれていない（保存すると未算定になる） */
+      choicePending: boolean;
+    }
   | {
       source: 'idea';
       productSelected: boolean;
@@ -104,6 +108,7 @@ export const VALIDATION_MESSAGES = {
   amountTooLarge: `活動量は整数部${AMOUNT_MAX_INTEGER_DIGITS}桁以内（${(10 ** AMOUNT_MAX_INTEGER_DIGITS - 1).toLocaleString('ja-JP')} 以下）で入力してください。`,
   amountTooPrecise: `活動量は小数第${AMOUNT_MAX_FRACTION_DIGITS}位までで入力してください。`,
   note: '備考は500文字以内で入力してください。',
+  factorChoice: '同じ優先度の排出係数が複数あるため、自動では選びません。排出係数の候補から、使った係数を選んでください。',
   /** handleSave の再ガード（validate 通過後に period / 製品詳細が無い） */
   inconsistent: '入力内容を確認してください。',
 } as const;
@@ -130,7 +135,7 @@ export const amountValidationMessage = (result: AmountValidation): string | null
 };
 
 /**
- * 検証順序（最初のエラーを返す）: 拠点 → 対象年月 → （IDEA: 製品）→ 活動量（0 以上・桁数）→ 備考 500 文字。
+ * 検証順序（最初のエラーを返す）: 拠点 → 対象年月 → （IDEA: 製品／Scope1/2: 同じ優先度の係数の選択）→ 活動量（0 以上・桁数）→ 備考 500 文字。
  * 製品未選択の文言は参照切れなら factorMissing（SCOPE3_FACTOR_MISSING_MESSAGE）を優先する。
  */
 export const validateEntry = (
@@ -150,6 +155,8 @@ export const validateEntry = (
     if (!input.factor.productSelected || !input.factor.productReady) {
       return input.factor.isFactorMissing ? messages.factorMissing : VALIDATION_MESSAGES.product;
     }
+  } else if (input.factor.choicePending) {
+    return VALIDATION_MESSAGES.factorChoice;
   }
   const amountError = amountValidationMessage(validateAmount(input.amount));
   if (amountError) {

@@ -447,6 +447,10 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
           ? computeEstimatedEmissions(validAmount, currentUnit, appliedFactor)
           : null;
 
+  // 同じ優先度で名前の違う係数の候補が並ぶ（重油・燃料（その他）・廃棄物など）ときは自動で選ばないので、
+  // 候補から選ぶまでプレビューを開けない（未算定のまま保存されないように）。
+  const isFactorChoicePending = !isIdea && scope12.applied.status === 'resolved' && scope12.applied.ambiguous;
+
   const calculationView = buildCalculationResultView({
     factorSource,
     hasPeriod: period !== null,
@@ -454,7 +458,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     unit: currentUnit,
     factorsReady: isIdea || (scope12.isFactorsReady && scope12.applied.status === 'resolved'),
     appliedFactor,
-    factorAmbiguous: scope12.applied.status === 'resolved' && scope12.applied.ambiguous,
+    factorAmbiguous: isFactorChoicePending,
     productDetail: idea.productDetail,
     estimatedEmissions,
   });
@@ -475,6 +479,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     : period !== null && (!fiscalYearsReady || scope12.isLoadingFactors || scope12.applied.status === 'pending');
   const isPreviewBlocked =
     locations.length === 0 ||
+    isFactorChoicePending ||
     initialLocationMissing ||
     awaitingLocationChoice ||
     isSaving ||
@@ -542,7 +547,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
               isFactorMissing: idea.isFactorMissing,
               detailError: idea.detailError,
             }
-          : { source: factorSource },
+          : { source: factorSource, choicePending: isFactorChoicePending },
       },
       { factorMissing: SCOPE3_FACTOR_MISSING_MESSAGE },
     );
@@ -655,6 +660,8 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
       if (idea.selectedProductId === null || idea.productDetail === null) {
         return idea.isFactorMissing ? SCOPE3_FACTOR_MISSING_MESSAGE : VALIDATION_MESSAGES.product;
       }
+    } else if (isFactorChoicePending) {
+      return VALIDATION_MESSAGES.factorChoice;
     }
     if (note.length > NOTE_MAX_LENGTH) {
       return VALIDATION_MESSAGES.note;
@@ -687,6 +694,8 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
         // 事業者係数を選択中は候補セレクトの上書きは使われない。自動選択（候補先頭）の場合も
         // 代表月の係数 ID を渡し、他の月でも適用可能ならその係数、不可なら各月の自動選択に落とす。
         selectedFactorId: scope12.providerFactor !== null ? null : (scope12.selectedFactor?.id ?? null),
+        // 温対法の年度の境目をまたぐ月では ID が変わるため、名前でも引き直す（選んだ A重油を全月で使う）。
+        selectedFactorName: scope12.providerFactor !== null ? null : (scope12.selectedFactor?.name ?? null),
       },
       productDetail: idea.productDetail,
     });
