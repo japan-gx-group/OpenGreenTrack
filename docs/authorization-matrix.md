@@ -7,9 +7,9 @@ SSBJ 開示レポートで、データを書き換えられる経路をすべて
 経路を 1 つでも見落とすと、画面でボタンを隠していても、API や PostgREST を直接呼べば操作できてしまう。
 そのため、正しさは DB（RLS・トリガー・RPC）と Route Handler で担保し、画面はそれに合わせて操作を出し分けるだけにする。
 
-> 範囲: R2 では **SSBJ の中だけでロールを効かせる**。OGT 本体の経路も §4 に載せるが、本体の権限の仕組み
-> （`current_user_can_edit()` / `current_user_is_admin()`、`profiles` / `invites` の制約、招待画面、本体の API）は変えない。
-> 本体のロール別の権限は、別の項目に切り出して保留している。
+> 範囲: SSBJ のロールは **SSBJ の中だけで効く**。OGT 本体のロール（管理者・メンバー）と本体の経路の権限は、
+> 本体の決め方（Issue #2 の方針。[`functional-spec.md`](functional-spec.md) §4.8.1）を正とし、SSBJ からは変えない。本体の経路は §4 に載せる。
+> 本体の方針は「本体には閲覧専用のロールを作らない。SSBJ の閲覧者は SSBJ のロールで扱う」で、この文書の §1 はそれに沿う。
 
 ---
 
@@ -25,9 +25,13 @@ SSBJ 開示レポートで、データを書き換えられる経路をすべて
 決めたこと:
 
 - **SSBJ のロールは SSBJ 専用のテーブル（`ssbj_member_roles`。組織×利用者で 1 行）に持つ。** 判定は DB の関数
-  `ssbj_user_role`（service_role 限定）と `ssbj_current_user_role()` ほか（authenticated）で行う（[`database-design.md`](database-design.md) 3.29）。 OGT 本体の `profiles.role` のうち、SSBJ が読むのは
-  `'admin'` だけにする。`logger` / `viewer` は SSBJ のロールに使わない。本体はロールで権限を分けておらず
-  （`src/types/role.ts` の「ロール無効化中」）、招待で決まる値をあとから変える画面も無いため、SSBJ の権限の根拠にできない。
+  `ssbj_user_role`（service_role 限定）と `ssbj_current_user_role()` ほか（authenticated）で行う（[`database-design.md`](database-design.md) 3.29）。
+- **SSBJ の管理者は、OGT 本体の管理者と同じ条件（`profiles.role = 'admin'`）で決める。** 本体の判定（DB の `current_user_is_admin()`、
+  画面とサーバの `isAdmin()`。[`database-design.md`](database-design.md) 3.14）と同じ条件で、本体のメンバー管理で管理者を付け外しすると、
+  SSBJ の管理者もそれに連れて変わる（管理者でなくなった人は、SSBJ では割り当てたロール、割り当てが無ければ入力担当になる）。
+  本体の判定が変わったときに気づけるよう、`scripts/db/__tests__/ssbjMemberRolesPolicy.test.ts` が両方の条件を照らし合わせる。
+- **本体のメンバー（`logger`・`viewer`）は、SSBJ では割り当てたロールになる。** 本体の値の `viewer` は本体ではメンバー（データの入力もできる）で、
+  SSBJ の閲覧者とは別物。SSBJ の承認担当・閲覧者も、本体の画面ではメンバーとして入力できる（本体の決め方のまま）。
 - **ロールを割り当てていない利用者は入力担当として扱う。** 今は同じ組織の利用者なら誰でもすべてを編集できるので、
   有効にしたときに既存の利用者を締め出さないため（§5）。
 - **OGT の管理者は、SSBJ でもすべての操作ができる。** 承認ロックの解除を「管理者か承認者」に限るという要件
@@ -130,16 +134,19 @@ SSBJ 開示レポートで、データを書き換えられる経路をすべて
 
 承認担当のロールを入れた後は、承認者の条件にロールを加える（承認担当か管理者だけを承認者に指定でき、承認できる）。
 
-## 4. OGT 本体の経路（R2 では変えない）
+## 4. OGT 本体の経路（SSBJ のロールは効かない）
 
-今はどれもロールで絞っていない（`current_user_can_edit()` / `current_user_is_admin()` はログイン済みかだけを返し、Server Action も `profiles.role` を見ない）。
-SSBJ のロールは、これらには効かない。
+本体の経路の権限は、本体の決め方を正とする（管理者だけに限る操作と全員ができる操作は [`functional-spec.md`](functional-spec.md) §4.8.1）。
+判定は、DB の `current_user_is_admin()`（`role` が `admin` か）と、サーバの `requireAdmin()`（`src/lib/authz.ts`）。
+`current_user_can_edit()` は「ログインしているか」を返す（データの入力・算定・マスタの編集は全員が行うため）。SSBJ のロールは、これらには効かない。
 
 | 種類 | 経路 |
 |---|---|
-| RLS で書き込みを許すテーブル | `organizations`（update）、`profiles`（自分の氏名・電話の update）、`suppliers`、`locations`、`emission_factors`、`activity_records`、`scope3_category_emissions`、`scope3_category_methods`、`supplier_emissions`、`reduction_targets`、`reduction_target_years`（以上 insert / update / delete）、`system_audit_logs`（insert）、`invites`（insert / delete） |
-| `service_role` を使う Route Handler | `POST /api/calculations`（算定）、`GET・POST /api/calculations/provisional-recalculation`（仮適用の再計算）、`POST /api/dashboard-aggregates/refresh`（集計の更新）、`POST /api/idea-imports`・`/upload-url`・`DELETE /api/idea-imports/[id]`（IDEA の取込）、`POST /api/account/delete`（アカウントの削除） |
-| Storage | 取込ファイルの置き場（`storage.objects` の delete。書き込みは署名付き URL 経由） |
+| RLS で書き込みを許すテーブル | `organizations`（update。管理者だけ）、`invites`（insert / delete。管理者だけ）、`profiles`（自分の氏名・電話の update）、`suppliers`、`locations`、`emission_factors`、`activity_records`、`scope3_category_emissions`、`scope3_category_methods`、`supplier_emissions`、`reduction_targets`、`reduction_target_years`（以上 insert / update / delete）、`activity_record_evidence`（insert / delete）、`system_audit_logs`（insert） |
+| サーバで書く Route Handler | `POST /api/calculations`（算定）、`GET・POST /api/calculations/provisional-recalculation`（仮適用の再計算）、`POST /api/dashboard-aggregates/refresh`（集計の更新）、`POST /api/idea-imports`・`/upload-url`・`DELETE /api/idea-imports/[id]`（IDEA の取込）、`POST /api/activity-evidence`・`/upload-url`・`DELETE /api/activity-evidence/[id]`（活動量の記録の帳票）、`POST /api/ai/invoice-reading`（請求書の AI 読取り。提供元への送信と `system_audit_logs` の `ai.request`）、`GET /api/ai/models`（モデルの一覧。管理者だけ）、`POST /api/account/delete`（アカウントの削除。最後の管理者は退会できない） |
+| 利用者が呼ぶ RPC | `change_member_role`（ロールの変更。service_role 限定で、Server Action の `saveMemberChanges` から呼ぶ。操作する人が管理者かを中でも確かめる） |
+| トリガー | `ensure_organization_keeps_admin`（組織の管理者が 0 人になるロールの変更・削除・退会を拒否する。組織ごとの削除は止めない） |
+| Storage | 取込ファイル・帳票の置き場（`import-files`。ブラウザからの delete は IDEA 取込のファイルだけで、帳票は `DELETE /api/activity-evidence/[id]` だけが消す。書き込みは署名付き URL 経由） |
 | 利用者が呼ぶ関数 | ダッシュボード・レポートの集計（読むだけ） |
 | ファイル出力 | GHG 排出量レポートの CSV・印刷（`system_audit_logs` に記録） |
 | Server Action | 画面から呼ぶサーバの関数。下の表（§4.1） |
@@ -151,19 +158,18 @@ SSBJ のロールは、これらには効かない。
 
 | Server Action（ファイル） | 対象データと操作 | 使うクライアント | 今の許可条件 |
 |---|---|---|---|
-| `addFiscalYear`・`deleteFiscalYear`（`src/features/settings/services/fiscalYears.ts`） | `fiscal_years` の insert / delete（参照するデータがある年度は削除しない） | `service_role` | ログイン済み。自組織の年度だけ |
-| `saveMemberChanges`（`src/features/settings/services/members.ts`） | ほかのメンバーの削除（auth のユーザーを消し、`profiles` は連鎖削除） | `service_role` | ログイン済み。自組織のメンバーだけ。自分は消せない |
-| `createInvite`・`revokeInvite`（`src/features/settings/services/invites.ts`） | `invites` の insert / delete（発行では、同じメール宛ての未受諾の招待を消してから作る） | 利用者（RLS。上の表の `invites`） | ログイン済み。自組織の招待だけ（RLS） |
+| `addFiscalYear`・`deleteFiscalYear`（`src/features/settings/services/fiscalYears.ts`） | `fiscal_years` の insert / delete（参照するデータがある年度は削除しない。SSBJ のレポートがある年度も消さない） | `service_role` | 管理者（`requireAdmin`）。自組織の年度だけ |
+| `saveMemberChanges`（`src/features/settings/services/members.ts`） | ほかのメンバーのロールの変更（RPC `change_member_role`）と削除（auth のユーザーを消し、`profiles` は連鎖削除） | `service_role` | 管理者（`requireAdmin`）。自組織のメンバーだけ。自分は消せない。管理者が 0 人になる変更は拒否する |
+| `createInvite`・`revokeInvite`（`src/features/settings/services/invites.ts`） | `invites` の insert / delete（発行では、同じメール宛ての未受諾の招待を消してから作る。ロールは管理者かメンバー） | 利用者（RLS。上の表の `invites`） | 管理者（`requireAdmin` と RLS）。自組織の招待だけ |
+| `saveAiModel`（`src/features/ai/services/aiSettingsActions.ts`） | `ai_settings` の upsert（組織で使う AI のモデル） | `service_role` | 管理者（`requireAdmin`） |
+| `saveAiCredential`・`deleteAiCredential`（`src/features/ai/services/aiCredentialActions.ts`） | `ai_credentials` の upsert / delete（画面から登録する AI の API キー。暗号化して保存） | `service_role` | 管理者（`requireAdmin`）と、ログインのパスワードの再入力。画面からの登録を許す設定のときだけ |
 | `changePassword`（`src/features/settings/services/password.ts`） | 自分のパスワード（auth のユーザー） | `service_role` | ログイン済み。今のパスワードが正しい |
 | `completePasswordRecovery`（`src/features/auth/services/passwordRecovery.ts`） | 自分のパスワード（auth のユーザー） | `service_role` | パスワードの再設定のメールから来たセッション（再設定の目印の Cookie がある） |
 | `setupOrganization`（`src/features/auth/services/setup.ts`） | auth のユーザー・`organizations`・`profiles`（`role = 'admin'`）・`locations`・`fiscal_years` の insert（初回登録） | `service_role` | ログイン不要。組織が 1 つも無い環境だけ |
 | `acceptInvite`（`src/features/auth/services/invites.ts`） | `invites` の update（受諾日時）、auth のユーザー・`profiles` の insert | `service_role` | ログイン不要。期限内で未受諾の招待のトークン |
 
-- **メンバーの削除は、同じ組織のログイン済みの利用者なら誰でもできる**（ロールを見ない。`members.ts` のコメントのとおり、今の OGT 本体の設計）。
-  本体のロール別の権限を入れるときに、最初に扱う経路の 1 つになる。
 - SSBJ には Server Action が無い（`service_role` を使う SSBJ の処理は、すべて §2.2 の Route Handler から呼ぶ）。
-
-本体のロール別の権限を入れるときは、この表（§4・§4.1）を土台に、§1 と同じ形でロールごとの可否を決める。
+- 本体の経路を足す・変えるときは、本体の決め方に合わせてこの表を直す（SSBJ のロールの可否は §2 だけで決める）。
 
 ## 5. 既存の利用者の切り替え
 
@@ -172,9 +178,11 @@ SSBJ のロールは、これらには効かない。
 - **承認・差戻しは変わる。** 今は承認者に指定されれば誰でも承認・差戻しができるが、SSBJ のロールを有効にした後は、
   管理者か承認担当だけになる（§2.2・§3）。承認担当を割り当てるまでは、承認者に指定でき、承認・差戻しができるのは管理者だけ。
   権限を絞りたい組織、管理者以外にも承認させたい組織は、管理者が承認担当・閲覧者を割り当てる。
-- **管理者が 1 人もいない組織**（`profiles.role` の既定値は `logger`）では、SSBJ のロールを割り当てられない。全員が入力担当のままで、
-  編集は今までどおりできるが、承認・差戻しのできる人がいなくなる。初回登録者は管理者として作られる（`src/features/auth/services/setup.ts`）ので、
-  通常は起きない。起きたときは OGT 本体の運用（DB の管理者が `profiles.role` を設定する）に従う。
+- **管理者が 1 人もいない組織**では、SSBJ のロールを割り当てられず、承認・差戻しのできる人もいない。本体は、管理者が 0 人になる
+  ロールの変更・削除・退会を拒否する（`ensure_organization_keeps_admin`）ので、新しくは起きない。本体のロールを入れる前に組織を作った人の
+  アカウントを消していた組織だけで起きうる。その場合は本体の復旧の手順（[`setup-guide.md`](setup-guide.md) 2-H）に従う。
+- **本体のメンバー管理で管理者でなくなった人**は、SSBJ でも管理者でなくなる（§1）。レビュー中のレポートの承認者だった場合は、
+  承認担当を割り当てない限り承認できなくなる。管理者が承認担当を割り当てるか、差戻して依頼し直す。
 - **切り替えはマイグレーションで行い、データは入れない**（AGENTS.md R12）。テーブルと判定の関数を足すだけで、割り当ては
   管理者が画面で行う。デモデータでは seed で各ロールの利用者を用意する。
 - **承認担当を入れた時点でレビュー中のレポート**の承認者が承認担当でも管理者でもないときは、その承認者は承認できなくなる。
