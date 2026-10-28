@@ -1,12 +1,14 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { PageHeading } from '@/components/layout/PageHeading';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { Pagination } from '@/components/ui/Pagination.client';
 import { useFiscalYear } from '@/hooks/useFiscalYear';
 import { usePagination } from '@/hooks/usePagination';
 import { useToast } from '@/hooks/useToast';
+import { InvoiceReadingCard } from '@/features/invoice-reading/components/InvoiceReadingCard.client';
+import type { ActivityEntryPrefill } from '../types';
 import { useActivityCalculation } from '../hooks/useActivityCalculation';
 import { useActivityEntrySave } from '../hooks/useActivityEntrySave';
 import { useActivityHistory } from '../hooks/useActivityHistory';
@@ -80,6 +82,17 @@ export const DataInput = () => {
     () => history.flatMap((item) => (item.record ? [item.record] : [])),
     [history],
   );
+  // 請求書の読取りの「フォームに反映」。フォームは初期値として読むだけなので、key を替えて作り直す。
+  // 保存に成功したら案内（どこから入れた値か）だけを消し、key は替えない（拠点・カテゴリの保持を崩さない）。
+  const [entryFormKey, setEntryFormKey] = useState(0);
+  const [entryPrefill, setEntryPrefill] = useState<ActivityEntryPrefill | undefined>(undefined);
+  const entryFormRef = useRef<HTMLDivElement>(null);
+  const applyPrefill = (prefill: ActivityEntryPrefill) => {
+    setEntryPrefill(prefill);
+    setEntryFormKey((key) => key + 1);
+    entryFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   const entrySave = useActivityEntrySave({
     // 新しい行は先頭に入るため、追加分が見えるよう1ページ目へ戻す。
     onSaved: (record) => { prependManualHistory(record); pagination.resetPage(); },
@@ -104,14 +117,24 @@ export const DataInput = () => {
         {/* Scope 1・2 と Scope 3 積上げ（IDEA連携）を 1 つのフォームで入力する。
             カテゴリに応じて排出係数の参照方式（供給事業者別 / 標準 / IDEA）をフォーム側で切り替える。
             複数月まとめて入力（一括入力）は履歴全件と照合して登録済みの月を表示する。 */}
-        <ActivityEntryForm
-          locations={manualEntryLocations}
-          onSave={entrySave.save}
-          onSaveBulk={entrySave.saveBulk}
-          historyRecords={historyRecords}
-          // 事前警告の「既存のレコードを開く」から編集モーダルを開き、合算入力へ直行できるようにする。
-          onOpenDuplicateRecord={editor.open}
-        />
+        {/* 請求書（電気・都市ガス・燃料）の AI 読取り。読み取った値は「フォームに反映」で下のフォームに入る。 */}
+        <InvoiceReadingCard onApply={applyPrefill} />
+
+        <div ref={entryFormRef} className="scroll-mt-4">
+          <ActivityEntryForm
+            key={entryFormKey}
+            locations={manualEntryLocations}
+            onSave={async (entry) => {
+              await entrySave.save(entry);
+              setEntryPrefill(undefined);
+            }}
+            onSaveBulk={entrySave.saveBulk}
+            historyRecords={historyRecords}
+            // 事前警告の「既存のレコードを開く」から編集モーダルを開き、合算入力へ直行できるようにする。
+            onOpenDuplicateRecord={editor.open}
+            prefill={entryPrefill}
+          />
+        </div>
 
         {/* History Table */}
         <section className="gt-card gt-card-table flex flex-col gap-4">

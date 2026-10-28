@@ -190,6 +190,36 @@ export type ActivityEntryInitialValues =
       note: string;
     };
 
+/**
+ * 新規入力のフォームに入れておく係数の選択（請求書の読取りなど、フォームの外で決めた候補）。
+ * 係数の行 ID は年度ごとに別の行になるため、名前で持つ。フォームは取得した係数の中から同じ名前の行を選ぶので、
+ * 対象年度の係数が未公表で過年度を暫定適用する場合も、フォームの年度の判定に従う。
+ *   provider: 供給事業者別係数（電気・都市ガス）。menuName が null なら、事業者だけを選んだ状態にする
+ *   standard: 標準係数（燃料など）。係数の name（例: '燃料 軽油'）が候補にあればそれを選ぶ
+ */
+export type EntryFactorPrefill =
+  | { kind: 'provider'; providerName: string; menuName: string | null }
+  | { kind: 'standard'; factorName: string };
+
+/**
+ * 新規入力のフォームに入れておく値（請求書の読取りの「フォームに反映」）。保存は人が入力プレビューから行う。
+ * 拠点が決まらなければ locationId は ''（未選択。フォームは先頭の拠点に倒さず、選ぶまでプレビューを開けない）、
+ * 活動量が読めなければ amount は ''。
+ */
+export interface ActivityEntryPrefill {
+  locationId: string;
+  /** 請求書の需要場所の住所（拠点が決まらなかったときの案内に出す）。読めなければ null */
+  supplyAddress: string | null;
+  energyType: EnergyType;
+  /** 対象年月（'YYYY-MM'）。読めなければ null（フォームの既定の当月のまま） */
+  targetMonth: string | null;
+  amount: string;
+  note: string;
+  factor: EntryFactorPrefill | null;
+  /** フォームの先頭に出す、どこから入れた値かの案内（例: 請求書「4月分.pdf」から読み取った値です） */
+  sourceLabel: string;
+}
+
 export interface SavedManualActivityRecord {
   id: string;
   locationId: string;

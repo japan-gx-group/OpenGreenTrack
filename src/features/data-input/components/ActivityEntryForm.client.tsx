@@ -22,6 +22,7 @@ import { scopeAnalysisHref } from '@/features/scope-analysis/utils/scopeAnalysis
 import {
   MANUAL_ACTIVITY_CATEGORY_MAP,
   type ActivityEntryInitialValues,
+  type ActivityEntryPrefill,
   type ActivityEntryInput,
   type ManualEntryLocationOption,
   type SavedManualActivityRecord,
@@ -136,6 +137,11 @@ export interface ActivityEntryFormProps {
   excludeRecordId?: string;
   /** 事前警告から重複レコードの編集を開く操作。指定時のみ「既存のレコードを開く」を表示する（新規入力用）。 */
   onOpenDuplicateRecord?: (record: SavedManualActivityRecord) => void;
+  /**
+   * 新規入力のフォームに入れておく値（請求書の読取りの「フォームに反映」）。create のときだけ使う。
+   * 初期値として読むだけなので、別の値を入れ直すときは呼び出し側が key を替えてフォームを作り直す。
+   */
+  prefill?: ActivityEntryPrefill;
 }
 
 // historyRecords 未指定時の既定値。毎レンダー新しい [] を作ると useMemo の依存が毎回変わるため共有する。
@@ -153,14 +159,20 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   historyRecords = NO_HISTORY_RECORDS,
   excludeRecordId,
   onOpenDuplicateRecord,
+  prefill: prefillProp,
 }) => {
   const isEdit = mode === 'edit';
   const initialCategory = useMemo(() => entryCategoryFromInitialValues(initialValues), [initialValues]);
+  const prefill = isEdit ? undefined : prefillProp;
 
-  const [selectedLocationId, setSelectedLocationId] = useState(initialValues?.locationId ?? '');
-  const [category, setCategory] = useState<EntryCategory>(initialCategory ?? DEFAULT_ENTRY_CATEGORY);
-  const [targetMonth, setTargetMonth] = useState(() => initialValues?.targetMonth ?? getCurrentYearMonth());
-  const [amount, setAmount] = useState(initialValues?.amount ?? '');
+  const [selectedLocationId, setSelectedLocationId] = useState(initialValues?.locationId ?? prefill?.locationId ?? '');
+  const [category, setCategory] = useState<EntryCategory>(
+    initialCategory ?? (prefill ? { kind: 'energy', energyType: prefill.energyType } : DEFAULT_ENTRY_CATEGORY),
+  );
+  const [targetMonth, setTargetMonth] = useState(
+    () => initialValues?.targetMonth ?? prefill?.targetMonth ?? getCurrentYearMonth(),
+  );
+  const [amount, setAmount] = useState(initialValues?.amount ?? prefill?.amount ?? '');
   // 入力時フィルタで弾いたことの案内（正規化しても数字にならなかったとき）。無言で無視しない。
   const [amountRejected, setAmountRejected] = useState(false);
   // IME 変換中フラグ。変換中の値（全角数字など）を controlled input が巻き戻すと
@@ -171,19 +183,25 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
   // 変換開始のたびに取り直し、保存で欄を空にしたときも空に戻す。
   // 保存前の値を持ったままにすると、空欄に数字以外を入れた瞬間に古い活動量が復活し、
   // 翌月分として再保存できてしまう。
-  const lastValidAmountRef = useRef(initialValues?.amount ?? '');
-  const [note, setNote] = useState(initialValues?.note ?? '');
+  const lastValidAmountRef = useRef(initialValues?.amount ?? prefill?.amount ?? '');
+  const [note, setNote] = useState(initialValues?.note ?? prefill?.note ?? '');
   const [showPreview, setShowPreview] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // 削除は誤操作防止のため2段階（1回目で確認表示、2回目で実行）。ダイアログは使わない。
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
+  // 請求書の読取りから入れた値で拠点が決まらなかった（住所が拠点と一致しない）ときは、先頭の拠点に倒さず未選択にし、
+  // 拠点を選ぶまでプレビューを開けないようにする。請求書と関係のない拠点の活動量として黙って保存しないため。
+  const awaitingLocationChoice =
+    prefill !== undefined && !locations.some((location) => location.id === selectedLocationId);
   // 選択肢に無い id（稼働中・一時停止でなくなった拠点の記録を編集中）は採用せず先頭拠点へ倒す。
   // ネイティブ select は一致する option が無いと先頭を表示するため、表示・係数判定・保存内容を一致させる。
-  const effectiveSelectedLocationId = locations.some((location) => location.id === selectedLocationId)
-    ? selectedLocationId
-    : (locations[0]?.id ?? '');
+  const effectiveSelectedLocationId = awaitingLocationChoice
+    ? ''
+    : locations.some((location) => location.id === selectedLocationId)
+      ? selectedLocationId
+      : (locations[0]?.id ?? '');
   const selectedLocation = useMemo(
     () => locations.find((location) => location.id === effectiveSelectedLocationId),
     [locations, effectiveSelectedLocationId],
@@ -248,6 +266,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     applicableYear: factorYear,
     isEdit,
     initialFactorId: isEdit && initialValues?.kind === 'scope12' ? initialValues.emissionFactorId : null,
+    prefillFactor: prefill?.factor ?? null,
   });
   // 対象年月が属する会計年度（画面上部で選択中の年度ではなく、この記録の帰属先）。
   // Scope 3 の算定方法の注記と、IDEA 製品を検索する版（その年度に割り当てた版）の決定に使う。
@@ -462,6 +481,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
     locations.length === 0 ||
     isFactorChoicePending ||
     initialLocationMissing ||
+    awaitingLocationChoice ||
     isSaving ||
     isDeleting ||
     isFactorLoading ||
@@ -794,6 +814,11 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
             データ入力に使用できる拠点がありません。稼働中または一時停止の拠点を登録してください。
           </EntryNotice>
         )}
+        {prefill && (
+          <EntryNotice variant="info">
+            {prefill.sourceLabel}拠点・対象年月・活動量・排出係数を確かめてから「入力プレビュー」で保存してください。
+          </EntryNotice>
+        )}
         {initialLocationMissing && initialValues && (
           <EntryNotice variant="warning">
             この記録の拠点「{initialValues.locationName}」は稼働中・一時停止ではないため、この記録は編集できません（削除は可能です）。拠点管理で状態を変更してから編集してください。
@@ -879,7 +904,17 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
               </div>
             )}
 
-            <EntryField htmlFor="manual-location-select" label="拠点">
+            <EntryField
+              htmlFor="manual-location-select"
+              label="拠点"
+              error={
+                awaitingLocationChoice && locations.length > 0
+                  ? prefill?.supplyAddress
+                    ? `請求書の住所（${prefill.supplyAddress}）から拠点を決められませんでした。拠点を選んでください`
+                    : '請求書から需要場所の住所を読み取れなかったため、拠点を決められませんでした。拠点を選んでください'
+                  : null
+              }
+            >
               <select
                 id="manual-location-select"
                 value={effectiveSelectedLocationId}
@@ -889,8 +924,14 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
                   scope12.onConditionChanged('location');
                 }}
                 disabled={isConditionLocked}
+                aria-describedby={awaitingLocationChoice ? 'manual-location-select-error' : undefined}
                 className="gt-field"
               >
+                {awaitingLocationChoice && (
+                  <option value="" disabled>
+                    拠点を選んでください
+                  </option>
+                )}
                 {locations.map((location) => (
                   <option key={location.id} value={location.id}>
                     {location.name}
@@ -1002,6 +1043,7 @@ export const ActivityEntryForm: React.FC<ActivityEntryFormProps> = ({
           <EntrySection step={2} title="排出係数の参照" titleId="manual-step-2">
             <ActivityEntryFactorSection
               factorSource={factorSource}
+              hasLocation={selectedLocation !== undefined}
               hasPeriod={period !== null}
               fiscalYearsReady={fiscalYearsReady}
               isEdit={isEdit}
