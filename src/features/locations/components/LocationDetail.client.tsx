@@ -5,11 +5,13 @@ import Link from 'next/link';
 import { ArrowLeft, Building2 } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { PageHeading } from '@/components/layout/PageHeading';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { RefreshingIndicator } from '@/components/ui/RefreshingIndicator';
 import { LoadingIndicator } from '@/components/ui/PageLoading';
 import { useFiscalYear } from '@/hooks/useFiscalYear';
+import { useAppRefresh } from '@/hooks/useAppRefresh';
 import { getLocationById } from '@/features/locations/services/locationService';
 import { LocationStatusBadge } from '@/features/locations/components/LocationStatusBadge';
 import {
@@ -35,8 +37,16 @@ const SCOPE_CARDS = [
   { key: 'total', title: '合計', dotColor: 'var(--color-primary)' },
 ] as const;
 
+// 拠点の ID（uuid）の形。形が違う URL は問い合わせずに「拠点が見つかりません」にする（問い合わせると
+// uuid の変換エラーが一瞬出て、集計の問い合わせも無駄に走るため）。Postgres の uuid と同じく、
+// 版と variant の桁は問わない（デモデータの拠点 ID は 11111111-aaaa-0000-0000-… の形）。
+const LOCATION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const LocationDetail = ({ locationId }: { locationId: string }) => {
-  const { fiscalYear, fiscalYearId, fiscalYears, isLoading: isFiscalYearLoading } = useFiscalYear();
+  const isValidLocationId = LOCATION_ID_PATTERN.test(locationId);
+  const { fiscalYear, fiscalYearId, fiscalYears, isLoading: isFiscalYearLoading, fiscalYearError, refresh: refreshFiscalYears } = useFiscalYear();
+  // ヘッダーの「最新データに更新」で増える。他の全データページと同じく、取得 effect の依存に入れて再取得する。
+  const { refreshToken } = useAppRefresh();
   // 年度が1件も無い（初期セットアップ直後・最後の年度を削除した後）。fiscalYear が空文字の
   // ままだと集計データの取得 effect が走らず「読み込んでいます...」から抜けられないため、
   // Context のロード完了後に判定して空状態の案内へ切り替える。
@@ -52,6 +62,7 @@ export const LocationDetail = ({ locationId }: { locationId: string }) => {
 
   // 拠点そのものの取得。存在しない・他組織の拠点は null（Not Found 表示）。
   useEffect(() => {
+    if (!isValidLocationId) return;
     let isMounted = true;
 
     const loadLocation = async () => {
@@ -81,12 +92,13 @@ export const LocationDetail = ({ locationId }: { locationId: string }) => {
     return () => {
       isMounted = false;
     };
-  }, [locationId]);
+  }, [isValidLocationId, locationId, refreshToken]);
 
   // 集計データの取得。年度切替（Headerの年度セレクタ）に追従する。
   // 切替中は直前のデータを保持して白画面を避け、RefreshingIndicator で更新中を明示する
   // （stale-while-revalidate。ダッシュボードと同じ方針）。
   useEffect(() => {
+    if (!isValidLocationId) return;
     // FiscalYearContext のロード完了前は fiscalYear が空文字。このまま取得すると
     // 不正な年度クエリでエラー表示になるため、実際の年度が入るまで待つ。
     if (fiscalYear === '') return;
@@ -121,9 +133,9 @@ export const LocationDetail = ({ locationId }: { locationId: string }) => {
     return () => {
       isMounted = false;
     };
-  }, [fiscalYear, fiscalYearId, locationId]);
+  }, [fiscalYear, fiscalYearId, isValidLocationId, locationId, refreshToken]);
 
-  const isNotFound = !isLocationLoading && !locationErrorMessage && location === null;
+  const isNotFound = !isValidLocationId || (!isLocationLoading && !locationErrorMessage && location === null);
   const hasScope3 = detail?.hasScope3 ?? false;
   const visibleScopeCards = SCOPE_CARDS.filter(card => card.key !== 'scope3' || hasScope3);
   const chartData = detail?.monthlyData ?? [];
@@ -174,6 +186,13 @@ export const LocationDetail = ({ locationId }: { locationId: string }) => {
             <Link href="/locations" className="gt-btn mt-6">
               拠点一覧へ戻る
             </Link>
+          </Card>
+        ) : fiscalYearError ? (
+          <Card className="text-sm text-text-muted">
+            <p className="m-0">年度を取得できませんでした。通信状態を確認して再試行してください。</p>
+            <Button type="button" variant="outline" className="mt-4" onClick={() => void refreshFiscalYears()}>
+              再試行
+            </Button>
           </Card>
         ) : hasNoFiscalYear ? (
           /* 年度未登録の空状態（拠点そのものは表示できるが、年度別の集計は出せない） */
