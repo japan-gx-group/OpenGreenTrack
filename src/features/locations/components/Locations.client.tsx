@@ -31,7 +31,7 @@ const PAGE_SIZE_OPTIONS = [5, 10, 20] as const;
 
 export const Locations = () => {
   const { toast, showToast } = useToast();
-  const { database, setDatabase, isLoading, hasFetchedOnce, dataVersion, reload } = useLocationDatabase(showToast);
+  const { database, setDatabase, isLoading, hasFetchedOnce, hasError, dataVersion, reload } = useLocationDatabase(showToast);
   const filters = useLocationFilters(database);
   // 一覧を取り直したとき（初回・更新ボタン・CSV 取込後）は 1 ページ目へ戻す。
   const pagination = usePagination(filters.filteredData, 10, { resetKey: dataVersion });
@@ -122,6 +122,11 @@ export const Locations = () => {
             totalCount={filters.totalCount}
             isBusy={isBusy}
             hasFetchedOnce={hasFetchedOnce}
+            // 取り直しに失敗しても、前に取得できた一覧があればそれを出す（失敗はトーストで知らせる）
+            loadFailed={hasError && database.length === 0}
+            onRetry={() => {
+              void reload().catch(() => showToast('拠点の取得に失敗しました', 'error'));
+            }}
             menuTriggerRef={menuTriggerRef}
             onResetFilters={handleResetFilters}
             onEdit={form.openEdit}

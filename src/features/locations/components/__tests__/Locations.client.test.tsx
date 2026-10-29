@@ -29,8 +29,10 @@ vi.mock('../../services/locationService', async (importOriginal) => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
+// 「最新データに更新」で増える値は、一覧取得エラーのテストから切り替える。
+const appRefresh = vi.hoisted(() => ({ refreshToken: 0 }));
 vi.mock('@/hooks/useAppRefresh', () => ({
-  useAppRefresh: () => ({ refreshToken: 0, requestRefresh: () => {} }),
+  useAppRefresh: () => ({ refreshToken: appRefresh.refreshToken, requestRefresh: () => {} }),
 }));
 
 const TOKYO: LocationRecord = {
@@ -143,5 +145,73 @@ describe('Locations 削除確認モーダル', () => {
     expect(deleteLocation).toHaveBeenCalledWith(TOKYO.id);
 
     unmount();
+  });
+});
+
+describe('Locations 一覧取得エラー', () => {
+  beforeEach(() => {
+    appRefresh.refreshToken = 0;
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    document.body.innerHTML = '';
+  });
+
+  // 取得の失敗（then/catch/finally の連鎖）を描画まで流し切る。
+  const settle = async () => {
+    for (let index = 0; index < 3; index += 1) await flushPromises();
+  };
+
+  it('取得に失敗した場合は空状態ではなく再試行手段を表示する', async () => {
+    vi.mocked(getLocations)
+      .mockRejectedValueOnce(new Error('network error'))
+      .mockResolvedValueOnce([TOKYO]);
+    const rendered = render(<Locations />);
+    await settle();
+
+    expect(rendered.container.textContent).toContain('拠点を取得できませんでした');
+    expect(rendered.container.textContent).not.toContain('条件に合致する拠点が見つかりません');
+    click(findButton(rendered.container, '再試行'));
+    await settle();
+    expect(getLocations).toHaveBeenCalledTimes(2);
+    expect(rendered.container.textContent).toContain('東京本社');
+    expect(rendered.container.textContent).not.toContain('拠点を取得できませんでした');
+    rendered.unmount();
+  });
+
+  it('再試行の間も「見つかりません」は出さず、再試行も失敗したら表示を残してトーストで知らせる', async () => {
+    let failRetry: (error: Error) => void = () => {};
+    vi.mocked(getLocations)
+      .mockRejectedValueOnce(new Error('network error'))
+      .mockImplementationOnce(() => new Promise((_, reject) => { failRetry = reject; }));
+    const rendered = render(<Locations />);
+    await settle();
+
+    click(findButton(rendered.container, '再試行'));
+    await settle();
+    expect(rendered.container.textContent).toContain('拠点を取得できませんでした');
+    expect(rendered.container.textContent).not.toContain('条件に合致する拠点が見つかりません');
+
+    await act(async () => failRetry(new Error('network error')));
+    await settle();
+    expect(rendered.container.textContent).toContain('拠点を取得できませんでした');
+    expect(document.body.textContent).toContain('拠点の取得に失敗しました');
+    rendered.unmount();
+  });
+
+  it('一覧を出したあとで「最新データに更新」に失敗しても、前の一覧を残す', async () => {
+    vi.mocked(getLocations).mockResolvedValueOnce([TOKYO]).mockRejectedValueOnce(new Error('network error'));
+    const rendered = render(<Locations />);
+    await settle();
+    expect(rendered.container.textContent).toContain('東京本社');
+
+    appRefresh.refreshToken = 1;
+    rendered.rerender(<Locations />);
+    await settle();
+    expect(getLocations).toHaveBeenCalledTimes(2);
+    expect(rendered.container.textContent).toContain('東京本社');
+    expect(rendered.container.textContent).not.toContain('拠点を取得できませんでした');
+    rendered.unmount();
   });
 });

@@ -20,6 +20,8 @@ export interface LocationDatabase {
    * 「条件に合致する拠点が見つかりません」がオーバーレイ越しに透けて見える。
    */
   hasFetchedOnce: boolean;
+  /** 最後の取得（初回・更新ボタン・取り直し）に失敗した。次に取得できると false に戻る */
+  hasError: boolean;
   /** 一覧を丸ごと取り直した回数。ページングを 1 ページ目へ戻す合図（usePagination の resetKey）に使う。 */
   dataVersion: number;
   /** 一覧を取り直す（CSV 取込後に採番された ID と更新後の値を表示へ反映するため）。失敗は throw する。 */
@@ -31,6 +33,7 @@ export function useLocationDatabase(showToast: ShowToast): LocationDatabase {
   const [database, setDatabase] = useState<LocationRecord[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [hasFetchedOnce, setHasFetchedOnce] = useState<boolean>(false);
+  const [hasError, setHasError] = useState<boolean>(false);
   const [dataVersion, setDataVersion] = useState<number>(0);
 
   useEffect(() => {
@@ -47,10 +50,12 @@ export function useLocationDatabase(showToast: ShowToast): LocationDatabase {
         if (isMounted) {
           setDatabase(locations);
           setDataVersion(version => version + 1);
+          setHasError(false);
         }
       })
       .catch(() => {
         if (isMounted) {
+          setHasError(true);
           showToast('拠点の取得に失敗しました', 'error');
         }
       })
@@ -69,10 +74,20 @@ export function useLocationDatabase(showToast: ShowToast): LocationDatabase {
   }, [showToast, refreshToken]);
 
   const reload = useCallback(async () => {
-    const locations = await getLocations();
-    setDatabase(locations);
-    setDataVersion(version => version + 1);
+    // 失敗の表示は取得できるまで消さない（取り直しの間に「見つかりません」がオーバーレイ越しに透けないように）。
+    setIsLoading(true);
+    try {
+      const locations = await getLocations();
+      setDatabase(locations);
+      setDataVersion(version => version + 1);
+      setHasError(false);
+    } catch (error) {
+      setHasError(true);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  return { database, setDatabase, isLoading, hasFetchedOnce, dataVersion, reload };
+  return { database, setDatabase, isLoading, hasFetchedOnce, hasError, dataVersion, reload };
 }
