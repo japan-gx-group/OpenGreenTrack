@@ -52,7 +52,7 @@ export const FiscalYearMenu = () => {
       </button>
 
       {isOpen && (
-        <div className="gt-menu" style={{ right: 0, minWidth: '244px' }} role="listbox">
+        <div className="gt-menu" style={{ right: 0, minWidth: '244px', width: 'max-content' }} role="listbox">
           <div className="gt-menu-label">対象年度</div>
           {fiscalYears.map(year => {
             const isSelected = year.id === fiscalYearId;
@@ -71,12 +71,12 @@ export const FiscalYearMenu = () => {
                 <span style={{ width: '14px', flex: 'none', color: 'var(--color-primary)' }}>
                   {isSelected && <Check size={13} strokeWidth={2.6} />}
                 </span>
-                <span style={{ flex: 1 }}>
+                <span style={{ flex: 1, whiteSpace: 'nowrap' }}>
                   {year.label}
                   {/* 「現在」は今日が期間内かで導出する。既定の選択年度（最新年度）とは別の概念 */}
                   {isCurrentFiscalYear(year) && <span style={{ color: 'var(--color-text-subtle)' }}>・現在</span>}
                 </span>
-                <span style={{ fontSize: '11.5px', color: 'var(--color-text-subtle)' }}>
+                <span style={{ fontSize: '11.5px', color: 'var(--color-text-subtle)', whiteSpace: 'nowrap' }}>
                   {formatRange(year.startDate, year.endDate)}
                 </span>
               </button>

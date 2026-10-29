@@ -57,6 +57,19 @@ describe('FiscalYearMenu', () => {
     expect(optionLabels(mounted.container)).toEqual(['2027年度', '2026年度・現在', '2025年度']);
   });
 
+  it('現在年度のラベルと期間を折り返さずに表示できる幅を確保する', () => {
+    mounted = render(<FiscalYearMenu />);
+    click(mounted.container.querySelector('[data-testid="fiscal-year-menu"]')!);
+
+    const menu = mounted.container.querySelector('[role="listbox"]') as HTMLElement;
+    const currentOption = mounted.container.querySelectorAll('[role="option"]')[1];
+    const spans = currentOption.querySelectorAll('span');
+
+    expect(menu.style.width).toBe('max-content');
+    expect(spans[1].style.whiteSpace).toBe('nowrap');
+    expect(spans[3].style.whiteSpace).toBe('nowrap');
+  });
+
   // 年度の切り替わり日は日本時間で判定する（サーバや CI が UTC でも 4/1 0:00 JST から新年度）。
   it('日本時間で新年度に入った瞬間から「・現在」が次の年度へ移る', () => {
     vi.setSystemTime(new Date('2027-03-31T15:00:00Z')); // 2027-04-01T00:00:00+09:00
