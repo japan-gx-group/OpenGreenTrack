@@ -122,11 +122,6 @@ export type SsbjNarrativeItem = {
   requirementIds: SsbjRequirementId[];
   /** 記載例（架空の会社の文例）。 */
   example: string;
-  /**
-   * 穴埋めテンプレート（試行版の初期文例）。【 】の部分を自社の言葉に置き換えて使う。
-   * チームが作った文例で、外部の監修は受けていない（docs/ssbj-r1-scope.md §8）。
-   */
-  template: string;
 };
 
 // ---------------------------------------------------------------------------
