@@ -20,6 +20,7 @@ export interface LocationDatabase {
    * 「条件に合致する拠点が見つかりません」がオーバーレイ越しに透けて見える。
    */
   hasFetchedOnce: boolean;
+  /** 最後の取得（初回・更新ボタン・取り直し）に失敗した。次に取得できると false に戻る */
   hasError: boolean;
   /** 一覧を丸ごと取り直した回数。ページングを 1 ページ目へ戻す合図（usePagination の resetKey）に使う。 */
   dataVersion: number;
@@ -73,12 +74,13 @@ export function useLocationDatabase(showToast: ShowToast): LocationDatabase {
   }, [showToast, refreshToken]);
 
   const reload = useCallback(async () => {
+    // 失敗の表示は取得できるまで消さない（取り直しの間に「見つかりません」がオーバーレイ越しに透けないように）。
     setIsLoading(true);
-    setHasError(false);
     try {
       const locations = await getLocations();
       setDatabase(locations);
       setDataVersion(version => version + 1);
+      setHasError(false);
     } catch (error) {
       setHasError(true);
       throw error;

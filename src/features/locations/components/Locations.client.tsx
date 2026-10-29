@@ -122,8 +122,11 @@ export const Locations = () => {
             totalCount={filters.totalCount}
             isBusy={isBusy}
             hasFetchedOnce={hasFetchedOnce}
-            hasError={hasError}
-            onRetry={() => { void reload().catch(() => {}); }}
+            // 取り直しに失敗しても、前に取得できた一覧があればそれを出す（失敗はトーストで知らせる）
+            loadFailed={hasError && database.length === 0}
+            onRetry={() => {
+              void reload().catch(() => showToast('拠点の取得に失敗しました', 'error'));
+            }}
             menuTriggerRef={menuTriggerRef}
             onResetFilters={handleResetFilters}
             onEdit={form.openEdit}

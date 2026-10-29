@@ -33,6 +33,8 @@ describe('LocationTable 行クリック', () => {
         totalCount={1}
         isBusy={false}
         hasFetchedOnce
+        loadFailed={false}
+        onRetry={vi.fn()}
         menuTriggerRef={{ current: null }}
         onResetFilters={vi.fn()}
         onEdit={vi.fn()}

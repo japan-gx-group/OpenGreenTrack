@@ -7,6 +7,7 @@ import { useState, type RefObject } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Building2, MoreVertical, Pencil, Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { LoadingIndicator } from '@/components/ui/PageLoading';
 import { LocationStatusBadge } from './LocationStatusBadge';
 import { getLocationTypeLabel, getRegionLabel, type LocationRecord } from '../types';
@@ -20,7 +21,9 @@ interface LocationTableProps {
   isBusy: boolean;
   /** 初回取得が終わるまでは空状態を出さない */
   hasFetchedOnce: boolean;
-  hasError: boolean;
+  /** 一覧を取得できず、出せる拠点が 1 件も無い（「見つかりません」ではなく、取得の失敗と再試行を出す） */
+  loadFailed: boolean;
+  /** 一覧を取り直す（「再試行」） */
   onRetry: () => void;
   /**
    * 行メニュー（⋮）から編集/削除モーダルを開くと、メニュー項目はモーダル表示と同じコミットで
@@ -38,7 +41,7 @@ export const LocationTable = ({
   totalCount,
   isBusy,
   hasFetchedOnce,
-  hasError,
+  loadFailed,
   onRetry,
   menuTriggerRef,
   onResetFilters,
@@ -58,10 +61,14 @@ export const LocationTable = ({
       )}
 
       {/* 初回取得が終わるまでは空状態を出さない。 */}
-      {!hasFetchedOnce ? null : hasError ? (
+      {!hasFetchedOnce ? null : loadFailed ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
+          <Building2 size={48} className="text-text-muted mb-3 opacity-50" />
           <p className="font-bold text-text-muted text-lg">拠点を取得できませんでした</p>
-          <button type="button" className="gt-btn mt-4" onClick={onRetry}>再試行</button>
+          <p className="text-sm text-text-muted mt-2">通信状態を確かめて、もう一度お試しください。</p>
+          <Button type="button" variant="outline" className="mt-4" onClick={onRetry}>
+            再試行
+          </Button>
         </div>
       ) : totalCount === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
