@@ -19,6 +19,7 @@ export type FiscalYearContextValue = {
   /** 選択肢一覧（fiscal_years マスタ由来） */
   fiscalYears: FiscalYearOption[];
   isLoading: boolean;
+  /** 年度一覧の取得に失敗した（年度が未登録なのと分けて、再試行を案内するため） */
   fiscalYearError: boolean;
   setFiscalYearId: (id: string) => void;
   /**
