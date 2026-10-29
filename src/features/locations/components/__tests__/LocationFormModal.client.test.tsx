@@ -36,3 +36,25 @@ describe('LocationFormModal ラベルの関連付け', () => {
     unmount();
   });
 });
+
+describe('LocationFormModal 保存中', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+
+  // 保存中に閉じると、保存に失敗したときに入力を失う。続けて押すと二重に登録される。
+  it('保存中は「キャンセル」と「保存」を押せない', () => {
+    const form = {
+      isModalOpen: true, editingLocationId: null,
+      values: { name: '拠点', region: 'Kanto', type: 'office', person: '', status: 'active' },
+      setValues: vi.fn(), isSaving: true, openAdd: vi.fn(), openEdit: vi.fn(), close: vi.fn(), submit: vi.fn(),
+    } as unknown as LocationFormController;
+    const { container, unmount } = render(
+      <LocationFormModal form={form} returnFocusRef={{ current: null }} />,
+    );
+
+    const button = (text: string) =>
+      Array.from(container.querySelectorAll('button')).find((element) => element.textContent?.trim() === text);
+    expect(button('キャンセル')?.disabled).toBe(true);
+    expect(button('保存')?.disabled).toBe(true);
+    unmount();
+  });
+});

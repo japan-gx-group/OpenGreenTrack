@@ -3,7 +3,7 @@
 // 拠点の追加/編集モーダルの状態と保存処理。同じフォーム・モーダルを使い回し、
 // editingLocationId が null なら新規追加、それ以外なら既存拠点の編集。
 
-import { useState, type Dispatch, type FormEvent, type SetStateAction } from 'react';
+import { useRef, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react';
 import type { ShowToast } from '@/hooks/useToast';
 import { addLocation, updateLocation } from '../services/locationService';
 import { validateLocationNameAndPerson } from '../services/locationValidation';
@@ -40,6 +40,9 @@ export function useLocationForm(
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [editingLocationId, setEditingLocationId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  // 保存中かどうかをすぐに読める目印。isSaving（state）は次の描画まで変わらないため、
+  // 保存ボタンを続けて押したときの二重登録と、保存中に閉じる操作はこちらで止める。
+  const savingRef = useRef(false);
   const [values, setValues] = useState<NewLocationInput>(EMPTY_LOCATION);
 
   // フォームを初期値に戻す（新規追加のデフォルト）。
@@ -66,11 +69,17 @@ export function useLocationForm(
     setIsModalOpen(true);
   };
 
-  // モーダルを閉じ、編集状態とフォームを初期化する。
-  const close = () => {
+  // モーダルを閉じ、編集状態とフォームを初期化する（保存に成功したときと、閉じる操作の両方で使う）。
+  const resetAndClose = () => {
     setIsModalOpen(false);
     setEditingLocationId(null);
     resetLocationForm();
+  };
+
+  // キャンセル・×・Escape・外側のクリックで閉じる。保存中は閉じない（保存に失敗したときに入力を失わないように）。
+  const close = () => {
+    if (savingRef.current) return;
+    resetAndClose();
   };
 
   // 追加/編集の共通送信ハンドラ。editingLocationId の有無で分岐する。
@@ -78,6 +87,7 @@ export function useLocationForm(
   // 必須・文字数上限の判定と文言も CSV と共通（locationValidation.ts）。
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (savingRef.current) return;
     const input: NewLocationInput = {
       ...values,
       name: values.name.trim(),
@@ -89,8 +99,9 @@ export function useLocationForm(
       return;
     }
 
+    savingRef.current = true;
+    setIsSaving(true);
     try {
-      setIsSaving(true);
       if (editingLocationId) {
         const updated = await updateLocation(editingLocationId, input);
         setDatabase(prev => prev.map(item => item.id === updated.id ? updated : item));
@@ -100,11 +111,12 @@ export function useLocationForm(
         setDatabase(prev => [recordToSave, ...prev]);
         showToast(`拠点「${recordToSave.name}」を新規登録しました`, 'success');
       }
-      close();
+      resetAndClose();
     } catch (error) {
       const fallback = editingLocationId ? '拠点の更新に失敗しました' : '拠点の登録に失敗しました';
       showToast(error instanceof Error ? error.message : fallback, 'error');
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   };
