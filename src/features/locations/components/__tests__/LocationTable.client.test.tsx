@@ -13,11 +13,11 @@ describe('LocationTable row menu', () => {
   it('closes on Escape and restores focus to its trigger', () => {
     const menuTriggerRef = { current: null };
     const row: LocationRecord = {
-      id: 'location-1', name: 'HQ', region: 'kanto', type: 'headquarters', person: '', status: 'active',
+      id: 'location-1', name: 'HQ', region: 'Kanto', type: 'headquarters', person: '', status: 'active',
     };
     const secondRow: LocationRecord = { ...row, id: 'location-2', name: 'Branch' };
     const { container, unmount } = render(
-      <LocationTable rows={[row, secondRow]} totalCount={2} isBusy={false} hasFetchedOnce menuTriggerRef={menuTriggerRef}
+      <LocationTable rows={[row, secondRow]} totalCount={2} isBusy={false} hasFetchedOnce loadFailed={false} onRetry={vi.fn()} menuTriggerRef={menuTriggerRef}
         onResetFilters={vi.fn()} onEdit={vi.fn()} onDelete={vi.fn()} />,
     );
     const trigger = container.querySelectorAll('button[aria-haspopup="menu"]')[1] as HTMLButtonElement;
