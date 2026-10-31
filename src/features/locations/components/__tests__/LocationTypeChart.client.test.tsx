@@ -35,7 +35,7 @@ const ROW: LocationRecord = {
 
 describe('LocationTypeChart', () => {
   it('ドーナツのアニメーションを無効化して初回から全周を描画する', () => {
-    pieProps.current = null;
+    pieProps.current = null as Record<string, unknown> | null;
     render(<LocationTypeChart database={[ROW]} />);
 
     expect(pieProps.current).not.toBeNull();
