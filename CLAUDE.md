@@ -7,5 +7,6 @@ Claude Code で作業する場合も、必ず `AGENTS.md` のルールに従っ�
 - アーキテクチャ → [`docs/architecture.md`](docs/architecture.md)
 - 機能仕様（画面・URL・列挙型・バリデーション） → [`docs/functional-spec.md`](docs/functional-spec.md)
 - SSBJ 開示レポート（試行版）のデータ契約・保存境界 → [`docs/ssbj-spec.md`](docs/ssbj-spec.md)
+- TNFD 開示レポート（試行版）のデータ契約・保存境界 → [`docs/tnfd-spec.md`](docs/tnfd-spec.md)
 
 （規約の内容をこのファイルに重複して書かないこと。常に `AGENTS.md` を1つの正本として保つ。）

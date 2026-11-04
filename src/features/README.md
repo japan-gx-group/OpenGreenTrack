@@ -1,6 +1,6 @@
 # src/features/ — 機能（ドメイン）別ディレクトリ
 
-機能ごとにコードを凝集させる場所です。現在は次の 13 ドメインがあります。
+機能ごとにコードを凝集させる場所です。現在は次の 15 ドメインがあります。
 
 | ディレクトリ | 機能 |
 |---|---|
@@ -16,7 +16,9 @@
 | `reports/` | レポート出力・印刷 |
 | `scope-analysis/` | Scope 分析 |
 | `settings/` | アカウント設定・企業情報設定・メンバー管理 |
+| `ssbj/` | SSBJ 開示レポート（試行版）。データ契約は [`docs/ssbj-spec.md`](../../docs/ssbj-spec.md) |
 | `targets/` | 削減目標 |
+| `tnfd/` | TNFD 開示レポート（試行版）。SSBJ の設計を踏襲。データ契約は [`docs/tnfd-spec.md`](../../docs/tnfd-spec.md) |
 
 ```
 src/features/<domain>/
