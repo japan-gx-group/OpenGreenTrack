@@ -4,6 +4,7 @@ import {
   FileEdit,
   FileText,
   LayoutDashboard,
+  Leaf,
   PieChart,
   Settings2,
   type LucideIcon,
@@ -46,6 +47,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { path: '/reports', label: 'レポート', icon: FileText },
       { path: '/ssbj', label: 'SSBJレポート', icon: FileCheck2 },
+      { path: '/tnfd', label: 'TNFDレポート', icon: Leaf },
     ],
   },
 ];
@@ -61,6 +63,7 @@ const EXTRA_PAGE_TITLES: { prefix: string; label: string }[] = [
   // SSBJ の権限（/ssbj/roles）はレポート詳細（/ssbj/<id>）より先に見る。
   { prefix: '/ssbj/roles', label: 'SSBJ の権限' },
   { prefix: '/ssbj/', label: 'SSBJレポート詳細' },
+  { prefix: '/tnfd/', label: 'TNFDレポート詳細' },
 ];
 
 export const getPageTitle = (pathname: string): string | null => {

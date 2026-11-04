@@ -109,6 +109,8 @@ src/app/
 | `/ssbj/[reportId]/external` | `src/app/(app)/ssbj/[reportId]/external/page.tsx` | SSBJ 外部で算定した排出量（出典・根拠文書・確認者付き） |
 | `/ssbj/[reportId]/preview` | `src/app/(app)/ssbj/[reportId]/preview/page.tsx` | SSBJ レポートのプレビュー（作業中の内容 / 保存版） |
 | `/ssbj/[reportId]/preview/print` | `src/app/(app)/ssbj/[reportId]/preview/print/page.tsx` | SSBJ レポートのプレビューの印刷ビュー（PDF 保存） |
+| `/tnfd` | `src/app/(app)/tnfd/page.tsx` | TNFD レポート一覧（試行版） |
+| `/tnfd/[reportId]` | `src/app/(app)/tnfd/[reportId]/page.tsx` | TNFD レポート詳細（基本情報） |
 
 Route Handler（API）:
 
@@ -141,7 +143,7 @@ Route Handler（API）:
     - `utils/` — Supabase に触れない純粋なヘルパー（例: `factors/utils/factorSources.ts`、`scope-analysis/utils/treemapLayout.ts`）。`services/` は「データ取得・保存」、`utils/` は「入出力のない変換・計算」と使い分ける
     - `engine/` — 純粋な算定エンジン（`calculation/engine/` のみ。`computeEmissions` / `resolveEmissionFactor` / `units`）。DB アクセスは `calculation/services/` 側に置き、エンジンは入力→出力の純関数に保つ
 - **置かないもの:** 他の機能から使い回すもの（→ `src/components/` や `src/hooks/` へ）
-- 現在のdomain一覧: `auth`, `calculation`, `dashboard`, `data-input`, `factors`, `locations`, `notifications`, `reports`, `scope-analysis`, `settings`, `ssbj`, `targets`
+- 現在のdomain一覧: `auth`, `calculation`, `dashboard`, `data-input`, `factors`, `locations`, `notifications`, `reports`, `scope-analysis`, `settings`, `ssbj`, `targets`, `tnfd`
   - 必要なサブディレクトリだけを持つ（例: `notifications/` は `services/` のみ、`calculation/` は `engine/` と `services/` のみで `components/` を持たない）
 
 ```
