@@ -32,8 +32,6 @@ export interface SsbjNarrativeFormController {
   setState: (state: SsbjFieldState) => void;
   setText: (text: string) => void;
   setInternalNote: (internalNote: string) => void;
-  /** 穴埋めテンプレートを本文に入れる（状態は「入力済み」にする）。 */
-  applyTemplate: (template: string) => void;
   /** 選択式テンプレートの選択・補足入力を変える（本文は変えない）。 */
   setTemplateInput: (templateInput: SsbjNarrativeTemplateInput | null) => void;
   /**
@@ -136,7 +134,6 @@ export function useSsbjNarrativeForm(
     setState: state => setValues(prev => ({ ...prev, state })),
     setText: text => setValues(prev => ({ ...prev, text })),
     setInternalNote: internalNote => setValues(prev => ({ ...prev, internalNote })),
-    applyTemplate: template => setValues(prev => ({ ...prev, state: 'answered', text: template })),
     setTemplateInput: templateInput => setValues(prev => ({ ...prev, templateInput })),
     insertDraft: draft => {
       const current = values.state === 'answered' ? values.text.trimEnd() : '';

@@ -146,19 +146,20 @@ describe('SsbjNarratives', () => {
 describe('SsbjNarratives（穴埋めテンプレート・2 画面エディタ・承認ロック）', () => {
   const preview = () => document.querySelector('[data-testid="ssbj-editor-preview"]')?.textContent ?? '';
 
-  it('テンプレートを入れると【 】の数を出し、置き換えないまま入力済みでは保存しない', async () => {
+  it('選択肢を選ばずに下書きを入れると【 】の数を出し、置き換えないまま入力済みでは保存しない', async () => {
     rendered = render(<SsbjNarratives reportId={report.id} />);
     await settle();
     const card = cardOf('経営者の役割');
     click(buttonIn(card, '編集'));
-    click(buttonIn(card, 'テンプレートを入れる'));
+    click(buttonIn(card, '選択肢から下書きを作る'));
+    click(buttonIn(card, '下書きを本文に入れる'));
     const textarea = card.querySelector<HTMLTextAreaElement>('textarea[aria-label="開示する文章"]')!;
-    expect(textarea.value).toContain('【任せている役員・会議体（例: 管理本部長）】');
+    expect(textarea.value).toBe('【管理を任せている先】【管理のための統制・手続】');
     expect(card.querySelector('select')?.value).toBe('answered');
-    expect(card.querySelector('[data-testid="ssbj-template-placeholders"]')?.textContent).toContain('4 か所');
+    expect(card.querySelector('[data-testid="ssbj-template-placeholders"]')?.textContent).toContain('2 か所');
     await act(async () => { click(buttonIn(card, '保存')); });
     expect(saveSsbjNarrative).not.toHaveBeenCalled();
-    expect(card.querySelector('[role="alert"]')?.textContent).toContain('【 】の部分（4 か所）');
+    expect(card.querySelector('[role="alert"]')?.textContent).toContain('【 】の部分（2 か所）');
   });
 
   describe('本文が入力された状態から、入力済み以外で保存する', () => {
@@ -168,7 +169,8 @@ describe('SsbjNarratives（穴埋めテンプレート・2 画面エディタ・
     /** テンプレートの一部だけを書き換えた本文を入れ、状態を「未確認」にして保存を押す（指摘の再現手順）。 */
     const saveDraftAsUnconfirmed = async (card: HTMLElement) => {
       click(buttonIn(card, '編集'));
-      click(buttonIn(card, 'テンプレートを入れる'));
+      click(buttonIn(card, '選択肢から下書きを作る'));
+      click(buttonIn(card, '下書きを本文に入れる'));
       setTextareaValue(card.querySelector<HTMLTextAreaElement>('textarea[aria-label="開示する文章"]')!, DRAFT);
       await act(async () => { click(buttonIn(card, '保存')); });
       expect(card.querySelector('[role="alert"]')?.textContent).toContain('文章を内部メモに移してから');
@@ -400,7 +402,7 @@ describe('SsbjNarratives（穴埋めテンプレート・2 画面エディタ・
       );
     });
 
-    it('保存済みの選択は、編集を始めると選択肢に戻す（記入例と【 】のテンプレートも残す）', async () => {
+    it('保存済みの選択は、編集を始めると選択肢に戻す（記入例も残す）', async () => {
       vi.mocked(listSsbjNarratives).mockResolvedValue([
         ...fictionalNarratives.filter(narrative => narrative.itemId !== 'governance.oversight_body'),
         {
@@ -416,7 +418,6 @@ describe('SsbjNarratives（穴埋めテンプレート・2 画面エディタ・
       click(buttonIn(card, '編集'));
       expect(choiceSelects(card)[1].value).toBe('other');
       expect(choicesOf(card)?.querySelector<HTMLInputElement>('input')?.value).toBe('経営会議');
-      expect(buttonIn(card, 'テンプレートを入れる')).toBeDefined();
     });
 
     it('選んだ選択肢で使わない欄は出さず、入力が残っていても保存しない', async () => {
@@ -443,12 +444,33 @@ describe('SsbjNarratives（穴埋めテンプレート・2 画面エディタ・
         .not.toContain('管理本部長');
     });
 
-    it('選択式テンプレートの無い項目には、選択肢のボタンを出さない', async () => {
+    // 全項目にテンプレートがあることは utils のテストで確かめる。ここでは、最初からある項目・後から足した項目・補足で画面を確かめる。
+    it('入口は「選択肢から下書きを作る」の 1 つにし、【 】の文例だけを入れるボタンは出さない', async () => {
       rendered = render(<SsbjNarratives reportId={report.id} />);
       await settle();
-      const card = cardOf('経営者の役割');
+      for (const label of ['監督する機関・責任者', '内部炭素価格', 'ガバナンスの補足（企業固有）']) {
+        const card = cardOf(label);
+        click(buttonIn(card, '編集'));
+        const labels = Array.from(card.querySelectorAll('button')).map(button => button.textContent?.trim() ?? '');
+        expect(labels, label).toContain('選択肢から下書きを作る');
+        expect(labels.some(text => text.includes('テンプレートを入れる')), label).toBe(false);
+        click(buttonIn(card, 'キャンセル'));
+      }
+    });
+
+    it('企業固有の補足は、型を選んで入れ、型を変えて入れ直すと本文の後ろに足す', async () => {
+      rendered = render(<SsbjNarratives reportId={report.id} />);
+      await settle();
+      const card = cardOf('ガバナンスの補足（企業固有）');
       click(buttonIn(card, '編集'));
-      expect(Array.from(card.querySelectorAll('button')).some(button => button.textContent?.includes('選択肢から'))).toBe(false);
+      click(buttonIn(card, '選択肢から下書きを作る'));
+      setSelectValue(choiceSelects(card)[0], 'parent_policy');
+      click(buttonIn(card, '下書きを本文に入れる'));
+      setSelectValue(choiceSelects(card)[0], 'own_structure');
+      click(buttonIn(card, '下書きを本文の後ろに追加'));
+      expect(bodyOf(card).value).toBe(
+        '当社は、親会社の【方針・規程の名称】に従って、リスク及び機会を管理している。\n\n当社独自の体制・手続として、【体制・手続の内容】を設けている。',
+      );
     });
   });
 });

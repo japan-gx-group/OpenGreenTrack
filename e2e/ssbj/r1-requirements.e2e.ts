@@ -101,14 +101,16 @@ test('1. レポートを作ると、一覧に「作成中」と出て、操作�
   expect(await auditActions()).toEqual(['create']);
 });
 
-test('2. 穴埋めテンプレートを入れ、【 】が残ったままでは入力済みにできない。入力中の文章は右側のプレビューにその場で出る', async () => {
+test('2. 選択肢を選ばずに下書きを入れ（穴埋めの文例）、【 】が残ったままでは入力済みにできない。入力中の文章は右側のプレビューにその場で出る', async () => {
   await page.goto(reportPath('/narratives'));
   const card = narrativeCard();
   await card.getByRole('button', { name: '編集' }).click();
-  await card.getByRole('button', { name: 'テンプレートを入れる' }).click();
-  await expect(card.getByTestId('ssbj-template-placeholders')).toContainText('1 か所');
+  await expect(card.getByRole('button', { name: 'テンプレートを入れる' })).toHaveCount(0);
+  await card.getByRole('button', { name: '選択肢から下書きを作る' }).click();
+  await card.getByRole('button', { name: '下書きを本文に入れる' }).click();
+  await expect(card.getByTestId('ssbj-template-placeholders')).toContainText('2 か所');
   await card.getByRole('button', { name: '保存', exact: true }).click();
-  await expect(card.getByRole('alert')).toContainText('【 】の部分（1 か所）');
+  await expect(card.getByRole('alert')).toContainText('【 】の部分（2 か所）');
 
   await card.getByLabel('開示する文章', { exact: true }).fill(APPROVED_TEXT);
   await expect(page.getByTestId('ssbj-editor-unsaved')).toBeVisible();

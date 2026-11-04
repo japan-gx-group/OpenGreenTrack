@@ -11,7 +11,8 @@ import {
   toSsbjNarrativeFormValues,
   validateSsbjNarrativeInput,
 } from '../narrative';
-import { findSsbjNarrativeItem, ssbjNarrativeItemsOfSection } from '../requirementMaster';
+import { buildSsbjNarrativeDraft, emptySsbjNarrativeTemplateInput, findSsbjNarrativeChoiceTemplate } from '../narrativeTemplateChoice';
+import { ssbjNarrativeItemsOfSection } from '../requirementMaster';
 
 describe('入力の正規化と検証', () => {
   it('入力済みのときだけ本文を残し、前後の空白を落とし、空の内部メモは null にする', () => {
@@ -30,10 +31,11 @@ describe('入力の正規化と検証', () => {
   });
 
   it('テンプレートの【 】が残ったまま入力済みにはできず、書きかけは内部メモに移すよう案内する', () => {
-    const template = findSsbjNarrativeItem('governance.oversight_body')!.template;
+    // 何も選ばずに作った下書き（【監督の範囲】は、【監督する機関・責任者】が監督している。）
+    const template = buildSsbjNarrativeDraft(findSsbjNarrativeChoiceTemplate('governance.oversight_body')!, emptySsbjNarrativeTemplateInput());
     const answered = normalizeSsbjNarrativeInput({ state: 'answered', text: template, internalNote: '', templateInput: null });
     const message = validateSsbjNarrativeInput('governance.oversight_body', answered).join();
-    expect(message).toContain('【 】の部分（1 か所）');
+    expect(message).toContain('【 】の部分（2 か所）');
     // 「未確認」では本文を保存しないので、「未確認にすれば下書きを保存できる」とは案内しない。
     expect(message).toContain('文章を内部メモに移してから、状態を「未確認」にして保存してください');
     const draft = normalizeSsbjNarrativeInput({ state: 'unconfirmed', text: template, internalNote: '', templateInput: null });

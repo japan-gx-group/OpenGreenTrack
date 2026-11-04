@@ -15,7 +15,7 @@ import { SSBJ_NARRATIVE_ITEMS, findSsbjNarrativeItem } from './requirementMaster
 
 export const SSBJ_NARRATIVE_TEXT_MAX_LENGTH = 5000;
 
-// 穴埋めテンプレート（requirementMaster.ts の template）の、埋める部分の書き方。
+// テンプレートの下書き（narrativeTemplateChoice.ts。選んでいない欄と、文例の書き換える部分）の、埋める部分の書き方。
 const TEMPLATE_PLACEHOLDER = /【[^【】]*】/g;
 
 /** 本文に残っている、テンプレートの埋める部分（【 】）。 */

@@ -16,7 +16,7 @@ import {
   validateSsbjNarrativeTemplateInput,
 } from '../narrativeTemplateChoice';
 import { SSBJ_SECTION_IDS } from '../../types';
-import { findSsbjNarrativeItem } from '../requirementMaster';
+import { SSBJ_NARRATIVE_ITEMS, findSsbjNarrativeItem } from '../requirementMaster';
 import { sectionOfItem } from '../ids';
 
 const input = (choices: Record<string, string>, texts: Record<string, string> = {}): SsbjNarrativeTemplateInput => ({
@@ -32,12 +32,39 @@ const riskProcess = findSsbjNarrativeChoiceTemplate('risk_management.risk_proces
 const measurementMethod = findSsbjNarrativeChoiceTemplate('metrics_targets.ghg_measurement_method')!;
 
 describe('テンプレートの定義', () => {
-  it('要求項目マスターにある要求の項目だけに付け、四本柱のすべての章に代表の項目がある', () => {
-    for (const template of SSBJ_NARRATIVE_CHOICE_TEMPLATES) {
-      expect(findSsbjNarrativeItem(template.itemId)?.kind).toBe('requirement');
-    }
+  it('要求項目マスターの文章の全項目（要求の項目と企業固有の補足）に 1 つずつ付け、マスターに無い項目には付けない', () => {
+    const itemIds = SSBJ_NARRATIVE_CHOICE_TEMPLATES.map(template => template.itemId);
+    expect(new Set(itemIds).size).toBe(itemIds.length);
+    expect([...itemIds].sort()).toEqual(SSBJ_NARRATIVE_ITEMS.map(item => item.id).sort());
+    for (const itemId of itemIds) expect(findSsbjNarrativeItem(itemId), itemId).toBeDefined();
     const sections = new Set(SSBJ_NARRATIVE_CHOICE_TEMPLATES.map(template => sectionOfItem(template.itemId)));
     expect([...sections].sort()).toEqual([...SSBJ_SECTION_IDS].sort());
+  });
+
+  it('何も選ばずに作った下書きは【 】だけが書き換える部分になり、{欄 ID} を残さない（穴埋めの文例として使える）', () => {
+    for (const template of SSBJ_NARRATIVE_CHOICE_TEMPLATES) {
+      const draft = buildSsbjNarrativeDraft(template, emptySsbjNarrativeTemplateInput());
+      expect(ssbjTemplatePlaceholders(draft).length, template.itemId).toBeGreaterThan(0);
+      expect(draft, template.itemId).not.toMatch(/\{[a-z_]+\}/);
+    }
+  });
+
+  it('{欄 ID} を含む選択肢は文型にある欄に置き、そこから使う欄の選択肢の文には {欄 ID} を書かない（置き換えは 1 段だけ）', () => {
+    for (const template of SSBJ_NARRATIVE_CHOICE_TEMPLATES) {
+      const inPattern = new Set([...template.pattern.matchAll(/\{([a-z_]+)\}/g)].map(match => match[1]));
+      for (const slot of template.slots) {
+        if (slot.kind !== 'choice' || inPattern.has(slot.id)) continue;
+        for (const option of slot.options) expect(option.text, `${template.itemId} の ${slot.id}`).not.toMatch(/\{[a-z_]+\}/);
+      }
+      // どの選択肢を選んでも、下書きに {欄 ID} が残らない。
+      for (const slot of template.slots) {
+        if (slot.kind !== 'choice' || !inPattern.has(slot.id)) continue;
+        for (const option of slot.options) {
+          expect(buildSsbjNarrativeDraft(template, input({ [slot.id]: option.id })), `${template.itemId} の ${option.id}`)
+            .not.toMatch(/\{[a-z_]+\}/);
+        }
+      }
+    }
   });
 
   it('文型・選択肢の文の {欄 ID} はすべて定義された欄で、欄はすべてどこかで使われている', () => {
@@ -77,6 +104,48 @@ describe('テンプレートの定義', () => {
     expect(optionIds(oversightInformation, 'reporting')).toContain('not_reported');
     expect(optionIds(oversightBody, 'scope')).toContain('climate');
     expect(optionIds(measurementMethod, 'scope')).toEqual(['scope_1_2', 'scope_1_2_3']);
+  });
+
+  it('残りの要求の項目でも、「していない」「無い」「初めての開示」を選べ、選んだ事実だけを書く', () => {
+    const optionIdsOf = (itemId: string, slotId: string) => {
+      const slot = findSsbjNarrativeChoiceTemplate(itemId)?.slots.find(candidate => candidate.id === slotId);
+      return slot?.kind === 'choice' ? slot.options.map(option => option.id) : [];
+    };
+    expect(optionIdsOf('governance.management_role', 'delegation')).toContain('not_delegated');
+    expect(optionIdsOf('governance.management_role', 'controls')).toContain('none');
+    expect(optionIdsOf('strategy.response_plans', 'action')).toContain('not_yet');
+    expect(optionIdsOf('strategy.response_plans', 'progress')).toContain('first_year');
+    expect(optionIdsOf('risk_management.opportunity_process', 'process')).toContain('not_established');
+    expect(optionIdsOf('risk_management.integration', 'integration')).toContain('not_integrated');
+    expect(optionIdsOf('metrics_targets.ghg_measurement_inputs', 'change')).toContain('first_year');
+    expect(optionIdsOf('metrics_targets.value_chain_period', 'usage')).toContain('not_used');
+    expect(optionIdsOf('metrics_targets.internal_carbon_price', 'usage')).toContain('not_used');
+    expect(optionIdsOf('metrics_targets.remuneration', 'linkage')).toContain('not_linked');
+    expect(optionIdsOf('metrics_targets.other_metrics', 'usage')).toContain('none');
+    expect(optionIdsOf('metrics_targets.targets', 'target_status')).toContain('not_set');
+    expect(optionIdsOf('metrics_targets.ghg_targets', 'target_status')).toContain('not_set');
+    expect(optionIdsOf('metrics_targets.comparative_information', 'comparison')).toContain('first_year');
+
+    const managementRole = findSsbjNarrativeChoiceTemplate('governance.management_role')!;
+    expect(buildSsbjNarrativeDraft(managementRole, input(
+      { delegation: 'delegated', delegate: 'management_meeting', overseer: 'board', method: 'regular_report', controls: 'none' },
+    ))).toBe('リスク及び機会の管理は経営会議に任せており、取締役会は定期的な報告を通じて監督している。管理のための所定の統制・手続は、設けていない。');
+    expect(buildSsbjNarrativeDraft(managementRole, input({ delegation: 'not_delegated' })))
+      .toBe('リスク及び機会の管理を、特定の役員・会議体には任せていない。【管理を担っている体制】。【管理のための統制・手続】');
+    const internalCarbonPrice = findSsbjNarrativeChoiceTemplate('metrics_targets.internal_carbon_price')!;
+    expect(buildSsbjNarrativeDraft(internalCarbonPrice, input({ usage: 'not_used' }))).toBe('当社は内部炭素価格を用いていない。');
+    expect(unfilledSsbjTemplateSlots(internalCarbonPrice, input({ usage: 'used' }))).toEqual(['使い方']);
+  });
+
+  it('企業固有の補足は、書くことの型を選び、【 】を書き換えて使う', () => {
+    for (const item of SSBJ_NARRATIVE_ITEMS.filter(candidate => candidate.kind === 'company_supplement')) {
+      const template = findSsbjNarrativeChoiceTemplate(item.id)!;
+      expect(template.slots.map(slot => slot.id), item.id).toEqual(['content']);
+      const content = template.slots[0];
+      if (content.kind !== 'choice') throw new Error('補足の欄は選択肢');
+      expect(content.allowOther).toBe(true);
+      for (const option of content.options) expect(ssbjTemplatePlaceholders(option.text).length, option.id).toBeGreaterThan(0);
+    }
   });
 });
 

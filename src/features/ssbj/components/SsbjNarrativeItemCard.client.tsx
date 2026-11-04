@@ -2,14 +2,14 @@
 
 // 四本柱・補足の文章（T05）の 1 項目のカード。対応する要求と項番号、記載ガイド・記載例、文章の表示と編集を出す。
 // 未入力・未確認・非該当は状態のラベルで出し、空欄や「なし」にしない。内部メモは開示しないことを明示する（docs/ssbj-spec.md §5）。
-// 編集中は、穴埋めテンプレートを入れられ、残っている【 】の数を出す。選択式テンプレートがある項目では、
-// 選択肢から下書きを作って本文に入れられる（SsbjNarrativeTemplateChoices）。入力中の内容は onDraftChange で親に渡す
+// 編集中は、選択肢から下書きを作って本文に入れられ（SsbjNarrativeTemplateChoices）、残っている【 】の数を出す。
+// 入口はこの 1 つで、何も選ばずに入れた下書きが【 】の穴埋めの文例になる。入力中の内容は onDraftChange で親に渡す
 // （2 画面エディタのプレビューにその場で反映するため。保存はしない）。
 // 入力済み以外の状態では本文を保存しないので、入力した本文が消える保存は、確認のダイアログで止める（取り消せば編集に戻る）。
 // 選択式テンプレートの下書きを一度も編集しないまま入力済みで保存するときも、確認のダイアログで止める。
 
 import { useEffect, useId, useState } from 'react';
-import { FileText, ListChecks, Pencil } from 'lucide-react';
+import { ListChecks, Pencil } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -128,35 +128,23 @@ export const SsbjNarrativeItemCard = ({ entry, onSave, readOnly = false, onDraft
                 <option key={state} value={state}>{SSBJ_FIELD_STATE_LABELS[state]}</option>
               ))}
             </select>
-            {entry.item && (
+            {choiceTemplate && (
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  disabled={form.isSaving || (isTextEnabled && form.values.text.trim() !== '')}
-                  onClick={() => form.applyTemplate(entry.item!.template)}
+                  aria-expanded={isChoosing}
+                  disabled={form.isSaving}
+                  onClick={() => setIsChoosing(open => !open)}
                 >
-                  <FileText size={14} />
-                  テンプレートを入れる
+                  <ListChecks size={14} />
+                  {isChoosing ? '選択肢を閉じる' : '選択肢から下書きを作る'}
                 </Button>
-                <span className="text-xs text-text-muted">
-                  {isTextEnabled && form.values.text.trim() !== ''
-                    ? '本文が空のときに入れられます'
-                    : '【 】の部分を自社の内容に置き換えて使います（試行版の文例です）'}
-                </span>
-                {choiceTemplate && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    aria-expanded={isChoosing}
-                    disabled={form.isSaving}
-                    onClick={() => setIsChoosing(open => !open)}
-                  >
-                    <ListChecks size={14} />
-                    {isChoosing ? '選択肢を閉じる' : '選択肢から下書きを作る'}
-                  </Button>
+                {!isChoosing && (
+                  <span className="text-xs text-text-muted">
+                    選べるところは選び、残りの【 】を自社の内容に書き換えて使います（試行版の文例です）
+                  </span>
                 )}
               </div>
             )}
