@@ -18,7 +18,7 @@ export type OrgDataTable = {
   omitColumns?: string[];
 };
 
-/** 組織に属するテーブル（OGT 本体と SSBJ）。並びは書き出しのファイルと表示の順。 */
+/** 組織に属するテーブル（OGT 本体と SSBJ・TNFD）。並びは書き出しのファイルと表示の順。 */
 export const ORG_DATA_TABLES: readonly OrgDataTable[] = [
   // OGT 本体
   { name: 'organizations', organizationColumn: 'id', primaryKey: ['id'], omitColumns: ['apiKeyHash'] },
@@ -64,6 +64,8 @@ export const ORG_DATA_TABLES: readonly OrgDataTable[] = [
   { name: 'ssbj_member_roles', organizationColumn: 'organizationId', primaryKey: ['id'] },
   { name: 'ssbj_external_emissions', organizationColumn: 'organizationId', primaryKey: ['id'] },
   { name: 'ssbj_audit_logs', organizationColumn: 'organizationId', primaryKey: ['id'] },
+  // TNFD
+  { name: 'tnfd_reports', organizationColumn: 'organizationId', primaryKey: ['id'] },
 ];
 
 /**

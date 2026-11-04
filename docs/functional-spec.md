@@ -231,6 +231,7 @@ erDiagram
 | `/ssbj/[reportId]/ghg` | OGT の GHG 候補値・採用 | `dashboard_aggregates`、算定・Scope 3 データ（参照のみ）、`ssbj_ogt_adoptions`（採用値） |
 | `/ssbj/[reportId]/external` | SSBJ 外部で算定した排出量 | `ssbj_external_emissions`、`ssbj_evidence`（根拠文書）、`profiles`（確認者） |
 | `/ssbj/[reportId]/preview` `/ssbj/[reportId]/preview/print` | SSBJ プレビュー・印刷（PDF） | 作業中の内容（保存版と同じ組み立て）、`ssbj_report_versions`（保存版。閲覧者は `GET /api/ssbj/reports/[reportId]/approved-version`） |
+| `/tnfd` `/tnfd/[reportId]` | TNFD レポート（試行版） | `tnfd_reports`、`fiscal_years` |
 | `/settings/company` `/settings/account` | 設定 | `organizations`、`profiles`、`fiscal_years`、`invites` |
 | `/login` `/signup` `/forgot-password` `/reset-password` `/invite/[token]` | 認証 | Supabase Auth、`invites` |
 
@@ -549,6 +550,20 @@ AI を使う機能で使う提供元とモデル。企業・メンバー設定�
 
 - 基本情報の必須はレポート名のみ。任意項目の未入力は「未入力」と表示し、空欄や「なし」にしない（項目名と必須性は T01 の合意。`ssbj-r1-scope.md`）
 - 親会社の持分比率は 0 より大きく 100 以下、小数点以下 2 桁まで。親会社との関係・測定アプローチ・業種は一覧から選ぶ（業種は SICS の 68 産業）
+- 対象年度は作成後に変更できない（後続機能が採用するその年度の OGT 値・保存版と食い違わないようにするため）
+- R1 ではレポートの削除を提供しない
+
+### 4.10 TNFD レポート（試行版）
+
+自然関連財務情報開示（TNFD）の下書きを、組織・算定年度に結び付けて作成する。**社内確認用の試行版であり、TNFD 提言への準拠や対外提出の完了を保証しない**（全画面の上部に注記を出す）。データ契約・保存境界・今後の画面構成は [`tnfd-spec.md`](./tnfd-spec.md) を正とする。
+
+| 画面 | 内容 |
+|---|---|
+| 一覧（`/tnfd`） | ヘッダーで選択中の年度のレポートを表示し、新規作成する。レポートは選択中の年度に作る（作成ダイアログで対象年度を明示する）。年度が未登録なら企業設定へ案内する |
+| 詳細（`/tnfd/[reportId]`） | 基本情報（レポート名・対象年度と期間・作成目的・報告範囲・参照する基準の版）を表示・編集する。存在しない・他組織のレポートは「見つかりません」と表示し、存在を示唆しない |
+
+- 基本情報の必須はレポート名のみ。任意項目の未入力は「未入力」と表示し、空欄や「なし」にしない（`tnfd-spec.md` §7.3）
+- **レポートは組織 × 算定年度につき 1 件**（SSBJ との違い。`tnfd-spec.md` §2）。同じ年度の 2 件目は作成できず、理由を表示する
 - 対象年度は作成後に変更できない（後続機能が採用するその年度の OGT 値・保存版と食い違わないようにするため）
 - R1 ではレポートの削除を提供しない
 

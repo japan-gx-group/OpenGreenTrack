@@ -40,6 +40,9 @@ erDiagram
 
     organizations ||--o{ ssbj_reports : "SSBJレポート"
     fiscal_years ||--o{ ssbj_reports : "対象年度"
+
+    organizations ||--o{ tnfd_reports : "TNFDレポート"
+    fiscal_years ||--o{ tnfd_reports : "対象年度"
     ssbj_reports ||--o{ ssbj_report_versions : "保存版"
     ssbj_report_versions |o--o{ ssbj_report_versions : "復元元"
     ssbj_reports ||--o{ ssbj_risks_opportunities : "リスク・機会"
@@ -676,6 +679,29 @@ OGT で算定できない排出量（CO2 以外のガス、対応していない
 - 二重計上の防止は、遅延の制約トリガー（トランザクションの最後に検査）で行う。OGT の採用値と重なる外部算定値（P2071）、
   外部算定値どうしの重なり（P2072）を拒否し、`ssbj_ogt_adoptions` の採用でも外部算定値と重なれば P2071 で拒否する。重なりの規則は
   [`ssbj-spec.md`](ssbj-spec.md) §13「外部で算定した排出量（R2-13）」。
+
+### 3.31 TNFD レポート (`tnfd_reports`) — TNFD 開示レポート試行版（`supabase/migrations/20261104100000_tnfd_reports.sql`）
+TNFD 開示レポートの本体と基本情報。組織と算定年度に必ず結び付き、後続の TNFD 機能（文章・コア指標・拠点の自然関連情報・保存版）は
+この行の `id` から組織・年度を辿る。データ契約・保存境界は [`tnfd-spec.md`](tnfd-spec.md) を正とする。
+`ssbj_reports` を写しているが、**組織 × 算定年度につき 1 件の unique 制約がある**点が違う（`tnfd-spec.md` §2）。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | レポートID | UUID | Primary Key | |
+| `organizationId` | 組織ID | UUID | Foreign Key | 削除時: CASCADE。`fiscalYearId` と合わせて UNIQUE（年度につき 1 件） |
+| `fiscalYearId` | 算定年度ID | UUID | Foreign Key | 削除時の指定なし（NO ACTION）。年度削除で連鎖削除しない。作成後は変更不可 |
+| `title` | レポート名 | VARCHAR(200) | NOT NULL, CHECK(空白のみ不可) | |
+| `purpose` | 作成目的 | TEXT | NULL | |
+| `reportingScope` | 報告範囲 | TEXT | NULL | |
+| `standardVersion` | 参照する基準の版 | VARCHAR(100) | NULL | 例: Recommendations of the TNFD, October 2026 |
+| `createdByUserId` / `updatedByUserId` | 登録・更新操作者ID | UUID | NULL | `set_row_actor` トリガが auth.uid() で上書き |
+| `createdAt` / `updatedAt` | 作成・更新日時 | TIMESTAMPTZ | NOT NULL | `updatedAt` は `set_updated_at` トリガ |
+
+- 版管理の列（`draftRevision`）・状態の列は保存機能（TN-03）のマイグレーションが追加する（`ssbj_reports` と同じ積み方）。
+- RLS は select / insert / update を自組織に限定し、insert / update の with check で `fiscalYearId` が自組織の年度であることを
+  `exists` で検証する（FK は行の存在しか見ないため）。delete のポリシーと GRANT は持たない（R1 では削除を提供しない）。
+- `authenticated` への insert / update は列指定の GRANT。update は基本情報の列だけで、組織・年度は作成後に付け替えられない。
+- 年度を参照するため、年度削除の可否判定（`src/features/settings/services/fiscalYears.ts` の `REFERENCING_TABLES`）の対象に含める。
 
 ---
 

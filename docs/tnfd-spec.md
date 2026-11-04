@@ -387,7 +387,7 @@ R1 のセクション `<key>`: `basic_info` / `narratives` / `metrics` / `locati
 | タスク | 内容 | 依存 | 状況 |
 |---|---|---|---|
 | TN-01 | 共通データ契約と仕様書（本文書・`types.ts`・`utils/ids.ts`・要求項目マスター・指標マスター・架空データ） | — | 実装中（v0.2） |
-| TN-02 | レポートの作成・一覧・基本情報（`/tnfd`、`/tnfd/[reportId]`） | TN-01 | 未着手 |
+| TN-02 | レポートの作成・一覧・基本情報（`/tnfd`、`/tnfd/[reportId]`） | TN-01 | 実装済み |
 | TN-03 | 汎用の保存・版生成（`tnfd_report_versions`、`draftRevision`、復元） | TN-02 | 未着手 |
 | TN-04 | 四本柱の文章（14提言＋一般要件＋企業固有の補足＋ISSB 受け皿） | TN-03、別表A | 未着手 |
 | TN-05 | コア指標（GHG 採用値の共用＋手入力指標） | TN-03、**U-2** | 未着手 |

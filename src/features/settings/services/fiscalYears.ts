@@ -25,7 +25,7 @@ import type { ActionResult } from '@/types/actionResult';
 // fiscalYearId を参照している全テーブル（削除の可否判定に使う）。
 // calculation_batches / reduction_targets / dashboard_aggregates は
 // on delete cascade のため、参照が残ったまま年度を消すとその年度のデータが連鎖削除される。
-// supplier_emissions / scope3_category_methods / ssbj_reports は cascade 無しの FK（残っていると削除自体が失敗する）。
+// supplier_emissions / scope3_category_methods / ssbj_reports / tnfd_reports は cascade 無しの FK（残っていると削除自体が失敗する）。
 // scope3_category_emissions は fiscalYearId に FK が無い（残ったまま年度を消すと孤児行になる）。
 // いずれにせよ「参照データが1件でもあれば削除させない」ことで全パターンを安全側で塞ぐ。
 // column は年度を指す外部キー名。reduction_targets だけは「基準年度」を指すため列名が異なる。
@@ -38,6 +38,7 @@ const REFERENCING_TABLES = [
   { table: 'scope3_category_emissions', column: 'fiscalYearId', label: 'Scope3 直接入力' },
   { table: 'scope3_category_methods', column: 'fiscalYearId', label: 'Scope3 算定方法' },
   { table: 'ssbj_reports', column: 'fiscalYearId', label: 'SSBJレポート' },
+  { table: 'tnfd_reports', column: 'fiscalYearId', label: 'TNFDレポート' },
 ] as const;
 
 // 指定年度を参照しているデータ種別のラベル一覧（存在するものだけ）を返す。
