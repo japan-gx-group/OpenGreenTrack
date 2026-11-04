@@ -2,7 +2,7 @@
 
 本書は、AIST-IDEA（産総研 LCIデータベース。以下 IDEA）を利用した Scope 3 の活動量ベース算定（積上げ法）を OpenGreenTrack に実装するための設計書である。合意後に §7 の issue 分割に従って実装する。
 
-**本書の読み方（実装者・実装AI向け）**: 本文はすべて「現在の確定仕様」を断定形で記述している（検討経緯・改訂履歴は §9 のみ）。DB の確定 DDL は §3、サービス層とRPC のコード契約（型・JSON形）は §4.3、issue ごとの実装範囲と受け入れ条件は §7 にある。矛盾がある場合は §3・§4.3 のコードブロックを正とする。
+**本書の読み方（実装者・実装AI向け）**: 本文はすべて「現在の確定仕様」を断定形で記述している（検討経緯・改訂履歴は §9 のみ）。DB設計の説明は§3、サービス層とRPC のコード契約（型・JSON形）は §4.3、issue ごとの実装範囲と受け入れ条件は §7 にある。DBの現行DDLは `supabase/migrations/*.sql` をファイル名順に適用した結果を正とする。§3のSQLは設計時の抜粋を含み、導入時にそのまま実行しない。サービス層とRPCの契約は§4.3と現行実装を照合する。
 
 関連正本: `docs/calculation-logic.md`（算定エンジン） / `docs/database-design.md` / `docs/functional-spec.md §4.3.3, §7.2` / 実装規約は `AGENTS.md`（特に R7: サーバ専用モジュールの分離、R9: 既存マイグレーション編集禁止）
 
@@ -71,9 +71,9 @@ IDEA Ver.4.0 標準版 Excel は影響評価手法別に複数ファイルで提
 
 不採用: 案A（既存 `emission_factors` に `source='idea'` で投入）。精度（列拡張は seed 済み公式係数と全画面・全テストに波及）、規模（`Factors.client.tsx` は全行ロード前提）、ライセンス境界（除外条件分岐の散在）、意味論（`EnergyType` / `regionName` に対応しない）の4点で劣るため。
 
-## 3. データベース設計（issue 1 の確定 DDL）
+## 3. データベース設計（構造と権限）
 
-マイグレーションは新規ファイルとして追加する（AGENTS.md R9）。以下の DDL を正とする。
+マイグレーションの変更は新規ファイルとして追加する（AGENTS.md R9）。以下はIDEA連携の構造を説明する抜粋である。型・列・精度変更はv1.0初期スキーマに取り込まれており、年度別の版割当は `20261019120000_idea_fiscal_year_imports.sql` に定義されている。全列・外部キーは [`database-design.md`](./database-design.md) を参照する。
 
 ### 3.1 新設テーブル
 
@@ -100,12 +100,18 @@ create table idea_imports (
   "errorMessage" text,
   "importedByUserId" uuid,
   "createdAt" timestamptz not null default now(),
-  "updatedAt" timestamptz not null default now()
+  "updatedAt" timestamptz not null default now(),
+  "unmappedRecordCount" integer not null default 0,
+  "skippedRowCount" integer not null default 0
 );
 
 -- 組織内で active なインポートは最大1件
 create unique index idea_imports_one_active_per_org
   on idea_imports ("organizationId") where "isActive" = true;
+
+-- 処理中も組織あたり最大1件
+create unique index idea_imports_one_processing_per_org
+  on idea_imports ("organizationId") where status = 'processing';
 
 create table idea_factors (
   id uuid primary key default gen_random_uuid(),
@@ -143,8 +149,8 @@ create table scope3_category_methods (
 
 ### 3.2 RLS / GRANT
 
-- `idea_imports` / `idea_factors`: SELECT は自組織のみ（`"organizationId" = (select current_user_organization_id())`）。**グループ会社横断の `current_user_organization_ids()` は使わない**（ライセンスは法人単位）。INSERT/UPDATE/DELETE は authenticated に**付与しない**（取込・削除はインポートAPI = Route Handler + service_role でのみ行い、API側で admin ロールを検証）。GRANT は `select` のみ authenticated へ、全操作を service_role へ（supplier_emissions のマイグレーションの GRANT 方針に倣う）。
-- `scope3_category_methods`: `scope3_category_emissions` と同型（SELECT 自組織、書き込みは editor 制限の RESTRICTIVE ポリシー併用）。
+- `idea_imports` / `idea_factors`: SELECT は自組織のみ（`"organizationId" = (select current_user_organization_id())`）。**グループ会社横断の `current_user_organization_ids()` は使わない**（ライセンスは法人単位）。INSERT/UPDATE/DELETE は authenticated に**付与しない**（取込・削除はインポートAPI = Route Handler + service_role でのみ行い、API側でログイン済み・自組織への所属を検証する。管理者・メンバーとも利用できる）。GRANT は `select` のみ authenticated へ、全操作を service_role へ（`20260831000001_rls.sql`）。
+- `scope3_category_methods`: `scope3_category_emissions` と同型（自組織のSELECT / INSERT / UPDATE / DELETEを許可。書き込みでは年度も自組織のものか検証し、ロールによる制限は設けない）。
 
 ### 3.3 既存テーブルへの追加列
 
@@ -152,7 +158,7 @@ create table scope3_category_methods (
 alter table activity_records
   add column "scope3CategoryId" integer check ("scope3CategoryId" between 1 and 15),
   add column "ideaFactorId" uuid references idea_factors(id) on delete set null,
-  -- Scope3積上げレコードはカテゴリ必須
+  -- IDEA係数を参照するレコードはカテゴリ必須
   add constraint activity_records_idea_requires_category
     check ("ideaFactorId" is null or "scope3CategoryId" is not null);
 
@@ -419,7 +425,7 @@ scope3Total = Σ カテゴリ別採用値
 
 ### issue 1: マイグレーション（依存: なし）
 
-実装範囲: §3 の DDL 全部（idea_imports / idea_factors / scope3_category_methods / 既存テーブル追加列 / emissions 精度拡張 / enum 追加 / RLS / GRANT）+ `roundEmissions` の第6位化。
+実装範囲: §3で説明するDB構造（実体は `supabase/migrations/*.sql`）（idea_imports / idea_factors / scope3_category_methods / 既存テーブル追加列 / emissions 精度拡張 / enum 追加 / RLS / GRANT）+ `roundEmissions` の第6位化。
 
 **マイグレーション分割の注意**（§3.3・§3.4 のコメント参照）:
 - `EnergyType` への enum 値追加は**単独ファイル**にする（同一トランザクション内で新値を使えないため）。

@@ -634,7 +634,7 @@ supabase db push --include-seed
 - 本番データが入った後にマイグレーションする場合は、事前にバックアップを確認してください。
 - `--include-seed` で流れるのは、`supabase/config.toml` の `[db.seed] sql_paths` に書かれた `seeds/production/*.sql`（公式排出係数マスタ）だけです。デモデータ（`seeds/demo/`）は流れません。
 
-CLI が使えない場合は、Supabase Dashboard の SQL Editor から SQL を実行する方法もあります。その場合は、`supabase/migrations/` の 4 ファイルをタイムスタンプ順（`…_schema.sql` → `…_rls.sql` → `…_rpc.sql` → `…_storage.sql`）に開いて上から順に実行し、続けて `supabase/seeds/production/` の `official_emission_factors_*.sql` を実行します。抜け漏れや順番間違いを避けるため、基本は CLI の `supabase db push --include-seed` を推奨します。
+CLIが使えない場合は、Supabase DashboardのSQL EditorからSQLを実行する方法もあります。新規DBでは、`supabase/migrations/` の全SQLファイルをファイル名のタイムスタンプ順に実行します。初期4本に続く追加マイグレーションも対象です。CLIで適用した既存DBは `supabase migration list` で履歴を確認し、未適用分だけを実行してください。SQL Editorでの実行は `supabase_migrations.schema_migrations` に記録されないため、実行済みファイルを別途記録します。後からCLIへ切り替える場合は、実際のスキーマと実行済みファイルの一致を確認してから `supabase migration repair --status applied <version>` で履歴を合わせてください。続けて `supabase/seeds/production/` の `official_emission_factors_*.sql` を実行します。抜け漏れや順番間違いを避けるため、基本はCLIの `supabase db push --include-seed` を推奨します。
 
 ### B-8. 初期データを入れる
 
