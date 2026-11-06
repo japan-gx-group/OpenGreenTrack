@@ -3,7 +3,7 @@
 // 拠点の一覧表。読込中のオーバーレイ・0 件表示・行ごとの操作メニュー（⋮）もここで持つ。
 // 行クリックで拠点詳細へ遷移し、⋮ から編集/削除モーダルを開く。
 
-import { useState, type RefObject } from 'react';
+import { useEffect, useState, type RefObject } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Building2, MoreVertical, Pencil, Trash2 } from 'lucide-react';
@@ -51,6 +51,19 @@ export const LocationTable = ({
   const router = useRouter();
   // 行ごとの操作メニュー（⋮）の開閉。開いている行の id を保持する。
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (openMenuId === null) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setOpenMenuId(null);
+      menuTriggerRef.current?.focus();
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [openMenuId, menuTriggerRef]);
 
   return (
     <div className="relative min-h-[280px] overflow-x-auto">

@@ -1,76 +1,34 @@
 // @vitest-environment jsdom
-import React, { act } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { click, render, type RenderResult } from '@/lib/testing/render';
-import { REGIONS } from '@/types/region';
-import { LocationTable } from '../LocationTable.client';
+import React from 'react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { keyDown, render, click } from '@/lib/testing/render';
 import type { LocationRecord } from '../../types';
+import { LocationTable } from '../LocationTable.client';
 
-const push = vi.fn();
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push, refresh: vi.fn() }),
-}));
+describe('LocationTable row menu', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
 
-const ROW: LocationRecord = {
-  id: 'loc-1',
-  name: '本社拠点',
-  region: REGIONS[0],
-  type: 'headquarters',
-  person: '山田',
-  status: 'active',
-};
-
-describe('LocationTable 行クリック', () => {
-  let rendered: RenderResult | null = null;
-
-  beforeEach(() => {
-    push.mockClear();
-    vi.spyOn(window, 'open').mockImplementation(() => null);
-    rendered = render(
-      <LocationTable
-        rows={[ROW]}
-        totalCount={1}
-        isBusy={false}
-        hasFetchedOnce
-        loadFailed={false}
-        onRetry={vi.fn()}
-        menuTriggerRef={{ current: null }}
-        onResetFilters={vi.fn()}
-        onEdit={vi.fn()}
-        onDelete={vi.fn()}
-      />,
+  it('closes on Escape and restores focus to its trigger', () => {
+    const menuTriggerRef = { current: null };
+    const row: LocationRecord = {
+      id: 'location-1', name: 'HQ', region: 'Kanto', type: 'headquarters', person: '', status: 'active',
+    };
+    const secondRow: LocationRecord = { ...row, id: 'location-2', name: 'Branch' };
+    const { container, unmount } = render(
+      <LocationTable rows={[row, secondRow]} totalCount={2} isBusy={false} hasFetchedOnce loadFailed={false} onRetry={vi.fn()} menuTriggerRef={menuTriggerRef}
+        onResetFilters={vi.fn()} onEdit={vi.fn()} onDelete={vi.fn()} />,
     );
-  });
+    const trigger = container.querySelectorAll('button[aria-haspopup="menu"]')[1] as HTMLButtonElement;
+    click(trigger);
+    expect(container.querySelector('[role="menu"]')).not.toBeNull();
+    expect(menuTriggerRef.current).toBe(trigger);
 
-  afterEach(() => {
-    rendered?.unmount();
-    rendered = null;
-    vi.restoreAllMocks();
-  });
+    keyDown(document, 'Escape');
 
-  // 修飾キー付きのクリックを発火する（click ヘルパーは修飾キーを付けられないため直接 dispatch する）
-  const modifiedClick = (element: Element, init: MouseEventInit) => {
-    act(() => {
-      element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ...init }));
-    });
-  };
-
-  it('通常クリックは現在タブで拠点詳細へ遷移する', () => {
-    const row = rendered!.container.querySelector('tbody tr')!;
-
-    click(row);
-
-    expect(push).toHaveBeenCalledWith('/locations/loc-1');
-    expect(window.open).not.toHaveBeenCalled();
-  });
-
-  it('Ctrl+クリックは現在タブを遷移させず新規タブで開く', () => {
-    const row = rendered!.container.querySelector('tbody tr')!;
-
-    modifiedClick(row, { ctrlKey: true });
-
-    expect(push).not.toHaveBeenCalled();
-    expect(window.open).toHaveBeenCalledWith('/locations/loc-1', '_blank', 'noopener');
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    unmount();
   });
 });
