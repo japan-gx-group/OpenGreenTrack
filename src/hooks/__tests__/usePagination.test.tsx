@@ -80,6 +80,24 @@ describe('usePagination', () => {
     unmount();
   });
 
+  it('削除でページが減った後、追加で件数が戻ってもページ番号は復活しない', () => {
+    const { rerender, unmount } = render(<Probe items={range(21)} pageSize={5} />);
+    act(() => latest.setPage(5));
+    expect(latest.totalPages).toBe(5);
+
+    // 最後の1件を削除 → 4 ページ目へ丸められ、state も補正される
+    rerender(<Probe items={range(20)} pageSize={5} />);
+    expect(latest.totalPages).toBe(4);
+    expect(latest.currentPage).toBe(4);
+    expect(latest.pageItems).toEqual([16, 17, 18, 19, 20]);
+
+    // 新規追加で 21 件に戻っても、古い 5 ページ目へは飛ばない
+    rerender(<Probe items={range(21)} pageSize={5} />);
+    expect(latest.currentPage).toBe(4);
+    expect(latest.pageItems).toEqual([16, 17, 18, 19, 20]);
+    unmount();
+  });
+
   it('resetKey が変わると 1 ページ目へ戻り、同じ値のままなら戻らない', () => {
     const { rerender, unmount } = render(<Probe items={range(30)} resetKey={1} />);
     act(() => latest.setPage(3));
