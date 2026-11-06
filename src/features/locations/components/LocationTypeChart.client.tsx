@@ -46,7 +46,7 @@ export const LocationTypeChart = ({ database }: { database: LocationRecord[] }) 
            <div className="w-1/2 h-full">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={pieData} innerRadius={55} outerRadius={75} paddingAngle={2} dataKey="value">
+                  <Pie data={pieData} innerRadius={55} outerRadius={75} paddingAngle={2} dataKey="value" isAnimationActive={false}>
                     {pieData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
