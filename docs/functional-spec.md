@@ -12,7 +12,7 @@
 | 算定ロジックの詳細 | [`calculation-logic.md`](./calculation-logic.md) |
 | Scope 3 積上げ（IDEA 連携） | [`idea-scope3-spec.md`](./idea-scope3-spec.md) |
 
-本書はフィールドの全定義を重複して持たない。カラム単位の定義は `database-design.md` を参照すること（DDL の最終正本は `supabase/migrations/*_schema.sql`）。
+本書はフィールドの全定義を重複して持たない。カラム単位の定義は `database-design.md` を参照すること（DDL の最終正本は `supabase/migrations/*.sql` をファイル名順に適用した結果）。
 
 ---
 
@@ -55,9 +55,9 @@ OpenGreenTrack は、企業の温室効果ガス（GHG）排出量を算定・�
 ```mermaid
 erDiagram
   organizations ||--o{ locations : has
-  organizations ||--o{ fiscal_years : has
-  organizations ||--o{ emission_factors : has
-  organizations ||--o{ reduction_targets : has
+  organizations |o--o{ fiscal_years : has
+  organizations |o--o{ emission_factors : has
+  organizations ||--o| reduction_targets : has
   organizations ||--o{ scope3_category_emissions : has
   organizations ||--o{ scope3_category_methods : has
   organizations ||--o{ idea_imports : has
@@ -71,14 +71,14 @@ erDiagram
   fiscal_years ||--o{ scope3_category_methods : has
   suppliers ||--o{ supplier_emissions : has
   locations ||--o{ activity_records : has
-  activity_records ||--o| emission_results : generates
-  emission_factors ||--o{ emission_results : used_at_calculation
+  activity_records |o--o| emission_results : generates
+  emission_factors |o--o{ emission_results : used_at_calculation
   idea_imports ||--o{ idea_factors : contains
-  idea_factors ||--o{ emission_results : used_at_calculation
-  calculation_batches ||--o{ emission_results : produces
+  idea_factors |o--o{ emission_results : used_at_calculation
+  calculation_batches |o--o{ emission_results : produces
 ```
 
-図は外部キーのある関係だけを描く。`scope3_category_methods` と `scope3_category_emissions` は `organizationId` + `fiscalYearId` + `categoryId` で突き合わせるが、両者の間に外部キーは無い。
+図は主要ドメインの抜粋で、外部キーのある関係だけを描く。全テーブル・外部キーは [`database-design.md`](./database-design.md) §1を参照する。`scope3_category_methods` と `scope3_category_emissions` は `organizationId` + `fiscalYearId` + `categoryId` で突き合わせるが、両者の間に外部キーは無い。
 
 | エンティティ | 説明 |
 |---|---|
@@ -99,7 +99,7 @@ erDiagram
 
 ## 3. 列挙型・マスタ
 
-値は DB の enum 型（`supabase/migrations/*_schema.sql`）と `src/features/calculation/types.ts` が正本。
+値は DB の enum 型（`supabase/migrations/*.sql` をファイル名順に適用した結果）と `src/features/calculation/types.ts` が正本。
 
 ### 3.1 Scope
 

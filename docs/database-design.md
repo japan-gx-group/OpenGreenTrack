@@ -2,41 +2,68 @@
 
 本書は、温室効果ガス（GHG）排出量算定・可視化ツール「OpenGreenTrack」におけるデータベース（PostgreSQL）の物理設計、リレーションシップ、および各エンティティのデータ定義をまとめた設計書である。
 
+DDLの正本は `supabase/migrations/*.sql` 全体であり、ファイル名の時刻順に適用した結果を本書に記載する。初期の `schema.sql` だけでは、後から追加されたテーブル・列・権限を確認できない。
+
 ---
 
 ## 1. 全体エンティティ関連図 (ERD)
 
+publicスキーマの全26テーブルと、外部キーが参照する `auth.users`（図中の `auth_users`）を示す。線のラベルは子テーブルの参照列。UUIDの操作者列でも、DDLに外部キーがないものは線を引かない。`reduction_target_years.organizationId` は `organizations` への直接参照ではなく `reduction_targets.organizationId` を参照する。
+
 ```mermaid
 erDiagram
-    organizations ||--o{ locations : "管理"
-    organizations ||--o{ emission_factors : "登録"
-    organizations ||--o{ suppliers : "管理"
-    organizations ||--o{ reduction_targets : "設定"
-    reduction_targets ||--o{ reduction_target_years : "年度ごとの削減率"
-    organizations ||--o{ scope3_category_emissions : "登録"
-    organizations ||--o{ activity_records : "所有"
-    organizations ||--o{ calculation_batches : "実行"
-    organizations ||--o{ dashboard_aggregates : "キャッシュ"
-    organizations ||--o{ system_audit_logs : "システムログ"
-
-    fiscal_years ||--o{ reduction_targets : "基準年度"
-    fiscal_years ||--o{ dashboard_aggregates : "割当"
-    fiscal_years ||--o{ calculation_batches : "所属"
-
-    locations ||--o{ activity_records : "発生場所"
-    locations ||--o{ emission_factors : "個別係数"
-    locations ||--o{ emission_results : "排出場所"
-
-    activity_records ||--o{ emission_results : "計算結果"
-    emission_factors ||--o{ emission_results : "適用"
-    calculation_batches ||--o{ emission_results : "一括生成"
-
-    organizations ||--o{ idea_imports : "取込"
-    organizations ||--o{ scope3_category_methods : "方式設定"
-    idea_imports ||--o{ idea_factors : "係数行"
-    idea_factors ||--o{ activity_records : "Scope3積上げ参照"
-    idea_factors ||--o{ emission_results : "適用(スナップショット併存)"
-    fiscal_years ||--o{ scope3_category_methods : "割当"
+    auth_users ||--o| profiles : "id"
+    organizations ||--o{ profiles : "organizationId"
+    organizations ||--o{ invites : "organizationId"
+    auth_users |o--o{ invites : "invitedByUserId"
+    organizations ||--o{ locations : "organizationId"
+    organizations |o--o{ fiscal_years : "organizationId"
+    organizations |o--o{ emission_factors : "organizationId"
+    locations |o--o{ emission_factors : "locationId"
+    organizations ||--o{ activity_records : "organizationId"
+    locations ||--o{ activity_records : "locationId"
+    emission_factors |o--o{ activity_records : "emissionFactorId"
+    organizations ||--o{ calculation_batches : "organizationId"
+    fiscal_years ||--o{ calculation_batches : "fiscalYearId"
+    organizations ||--o{ emission_results : "organizationId"
+    activity_records |o--o| emission_results : "activityRecordId"
+    emission_factors |o--o{ emission_results : "emissionFactorId"
+    calculation_batches |o--o{ emission_results : "batchId"
+    locations |o--o{ emission_results : "locationId"
+    organizations ||--o{ dashboard_aggregates : "organizationId"
+    fiscal_years ||--o{ dashboard_aggregates : "fiscalYearId"
+    organizations ||--o{ suppliers : "organizationId"
+    organizations ||--o{ supplier_emissions : "organizationId"
+    suppliers ||--o{ supplier_emissions : "supplierId"
+    fiscal_years ||--o{ supplier_emissions : "fiscalYearId"
+    organizations ||--o{ scope3_category_emissions : "organizationId"
+    fiscal_years ||--o{ scope3_category_emissions : "fiscalYearId"
+    organizations ||--o{ scope3_category_methods : "organizationId"
+    fiscal_years ||--o{ scope3_category_methods : "fiscalYearId"
+    organizations ||--o{ idea_imports : "organizationId"
+    organizations ||--o{ idea_factors : "organizationId"
+    idea_imports ||--o{ idea_factors : "importId"
+    organizations ||--o| reduction_targets : "organizationId"
+    fiscal_years ||--o{ reduction_targets : "baseFiscalYearId"
+    organizations ||--o{ system_audit_logs : "organizationId"
+    suppliers |o--o{ emission_factors : "supplierId"
+    idea_factors |o--o{ activity_records : "ideaFactorId"
+    idea_factors |o--o{ emission_results : "ideaFactorId"
+    organizations ||--o{ scope2_basis_results : "organizationId"
+    emission_results ||--o{ scope2_basis_results : "activityRecordId"
+    emission_factors |o--o{ scope2_basis_results : "emissionFactorId"
+    organizations ||--o{ emission_factor_revisions : "organizationId"
+    emission_factors |o--o{ emission_factor_revisions : "emissionFactorId"
+    fiscal_years ||--o| idea_fiscal_year_imports : "fiscalYearId"
+    organizations ||--o{ idea_fiscal_year_imports : "organizationId"
+    idea_imports ||--o{ idea_fiscal_year_imports : "importId"
+    organizations ||--o| ai_settings : "organizationId"
+    organizations ||--o| ai_credentials : "organizationId"
+    organizations ||--o{ activity_evidence_files : "organizationId"
+    activity_records ||--o{ activity_record_evidence : "activityRecordId"
+    activity_evidence_files ||--o{ activity_record_evidence : "evidenceFileId"
+    organizations ||--o{ activity_record_evidence : "organizationId"
+    reduction_targets ||--o{ reduction_target_years : "organizationId"
 ```
 
 ---
@@ -52,7 +79,7 @@ OpenGreenTrackは、機密性の高い企業の活動量データを取り扱う
    - 万が一データベースが外部に流出した場合でも、攻撃者が他社のAPIキーを利用して不正アクセスする二次被害を防ぐ。
 
 2. **マルチテナント分離の担保 (テナントRLS設計)**
-   - すべてのテーブルは `organizationId` （組織ID）を保有する。
+   - 組織別テーブルは `organizationId`（組織ID）で分離する。`organizations` 自体は `id` が組織IDとなる。公式排出係数は `organizationId IS NULL` の共通マスタとして参照でき、所属組織がNULLの算定年度は公開しない。
    - PostgreSQLの **RLS（Row Level Security / 行レベルセキュリティ）** 機能を有効化し、データベース接続ユーザーが保有するロール/テナントコンテキスト以外の行に対する `SELECT`, `INSERT`, `UPDATE`, `DELETE` をエンジンレベルで遮断する。
 
 3. **厳格な監査証跡 (Audit Trail)**
@@ -65,7 +92,7 @@ OpenGreenTrackは、機密性の高い企業の活動量データを取り扱う
    - 活動量・拠点の削除に伴う結果行の後始末は on delete cascade と security definer トリガーが行うため、この権限剥奪の影響を受けない。
 
 ### 2.2 小数点精度の厳格化 (Decimal型)
-浮動小数点による計算誤差を防ぐため、数値データには `Decimal` 型を使用する。
+浮動小数点による計算誤差を防ぐため、数値データにはPostgreSQLの `numeric`（`decimal` と同義）型を使用する。
 - **活動量 (`ActivityRecord.amount`)**: `Decimal(15, 3)` (整数部12桁、小数部3桁)。大容量の使用量に対応。
 - **排出係数 (`EmissionFactor.factorValue`)**: `Decimal(12, 6)` (整数部6桁、小数部6桁)。環境省などの微細な係数値に対応。
 - **排出量 (`EmissionResult.emissions`)**: `Decimal(15, 6)` (整数部9桁、小数部6桁 - t-CO2e)。
@@ -78,7 +105,8 @@ OpenGreenTrackは、機密性の高い企業の活動量データを取り扱う
   （円単位原単位は t-CO2e 換算で 1e-9 オーダー）を桁落ちなく原典精度のまま保持する。
 
 ### 2.3 安全な削除・整合性制御 (On Delete)
-- **連鎖削除 (Cascade)**: `Organization` または `Location` が削除された際、紐づく活動量データや算定結果は連鎖的に自動削除される。
+- **連鎖削除 (Cascade)**: 組織・拠点から活動量・算定結果へ連鎖する。拠点・サプライヤーに紐づくカスタム係数もCASCADEで削除する（NULL化すると組織全体の係数へ昇格してしまうため）。
+- **削除の拒否**: `system_audit_logs.organizationId` はRESTRICTのため、監査ログがある組織は削除できない。帳票への紐づけ・年度へのIDEA版の割当も参照先の削除をRESTRICTで止める。Scope 3直接入力・方式設定・サプライヤー排出実績の年度参照は既定のNO ACTIONで保護する。
 - **保護・Null設定 (SetNull / Protect)**: `EmissionFactor`（排出係数）が削除された場合、過去の算定結果 (`EmissionResult`) の履歴を残すために、係数参照IDは削除されずに `NULL` がセットされる。
 
 ---
@@ -99,7 +127,7 @@ OpenGreenTrackは、機密性の高い企業の活動量データを取り扱う
 | `envManagerName` | 環境管理責任者名 | VARCHAR(100) | NULL | |
 | `fiscalYearStartMonth` | 期首月 | SMALLINT | NULL, CHECK 1〜12 | 算定年度の開始月。NULL は 4 月始まり扱い（機能仕様 §1.2） |
 | `createdAt` | 作成日時 | TIMESTAMPTZ | NOT NULL, DEFAULT | |
-| `updatedAt` | 更新日時 | TIMESTAMPTZ | NOT NULL | |
+| `updatedAt` | 更新日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
 
 ### 3.2 算定年度 (`fiscal_years`)
 環境情報開示で基準となる年度管理用のテーブル。
@@ -107,7 +135,7 @@ OpenGreenTrackは、機密性の高い企業の活動量データを取り扱う
 | 物理名 | 論理名 | 型 | 制約 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `id` | 算定年度ID | UUID | Primary Key | |
-| `organizationId` | 組織ID | UUID | Foreign Key | 削除時: CASCADE。年度は組織別（期首月が組織ごとの設定のため） |
+| `organizationId` | 組織ID | UUID | NULL, Foreign Key | 削除時: CASCADE。年度は組織別。NULLの行はRLSで公開しない |
 | `label` | 年度ラベル | VARCHAR(50) | NOT NULL | 例: "2024年度" |
 | `startDate` | 開始日 | DATE | NOT NULL | 例: 2024-04-01 |
 | `endDate` | 終了日 | DATE | NOT NULL | 例: 2025-03-31 |
@@ -119,7 +147,7 @@ OpenGreenTrackは、機密性の高い企業の活動量データを取り扱う
 | 物理名 | 論理名 | 型 | 制約 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `id` | 拠点ID | UUID | Primary Key | |
-| `organizationId` | 組織ID | UUID | Foreign Key | 削除時: CASCADE |
+| `organizationId` | 組織ID | UUID | NOT NULL, Foreign Key | 削除時: CASCADE |
 | `name` | 拠点名 | VARCHAR(100) | NOT NULL | 例: "東京本社", "名古屋工場" |
 | `region` | 地域 | ENUM | NOT NULL | 電力係数の適用判別用 (Region Enum) |
 | `type` | 拠点種別 | ENUM | NOT NULL | グラフ等の構成比分析用 (LocationType Enum) |
@@ -132,6 +160,8 @@ OpenGreenTrackは、機密性の高い企業の活動量データを取り扱う
 | `isAggregationTarget` | 集計対象 | BOOLEAN | NOT NULL, DEFAULT true | **未使用**。集計は全拠点を対象にし、この列は参照しない |
 | `createdByUserId` | 登録操作者ID | UUID | NULL | 監査用: データ登録したユーザーID |
 | `updatedByUserId` | 更新操作者ID | UUID | NULL | 監査用: 最後にデータ更新したユーザーID |
+| `createdAt` | 作成日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
+| `updatedAt` | 更新日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
 
 ### 3.4 排出係数マスタ (`emission_factors`)
 GHG排出量の計算に用いる原単位係数。公式係数（`organizationId` が null・`isCustom=false`。全組織共通の読み取り専用）の
@@ -141,7 +171,7 @@ GHG排出量の計算に用いる原単位係数。公式係数（`organizationI
 | 物理名 | 論理名 | 型 | 制約 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `id` | 係数ID | UUID | Primary Key | |
-| `organizationId` | 組織ID | UUID | Foreign Key | 削除時: CASCADE |
+| `organizationId` | 組織ID | UUID | NULL, Foreign Key | 削除時: CASCADE |
 | `name` | 係数名称 | VARCHAR(200) | NOT NULL | 例: "東京電力 調整後排出係数 (2024)" |
 | `energyType` | エネルギー種別 | ENUM | NOT NULL | EnergyType Enum (electricity等) |
 | `scope` | 該当Scope | ENUM | NOT NULL | Scope 1 / 2 / 3 |
@@ -150,10 +180,20 @@ GHG排出量の計算に用いる原単位係数。公式係数（`organizationI
 | `applicableYear` | 適用年度 | INT | NOT NULL | 適用する暦年または年度 (例: 2024) |
 | `regionName` | 適用地域名 | VARCHAR(100) | NOT NULL | 例: "全国", "東京電力管内" |
 | `source` | 係数ソース | ENUM | NOT NULL | FactorSource Enum (moe=環境省等) |
-| `status` | 係数状態 | ENUM | NOT NULL | FactorStatus Enum (active=有効等) |
+| `status` | 係数状態 | ENUM | NOT NULL, DEFAULT 'draft' | FactorStatus Enum (active=有効等) |
 | `isCustom` | カスタムフラグ | BOOLEAN | NOT NULL, DEFAULT | 自社定義係数の場合は true |
-| `locationId` | 適用拠点ID | UUID | Foreign Key | 拠点固有係数にする場合指定 (SetNull) |
-| `supplierId` | 適用サプライヤーID | UUID | Foreign Key | サプライヤー固有係数にする場合指定 (SetNull) |
+| `locationId` | 適用拠点ID | UUID | NULL, Foreign Key | 拠点固有係数にする場合指定。NULL可。削除時: CASCADE |
+| `supplierId` | 適用サプライヤーID | UUID | NULL, Foreign Key | サプライヤー固有係数にする場合指定。NULL可。削除時: CASCADE |
+| `effectiveFrom` | 適用開始日 | DATE | NULL | |
+| `effectiveTo` | 適用終了日 | DATE | NULL | |
+| `createdAt` | 作成日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
+| `updatedAt` | 更新日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
+| `sourceDocumentName` | 出典資料名 | VARCHAR(300) | NULL | |
+| `sourceUrl` | 出典URL | TEXT | NULL | |
+| `providerName` | 供給事業者名 | VARCHAR(200) | NULL | |
+| `providerNumber` | 事業者登録番号 | VARCHAR(20) | NULL | |
+| `menuName` | メニュー・供給区域名 | VARCHAR(200) | NULL | |
+| `factorType` | 係数区分 | FactorType | NULL | basic = 基礎 / adjusted = 調整後 / NULL = 区分なし |
 
 ### 3.5 活動量レコード (`activity_records`)
 電気の使用量やガスの使用量などの、算定元データ（ファクトデータ）。
@@ -161,8 +201,8 @@ GHG排出量の計算に用いる原単位係数。公式係数（`organizationI
 | 物理名 | 論理名 | 型 | 制約 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `id` | レコードID | UUID | Primary Key | |
-| `organizationId` | 組織ID | UUID | Foreign Key | 削除時: CASCADE |
-| `locationId` | 拠点ID | UUID | Foreign Key | 削除時: CASCADE |
+| `organizationId` | 組織ID | UUID | NOT NULL, Foreign Key | 削除時: CASCADE |
+| `locationId` | 拠点ID | UUID | NOT NULL, Foreign Key | 削除時: CASCADE |
 | `sourceType` | データソース | ENUM | NOT NULL | SourceType Enum (manual) |
 | `energyType` | エネルギー種別 | ENUM | NOT NULL | electricity / city_gas 等 |
 | `amount` | 使用活動量 | DECIMAL(15, 3) | NOT NULL | 例: 24500.500 |
@@ -170,10 +210,14 @@ GHG排出量の計算に用いる原単位係数。公式係数（`organizationI
 | `periodStart` | 対象期間（開始） | DATE | NOT NULL | 例: 2024-04-01 |
 | `periodEnd` | 対象期間（終了） | DATE | NOT NULL | 例: 2024-04-30 |
 | `isCalculated` | 算定済みフラグ | BOOLEAN | NOT NULL, DEFAULT | 算定処理が走ったかどうかを追跡 |
-| `scope3CategoryId` | Scope3カテゴリID | INT | NULL, CHECK(1..15) | Scope3積上げレコード（`energyType='scope3_activity'`）のみ必須（CHECK制約） |
-| `ideaFactorId` | IDEA係数ID | UUID | Foreign Key | Scope3積上げレコードの参照係数 (SetNull。null は「参照切れ」＝製品の再選択が必要) |
+| `scope3CategoryId` | Scope3カテゴリID | INT | NULL, CHECK(1..15) | NULL可。CHECKは値が1〜15であることと、`ideaFactorId` が非NULLならカテゴリも非NULLであることを検証する |
+| `ideaFactorId` | IDEA係数ID | UUID | NULL, Foreign Key | Scope3積上げレコードの参照係数 (SetNull。null は「参照切れ」＝製品の再選択が必要) |
 | `createdByUserId` | 登録操作者ID | UUID | NULL | 監査用: データ登録したユーザーID |
 | `updatedByUserId` | 更新操作者ID | UUID | NULL | 監査用: 最後にデータ更新したユーザーID |
+| `note` | 備考 | VARCHAR(500) | NULL | |
+| `createdAt` | 作成日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
+| `updatedAt` | 更新日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
+| `emissionFactorId` | 明示選択係数ID | UUID | NULL, FK → `emission_factors` | 削除時: SET NULL。NULLなら算定時に自動解決 |
 
 ### 3.6 システム操作ログ (`system_audit_logs`)
 法令に基づく第三者保証やセキュリティ監査に対応するため、誰がいつどのようなシステム変更・データ参照をしたかをログとして永続化する。
@@ -181,7 +225,7 @@ GHG排出量の計算に用いる原単位係数。公式係数（`organizationI
 | 物理名 | 論理名 | 型 | 制約 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `id` | ログID | UUID | Primary Key | |
-| `organizationId` | 組織ID | UUID | Foreign Key | 削除時: CASCADE |
+| `organizationId` | 組織ID | UUID | NOT NULL, Foreign Key | 削除時: RESTRICT（監査ログを残す） |
 | `userId` | 操作ユーザーID | UUID | NOT NULL | 操作を行ったユーザーのアカウントID |
 | `action` | 操作アクション | VARCHAR(100) | NOT NULL | 操作内容 (例: "delete_activity_record") |
 | `entityName` | 対象テーブル名 | VARCHAR(100) | NOT NULL | 影響を受けたテーブル (例: "activity_records") |
@@ -193,12 +237,12 @@ GHG排出量の計算に用いる原単位係数。公式係数（`organizationI
 ### 3.7 IDEAインポート記録 (`idea_imports`) — Scope3積上げ算定（`supabase/migrations/20260831000000_schema.sql` の `idea_imports`）
 IDEA（AIST LCIデータベース）Excel の取込単位。BYOライセンス方式のため**組織スコープ必須**で、
 グループ会社にも共有しない（RLS は `current_user_organization_id()` の自組織のみ。書き込みは
-Route Handler + service_role 限定）。詳細な確定 DDL は `idea-scope3-spec.md §3` を正とする。
+Route Handler + service_role 限定）。運用仕様は `idea-scope3-spec.md §3`、DDLは全マイグレーションを参照する。
 
 | 物理名 | 論理名 | 型 | 制約 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `id` | インポートID | UUID | Primary Key | |
-| `organizationId` | 組織ID | UUID | Foreign Key | 削除時: CASCADE。ライセンスは法人単位 |
+| `organizationId` | 組織ID | UUID | NOT NULL, Foreign Key | 削除時: CASCADE。ライセンスは法人単位 |
 | `version` | 版名 | VARCHAR(100) | NOT NULL | 例: 'Ver.4.0 標準版' |
 | `releaseDate` | リリース日 | DATE | NULL | |
 | `gwpModel` | GWPモデル列識別子 | VARCHAR(200) | NOT NULL | 例: '気候変動 IPCC 2021 GWP 100a without LULUCF'。レポート出典欄に表示 |
@@ -210,6 +254,9 @@ Route Handler + service_role 限定）。詳細な確定 DDL は `idea-scope3-sp
 | `unmappedRecordCount` | 再選択必要件数 | INT | NOT NULL, DEFAULT | 版更新で新版に同一コードが無かった未算定明細の件数 |
 | `skippedRowCount` | 取込対象外件数 | INT | NOT NULL, DEFAULT | GWP値が空欄で取込対象外にした行数（LCIA結果を持たない製品。エラーではない。`supabase/migrations/20260831000000_schema.sql` の `comment on column idea_imports."skippedRowCount"` 参照） |
 | `errorMessage` | エラー内容 | TEXT | NULL | |
+| `importedByUserId` | 取込操作者ID | UUID | NULL | |
+| `createdAt` | 作成日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
+| `updatedAt` | 更新日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
 
 ### 3.8 IDEA係数 (`idea_factors`)
 取込済みの IDEA 製品別係数（1インポートあたり約1万行）。既存の `emission_factors` とは分離し
@@ -218,8 +265,8 @@ Route Handler + service_role 限定）。詳細な確定 DDL は `idea-scope3-sp
 | 物理名 | 論理名 | 型 | 制約 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `id` | 係数ID | UUID | Primary Key | |
-| `organizationId` | 組織ID | UUID | Foreign Key | RLS用に非正規化 (CASCADE) |
-| `importId` | インポートID | UUID | Foreign Key | 削除時: CASCADE。UNIQUE(importId, ideaCode) |
+| `organizationId` | 組織ID | UUID | NOT NULL, Foreign Key | RLS用に非正規化 (CASCADE) |
+| `importId` | インポートID | UUID | NOT NULL, Foreign Key | 削除時: CASCADE。UNIQUE(importId, ideaCode) |
 | `ideaCode` | IDEA製品コード | VARCHAR(30) | NOT NULL | 例 '999999999mJPN'（国コード含み一意） |
 | `productName` | 製品名 | VARCHAR(300) | NOT NULL | |
 | `country` | 国 | VARCHAR(10) | NOT NULL | 'JPN' / 'GLO' 等 |
@@ -227,6 +274,7 @@ Route Handler + service_role 限定）。詳細な確定 DDL は `idea-scope3-sp
 | `baseFlowAmount` | 基準フロー量 | NUMERIC | NOT NULL, DEFAULT 1 | |
 | `gwpValue` | GWP係数値 | NUMERIC | NOT NULL | kg-CO2e/単位。無制約 numeric で原典精度を保持 |
 | `unit` | 単位 | VARCHAR(30) | NOT NULL | kg / kWh / 円 / t-km 等 |
+| `createdAt` | 作成日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
 
 ### 3.9 Scope3カテゴリ算定方法 (`scope3_category_methods`)
 カテゴリ 1〜15 × 年度ごとの算定方法（direct = 直接入力 / calculated = 積上げ算定）。
@@ -238,15 +286,27 @@ Route Handler + service_role 限定）。詳細な確定 DDL は `idea-scope3-sp
 | 物理名 | 論理名 | 型 | 制約 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `id` | 設定ID | UUID | Primary Key | |
-| `organizationId` | 組織ID | UUID | Foreign Key | 削除時: CASCADE |
-| `fiscalYearId` | 算定年度ID | UUID | Foreign Key | |
+| `organizationId` | 組織ID | UUID | NOT NULL, Foreign Key | 削除時: CASCADE |
+| `fiscalYearId` | 算定年度ID | UUID | NOT NULL, Foreign Key | 削除時: NO ACTION（既定） |
 | `categoryId` | カテゴリID | INT | NOT NULL, CHECK(1..15) | UNIQUE(organizationId, fiscalYearId, categoryId) |
 | `method` | 算定方法 | ENUM | NOT NULL | Scope3Method ('direct' / 'calculated'。将来 'hybrid' を値追加可) |
+| `createdAt` | 作成日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
+| `updatedAt` | 更新日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
 
-### 3.10 算定結果 (`emission_results`) への Scope3積上げ対応列（`supabase/migrations/20260831000000_schema.sql` の `emission_results`）
+### 3.10 算定結果 (`emission_results`)（`supabase/migrations/20260831000000_schema.sql` の `emission_results`）
 | 物理名 | 論理名 | 型 | 制約 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `ideaFactorId` | IDEA係数ID | UUID | Foreign Key | IDEA由来の結果のみ非null (SetNull)。`emissionFactorId` はこのとき null |
+| `id` | 結果ID | UUID | Primary Key, DEFAULT gen_random_uuid() | |
+| `organizationId` | 組織ID | UUID | NOT NULL, FK → `organizations` | 削除時: CASCADE |
+| `activityRecordId` | 活動量ID | UUID | NULL, UNIQUE, FK → `activity_records` | 削除時: CASCADE。1活動量につき結果は最大1行 |
+| `emissionFactorId` | 適用排出係数ID | UUID | NULL, FK → `emission_factors` | 削除時: SET NULL |
+| `batchId` | 算定バッチID | UUID | NULL, FK → `calculation_batches` | 削除時: SET NULL |
+| `locationId` | 拠点ID | UUID | NULL, FK → `locations` | 削除時: CASCADE |
+| `scope` | Scope | Scope | NOT NULL | |
+| `categoryId` | カテゴリID | INTEGER | NULL | |
+| `emissions` | 排出量 | NUMERIC(15, 6) | NOT NULL | |
+| `calculatedAt` | 算定日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
+| `ideaFactorId` | IDEA係数ID | UUID | NULL, Foreign Key | IDEA由来の結果のみ非null (SetNull)。`emissionFactorId` はこのとき null |
 | `appliedFactorValue` | 適用係数値 | NUMERIC | NULL | 監査用スナップショット（参照先が版更新・削除されても適用時の内容を保持） |
 | `appliedFactorUnit` | 適用係数単位 | VARCHAR(50) | NULL | 例 'kg-CO2e/kg' |
 | `appliedFactorName` | 適用係数名 | VARCHAR(500) | NULL | 例 '999999999mJPN ダミー製品 (AIST-IDEA Ver.4.0 標準版)' |
@@ -267,13 +327,16 @@ GHG プロトコルのロケーション基準／マーケット基準それぞ�
 | 物理名 | 論理名 | 型 | 制約 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `id` | 結果ID | UUID | Primary Key | |
-| `organizationId` | 組織ID | UUID | Foreign Key | RLS の組織判定用に非正規化（削除時: CASCADE） |
-| `activityRecordId` | 活動量レコードID | UUID | FK → `emission_results("activityRecordId")`, UNIQUE(activityRecordId, basis) | 単一値の明細と同じライフサイクル（編集トリガー・削除の cascade が emission_results 経由で届く） |
+| `organizationId` | 組織ID | UUID | NOT NULL, Foreign Key | RLS の組織判定用に非正規化（削除時: CASCADE） |
+| `activityRecordId` | 活動量レコードID | UUID | NOT NULL, FK → `emission_results("activityRecordId")`, UNIQUE(activityRecordId, basis) | 単一値の明細と同じライフサイクル（編集トリガー・削除の cascade が emission_results 経由で届く） |
 | `basis` | 算定基準 | ENUM | NOT NULL | Scope2Basis ('location_based' / 'market_based') |
 | `evidence` | 根拠種別 | ENUM | NOT NULL, CHECK(基準との整合) | Scope2BasisEvidence ('grid_average' / 'contract_menu' / 'grid_fallback') |
-| `emissionFactorId` | 適用係数ID | UUID | Foreign Key | 削除時: SetNull |
+| `emissionFactorId` | 適用係数ID | UUID | NULL, Foreign Key | 削除時: SetNull |
 | `emissions` | 排出量 | NUMERIC(15,6) | NOT NULL | 1g 粒度（`emission_results.emissions` と同じ） |
-| `appliedFactorValue` 他 | 適用係数スナップショット | NUMERIC / VARCHAR | NULL | `emission_results` の `appliedFactor*` と同じ監査用スナップショット |
+| `appliedFactorValue` | 適用係数値 | NUMERIC | NULL | `emission_results` と同じ監査用スナップショット |
+| `appliedFactorUnit` | 適用係数単位 | VARCHAR(50) | NULL | |
+| `appliedFactorName` | 適用係数名 | VARCHAR(500) | NULL | |
+| `calculatedAt` | 算定日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
 
 - `dashboard_aggregates` に基準別の年度合計列を追加:
   `scope2LocationBasedTotal` / `scope2MarketBasedTotal` / `scope2MarketContractTotal`（いずれも NUMERIC(15,3)・NULL 可）。
@@ -290,13 +353,13 @@ GHG プロトコルのロケーション基準／マーケット基準それぞ�
 | 物理名 | 論理名 | 型 | 制約 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `id` | 履歴ID | UUID | Primary Key | |
-| `organizationId` | 組織ID | UUID | Foreign Key | RLS の組織判定用（削除時: CASCADE） |
-| `emissionFactorId` | 係数ID | UUID | Foreign Key | 削除時: SetNull（係数を削除しても履歴は残す） |
+| `organizationId` | 組織ID | UUID | NOT NULL, Foreign Key | RLS の組織判定用（削除時: CASCADE） |
+| `emissionFactorId` | 係数ID | UUID | NULL, Foreign Key | 削除時: SetNull（係数を削除しても履歴は残す） |
 | `factorName` / `energyType` / `applicableYear` | 係数のスナップショット | VARCHAR / ENUM / INTEGER | NOT NULL | 変更時点の係数名・種別・適用年度 |
 | `previousFactorValue` / `previousUnit` | 変更前の値・単位 | NUMERIC(12,6) / VARCHAR | NOT NULL | |
 | `newFactorValue` / `newUnit` | 変更後の値・単位 | NUMERIC(12,6) / VARCHAR | NOT NULL | |
 | `changedByUserId` | 変更者 | UUID | NULL 可 | `auth.uid()`。service_role など利用者を持たない更新では NULL |
-| `changedAt` | 変更日時 | TIMESTAMPTZ | NOT NULL | |
+| `changedAt` | 変更日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
 
 - 記録はトリガー `record_emission_factor_revision`（security definer）だけが行う。組織の係数（`organizationId` が非 NULL）の
   `factorValue` / `unit` が実際に変わった更新で発火する（係数管理画面の編集・係数 CSV 取込のどちらでも記録される）。
@@ -310,10 +373,10 @@ GHG プロトコルのロケーション基準／マーケット基準それぞ�
 | 物理名 | 論理名 | 型 | 制約 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `fiscalYearId` | 会計年度ID | UUID | Primary Key, FK → `fiscal_years` | 削除時: CASCADE |
-| `organizationId` | 組織ID | UUID | Foreign Key | RLS の組織判定用（削除時: CASCADE） |
-| `importId` | 版（取込）ID | UUID | FK → `idea_imports` | 削除時: RESTRICT（割り当て中の版は削除できない） |
+| `organizationId` | 組織ID | UUID | NOT NULL, Foreign Key | RLS の組織判定用（削除時: CASCADE） |
+| `importId` | 版（取込）ID | UUID | NOT NULL, FK → `idea_imports` | 削除時: RESTRICT（割り当て中の版は削除できない） |
 | `assignedByUserId` | 割り当てた利用者 | UUID | NULL 可 | |
-| `assignedAt` | 割り当て日時 | TIMESTAMPTZ | NOT NULL | |
+| `assignedAt` | 割り当て日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
 
 - 書き込みは service_role 限定の RPC `assign_idea_import_to_fiscal_year` だけ（割り当てと同時に、その年度の未算定の積上げ明細を割り当てた版へ付け替えるため）。`authenticated` は SELECT のみ（自組織限定。IDEA のライセンスは法人単位）。
 - 取込完了の `complete_idea_import` は、版を割り当てた年度の明細を新しい版への付け替え・孤児化の対象から除く。`delete_idea_import` は割り当て中の版を P2033 で拒否する。
@@ -333,15 +396,15 @@ GHG プロトコルのロケーション基準／マーケット基準それぞ�
 
 ### 3.15 AI の設定 (`ai_settings`)（`supabase/migrations/20261024150000_ai_settings.sql`）
 
-組織で使う AI の提供元とモデル（管理者が選ぶ）。1 組織 = 1 行。API キーは環境変数（`AI_API_KEY`）に置き、DB には持たない。
+組織で使う AI の提供元とモデル（管理者が選ぶ）。1 組織 = 1 行。このテーブルにはAPIキーを持たない。方式Aでは環境変数（`AI_API_KEY`）、方式Bでは `ai_credentials` の暗号文として管理する（§3.16）。
 
 | 物理名 | 論理名 | 型 | 制約 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `organizationId` | 組織ID | UUID | Primary Key, FK → `organizations` | 削除時: CASCADE |
-| `provider` | 提供元 | VARCHAR(20) | NOT NULL, CHECK (`anthropic` / `google` / `openai`) | モデルを選んだ時点の提供元。環境変数の提供元と違えば、選んだモデルは無効として扱う |
+| `provider` | 提供元 | VARCHAR(20) | NOT NULL, CHECK (`anthropic` / `google` / `openai`) | モデルを選んだ時点の提供元。現在利用するAPIキーの提供元と違えば、選んだモデルは無効として扱う |
 | `modelId` | モデルID | VARCHAR(200) | NOT NULL | 提供元のモデル ID（Gemini は `models/` を外したもの） |
 | `updatedBy` | 更新者 | UUID | NULL 可 | |
-| `updatedAt` | 更新日時 | TIMESTAMPTZ | NOT NULL | |
+| `updatedAt` | 更新日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
 
 - `authenticated` は自組織の SELECT だけ（何に送られるかを誰でも確かめられるように）。書き込みは、管理者であることを Server Action（`saveAiModel` の `requireAdmin`）で確かめたうえで service_role から行う。変更は `system_audit_logs` に `ai.model.update` として残す。
 
@@ -359,7 +422,7 @@ GHG プロトコルのロケーション基準／マーケット基準それぞ�
 | `keyId` | 暗号化の鍵の指紋 | VARCHAR(16) | NOT NULL | `AI_ENCRYPTION_KEY` の SHA-256 の先頭 16 文字。替えたら一致しなくなり、登録し直してもらう |
 | `keyLast4` | 鍵の末尾 4 文字 | VARCHAR(4) | NOT NULL | 画面表示用 |
 | `updatedBy` | 更新者 | UUID | NULL 可 | |
-| `updatedAt` | 更新日時 | TIMESTAMPTZ | NOT NULL | |
+| `updatedAt` | 更新日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
 
 - 追加認証データに `ai-credential:v1:<organizationId>:<provider>` を入れて暗号化するので、暗号文を別の組織・別の提供元の行に移しても復号できない。
 - RLS を有効にしてポリシーを置かず、`anon`・`authenticated` の権限はすべて外す（ブラウザ側からは一切読めない）。読み書きは、管理者であることと本人確認（ログインパスワードの再入力）をサーバで確かめたうえで service_role から行う。
@@ -380,7 +443,7 @@ GHG プロトコルのロケーション基準／マーケット基準それぞ�
 | `sha256` | SHA-256 | CHAR(64) | NOT NULL | 同じファイルか・改ざんの確認に使う |
 | `convertedFrom` | 変換前の形式 | VARCHAR(50) | NULL 可, CHECK（PNG・JPEG、`mimeType` が WebP のときだけ） | 容量を減らすため WebP に変換して保存したときの元の形式 |
 | `uploadedBy` | 上げた人 | UUID | NULL 可 | |
-| `createdAt` | 日時 | TIMESTAMPTZ | NOT NULL | |
+| `createdAt` | 日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
 
 - 行はサーバ（`POST /api/activity-evidence`）が中身を確かめてから service_role で作る。`authenticated` には自組織の select だけを許す。
 - 削除もサーバ（`DELETE /api/activity-evidence/[id]`）が、どの記録にも紐づいていないことを確かめて Storage のファイルと一緒に行う。上げた・消したことは `system_audit_logs` に `activity_evidence.upload` / `activity_evidence.delete` として残す（ファイル名・大きさ・SHA-256）。
@@ -394,11 +457,164 @@ GHG プロトコルのロケーション基準／マーケット基準それぞ�
 | `evidenceFileId` | 帳票ID | UUID | Primary Key（複合）, FK → `activity_evidence_files` | 削除時: RESTRICT（紐づいている帳票は消せない） |
 | `organizationId` | 組織ID | UUID | NOT NULL, FK → `organizations` | 削除時: CASCADE |
 | `createdBy` | 紐づけた人 | UUID | NULL 可 | ブラウザから作るときは、トリガ（`set_activity_record_evidence_actor`）がログイン中のユーザーにする |
-| `createdAt` | 日時 | TIMESTAMPTZ | NOT NULL | |
+| `createdAt` | 日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
 
 - 1 枚の帳票を複数の記録に（燃料の種類ごとなど）、1 件の記録に複数の帳票を（複数メーターなど）紐づけられる。
 - `authenticated` は自組織の select・insert・delete ができる。insert は、記録と帳票の両方が自組織のものであることを exists で確かめる（FK は行の存在しか見ないため）。
 - 紐づけた・外したことは、トリガ（`log_activity_record_evidence_change`）が `system_audit_logs` に `activity_evidence.link` / `activity_evidence.unlink` として残す（記録の ID・ファイル名）。紐づけはブラウザから直接作る・外すため、アプリの処理ではなくトリガで残す。記録の削除で紐づけが消えたときも `unlink` が残る。ログイン中のユーザーがいない書き込み（service_role・seed）は残さない。
+
+### 3.19 ユーザープロフィール (`profiles`)
+
+認証ユーザーの所属組織とプロフィール。`id` は `auth.users.id` を参照する。authenticatedは自組織のプロフィールを参照でき、自分の `fullName`・`phone` だけを更新できる。作成・削除やロール変更はサーバ経由で行う。ロールと管理者保護は§3.14を参照。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | ユーザーID | UUID | Primary Key, NOT NULL, FK → `auth.users` | 削除時: CASCADE |
+| `organizationId` | 組織ID | UUID | NOT NULL, FK → `organizations` | 削除時: CASCADE |
+| `email` | メールアドレス | VARCHAR(255) | NOT NULL |  |
+| `fullName` | 氏名 | VARCHAR(100) | NULL |  |
+| `role` | ロール | VARCHAR(50) | NOT NULL, DEFAULT 'logger' | §3.14参照 |
+| `createdAt` | 作成日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() |  |
+| `updatedAt` | 更新日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() |  |
+| `phone` | 電話番号 | VARCHAR(20) | NULL |  |
+
+- 組織ID＋emailが一意。ロールの制約と管理者保護は§3.14を参照。
+
+### 3.20 招待 (`invites`)
+
+組織への招待。参照・作成・削除は自組織の管理者のみ。受諾時の更新はサーバのservice_roleが行う。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `token` | 招待トークン | UUID | Primary Key, NOT NULL, DEFAULT gen_random_uuid() |  |
+| `organizationId` | 組織ID | UUID | NOT NULL, FK → `organizations` | 削除時: CASCADE |
+| `email` | メールアドレス | VARCHAR(255) | NOT NULL |  |
+| `role` | ロール | VARCHAR(50) | NOT NULL, DEFAULT 'logger' |  |
+| `invitedByUserId` | 招待者ID | UUID | NULL, FK → `auth.users` | 削除時: SET NULL |
+| `expiresAt` | 有効期限 | TIMESTAMPTZ | NOT NULL, DEFAULT (now() + interval '7 days') | 既定は作成時点から7日後 |
+| `acceptedAt` | 受諾日時 | TIMESTAMPTZ | NULL |  |
+| `createdAt` | 作成日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() |  |
+
+- `role` は `admin` / `logger` / `viewer`。未受諾（`acceptedAt IS NULL`）の組織ID＋emailが部分一意インデックスで保護される。
+
+### 3.21 算定バッチ (`calculation_batches`)
+
+年度ごとの算定バッチ。authenticatedは自組織のSELECTのみ。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | ID | UUID | Primary Key, NOT NULL, DEFAULT gen_random_uuid() |  |
+| `organizationId` | 組織ID | UUID | NOT NULL, FK → `organizations` | 削除時: CASCADE |
+| `fiscalYearId` | 算定年度ID | UUID | NOT NULL, FK → `fiscal_years` | 削除時: CASCADE |
+| `status` | 状態 | ENUM（`BatchStatus`） | NOT NULL, DEFAULT 'pending' |  |
+| `processedCount` | 処理件数 | INTEGER | NOT NULL, DEFAULT 0 |  |
+| `totalEmissionsDelta` | 排出量増減合計 | NUMERIC(15, 3) | NOT NULL, DEFAULT 0.000 | t-CO2e |
+| `errorMessage` | エラー内容 | TEXT | NULL |  |
+| `startedAt` | 開始日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() |  |
+| `completedAt` | 完了日時 | TIMESTAMPTZ | NULL |  |
+
+- `status` は `pending` / `completed` / `failed`。`pending` の行は組織ID＋年度IDで一意（`calculation_batches_one_pending_per_year`）。同じ年度の算定バッチの並行実行を防ぐ。
+
+### 3.22 ダッシュボード集計 (`dashboard_aggregates`)
+
+年度ごとの排出量キャッシュ。authenticatedは自組織のSELECTのみ。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | ID | UUID | Primary Key, NOT NULL, DEFAULT gen_random_uuid() |  |
+| `organizationId` | 組織ID | UUID | NOT NULL, FK → `organizations` | 削除時: CASCADE |
+| `fiscalYearId` | 算定年度ID | UUID | NOT NULL, FK → `fiscal_years` | 削除時: CASCADE |
+| `scope1Total` | Scope 1合計 | NUMERIC(15, 3) | NOT NULL, DEFAULT 0.000 |  |
+| `scope2Total` | Scope 2合計 | NUMERIC(15, 3) | NOT NULL, DEFAULT 0.000 |  |
+| `scope3Total` | Scope 3合計 | NUMERIC(15, 3) | NOT NULL, DEFAULT 0.000 |  |
+| `scope2LocationBasedTotal` | ロケーション基準合計 | NUMERIC(15, 3) | NULL | NULL = 未算定。§3.11参照 |
+| `scope2MarketBasedTotal` | マーケット基準合計 | NUMERIC(15, 3) | NULL | NULL = 未算定。§3.11参照 |
+| `scope2MarketContractTotal` | 契約根拠分合計 | NUMERIC(15, 3) | NULL | NULL = 未算定。§3.11参照 |
+| `updatedAt` | 更新日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() |  |
+
+- 組織ID＋年度IDが一意。Scope 2基準別3列は `20261006000000_scope2_dual_basis.sql` で追加。
+
+### 3.23 サプライヤー (`suppliers`)
+
+組織別サプライヤーマスタ。自組織の参照・登録・更新・削除を許可する。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | ID | UUID | Primary Key, NOT NULL, DEFAULT gen_random_uuid() |  |
+| `organizationId` | 組織ID | UUID | NOT NULL, FK → `organizations` | 削除時: CASCADE |
+| `name` | 名称 | VARCHAR(200) | NOT NULL |  |
+| `categoryId` | カテゴリID | INTEGER | NOT NULL |  |
+| `primaryDataRate` | 一次データ比率 | NUMERIC(5, 2) | NOT NULL | 一次データ比率 |
+| `createdAt` | 作成日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() |  |
+| `updatedAt` | 更新日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() |  |
+
+- `categoryId` に1〜15のCHECK制約はない。
+
+### 3.24 サプライヤー排出実績 (`supplier_emissions`)
+
+サプライヤー・年度・カテゴリ別の排出実績。自組織の参照・登録・更新・削除を許可する。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | ID | UUID | Primary Key, NOT NULL, DEFAULT gen_random_uuid() |  |
+| `organizationId` | 組織ID | UUID | NOT NULL, FK → `organizations` | 削除時: CASCADE |
+| `supplierId` | サプライヤーID | UUID | NOT NULL, FK → `suppliers` | 削除時: CASCADE |
+| `fiscalYearId` | 算定年度ID | UUID | NOT NULL, FK → `fiscal_years` | 削除時: NO ACTION（既定）。年度削除で実績を巻き込まない |
+| `categoryId` | カテゴリID | INTEGER | NOT NULL |  |
+| `emissions` | 排出量 | NUMERIC | NOT NULL | 精度・スケールの指定なし |
+| `createdAt` | 作成日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() |  |
+| `updatedAt` | 更新日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() |  |
+
+- サプライヤーID＋年度ID＋カテゴリIDが一意。`categoryId` に1〜15のCHECK制約はない。
+
+### 3.25 Scope 3カテゴリ直接入力 (`scope3_category_emissions`)
+
+Scope 3カテゴリの直接入力値。自組織の参照・登録・更新・削除を許可する。採用する値は§3.9の方式設定で決まる。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | ID | UUID | Primary Key, NOT NULL, DEFAULT gen_random_uuid() |  |
+| `organizationId` | 組織ID | UUID | NOT NULL, FK → `organizations` | 削除時: CASCADE |
+| `fiscalYearId` | 算定年度ID | UUID | NOT NULL, FK → `fiscal_years` | 削除時: NO ACTION（既定）。年度削除で実績を巻き込まない |
+| `categoryId` | カテゴリID | INTEGER | NOT NULL |  |
+| `emissions` | 排出量 | NUMERIC(15, 3) | NOT NULL |  |
+| `periodStart` | 対象期間開始 | DATE | NULL |  |
+| `periodEnd` | 対象期間終了 | DATE | NULL |  |
+| `dataSourceNote` | データ出典の補足 | VARCHAR(500) | NULL |  |
+| `updatedAt` | 更新日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() |  |
+
+- 組織ID＋年度ID＋カテゴリIDが一意。`categoryId` に1〜15のCHECK制約はない。
+
+### 3.26 削減目標の基準年度 (`reduction_targets`)
+
+組織ごとの基準年度。自組織の参照・登録・更新・削除を許可する。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | ID | UUID | Primary Key, NOT NULL, DEFAULT gen_random_uuid() |  |
+| `organizationId` | 組織ID | UUID | NOT NULL, UNIQUE, FK → `organizations` | 削除時: CASCADE |
+| `baseFiscalYearId` | 基準年度ID | UUID | NOT NULL, FK → `fiscal_years` | 削除時: CASCADE |
+| `createdAt` | 作成日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() |  |
+| `updatedAt` | 更新日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() |  |
+
+- 組織IDが一意（組織あたり基準年度は1行）。
+
+### 3.27 年度ごとの削減率 (`reduction_target_years`)
+
+基準年度に対する年度ごとの削減率。自組織の参照・登録・更新・削除を許可する。
+
+| 物理名 | 論理名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | ID | UUID | Primary Key, NOT NULL, DEFAULT gen_random_uuid() |  |
+| `organizationId` | 組織ID | UUID | NOT NULL, FK → `reduction_targets.organizationId` | 削除時: CASCADE |
+| `targetYear` | 目標年度 | INTEGER | NOT NULL | 年度開始年（1900〜9999） |
+| `reductionPercent` | 削減率 | NUMERIC(5, 2) | NOT NULL | 基準年度比の削減率（0〜100%） |
+| `createdAt` | 作成日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() |  |
+| `updatedAt` | 更新日時 | TIMESTAMPTZ | NOT NULL, DEFAULT now() |  |
+
+- 組織ID＋目標年度が一意。`targetYear` は1900〜9999、`reductionPercent` は0〜100のCHECK制約を持つ。
+
+§3.19〜3.27の基本列定義は `20260831000000_schema.sql` に基づく。ロール制御は後続の `member_roles`・`admin_only_settings`、Scope 2集計列は `scope2_dual_basis` も参照する。
 
 ---
 
@@ -409,14 +625,16 @@ GHG プロトコルのロケーション基準／マーケット基準それぞ�
 
 ```
 1. 拠点固有のカスタム係数 (EmissionFactor.locationId = 対象拠点 かつ isCustom = true)
-2. サプライヤー固有のカスタム係数 (EmissionFactor.supplierId = 対象サプライヤー かつ isCustom = true)
+2. サプライヤー固有のカスタム係数（現行では該当なし・予約）
 3. 組織固有の全体カスタム係数 (EmissionFactor.isCustom = true かつ locationId / supplierId = NULL)
 4. 地域が一致する標準係数 (EmissionFactor.isCustom = false かつ 該当RegionName)
 5. 全国平均の標準係数 (EmissionFactor.isCustom = false かつ 適用地域 = "全国")
 ```
 
+サプライヤー固有の係数は、活動量にサプライヤー紐付けがないため現状の自動解決では対象外。`activity_records.emissionFactorId` の明示選択、年度・単位の検証や同一優先度の並び順は機能仕様§7.3と `resolveEmissionFactor.ts` を参照する。
+
 ### 4.2 データの二重登録・競合の防止
-同一拠点・同一エネルギー種別で対象期間が重複するデータの多重登録を防ぐため、以下のユニークインデックスをDB側で強制する。
+活動量の期間重複は `prevent_duplicate_activity_record` トリガーで検査する。以下の一意制約・インデックスとあわせて二重登録を防ぐ。
 - **削減目標（基準年度）**: 組織ID がユニークであること（基準年度は組織あたり1行）。
 - **削減目標（年度ごとの削減率）**: 組織ID + 目標年度（開始年の整数）がユニークであること。
   年間目標排出量は「基準年度の実績 × (1 − 削減率/100)」として画面側で導出する。

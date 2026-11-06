@@ -49,8 +49,8 @@ OpenGreenTrack は **Next.js（App Router）+ Supabase** で構成します。
 OpenGreenTrack は複数企業（organization）が同居するマルチテナント型です。
 「A社のユーザーにはA社のデータしか見えない」を、アプリのコードではなく **DBのRLSポリシーで強制** します。
 
-- ほぼ全テーブルが `organization_id` 列を持つ
-- ポリシー例（イメージ）: `organization_id = (ログイン中ユーザーの所属組織id)` の行のみ SELECT/INSERT/UPDATE/DELETE を許可
+- 組織別テーブルは `organizationId` 列で所属を表し、`organizations` 自体は `id` を使う。公式排出係数（組織IDがNULL）は全組織共通の読み取り専用マスタ
+- 通常の組織別テーブルのポリシー例（操作ごとのGRANT・管理者制限は別途適用）: `"organizationId" = (ログイン中ユーザーの所属組織id)` の行のみ SELECT/INSERT/UPDATE/DELETE を許可
 - こうしておくと、フロントのコードにバグがあっても他社のデータは**DBが返さない**
 
 ## 環境変数
