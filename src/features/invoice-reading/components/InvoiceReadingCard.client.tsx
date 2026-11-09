@@ -23,6 +23,7 @@ import type {
   ActivityEntrySaveManyItem,
   ActivityEntrySaveManyResult,
 } from '@/features/data-input/hooks/useActivityEntrySave';
+import { formatEmissionsNumber } from '@/lib/emissionsFormat';
 import { AI_PROVIDER_LABELS, type AiStatus } from '@/types/ai';
 import { useInvoiceBatchReading } from '../hooks/useInvoiceBatchReading';
 import { useInvoiceReviewRows } from '../hooks/useInvoiceReviewRows';
@@ -217,7 +218,7 @@ export const InvoiceReadingCard = ({
             <dt className="text-text-muted">登録する明細</dt>
             <dd className="text-text-main">{review.entries.length} 件</dd>
             <dt className="text-text-muted">推定排出量の合計</dt>
-            <dd className="text-text-main">{Number(totalEmissions.toFixed(3)).toLocaleString('ja-JP')} t-CO2e</dd>
+            <dd className="text-text-main">{formatEmissionsNumber(totalEmissions, { precision: 'detail' })} t-CO2e</dd>
             <dt className="text-text-muted">帳票</dt>
             <dd className="text-text-main">
               <ul className="flex flex-col gap-0.5">

@@ -9,13 +9,14 @@ import { ArrowDownToLine, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { formatEmissionsNumber } from '@/lib/emissionsFormat';
 import { MANUAL_ACTIVITY_CATEGORY_MAP, type ActivityEntryPrefill, type ManualEntryLocationOption } from '@/features/data-input/types';
 import { normalizeAmountInput } from '@/features/data-input/services/entrySubmission';
 import { openEvidenceFile } from '@/features/activity-evidence/services/evidenceClient';
 import type { InvoiceReviewRows, ReviewRow } from '../hooks/useInvoiceReviewRows';
 import { InvoiceJudgementBadge } from './InvoiceJudgementBadge';
 
-const formatEmissions = (value: number | null) => (value === null ? '—' : `${value.toLocaleString('ja-JP')} t-CO2e`);
+const formatEmissions = (value: number | null) => (value === null ? '—' : `${formatEmissionsNumber(value, { precision: 'detail' })} t-CO2e`);
 
 const FactorCell = ({
   row,
