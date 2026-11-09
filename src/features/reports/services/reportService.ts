@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { formatEmissionsNumber } from '@/lib/emissionsFormat';
 import { createClient } from '@/lib/supabase/client';
 import { fetchAllRows } from '@/lib/supabaseRows';
 import {
@@ -207,7 +208,7 @@ const formatDateTime = (value?: string | null): string => {
 
 const formatEmissionValue = (value?: number): string | null => {
   if (value === undefined || !Number.isFinite(value)) return null;
-  return `${value.toLocaleString('ja-JP', { maximumFractionDigits: 3 })} t-CO2e`;
+  return `${formatEmissionsNumber(value, { precision: 'detail' })} t-CO2e`;
 };
 
 const safeParseDetail = (detail: string | null): ReportAuditDetail => {
