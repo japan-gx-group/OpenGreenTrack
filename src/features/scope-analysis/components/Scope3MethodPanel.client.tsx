@@ -23,7 +23,7 @@ import {
 const numberFormatter = new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 3 });
 
 const formatEmissions = (value: number | null): string =>
-  value === null ? '—' : formatEmissionsNumber(value);
+  value === null ? '—' : formatEmissionsNumber(value, { precision: 'detail' });
 
 /** 正規化しても DECIMAL_PATTERN に合わない入力を弾いたときの案内（無言で無視しない）。 */
 const EMISSIONS_INPUT_REJECTED_MESSAGE = '排出量は数字と小数点のみ入力できます。';
@@ -226,7 +226,7 @@ export const Scope3MethodPanel: React.FC<Scope3MethodPanelProps> = ({
                     : '—'}
                 </td>
                 <td className="px-2 py-1.5 text-right font-medium text-text-heading">
-                  {formatEmissionsNumber(product.totalEmissions)}
+                  {formatEmissionsNumber(product.totalEmissions, { precision: 'detail' })}
                 </td>
                 <td className="px-2 py-1.5 text-right text-text-main">{product.percentage}</td>
               </tr>
@@ -300,7 +300,7 @@ export const Scope3MethodPanel: React.FC<Scope3MethodPanelProps> = ({
                   </td>
                   <td className="px-2 py-2.5 text-right">
                     <span className={isCalculated ? 'font-medium text-text-heading' : 'text-text-muted'}>
-                      {formatEmissionsNumber(item.calculatedEmissions)}
+                      {formatEmissionsNumber(item.calculatedEmissions, { precision: 'detail' })}
                     </span>
                     {!isCalculated && item.calculatedEmissions > 0 && (
                       <div className="mt-0.5 text-[10.5px] text-text-label">
@@ -309,7 +309,7 @@ export const Scope3MethodPanel: React.FC<Scope3MethodPanelProps> = ({
                     )}
                   </td>
                   <td className="px-2 py-2.5 text-right font-serif font-semibold text-text-heading">
-                    {formatEmissionsNumber(item.adoptedEmissions)}
+                    {formatEmissionsNumber(item.adoptedEmissions, { precision: 'detail' })}
                   </td>
                   <td className="px-2 py-2.5">
                     <div className="flex items-center justify-end gap-2 whitespace-nowrap">
