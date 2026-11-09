@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppRefresh } from '@/hooks/useAppRefresh';
 import type { ShowToast } from '@/hooks/useToast';
 import { formatDateTime } from '@/lib/datetime';
+import { formatEmissionsNumber } from '@/lib/emissionsFormat';
 import { SCOPE3_CATEGORY_NAMES } from '@/features/scope-analysis/services/scopeAnalysisService';
 import { getActivityHistoryRecords, getManualEntryLocations } from '../services/activityRecordService';
 import type { HistoryFilterItem } from '../services/activityHistoryFilter';
@@ -49,7 +50,7 @@ const toHistoryPeriod = (periodStart: string, periodEnd: string) =>
 const formatEmissions = (emissions: number | null | undefined): string =>
   emissions === null || emissions === undefined
     ? '未算定'
-    : emissions.toLocaleString('ja-JP', { maximumFractionDigits: 3 });
+    : formatEmissionsNumber(emissions, { precision: 'detail' });
 
 // Scope3積上げ行のカテゴリ表示（例 'カテゴリ1: 購入した製品・サービス'）。
 const toScope3CategoryLabel = (record: SavedManualActivityRecord): string | null => {
