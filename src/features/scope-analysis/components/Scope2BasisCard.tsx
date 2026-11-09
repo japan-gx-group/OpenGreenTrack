@@ -7,6 +7,7 @@
 // 並べて見ても一致するとは限らないことを注記で明示する。
 
 import type { Scope2BasisCoverage, Scope2BasisTotals } from '../services/scopeAnalysisService';
+import { formatEmissionsNumber } from '@/lib/emissionsFormat';
 
 const numberFormatter = new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 3 });
 
@@ -61,7 +62,7 @@ export const Scope2BasisCard = ({
       breakdown:
         totals.marketBased === null
           ? ''
-          : `契約メニュー根拠 ${numberFormatter.format(totals.marketContract ?? 0)} ・ 代替値補完 ${numberFormatter.format(marketFallback ?? 0)} t-CO2e`,
+          : `契約メニュー根拠 ${formatEmissionsNumber(totals.marketContract ?? 0)} ・ 代替値補完 ${formatEmissionsNumber(marketFallback ?? 0)} t-CO2e`,
     },
   ];
   const hasUncalculated = columns.some((column) => column.value === null);
@@ -111,7 +112,7 @@ export const Scope2BasisCard = ({
             </div>
             <div className="flex items-baseline" style={{ gap: '7px', marginTop: '9px' }}>
               <span style={{ fontSize: '28px', fontWeight: 600, lineHeight: 1, letterSpacing: '-0.025em' }}>
-                {column.value === null ? '—' : numberFormatter.format(column.value)}
+                {column.value === null ? '—' : formatEmissionsNumber(column.value)}
               </span>
               <span style={{ fontSize: '12.5px', color: 'var(--color-text-subtle)' }}>
                 {column.value === null ? '未算定' : 't-CO2e'}

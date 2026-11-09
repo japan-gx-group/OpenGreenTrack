@@ -22,7 +22,7 @@ describe('Scope2BasisCard', () => {
     const text = container.textContent ?? '';
     expect(text).toContain('ロケーション基準');
     expect(text).toContain('マーケット基準');
-    expect(text).toContain('1.248');
+    expect(text).toContain('1.2');
     expect(text).toContain('0.9');
     // 補完分 = marketBased - marketContract
     expect(text).toContain('契約メニュー根拠 0.3');

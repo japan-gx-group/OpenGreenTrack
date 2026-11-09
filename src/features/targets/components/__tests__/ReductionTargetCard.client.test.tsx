@@ -154,7 +154,7 @@ describe('ReductionTargetCard', () => {
 
       const text = textOf(container);
       expect(text).toContain('125.0%');
-      expect(text).toContain('目標を 50 t-CO2e（25.0%）超過');
+      expect(text).toContain('目標を 50.0 t-CO2e（25.0%）超過');
       unmount();
     });
   });

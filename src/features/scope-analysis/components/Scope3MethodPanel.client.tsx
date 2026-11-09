@@ -11,6 +11,7 @@ import React, { useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Loader2, Pencil } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Modal } from '@/components/ui/Modal.client';
+import { formatEmissionsNumber } from '@/lib/emissionsFormat';
 import { DECIMAL_PATTERN, normalizeAmountInput } from '@/features/data-input/services/entrySubmission';
 import {
   getScope3CategoryDrilldown,
@@ -22,7 +23,7 @@ import {
 const numberFormatter = new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 3 });
 
 const formatEmissions = (value: number | null): string =>
-  value === null ? '—' : numberFormatter.format(value);
+  value === null ? '—' : formatEmissionsNumber(value);
 
 /** 正規化しても DECIMAL_PATTERN に合わない入力を弾いたときの案内（無言で無視しない）。 */
 const EMISSIONS_INPUT_REJECTED_MESSAGE = '排出量は数字と小数点のみ入力できます。';
@@ -225,7 +226,7 @@ export const Scope3MethodPanel: React.FC<Scope3MethodPanelProps> = ({
                     : '—'}
                 </td>
                 <td className="px-2 py-1.5 text-right font-medium text-text-heading">
-                  {numberFormatter.format(product.totalEmissions)}
+                  {formatEmissionsNumber(product.totalEmissions)}
                 </td>
                 <td className="px-2 py-1.5 text-right text-text-main">{product.percentage}</td>
               </tr>
@@ -299,7 +300,7 @@ export const Scope3MethodPanel: React.FC<Scope3MethodPanelProps> = ({
                   </td>
                   <td className="px-2 py-2.5 text-right">
                     <span className={isCalculated ? 'font-medium text-text-heading' : 'text-text-muted'}>
-                      {numberFormatter.format(item.calculatedEmissions)}
+                      {formatEmissionsNumber(item.calculatedEmissions)}
                     </span>
                     {!isCalculated && item.calculatedEmissions > 0 && (
                       <div className="mt-0.5 text-[10.5px] text-text-label">
@@ -308,7 +309,7 @@ export const Scope3MethodPanel: React.FC<Scope3MethodPanelProps> = ({
                     )}
                   </td>
                   <td className="px-2 py-2.5 text-right font-serif font-semibold text-text-heading">
-                    {numberFormatter.format(item.adoptedEmissions)}
+                    {formatEmissionsNumber(item.adoptedEmissions)}
                   </td>
                   <td className="px-2 py-2.5">
                     <div className="flex items-center justify-end gap-2 whitespace-nowrap">
