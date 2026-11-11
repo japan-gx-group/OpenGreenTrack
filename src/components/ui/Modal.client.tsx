@@ -29,6 +29,8 @@ const sizeWidths = {
 export const Modal = ({ isOpen, onClose, title, children, size, returnFocusRef }: ModalProps) => {
   const titleId = useId();
   const overlayRef = useRef<HTMLDivElement>(null);
+  const overlayMouseDownRef = useRef(false);
+  const overlayMouseUpRef = useRef(false);
   const modalRef = useRef<HTMLDivElement>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
   const previousBodyOverflowRef = useRef<string | null>(null);
@@ -38,6 +40,7 @@ export const Modal = ({ isOpen, onClose, title, children, size, returnFocusRef }
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === 'Escape' && isOpen) {
         onClose();
       }
@@ -93,12 +96,23 @@ export const Modal = ({ isOpen, onClose, title, children, size, returnFocusRef }
   return (
     <div
       ref={overlayRef}
+      onMouseDown={(e) => {
+        overlayMouseDownRef.current = e.target === overlayRef.current;
+        overlayMouseUpRef.current = false;
+      }}
+      onMouseUp={(e) => {
+        overlayMouseUpRef.current = e.target === overlayRef.current;
+      }}
       // 中央寄せは items-center ではなくパネル側の m-auto で行う。
       // overflow-y-auto なコンテナで items-center を使うと、子がコンテナより高いとき
       // はみ出しが上下に分配され、上側は scrollTop を負にできず到達不能になるため。
       className="fixed inset-0 z-[9999] flex justify-center overflow-y-auto p-4 bg-black/50 backdrop-blur-sm transition-opacity"
       onClick={(e) => {
-        if (e.target === overlayRef.current) onClose();
+        if (e.target === overlayRef.current && overlayMouseDownRef.current && overlayMouseUpRef.current) {
+          onClose();
+        }
+        overlayMouseDownRef.current = false;
+        overlayMouseUpRef.current = false;
       }}
     >
       <div
