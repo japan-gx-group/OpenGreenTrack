@@ -10,7 +10,7 @@ import { LocationFormModal } from '../LocationFormModal.client';
 describe('LocationFormModal ラベルの関連付け', () => {
   afterEach(() => { document.body.innerHTML = ''; });
 
-  it('拠点名称・地域区分・拠点種別・管理責任者名・稼働状況のラベルが htmlFor で対応する入力欄を指す', () => {
+  it('拠点名称・地域区分・拠点種別・担当者名・稼働状況のラベルが htmlFor で対応する入力欄を指す', () => {
     const form = {
       isModalOpen: true, editingLocationId: null,
       values: { name: '', region: 'Kanto', type: 'office', person: '', status: 'active' },
@@ -22,7 +22,7 @@ describe('LocationFormModal ラベルの関連付け', () => {
 
     const labels = Array.from(container.querySelectorAll('label'));
     expect(labels.map((label) => label.textContent?.replace(/\*/g, '').trim())).toEqual([
-      '拠点名称', '地域区分', '拠点種別', '管理責任者名', '稼働状況',
+      '拠点名称', '地域区分', '拠点種別', '担当者名', '稼働状況',
     ]);
     for (const label of labels) {
       const name = label.textContent?.replace(/\*/g, '').trim();

@@ -73,7 +73,7 @@ export const LocationFormModal = ({ form, returnFocusRef }: LocationFormModalPro
 
       <div className="flex gap-4">
         <div className="flex flex-col gap-1 flex-1">
-          <label className="text-xs font-semibold text-text-muted" htmlFor="location-form-person">管理責任者名</label>
+          <label className="text-xs font-semibold text-text-muted" htmlFor="location-form-person">担当者名</label>
           <input
             id="location-form-person"
             type="text"
