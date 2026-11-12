@@ -12,6 +12,7 @@ import { RefreshingIndicator } from '@/components/ui/RefreshingIndicator';
 import { LoadingIndicator } from '@/components/ui/PageLoading';
 import { useFiscalYear } from '@/hooks/useFiscalYear';
 import { useAppRefresh } from '@/hooks/useAppRefresh';
+import { formatEmissionsNumber } from '@/lib/emissionsFormat';
 import { getLocationById } from '@/features/locations/services/locationService';
 import { LocationStatusBadge } from '@/features/locations/components/LocationStatusBadge';
 import {
@@ -24,7 +25,7 @@ import {
   type LocationRecord,
 } from '@/features/locations/types';
 
-const formatNumber = (value: number) =>
+const formatAmount = (value: number) =>
   new Intl.NumberFormat('ja-JP', {
     maximumFractionDigits: 3,
   }).format(value);
@@ -257,7 +258,7 @@ export const LocationDetail = ({ locationId }: { locationId: string }) => {
                         <span
                           style={{ fontFamily: 'var(--font-serif)', fontWeight: 600, fontSize: '30px', lineHeight: 1 }}
                         >
-                          {formatNumber(detail.totals[card.key])}
+                          {formatEmissionsNumber(detail.totals[card.key])}
                         </span>
                         <span className="text-xs text-text-muted">t-CO2e</span>
                       </div>
@@ -335,7 +336,7 @@ export const LocationDetail = ({ locationId }: { locationId: string }) => {
                       カテゴリ別内訳
                     </h3>
                     <span style={{ fontSize: '12px', color: 'var(--color-text-label)' }}>
-                      計 {formatNumber(detail.totals.total)} t-CO2e
+                      計 {formatEmissionsNumber(detail.totals.total)} t-CO2e
                     </span>
                   </div>
 
@@ -355,10 +356,10 @@ export const LocationDetail = ({ locationId }: { locationId: string }) => {
                             <td className="py-3 pr-4 font-bold">{row.label}</td>
                             <td className="py-3 pr-4 text-right">
                               {row.amounts
-                                .map(entry => `${formatNumber(entry.amount)} ${entry.unit}`)
+                                .map(entry => `${formatAmount(entry.amount)} ${entry.unit}`)
                                 .join(' / ')}
                             </td>
-                            <td className="py-3 pr-4 text-right font-medium">{formatNumber(row.emissions)}</td>
+                            <td className="py-3 pr-4 text-right font-medium">{formatEmissionsNumber(row.emissions)}</td>
                             <td className="py-3 pl-4">
                               <div className="flex items-center gap-3">
                                 <div

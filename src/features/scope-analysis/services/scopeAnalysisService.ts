@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
 import { resolveFiscalYearCandidates } from '@/lib/fiscal-year/fiscalYearLookup';
 import { IN_CHUNK_SIZE, chunk } from '@/lib/supabaseRows';
+import { formatEmissionsNumber } from '@/lib/emissionsFormat';
 
 type Scope3CategoryEmissionRow = {
   fiscalYearId: string;
@@ -184,9 +185,6 @@ const fetchAllRows = async <T>(
   return allRows;
 };
 
-const formatNumber = (value: number): string =>
-  new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 3 }).format(value);
-
 const formatSupplierCategory = (categoryId: number): string =>
   `${categoryId}. ${SCOPE3_CATEGORY_NAMES[categoryId] ?? `カテゴリ${categoryId}`}`;
 
@@ -307,7 +305,7 @@ export const buildCategories = (
         id: row.categoryId,
         name: SCOPE3_CATEGORY_NAMES[row.categoryId] ?? `カテゴリ${row.categoryId}`,
         displayName: CATEGORY_DISPLAY_LABELS[row.categoryId],
-        value: formatNumber(emissions),
+        value: formatEmissionsNumber(emissions),
         percentage: total > 0 ? `${((emissions / total) * 100).toFixed(1)}%` : '0.0%',
         emissions,
       };
@@ -332,7 +330,7 @@ export const buildSuppliers = (rows: SupplierEmissionRow[]): Scope3SupplierItem[
         name: row.suppliers.name,
         categoryId: row.categoryId,
         category: formatSupplierCategory(row.categoryId),
-        emissions: formatNumber(emissions),
+        emissions: formatEmissionsNumber(emissions),
         emissionsNum: emissions,
         rate: Math.round(toNumber(row.suppliers.primaryDataRate)),
       };

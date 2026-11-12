@@ -16,10 +16,8 @@ import {
   type LocationType,
   type Region,
 } from '@/features/locations/types';
+import { formatEmissionsNumber } from '@/lib/emissionsFormat';
 import type { DashboardTopLocationDetail } from '../services/dashboardService';
-
-const formatNumber = (value: number) =>
-  new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 3 }).format(value);
 
 // 前年比の評価色（増減の良し悪し）は年度終了後に限る。分子＝表示年度の期中累計・分母＝前年度の
 // 通年実績の比較のため、年度が終わるまでは実態より大きな「削減」に見える。期中は増減率そのものは
@@ -152,10 +150,10 @@ export const TopLocationsTable = ({
                       {row.type ? getLocationTypeLabel(row.type as LocationType) : '—'}
                     </span>
                   </td>
-                  <td className="gt-num" style={{ color: 'var(--color-text-body)' }}>{formatNumber(row.scope1)}</td>
-                  <td className="gt-num" style={{ color: 'var(--color-text-body)' }}>{formatNumber(row.scope2)}</td>
+                  <td className="gt-num" style={{ color: 'var(--color-text-body)' }}>{formatEmissionsNumber(row.scope1)}</td>
+                  <td className="gt-num" style={{ color: 'var(--color-text-body)' }}>{formatEmissionsNumber(row.scope2)}</td>
                   <td className={clsx('gt-num')} style={{ fontSize: '14px', fontWeight: 600 }}>
-                    {formatNumber(row.total)}
+                    {formatEmissionsNumber(row.total)}
                   </td>
                   <td className="gt-num">
                     <DiffPill percent={row.diffPercent} fiscalYearEnded={fiscalYearEnded} />

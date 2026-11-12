@@ -20,6 +20,7 @@ import {
   type ReportTypeId,
 } from '../services/reportService';
 import { buildReportDocument } from '../services/reportContent';
+import { formatEmissionsNumber } from '@/lib/emissionsFormat';
 import { describeCalculationFreshness } from '../services/reportPreview';
 import { POPUP_BLOCKED_MESSAGE, downloadReportCsv, openReportPrintView } from '../services/reportExport';
 import { ORGANIZATION_WIDE_TARGET_LABEL, REPORT_TYPE_LABELS, usesLocationFilter } from '../types';
@@ -79,9 +80,8 @@ const reportTypes: ReportType[] = [
   },
 ];
 
-const formatEmissions = (value: number): string => `${value.toLocaleString('ja-JP', {
-  maximumFractionDigits: 3,
-})} t-CO2e`;
+const formatEmissions = (value: number): string =>
+  `${formatEmissionsNumber(value, { precision: 'detail' })} t-CO2e`;
 
 const formatDateTime = (value?: string): string => {
   if (!value) return '-';
