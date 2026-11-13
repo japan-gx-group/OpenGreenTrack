@@ -24,6 +24,17 @@ import {
   type LocationRecord,
 } from '@/features/locations/types';
 
+/** 取得できた集計と、その集計を取得した年度。ラベルは表示中のデータの年度と対にして出すために対で持つ。 */
+interface LoadedDetail {
+  aggregation: LocationDetailData;
+  fiscalYear: string;
+}
+
+// 取得前の state の初期値（取得を始める前は「読み込み中」、エラーは無し）。useState の初期化と、
+// 拠点が切り替わったときのリセットで同じ値を使い、片方だけ変えてずれることを防ぐ。
+const LOADING_BEFORE_FIRST_FETCH = true;
+const NO_ERROR_MESSAGE = '';
+
 const formatNumber = (value: number) =>
   new Intl.NumberFormat('ja-JP', {
     maximumFractionDigits: 3,
@@ -53,12 +64,28 @@ export const LocationDetail = ({ locationId }: { locationId: string }) => {
   const hasNoFiscalYear = !isFiscalYearLoading && fiscalYears.length === 0;
 
   const [location, setLocation] = useState<LocationRecord | null>(null);
-  const [isLocationLoading, setIsLocationLoading] = useState(true);
-  const [locationErrorMessage, setLocationErrorMessage] = useState('');
+  const [isLocationLoading, setIsLocationLoading] = useState(LOADING_BEFORE_FIRST_FETCH);
+  const [locationErrorMessage, setLocationErrorMessage] = useState(NO_ERROR_MESSAGE);
 
-  const [detail, setDetail] = useState<LocationDetailData | null>(null);
-  const [isDetailLoading, setIsDetailLoading] = useState(true);
-  const [detailErrorMessage, setDetailErrorMessage] = useState('');
+  const [loadedDetail, setLoadedDetail] = useState<LoadedDetail | null>(null);
+  const [isDetailLoading, setIsDetailLoading] = useState(LOADING_BEFORE_FIRST_FETCH);
+  const [detailErrorMessage, setDetailErrorMessage] = useState(NO_ERROR_MESSAGE);
+
+  // 別の拠点へ切り替わったら、前の拠点の表示内容を引き継がない。拠点の取得も集計の取得も
+  // 終わるまでは、前の拠点の名前・バッジ・数値が新しい URL の画面に出てしまうため。
+  // 描画中に state を調整する方式（React 公式の「props の変化に合わせて state を調整する」）にして、
+  // 切替後の最初の描画から空にする（effect で空にすると、前の拠点が 1 回描かれてしまう）。
+  // 「最新データに更新」（refreshToken）では空にしない。更新中は直前の表示を保つ（下の stale-while-revalidate）。
+  const [previousLocationId, setPreviousLocationId] = useState(locationId);
+  if (previousLocationId !== locationId) {
+    setPreviousLocationId(locationId);
+    setLocation(null);
+    setIsLocationLoading(LOADING_BEFORE_FIRST_FETCH);
+    setLocationErrorMessage(NO_ERROR_MESSAGE);
+    setLoadedDetail(null);
+    setIsDetailLoading(LOADING_BEFORE_FIRST_FETCH);
+    setDetailErrorMessage(NO_ERROR_MESSAGE);
+  }
 
   // 拠点そのものの取得。存在しない・他組織の拠点は null（Not Found 表示）。
   useEffect(() => {
@@ -112,11 +139,11 @@ export const LocationDetail = ({ locationId }: { locationId: string }) => {
       try {
         const data = await getLocationDetailData(fiscalYear, locationId, fiscalYearId);
         if (isMounted) {
-          setDetail(data);
+          setLoadedDetail({ aggregation: data, fiscalYear });
         }
       } catch (error) {
         if (isMounted) {
-          setDetail(null);
+          setLoadedDetail(null);
           setDetailErrorMessage(
             error instanceof Error ? error.message : '拠点別データの取得に失敗しました',
           );
@@ -136,9 +163,13 @@ export const LocationDetail = ({ locationId }: { locationId: string }) => {
   }, [fiscalYear, fiscalYearId, isValidLocationId, locationId, refreshToken]);
 
   const isNotFound = !isValidLocationId || (!isLocationLoading && !locationErrorMessage && location === null);
-  const hasScope3 = detail?.hasScope3 ?? false;
+  const displayedDetail = loadedDetail?.aggregation ?? null;
+  // 見出しの年度は、いま選んでいる年度ではなく、表示中のデータの年度にする。年度の切替中は
+  // 直前の年度のデータを保持するため、選択中の年度を出すと「2024年度」の見出しに 2026 年度の数値が並ぶ。
+  const displayedFiscalYear = loadedDetail?.fiscalYear ?? fiscalYear;
+  const hasScope3 = displayedDetail?.hasScope3 ?? false;
   const visibleScopeCards = SCOPE_CARDS.filter(card => card.key !== 'scope3' || hasScope3);
-  const chartData = detail?.monthlyData ?? [];
+  const chartData = displayedDetail?.monthlyData ?? [];
 
   return (
     <>
@@ -213,9 +244,9 @@ export const LocationDetail = ({ locationId }: { locationId: string }) => {
               </div>
             )}
 
-            <RefreshingIndicator show={isDetailLoading && Boolean(detail)} />
+            <RefreshingIndicator show={isDetailLoading && Boolean(displayedDetail)} />
 
-            {!detail ? (
+            {!displayedDetail ? (
               !detailErrorMessage && (
                 <Card className="text-sm text-text-muted">
                   {isDetailLoading || isLocationLoading ? (
@@ -225,12 +256,12 @@ export const LocationDetail = ({ locationId }: { locationId: string }) => {
                   )}
                 </Card>
               )
-            ) : !detail.hasData ? (
+            ) : !displayedDetail.hasData ? (
               /* 選択中年度に活動量データが1件も無い場合の空状態 */
               <Card className="flex flex-col items-center justify-center py-16 text-center">
                 <Building2 size={48} className="text-text-muted mb-3 opacity-50" />
                 <p className="font-bold text-text-muted text-lg">
-                  {fiscalYear}年度の活動量データはまだ登録されていません
+                  {displayedFiscalYear}年度の活動量データはまだ登録されていません
                 </p>
                 <p className="text-sm text-text-muted mt-2">
                   データ入力画面から活動量を登録すると、この拠点のScope内訳が表示されます。
@@ -257,7 +288,7 @@ export const LocationDetail = ({ locationId }: { locationId: string }) => {
                         <span
                           style={{ fontFamily: 'var(--font-serif)', fontWeight: 600, fontSize: '30px', lineHeight: 1 }}
                         >
-                          {formatNumber(detail.totals[card.key])}
+                          {formatNumber(displayedDetail.totals[card.key])}
                         </span>
                         <span className="text-xs text-text-muted">t-CO2e</span>
                       </div>
@@ -269,7 +300,7 @@ export const LocationDetail = ({ locationId }: { locationId: string }) => {
                 <Card className="flex flex-col shrink-0" style={{ padding: '24px 26px' }}>
                   <div className="flex justify-between items-baseline">
                     <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 600, fontSize: '19px', margin: 0 }}>
-                      月別排出量推移（{fiscalYear}年度）
+                      月別排出量推移（{displayedFiscalYear}年度）
                     </h2>
                     <div className="flex items-center" style={{ gap: '16px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
                       <span className="flex items-center" style={{ gap: '6px' }}>
@@ -335,7 +366,7 @@ export const LocationDetail = ({ locationId }: { locationId: string }) => {
                       カテゴリ別内訳
                     </h3>
                     <span style={{ fontSize: '12px', color: 'var(--color-text-label)' }}>
-                      計 {formatNumber(detail.totals.total)} t-CO2e
+                      計 {formatNumber(displayedDetail.totals.total)} t-CO2e
                     </span>
                   </div>
 
@@ -350,7 +381,7 @@ export const LocationDetail = ({ locationId }: { locationId: string }) => {
                         </tr>
                       </thead>
                       <tbody>
-                        {detail.energyBreakdown.map(row => (
+                        {displayedDetail.energyBreakdown.map(row => (
                           <tr key={row.energyType} className="border-b border-border-light">
                             <td className="py-3 pr-4 font-bold">{row.label}</td>
                             <td className="py-3 pr-4 text-right">
