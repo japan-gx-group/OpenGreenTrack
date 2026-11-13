@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React, { act } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { click, render, type RenderResult } from '@/lib/testing/render';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { click, focusElement, keyDown, render, type RenderResult } from '@/lib/testing/render';
 import type { LocationDeletionImpact } from '../../services/locationDeletionGuard';
 import {
   countScope3StackedRecords,
@@ -80,13 +80,31 @@ const openDeleteModal = async (): Promise<RenderResult> => {
   await flushPromises();
   const menuTrigger = rendered.container.querySelector<HTMLButtonElement>('button[title="操作"]');
   if (!menuTrigger) throw new Error('行メニューのボタンが見つかりません');
-  click(menuTrigger);
-  click(findButton(rendered.container, '削除'));
+  // メニュー（Radix の DropdownMenu）はキーボードで開く。項目は Portal で document.body 直下に描かれる
+  focusElement(menuTrigger);
+  keyDown(menuTrigger, 'Enter');
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  const deleteItem = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(
+    (element) => element.textContent?.trim() === '削除',
+  );
+  if (!deleteItem) throw new Error('メニュー項目「削除」が見つかりません');
+  click(deleteItem);
   await flushPromises();
   return rendered;
 };
 
 describe('Locations 削除確認モーダル', () => {
+  beforeAll(() => {
+    // Radix のポップアップが位置計算に使う API。jsdom には無いため、何もしない実装を差し込む。
+    globalThis.ResizeObserver ??= class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    };
+  });
+
   beforeEach(() => {
     vi.mocked(getLocations).mockResolvedValue([TOKYO]);
     vi.mocked(countScope3StackedRecords).mockResolvedValue(0);
