@@ -120,8 +120,8 @@ describe('LocationTable 行メニュー（⋮）のキーボード操作', () =>
   // メニューは Portal で document.body 直下に描かれる
   const getMenu = () => document.body.querySelector<HTMLElement>('[role="menu"]');
   const getItems = () => Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'));
-  // 開閉・フォーカス移動は Radix が次のタスクで行うため、act の中で 1 タスク待つ
-  const flush = async () => {
+  // 開閉・フォーカス移動は Radix が次のタスクで行うため、act の中で次のタスクまで待つ
+  const waitForNextTask = async () => {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
@@ -129,7 +129,7 @@ describe('LocationTable 行メニュー（⋮）のキーボード操作', () =>
   const openByKeyboard = async () => {
     focusElement(getTrigger());
     keyDown(getTrigger(), 'Enter');
-    await flush();
+    await waitForNextTask();
     // 開いていなければ、以降の「閉じた」「描かれない」系の検証が空振りで通ってしまう
     expect(getMenu()).not.toBeNull();
   };
@@ -146,11 +146,11 @@ describe('LocationTable 行メニュー（⋮）のキーボード操作', () =>
     await openByKeyboard();
 
     keyDown(document.activeElement!, 'ArrowDown');
-    await flush();
+    await waitForNextTask();
     expect(document.activeElement).toBe(getItems()[1]);
 
     keyDown(document.activeElement!, 'ArrowUp');
-    await flush();
+    await waitForNextTask();
     expect(document.activeElement).toBe(getItems()[0]);
   });
 
@@ -158,7 +158,7 @@ describe('LocationTable 行メニュー（⋮）のキーボード操作', () =>
     await openByKeyboard();
 
     keyDown(document.activeElement!, 'Escape');
-    await flush();
+    await waitForNextTask();
 
     expect(getMenu()).toBeNull();
     expect(getTrigger().getAttribute('aria-expanded')).toBe('false');
@@ -181,7 +181,7 @@ describe('LocationTable 行メニュー（⋮）のキーボード操作', () =>
     await openByKeyboard();
 
     keyDown(getItems()[0], 'Enter');
-    await flush();
+    await waitForNextTask();
 
     expect(onEdit).toHaveBeenCalledWith(ROW);
     expect(push).not.toHaveBeenCalled();
@@ -194,7 +194,7 @@ describe('LocationTable 行メニュー（⋮）のキーボード操作', () =>
     await openByKeyboard();
 
     click(getItems()[1]);
-    await flush();
+    await waitForNextTask();
 
     expect(onDelete).toHaveBeenCalledWith(ROW);
     expect(onEdit).not.toHaveBeenCalled();

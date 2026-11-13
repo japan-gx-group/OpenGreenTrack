@@ -59,7 +59,7 @@ export const LocationTable = ({
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   // 行ごとの ⋮ ボタン。キーボード（Enter / Space / ↓）で開いたときは click が発火しないため、
   // 開いた時点で menuTriggerRef へ控えるのに使う。
-  const triggerEls = useRef(new Map<string, HTMLButtonElement>());
+  const triggerButtonsByRowId = useRef(new Map<string, HTMLButtonElement>());
   // メニュー項目を選んだ（= 編集/削除モーダルを開く）ことの印。閉じた後のフォーカス復帰を
   // Radix の既定（⋮ へ戻す）ではなく Modal 側（returnFocusRef）に任せるために使う。
   const actionChosenRef = useRef(false);
@@ -145,7 +145,7 @@ export const LocationTable = ({
                     open={openMenuId === row.id}
                     onOpenChange={(open) => {
                       if (open) {
-                        menuTriggerRef.current = triggerEls.current.get(row.id) ?? null;
+                        menuTriggerRef.current = triggerButtonsByRowId.current.get(row.id) ?? null;
                       }
                       // 別の行のメニューが開いた後に、閉じる側の通知が遅れて届いても上書きしない
                       setOpenMenuId((current) => (open ? row.id : current === row.id ? null : current));
@@ -155,8 +155,8 @@ export const LocationTable = ({
                       <button
                         type="button"
                         ref={(el) => {
-                          if (el) triggerEls.current.set(row.id, el);
-                          else triggerEls.current.delete(row.id);
+                          if (el) triggerButtonsByRowId.current.set(row.id, el);
+                          else triggerButtonsByRowId.current.delete(row.id);
                         }}
                         className="text-text-muted hover:text-text-main"
                         title="操作"
