@@ -48,6 +48,27 @@ const DETAIL = { hasScope3: false, hasData: false, monthlyData: [] } as unknown 
   ReturnType<typeof getLocationDetailData>
 >;
 
+// 集計が 1 件以上ある拠点の詳細（Scope 別の数値とカテゴリ別内訳が描かれる）
+const detailWithData = (scope1: number): Awaited<ReturnType<typeof getLocationDetailData>> =>
+  ({
+    hasScope3: false,
+    hasData: true,
+    monthlyData: [],
+    energyBreakdown: [],
+    totals: { scope1, scope2: 0, scope3: 0, total: scope1 },
+  }) as unknown as Awaited<ReturnType<typeof getLocationDetailData>>;
+
+// 取得の完了をテストから制御する（切替中の状態を確かめるため、解決を遅らせる）
+const deferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+};
+
 const fiscalYearValue = (overrides: Partial<FiscalYearContextValue> = {}): FiscalYearContextValue => ({
   fiscalYearId: 'fy2025',
   fiscalYear: '2025',
@@ -65,6 +86,12 @@ const flushPromises = async (): Promise<void> => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
 };
+
+// 画面の見出し・空状態の文言そのものを取り出す（ページ内の別の箇所に同じ文字列が出ても影響されないようにする）
+const chartHeading = (container: HTMLElement) => container.querySelector('h2')?.textContent?.trim();
+const emptyStateTitle = (container: HTMLElement) =>
+  Array.from(container.querySelectorAll('p')).find((p) => p.textContent?.includes('活動量データはまだ登録されていません'))
+    ?.textContent?.trim();
 
 const buttonByText = (container: HTMLElement, text: string) =>
   Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.trim() === text);
@@ -141,5 +168,149 @@ describe('LocationDetail', () => {
     expect(getLocationById).toHaveBeenCalledWith(LOCATION_ID);
     expect(rendered.container.textContent).toContain('東京本社');
     expect(rendered.container.textContent).not.toContain('拠点が見つかりません');
+  });
+
+  describe('年度・拠点の切替中の表示', () => {
+    const FY2026 = { fiscalYearId: 'fy2026', fiscalYear: '2026' };
+    const OSAKA_LOCATION_ID = '11111111-aaaa-0000-0000-000000000002';
+    const OSAKA: LocationRecord = { ...TOKYO, id: OSAKA_LOCATION_ID, name: '大阪支社' };
+
+    it('年度を切り替えている間は、見出しの年度を表示中のデータの年度のままにし、取得後に新しい年度へ変える', async () => {
+      vi.mocked(getLocationDetailData).mockResolvedValueOnce(detailWithData(111));
+      rendered = render(<LocationDetail locationId={LOCATION_ID} />);
+      await flushPromises();
+      expect(chartHeading(rendered.container)).toBe('月別排出量推移（2025年度）');
+
+      const next = deferred<Awaited<ReturnType<typeof getLocationDetailData>>>();
+      vi.mocked(getLocationDetailData).mockReturnValueOnce(next.promise);
+      vi.mocked(useFiscalYear).mockReturnValue(fiscalYearValue(FY2026));
+      rendered.rerender(<LocationDetail locationId={LOCATION_ID} />);
+      await flushPromises();
+
+      // 取得の完了前: データは 2025 年度のまま残るので、見出しも 2025 年度のまま
+      expect(chartHeading(rendered.container)).toBe('月別排出量推移（2025年度）');
+
+      await act(async () => {
+        next.resolve(detailWithData(222));
+        await next.promise;
+      });
+      expect(chartHeading(rendered.container)).toBe('月別排出量推移（2026年度）');
+    });
+
+    it('年度を切り替えている間の「活動量データはまだ登録されていません」も、表示中のデータの年度で出す', async () => {
+      rendered = render(<LocationDetail locationId={LOCATION_ID} />);
+      await flushPromises();
+      expect(emptyStateTitle(rendered.container)).toBe('2025年度の活動量データはまだ登録されていません');
+
+      vi.mocked(getLocationDetailData).mockReturnValueOnce(deferred<Awaited<ReturnType<typeof getLocationDetailData>>>().promise);
+      vi.mocked(useFiscalYear).mockReturnValue(fiscalYearValue(FY2026));
+      rendered.rerender(<LocationDetail locationId={LOCATION_ID} />);
+      await flushPromises();
+
+      expect(emptyStateTitle(rendered.container)).toBe('2025年度の活動量データはまだ登録されていません');
+    });
+
+    it('別の拠点へ切り替えている間は、前の拠点の名前と数値を出さず、読み込み中にする', async () => {
+      vi.mocked(getLocationDetailData).mockResolvedValueOnce(detailWithData(98765));
+      rendered = render(<LocationDetail locationId={LOCATION_ID} />);
+      await flushPromises();
+      expect(rendered.container.textContent).toContain('東京本社');
+      expect(rendered.container.textContent).toContain('98,765');
+
+      vi.mocked(getLocationById).mockReturnValueOnce(deferred<LocationRecord | null>().promise);
+      vi.mocked(getLocationDetailData).mockReturnValueOnce(deferred<Awaited<ReturnType<typeof getLocationDetailData>>>().promise);
+      rendered.rerender(<LocationDetail locationId={OSAKA_LOCATION_ID} />);
+      await flushPromises();
+
+      const text = rendered.container.textContent;
+      expect(text).not.toContain('東京本社');
+      expect(text).not.toContain('98,765');
+      expect(text).not.toContain('拠点が見つかりません');
+      expect(text).toContain('拠点別データを読み込んでいます');
+    });
+
+    it('切替先の拠点の取得だけが失敗しても、前の拠点の名前は残らない（切替先の集計だけが出る）', async () => {
+      rendered = render(<LocationDetail locationId={LOCATION_ID} />);
+      await flushPromises();
+      expect(rendered.container.textContent).toContain('東京本社');
+
+      vi.mocked(getLocationById).mockRejectedValueOnce(new Error('拠点の取得に失敗しました'));
+      vi.mocked(getLocationDetailData).mockResolvedValueOnce(detailWithData(4321));
+      rendered.rerender(<LocationDetail locationId={OSAKA_LOCATION_ID} />);
+      await flushPromises();
+
+      const text = rendered.container.textContent;
+      expect(text).toContain('拠点の取得に失敗しました');
+      expect(text).not.toContain('東京本社');
+      // 出ている数値は切替先の拠点の集計
+      expect(text).toContain('4,321');
+      expect(vi.mocked(getLocationById)).toHaveBeenLastCalledWith(OSAKA_LOCATION_ID);
+    });
+
+    it('切替先の拠点が取得できたら、その拠点の名前を出す', async () => {
+      rendered = render(<LocationDetail locationId={LOCATION_ID} />);
+      await flushPromises();
+
+      vi.mocked(getLocationById).mockResolvedValueOnce(OSAKA);
+      rendered.rerender(<LocationDetail locationId={OSAKA_LOCATION_ID} />);
+      await flushPromises();
+
+      expect(rendered.container.textContent).toContain('大阪支社');
+      expect(rendered.container.textContent).not.toContain('東京本社');
+    });
+
+    it('切替前の拠点の取得が遅れて終わっても、切替先の画面を上書きしない', async () => {
+      const lateLocation = deferred<LocationRecord | null>();
+      const lateDetail = deferred<Awaited<ReturnType<typeof getLocationDetailData>>>();
+      vi.mocked(getLocationById).mockReturnValueOnce(lateLocation.promise);
+      vi.mocked(getLocationDetailData).mockReturnValueOnce(lateDetail.promise);
+      rendered = render(<LocationDetail locationId={LOCATION_ID} />);
+
+      // 取得が終わらないうちに、別の拠点へ切り替える
+      vi.mocked(getLocationById).mockResolvedValueOnce(OSAKA);
+      vi.mocked(getLocationDetailData).mockResolvedValueOnce(detailWithData(222));
+      rendered.rerender(<LocationDetail locationId={OSAKA_LOCATION_ID} />);
+      await flushPromises();
+
+      await act(async () => {
+        lateLocation.resolve(TOKYO);
+        lateDetail.resolve(detailWithData(111));
+        await Promise.all([lateLocation.promise, lateDetail.promise]);
+      });
+
+      const text = rendered.container.textContent;
+      expect(text).toContain('大阪支社');
+      expect(text).toContain('222');
+      expect(text).not.toContain('東京本社');
+      expect(text).not.toContain('111');
+    });
+
+    it('切替先の拠点が存在しなければ、前の拠点を出さずに「拠点が見つかりません」にする', async () => {
+      rendered = render(<LocationDetail locationId={LOCATION_ID} />);
+      await flushPromises();
+      expect(rendered.container.textContent).toContain('東京本社');
+
+      vi.mocked(getLocationById).mockResolvedValueOnce(null);
+      rendered.rerender(<LocationDetail locationId={OSAKA_LOCATION_ID} />);
+      await flushPromises();
+
+      expect(rendered.container.textContent).toContain('拠点が見つかりません');
+      expect(rendered.container.textContent).not.toContain('東京本社');
+    });
+
+    it('「最新データに更新」では空にせず、更新中も直前の表示を保つ', async () => {
+      vi.mocked(getLocationDetailData).mockResolvedValueOnce(detailWithData(555));
+      rendered = render(<LocationDetail locationId={LOCATION_ID} />);
+      await flushPromises();
+
+      vi.mocked(getLocationById).mockReturnValueOnce(deferred<LocationRecord | null>().promise);
+      vi.mocked(getLocationDetailData).mockReturnValueOnce(deferred<Awaited<ReturnType<typeof getLocationDetailData>>>().promise);
+      appRefresh.refreshToken = 1;
+      rendered.rerender(<LocationDetail locationId={LOCATION_ID} />);
+      await flushPromises();
+
+      expect(rendered.container.textContent).toContain('東京本社');
+      expect(rendered.container.textContent).toContain('555');
+    });
   });
 });
