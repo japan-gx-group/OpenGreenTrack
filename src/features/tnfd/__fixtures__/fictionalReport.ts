@@ -91,7 +91,7 @@ export const fictionalTnfdNarratives: TnfdNarrative[] = (
 /** 文章と要求の対応（TNFD の提言と ISSB 草案の要求に 1 つの文章で答える例を含む）。 */
 export const fictionalTnfdRequirementLinks: { itemId: TnfdItemId; requirementIds: TnfdRequirementId[] }[] = [
   { itemId: 'governance.board_oversight', requirementIds: ['REQ-TNFD-001'] },
-  { itemId: 'governance.human_rights_engagement', requirementIds: ['REQ-TNFD-003', 'REQ-TNFD-020'] },
+  { itemId: 'governance.human_rights_engagement', requirementIds: ['REQ-TNFD-003', 'REQ-TNFD-020', 'REQ-ISSB-007'] },
   { itemId: 'strategy.scenario_analysis', requirementIds: ['REQ-ISSB-002'] },
 ];
 

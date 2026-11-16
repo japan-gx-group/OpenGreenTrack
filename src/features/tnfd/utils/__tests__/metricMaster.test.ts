@@ -70,10 +70,21 @@ describe('指標マスター', () => {
     expect(findTnfdMetric('species_extinction_risk')?.tnfdCode).toBe('C5.2');
   });
 
-  it('ISSB 公開草案の脆弱資産の受け皿（金額・割合）は R1 で入力欄を出す', () => {
-    expect(findTnfdMetric('vulnerable_assets_amount')?.enabledInR1).toBe(true);
-    expect(findTnfdMetric('vulnerable_assets_share')?.enabledInR1).toBe(true);
+  it('ISSB 公開草案の受け皿（リスクに脆弱な側・機会と整合する側の金額と割合）は R1 で入力欄を出す', () => {
+    for (const id of [
+      'vulnerable_assets_amount',
+      'vulnerable_assets_share',
+      'opportunity_aligned_assets_amount',
+      'opportunity_aligned_assets_share',
+    ]) {
+      const metric = findTnfdMetric(id);
+      expect(metric, id).toBeDefined();
+      expect(metric?.enabledInR1, id).toBe(true);
+      expect(metric?.inputKind, id).toBe('manual_number');
+      expect(metric?.requirementIds, id).toContain('REQ-ISSB-003');
+    }
     expect(findTnfdMetric('vulnerable_assets_share')?.unit).toBe('%');
+    expect(findTnfdMetric('opportunity_aligned_assets_share')?.unit).toBe('%');
   });
 
   it('R1 で入力欄を出す指標は enabledInR1 の指標と一致し、対象外の指標もマスターに残る', () => {
@@ -90,6 +101,8 @@ describe('指標マスター', () => {
     expect(tnfdMetricsOfCategory('risk_opportunity').map(metric => metric.id)).toEqual([
       'vulnerable_assets_amount',
       'vulnerable_assets_share',
+      'opportunity_aligned_assets_amount',
+      'opportunity_aligned_assets_share',
     ]);
   });
 
