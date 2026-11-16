@@ -31,6 +31,7 @@ export interface CsvImportConfirmModalProps {
   /** 取込対象の呼び方（例: '拠点' / '排出係数'）。警告文に使う */
   entityLabel: string;
   isRunning: boolean;
+  progress?: { completed: number; total: number };
   onCancel: () => void;
   onConfirm: () => void;
 }
@@ -39,6 +40,7 @@ export const CsvImportConfirmModal = ({
   summary,
   entityLabel,
   isRunning,
+  progress,
   onCancel,
   onConfirm,
 }: CsvImportConfirmModalProps) => (
@@ -101,6 +103,12 @@ export const CsvImportConfirmModal = ({
         {summary.createCount + summary.updates.length === 0 && (
           <p className="text-sm text-text-muted">
             反映する変更がありません。ファイルの内容を確認してください。
+          </p>
+        )}
+
+        {isRunning && progress && (
+          <p role="status" aria-live="polite" className="text-sm text-text-muted">
+            取り込み中: {progress.completed}/{progress.total} 件
           </p>
         )}
 

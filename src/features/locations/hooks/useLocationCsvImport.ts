@@ -30,6 +30,7 @@ export interface LocationCsvImportController {
    */
   importPreview: LocationImportPreview | null;
   isImporting: boolean;
+  completedCount: number;
   selectFile: (file: File) => Promise<void>;
   cancelImport: () => void;
   runImport: () => Promise<void>;
@@ -44,6 +45,7 @@ export function useLocationCsvImport(
   const [importErrors, setImportErrors] = useState<LocationImportRowError[]>([]);
   const [importPreview, setImportPreview] = useState<LocationImportPreview | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [completedCount, setCompletedCount] = useState(0);
 
   const selectFile = async (file: File) => {
     setImportErrors([]);
@@ -59,6 +61,7 @@ export function useLocationCsvImport(
   const runImport = async () => {
     if (!importPreview) return;
     const { plan } = importPreview;
+    setCompletedCount(0);
     setIsImporting(true);
     // 作成・更新の途中で throw しても一覧を取り直す（作成分が書き込み済みなのに画面が変わらない、という状態を残さないため）。
     // throw した工程の件数は service から返らず確定できないので null（件数不明）のままにし、0件とは区別する。
@@ -70,7 +73,10 @@ export function useLocationCsvImport(
       // 行ごとに addLocation / updateLocation を呼ぶと、テンプレートが想定する規模
       // （数百行）で往復回数が現実的でなくなるため、一括版を使う。
       // 失敗は添字で返るので、行番号つきのエラーへ戻す。
-      const createResult = await addLocations(plan.creates.map(create => create.location));
+      const createResult = await addLocations(
+        plan.creates.map(create => create.location),
+        setCompletedCount,
+      );
       addedCount = createResult.created.length;
       runtimeErrors.push(
         ...createResult.failures.map(failure => ({
@@ -81,6 +87,7 @@ export function useLocationCsvImport(
 
       const updateResult = await updateLocations(
         plan.updates.map(update => ({ id: update.targetId, location: update.location })),
+        completed => setCompletedCount(plan.creates.length + completed),
       );
       updatedCount = updateResult.updated.length;
       runtimeErrors.push(
@@ -129,6 +136,7 @@ export function useLocationCsvImport(
     clearErrors: () => setImportErrors([]),
     importPreview,
     isImporting,
+    completedCount,
     selectFile,
     cancelImport: () => setImportPreview(null),
     runImport,

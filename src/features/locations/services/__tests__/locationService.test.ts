@@ -11,7 +11,8 @@ type QueryResult = { data?: unknown; count?: number | null; error: { message: st
 // チェーン（select → eq / gte / lte / order / limit → maybeSingle / await）を thenable で解決する。
 type QueryLog = {
   table: string;
-  action: 'select' | 'delete';
+  action: 'select' | 'delete' | 'insert';
+  payload?: unknown;
   filters: { op: string; column: string; value: unknown }[];
   head: boolean;
 };
@@ -27,6 +28,11 @@ const makeBuilder = (table: string) => {
     },
     delete: () => {
       query.action = 'delete';
+      return builder;
+    },
+    insert: (payload: unknown) => {
+      query.action = 'insert';
+      query.payload = payload;
       return builder;
     },
     eq: (column: string, value: unknown) => {
@@ -47,6 +53,10 @@ const makeBuilder = (table: string) => {
       queryLog.push(query);
       return resolveQuery(query);
     },
+    single: async () => {
+      queryLog.push(query);
+      return resolveQuery(query);
+    },
     then: (onFulfilled: (value: QueryResult) => unknown, onRejected?: (reason: unknown) => unknown) => {
       queryLog.push(query);
       return Promise.resolve(resolveQuery(query)).then(onFulfilled, onRejected);
@@ -56,10 +66,13 @@ const makeBuilder = (table: string) => {
 };
 
 vi.mock('@/lib/supabase/client', () => ({
-  createClient: () => ({ from: (table: string) => makeBuilder(table) }),
+  createClient: () => ({
+    from: (table: string) => makeBuilder(table),
+    auth: { getUser: async () => ({ data: { user: { id: 'user-1' } } }) },
+  }),
 }));
 
-import { deleteLocation } from '../locationService';
+import { addLocations, deleteLocation } from '../locationService';
 
 const fiscalYears = [
   { id: 'fy-2024', startDate: '2024-04-01', endDate: '2025-03-31' },
@@ -100,6 +113,38 @@ afterEach(() => {
 
 const refreshedFiscalYearIds = () =>
   fetchMock.mock.calls.map(([, init]) => JSON.parse((init as RequestInit).body as string).fiscalYearId);
+
+describe('addLocations', () => {
+  it('retries only a failed chunk and reports original indexes and progress', async () => {
+    resolveQuery = query => {
+      if (query.table === 'profiles') return { data: { organizationId: 'org-1' }, error: null };
+      if (query.table === 'locations' && query.action === 'insert') {
+        const payload = query.payload as { name: string } | { name: string }[];
+        if (Array.isArray(payload)) {
+          if (payload[0].name === 'place-100') return { error: { message: 'bad row' } };
+          return { data: payload.map((row, index) => ({ ...row, id: `id-${index}` })), error: null };
+        }
+        if (payload.name === 'place-101') return { error: { message: 'bad row' } };
+        return { data: { ...payload, id: payload.name }, error: null };
+      }
+      return defaultResolver(query);
+    };
+    const progress: number[] = [];
+    const locations = Array.from({ length: 205 }, (_, index) => ({
+      name: `place-${index}`, region: 'Kanto' as const, type: 'branch' as const,
+      person: '', status: 'active' as const,
+    }));
+
+    const result = await addLocations(locations, count => progress.push(count));
+
+    expect(result.created).toHaveLength(204);
+    expect(result.failures).toEqual([{ index: 101, message: 'bad row' }]);
+    expect(progress[0]).toBe(100);
+    expect(progress.at(-1)).toBe(205);
+    expect(queryLog.filter(query => query.action === 'insert' && !Array.isArray(query.payload)))
+      .toHaveLength(100);
+  });
+});
 
 describe('deleteLocation', () => {
   it('算定結果がある年度だけ、削除後に集計の再計算を呼ぶ', async () => {

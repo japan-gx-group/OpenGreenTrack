@@ -147,14 +147,16 @@ export interface BulkLocationFailure {
 // 待ち時間になる。addLocation を N 回呼ぶと、組織IDの解決（getUser + profiles）だけで
 // 2N 回の往復が乗るため、一括版では組織IDを1回だけ解決して使い回す。
 const MAX_PARALLEL_WRITES = 5;
+const INSERT_CHUNK_SIZE = 100;
 
 /**
- * CSVインポート用の一括登録。組織IDの解決を1回で済ませ、1リクエストでまとめて insert する。
- * まとめて失敗した場合は1件ずつ入れ直し、どの行が原因かを行単位で返す
+ * CSVインポート用の一括登録。組織IDの解決を1回で済ませ、チャンク単位で insert する。
+ * 失敗したチャンクだけ1件ずつ入れ直し、どの行が原因かを行単位で返す
  * （取込画面が行番号つきでエラーを出せるようにするため）。
  */
 export const addLocations = async (
   locations: NewLocationInput[],
+  onProgress?: (completed: number) => void,
 ): Promise<{ created: LocationRecord[]; failures: BulkLocationFailure[] }> => {
   if (locations.length === 0) return { created: [], failures: [] };
 
@@ -162,22 +164,33 @@ export const addLocations = async (
   const organizationId = await getCurrentOrganizationId(supabase);
   const rows = locations.map(location => ({ ...toInsertRow(location), organizationId }));
 
-  const { data, error } = await supabase.from('locations').insert(rows).select(SELECT_COLUMNS);
-
-  if (!error && data) {
-    return { created: (data as unknown as LocationRow[]).map(toLocationRecord), failures: [] };
-  }
-
-  // 一括 insert は1行でも弾かれると全体が失敗する。原因行を特定するため1件ずつ入れ直す。
   const created: LocationRecord[] = [];
   const failures: BulkLocationFailure[] = [];
-  for (const [index, row] of rows.entries()) {
-    const single = await supabase.from('locations').insert(row).select(SELECT_COLUMNS).single();
-    if (single.error || !single.data) {
-      failures.push({ index, message: single.error?.message ?? '拠点の登録に失敗しました' });
+  for (let offset = 0; offset < rows.length; offset += INSERT_CHUNK_SIZE) {
+    const chunk = rows.slice(offset, offset + INSERT_CHUNK_SIZE);
+    const { data, error } = await supabase.from('locations').insert(chunk).select(SELECT_COLUMNS);
+    if (!error && data) {
+      created.push(...(data as unknown as LocationRow[]).map(toLocationRecord));
+      onProgress?.(offset + chunk.length);
       continue;
     }
-    created.push(toLocationRecord(single.data as unknown as LocationRow));
+
+    // 一括 insert は1行でも弾かれるとチャンク全体が失敗する。原因行を特定する。
+    for (let start = 0; start < chunk.length; start += MAX_PARALLEL_WRITES) {
+      const batch = chunk.slice(start, start + MAX_PARALLEL_WRITES);
+      const results = await Promise.all(
+        batch.map(row => supabase.from('locations').insert(row).select(SELECT_COLUMNS).single()),
+      );
+      results.forEach((single, indexInBatch) => {
+        const index = offset + start + indexInBatch;
+        if (single.error || !single.data) {
+          failures.push({ index, message: single.error?.message ?? '拠点の登録に失敗しました' });
+        } else {
+          created.push(toLocationRecord(single.data as unknown as LocationRow));
+        }
+      });
+      onProgress?.(offset + start + batch.length);
+    }
   }
   return { created, failures };
 };
@@ -188,6 +201,7 @@ export const addLocations = async (
  */
 export const updateLocations = async (
   updates: { id: string; location: NewLocationInput }[],
+  onProgress?: (completed: number) => void,
 ): Promise<{ updated: LocationRecord[]; failures: BulkLocationFailure[] }> => {
   const supabase = createClient();
   const updated: LocationRecord[] = [];
@@ -213,6 +227,7 @@ export const updateLocations = async (
       }
       updated.push(toLocationRecord(result.data as unknown as LocationRow));
     });
+    onProgress?.(offset + chunk.length);
   }
 
   return { updated, failures };

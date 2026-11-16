@@ -48,6 +48,27 @@ describe('useLocationCsvImport', () => {
     document.body.innerHTML = '';
   });
 
+  it('combines create and update progress into one total', async () => {
+    vi.mocked(addLocations).mockImplementation(async (_rows, onProgress) => {
+      onProgress?.(2);
+      return { created: [{ id: 'n1' }, { id: 'n2' }] as LocationRecord[], failures: [] };
+    });
+    vi.mocked(updateLocations).mockImplementation(async (_rows, onProgress) => {
+      onProgress?.(1);
+      return { updated: [{ id: 'l1' }] as LocationRecord[], failures: [] };
+    });
+    const reload = vi.fn().mockResolvedValue(undefined);
+    const showToast = vi.fn();
+    const file = { name: 'locations.csv', arrayBuffer: async () => new ArrayBuffer(0) } as unknown as File;
+    const { unmount } = render(<Probe reload={reload} showToast={showToast} />);
+    await act(async () => { await controller.selectFile(file); });
+    await act(async () => { await controller.runImport(); });
+
+    expect(controller.completedCount).toBe(3);
+    expect(showToast).toHaveBeenCalledWith(expect.stringContaining('追加2件・更新1件'), 'success');
+    unmount();
+  });
+
   it('keeps the created count and reloads the list when the update step throws', async () => {
     vi.mocked(addLocations).mockResolvedValue({ created: [{ id: 'n1' }, { id: 'n2' }] as LocationRecord[], failures: [] });
     vi.mocked(updateLocations).mockRejectedValue(new Error('network down'));

@@ -32,6 +32,14 @@ const existing: LocationRecord[] = [
 ];
 
 describe('buildLocationImportPlan', () => {
+  it('accepts 1,000 data rows and rejects the next row before preview', () => {
+    const rows = Array.from({ length: 1000 }, (_, index) =>
+      ['', `拠点${index}`, '東北', '支社', '', '稼働中']);
+    expect(buildLocationImportPlan(csv(rows), []).creates).toHaveLength(1000);
+    expect(() => buildLocationImportPlan(csv([...rows, ['', '追加拠点', '東北', '支社', '', '稼働中']]), []))
+      .toThrow('最大1,000行');
+  });
+
   it('ID列が空で拠点名が既存にない行は新規追加になる', () => {
     const plan = buildLocationImportPlan(
       csv([['', '仙台営業所', '東北', '支社', '営業 十郎', '稼働中']]),

@@ -18,6 +18,10 @@ export const LocationCsvImportConfirm = ({ csvImport, database }: LocationCsvImp
   <CsvImportConfirmModal
     entityLabel="拠点"
     isRunning={csvImport.isImporting}
+    progress={csvImport.isImporting ? {
+      completed: csvImport.completedCount,
+      total: (csvImport.importPreview?.plan.creates.length ?? 0) + (csvImport.importPreview?.plan.updates.length ?? 0),
+    } : undefined}
     onCancel={csvImport.cancelImport}
     onConfirm={csvImport.runImport}
     summary={

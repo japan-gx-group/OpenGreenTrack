@@ -171,6 +171,7 @@ export const parseLocationCsvText = (
   const rows: ParsedLocationRow[] = [];
   const errors: LocationImportRowError[] = [];
   let exampleRowCount = 0;
+  let dataRowCount = 0;
 
   for (let i = 1; i < lines.length; i++) {
     // 行全体を trim すると「末尾列が空のタブ区切り行」の区切り文字まで消えて列数が狂うため、
@@ -180,6 +181,11 @@ export const parseLocationCsvText = (
 
     const columns = splitCsvLine(line, delimiter).map(col => unescapeFormulaGuard(col.trim()));
     if (columns.every(col => col === '')) continue;
+
+    dataRowCount++;
+    if (dataRowCount > 1000) {
+      throw new Error('拠点CSVは最大1,000行まで取り込めます。ファイルを分割してください。');
+    }
 
     const rowNumber = i + 1;
 
