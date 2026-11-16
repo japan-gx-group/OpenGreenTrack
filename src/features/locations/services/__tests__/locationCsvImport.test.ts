@@ -266,6 +266,81 @@ describe('buildLocationImportPlan', () => {
     expect(plan.errors[0].reasons[0]).toBe('列数が足りません（7列必要ですが、6列のみです）');
   });
 
+  it.each([false, true])('余分な列がある行を取り込まない（旧形式: %s）', (legacy) => {
+    const headers = legacy
+      ? ['ID', '拠点名', '地域', '拠点種別', '担当者', 'Scope対象区分', '稼働状況']
+      : [...LOCATION_CSV_HEADERS];
+    const row = legacy
+      ? ['', '仙台営業所', '東北', '支社', '担当', '', '稼働中', '余分']
+      : ['', '仙台営業所', '東北', '支社', '担当', '稼働中', '余分'];
+    const plan = buildLocationImportPlan([headers, row].map(cells => cells.join('\t')).join('\r\n'), existing);
+    expect(plan.creates).toEqual([]);
+    expect(plan.errors[0].reasons[0]).toContain('列数が多すぎます');
+  });
+
+  it.each([false, true])('末尾に空のヘッダーセルがあっても取り込める（旧形式: %s）', (legacy) => {
+    const headers = legacy
+      ? ['ID', '拠点名', '地域', '拠点種別', '担当者', 'Scope対象区分', '稼働状況', '']
+      : [...LOCATION_CSV_HEADERS, ''];
+    const row = legacy
+      ? ['', '仙台営業所', '東北', '支社', '担当', '', '稼働中']
+      : ['', '仙台営業所', '東北', '支社', '担当', '稼働中'];
+    const plan = buildLocationImportPlan([headers, row].map(cells => cells.join(',')).join('\r\n'), existing);
+    expect(plan.errors).toEqual([]);
+    expect(plan.creates).toHaveLength(1);
+  });
+
+  it.each([false, true])('各行の末尾に区切り文字が残っていても取り込める（旧形式: %s）', (legacy) => {
+    const headers = legacy
+      ? ['ID', '拠点名', '地域', '拠点種別', '担当者', 'Scope対象区分', '稼働状況']
+      : [...LOCATION_CSV_HEADERS];
+    const row = legacy
+      ? ['', '仙台営業所', '東北', '支社', '担当', '', '稼働中']
+      : ['', '仙台営業所', '東北', '支社', '担当', '稼働中'];
+    const text = [[...headers, ''], [...row, '']].map(cells => cells.join(',')).join('\r\n');
+    const plan = buildLocationImportPlan(text, existing);
+    expect(plan.errors).toEqual([]);
+    expect(plan.creates).toHaveLength(1);
+  });
+
+  it('空でない余分なヘッダーは拒否する', () => {
+    expect(() => buildLocationImportPlan(`${LOCATION_CSV_HEADERS.join(',')},余分`, existing))
+      .toThrow(/ヘッダー列が一致しません/);
+  });
+
+  it.each(['constructor', 'toString', '__proto__'])('継承プロパティ名 %s を選択肢として受け付けない', (value) => {
+    for (const column of [2, 3, 5]) {
+      const row = ['', '仙台営業所', '東北', '支社', '担当', '稼働中'];
+      row[column] = value;
+      const plan = buildLocationImportPlan(csv([row]), existing);
+      expect(plan.creates).toEqual([]);
+      expect(plan.errors).toHaveLength(1);
+    }
+  });
+
+  it('既存のアポストロフィで始まる名前を再取込しても改名しない', () => {
+    const location = { ...existing[0], name: "'-試験棟", person: "'=担当" };
+    const plan = buildLocationImportPlan(csv([locationToCsvRow(location)]), [location]);
+    expect(plan.errors).toEqual([]);
+    expect(plan.updates).toEqual([]);
+    expect(plan.skipCount).toBe(1);
+  });
+
+  it('ガード付きの数式先頭値は元の値へ戻す', () => {
+    const location = { ...existing[0], name: '=試験棟', person: '+担当' };
+    const plan = buildLocationImportPlan(csv([['loc-1', "'=試験棟", '関西', '支社', "'+担当", '稼働中']]), [location]);
+    expect(plan.updates).toEqual([]);
+    expect(plan.skipCount).toBe(1);
+  });
+
+  it('IDがなくても既存のアポストロフィで始まる名前を照合できる', () => {
+    const location = { ...existing[0], name: "'-試験棟", person: "'=担当" };
+    const plan = buildLocationImportPlan(csv([['', "'-試験棟", '関西', '支社', "'=担当", '稼働中']]), [location]);
+    expect(plan.creates).toEqual([]);
+    expect(plan.updates).toEqual([]);
+    expect(plan.skipCount).toBe(1);
+  });
+
   it('ヘッダーが一致しないファイルは取込自体を中止する', () => {
     expect(() => buildLocationImportPlan('拠点名\t地域\n大阪支社\t関西', existing)).toThrow(
       /ヘッダー列が一致しません/,
@@ -388,5 +463,24 @@ describe('locationToCsvRow', () => {
     expect(plan.creates).toEqual([]);
     expect(plan.updates).toEqual([]);
     expect(plan.skipCount).toBe(existing.length);
+  });
+
+  it("アポストロフィを2つ重ねて始まる値も出力と再取込で復元する", () => {
+    const location = { ...existing[0], name: "''=試験棟", person: "'''-担当" };
+    const row = locationToCsvRow(location);
+    expect(row[1]).toBe("'''=試験棟");
+    const plan = buildLocationImportPlan(csv([row]), []);
+    expect(plan.creates[0].location.name).toBe(location.name);
+    expect(plan.creates[0].location.person).toBe(location.person);
+  });
+
+  it('元からアポストロフィで始まる値を区別して出力し、再取込で復元する', () => {
+    const location = { ...existing[0], name: "'-試験棟", person: "'=担当" };
+    const row = locationToCsvRow(location);
+    expect(row[1]).toBe("''-試験棟");
+    expect(row[4]).toBe("''=担当");
+    const plan = buildLocationImportPlan(csv([row]), []);
+    expect(plan.creates[0].location.name).toBe(location.name);
+    expect(plan.creates[0].location.person).toBe(location.person);
   });
 });
