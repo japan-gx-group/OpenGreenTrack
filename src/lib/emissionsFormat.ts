@@ -6,6 +6,8 @@ export type EmissionsPrecision = 'summary' | 'detail';
 
 // summary の境界。この値未満（小数1桁に丸めた後）は小数1桁、以上は整数で表示する。
 const SUMMARY_DECIMAL_THRESHOLD = 100;
+// summary で 0 と区別する微小値の境界。100 の表示切替とは独立して判定する。
+const SUMMARY_SMALL_VALUE_CUTOFF = 0.05;
 
 // detail: 精度が意味を持つ出力（レポートの表・データ入力の算定結果など）向け。小数3位まで。
 const detailFormatter = new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 3 });
@@ -20,7 +22,7 @@ const integerFormatter = new Intl.NumberFormat('ja-JP', { maximumFractionDigits:
  * 排出量の数値をカンマ区切りの文字列にする（単位は付けない）。
  *
  * - `summary`（既定）: 整数。ただし絶対値が 100 未満なら小数1桁（小規模な組織で値が 0 に潰れないようにする）。
- *   小数1桁に丸めても 0 になる値は `0` と表示する。
+ *   真の 0 は `0`、0 より大きく 0.05 未満は `<0.1`、-0.05 より大きく 0 未満は `>-0.1` と表示する。
  * - `detail`: 小数3位まで（末尾のゼロは出さない）。
  *
  * null や「未算定」の扱いは呼び出し側で行う。
@@ -33,11 +35,15 @@ export const formatEmissionsNumber = (
     return detailFormatter.format(value);
   }
 
-  // 閾値の判定は丸めた後の値で行う（99.96 が「100.0」と表示されないようにする）。
-  const rounded = Math.round(Math.abs(value) * 10) / 10;
-  if (rounded === 0) {
+  if (value === 0) {
     return '0';
   }
+  if (Math.abs(value) < SUMMARY_SMALL_VALUE_CUTOFF) {
+    return value > 0 ? '<0.1' : '>-0.1';
+  }
+
+  // 閾値の判定は丸めた後の値で行う（99.96 が「100.0」と表示されないようにする）。
+  const rounded = Math.round(Math.abs(value) * 10) / 10;
   if (rounded < SUMMARY_DECIMAL_THRESHOLD) {
     return oneDecimalFormatter.format(value);
   }

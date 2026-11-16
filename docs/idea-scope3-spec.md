@@ -198,7 +198,7 @@ alter table emission_results alter column emissions type numeric(15, 6);
   `numeric(15,3) に合わせて小数第3位へ丸める` のままなので**コメントも併せて更新**する
   （AGENTS.md R10 は既存コメントの温存を求めるが、事実と食い違うコメントは更新が正）。
   同じ丸めを使う `EmissionResultInsert.emissions` の型コメントも同様。
-- **画面・レポートの表示丸めは従来どおり小数第3位**で変えない。
+- **算定・保存精度は表示と独立**。現行の要約表示は小数1桁に丸めた絶対値100以上で整数、100未満で小数1桁（真の0は「0」、0より大きく0.05未満は「<0.1」、-0.05より大きく0未満は「>-0.1」）。データ入力・結果・レポートの詳細表示は小数第3位まで（末尾のゼロは省略）。グラフの軸・ツールチップは別途対応する。
 - **`dashboard_aggregates` の `scope1Total` / `scope2Total` / `scope3Total` は `numeric(15,3)` のまま据え置く**（意図的）。
   是正対象はレコード単位の丸めによる系統的過小計上であり、合計値を一度 1kg に丸めるのは実用上無害。
   `scope3_category_emissions.emissions`（direct 入力値）も同様に据え置く。**この2つは広げないこと。**
@@ -434,7 +434,7 @@ scope3Total = Σ カテゴリ別採用値
 受け入れ条件:
 - [ ] §3.1〜3.4 の DDL が新規マイグレーションとして適用できる（既存マイグレーションは未編集）
 - [ ] `EnergyType` に `scope3_activity` が追加され、係数作成 UI / 係数CSVの候補には**出ない**
-- [ ] `emissions` が numeric(15,6) になり、`roundEmissions` が第6位丸め・表示は第3位のまま
+- [ ] `emissions` が numeric(15,6) になり、`roundEmissions` が第6位丸めになる（現行の表示規則は §3.4 を参照）
 - [ ] 既存の Scope1/2 算定テストが（期待値見直しの上）全て通る
 - [ ] idea_* テーブルに authenticated で INSERT できないこと、他組織の行が SELECT できないことのRLSテスト
 
