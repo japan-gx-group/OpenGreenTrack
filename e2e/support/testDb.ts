@@ -89,6 +89,29 @@ export const createSignedInClient = async (): Promise<SupabaseClient> => {
   return supabase;
 };
 
+/** 指定年度の確定済みダッシュボード集計を、表示丸め前の値で読む。 */
+export const readDashboardAggregate = async (supabase: SupabaseClient, fiscalYearLabel: string): Promise<number> => {
+  const { data: fiscalYear, error: yearError } = await supabase
+    .from('fiscal_years')
+    .select('id')
+    .eq('label', fiscalYearLabel)
+    .single();
+  if (yearError || !fiscalYear) {
+    throw new Error(`年度「${fiscalYearLabel}」の取得に失敗しました: ${yearError?.message}`);
+  }
+
+  const { data: aggregate, error: aggregateError } = await supabase
+    .from('dashboard_aggregates')
+    .select('scope1Total, scope2Total, scope3Total')
+    .eq('fiscalYearId', fiscalYear.id)
+    .single();
+  if (aggregateError || !aggregate) {
+    throw new Error(`年度「${fiscalYearLabel}」の集計取得に失敗しました: ${aggregateError?.message}`);
+  }
+
+  return Number(aggregate.scope1Total) + Number(aggregate.scope2Total) + Number(aggregate.scope3Total);
+};
+
 /**
  * テストが作った活動量レコードを削除する（備考の目印で特定する）。
  * emission_results は activityRecordId の on delete cascade で一緒に消える。

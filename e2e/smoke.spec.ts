@@ -6,6 +6,8 @@
 
 import { stat } from 'node:fs/promises';
 import { test, expect } from '@playwright/test';
+import { formatEmissionsNumber } from '../src/lib/emissionsFormat';
+import { createSignedInClient, readDashboardAggregate } from './support/testDb';
 import {
   navigateTo,
   readDashboardTotal,
@@ -66,7 +68,9 @@ test.describe('基幹導線スモーク', () => {
 
     await navigateTo(page, 'ダッシュボード', 'ダッシュボード');
     await selectFiscalYear(page, TEST_FISCAL_YEAR_LABEL);
-    const totalBefore = await readDashboardTotal(page);
+    const supabase = await createSignedInClient();
+    const totalBefore = await readDashboardAggregate(supabase, TEST_FISCAL_YEAR_LABEL);
+    expect(await readDashboardTotal(page)).toBe(formatEmissionsNumber(totalBefore));
 
     await navigateTo(page, 'データ入力', 'データ入力');
     await saveManualActivityRecord(page, DASHBOARD_TARGET_MONTH);
@@ -74,11 +78,12 @@ test.describe('基幹導線スモーク', () => {
     // サイドバー経由のクライアント遷移なので、選択中の年度は保持される。
     await navigateTo(page, 'ダッシュボード', 'ダッシュボード');
 
-    // 増分が算定結果ぴったりであることまで見る。「変化していればOK」だと、年度切替の待ち漏れで
-    // 別年度の数値を読んでいても通ってしまうため。
+    // 集計の増分を丸め前の DB 値で検証し、その確定値を要約表示に変換して画面と照合する。
+    const totalAfter = await readDashboardAggregate(supabase, TEST_FISCAL_YEAR_LABEL);
+    expect(totalAfter - totalBefore).toBeCloseTo(EXPECTED_EMISSIONS_T_CO2E, 3);
     await expect
       .poll(() => readDashboardTotal(page), { timeout: DASHBOARD_REFLECTION_TIMEOUT_MS })
-      .toBeCloseTo(totalBefore + EXPECTED_EMISSIONS_T_CO2E, 3);
+      .toBe(formatEmissionsNumber(totalAfter));
   });
 
   test('レポート出力からCSVをダウンロードできる', async ({ page }) => {
