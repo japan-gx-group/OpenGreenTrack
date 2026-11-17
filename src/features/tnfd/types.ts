@@ -99,7 +99,7 @@ export type TnfdVersionId = string;
 
 /**
  * 提言・段落の参照（例 `{ standard: 'TNFD', paragraphs: 'Governance A' }`）。本文は持たない（docs/tnfd-spec.md §1）。
- * TNFD のラベルは October 2026 版、ISSB は公開草案（ED-2026-10）で確認したものを書く。
+ * TNFD のラベルは October 2026 版、ISSB は公開草案（ISSB/ED/2026/1）の項番号で確認したものを書く。
  */
 export type TnfdParagraphReference = {
   standard: TnfdStandardCode;
@@ -133,7 +133,7 @@ export type TnfdRequirement = {
 /**
  * 四本柱の文章の項目。1 つの項目で複数の要求に答えられる（TNFD の提言と ISSB 草案の同じ趣旨の要求を
  * 二重に入力しないため）。company_supplement は要求に対応しない企業固有の補足。
- * issb_placeholder は ISSB 公開草案の新要求の受け皿で、TNFD の 14 提言とは別の見出しで出す（docs/tnfd-spec.md §10）。
+ * issb_placeholder は ISSB 公開草案の要求のうち TNFD に対応物が無いものの受け皿で、TNFD の 14 提言とは別の見出しで出す（docs/tnfd-spec.md §10）。
  */
 export type TnfdNarrativeItem = {
   id: TnfdItemId;

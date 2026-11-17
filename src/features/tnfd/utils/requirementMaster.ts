@@ -6,7 +6,9 @@
 //
 // - 要約・記載ガイドはこの試行版の言葉で書いたもので、提言の本文ではない（本文は転載しない。docs/tnfd-spec.md §1）。
 // - 一般要件（章にまたがる要求）は sectionId を null にし、答える場所（文章の項目・基本情報・拠点）を inputTarget で示す。
-// - ISSB 公開草案の新要求（REQ-ISSB-*）は TNFD の 14 提言とは別の見出しで出す（docs/tnfd-spec.md §10）。
+// - ISSB 公開草案（ISSB/ED/2026/1）の要求（REQ-ISSB-*）は、草案の本文（第 1〜38 項）を読んで項番号を付けた。
+//   TNFD の提言と同じ趣旨の要求は TNFD の項目で一緒に答え、TNFD に対応物が無い要求だけを別の見出しの受け皿（issb_placeholder）で出す
+//   （docs/tnfd-spec.md §10）。草案の本文は転載しない。最終化で項番号が変わりうるので、変わったら参照だけを直す（ID は変えない）。
 // - 記載例は架空の会社の文例で、実在の企業・開示とは無関係。
 
 import type {
@@ -21,7 +23,7 @@ import type {
 import { sectionOfItem } from './ids';
 
 /** マスターの版。ID や入力先を変えたら上げる（保存版にどの版のマスターで作ったかを残すため）。 */
-export const TNFD_REQUIREMENT_MASTER_VERSION = 'r1-provisional-1';
+export const TNFD_REQUIREMENT_MASTER_VERSION = 'r1-provisional-2';
 
 /** 提言・段落を確認した文書の版。 */
 export const TNFD_REFERENCE_STANDARD_DOCUMENTS: Record<
@@ -36,7 +38,7 @@ export const TNFD_REFERENCE_STANDARD_DOCUMENTS: Record<
   ISSB: {
     name: 'IFRS Sustainability Disclosure Practice Statement 1 Nature-related Disclosures（公開草案）',
     shortLabel: 'ISSB 草案',
-    version: 'ED-2026-10（2026年10月22日公表。コメント期限 2027年2月19日。最終化未定・準拠は任意）',
+    version: 'ISSB/ED/2026/1（2026年10月公表。コメント期限 2027年2月19日。最終化未定・準拠は任意。SSBJ が日本語仮訳を掲載）',
   },
 };
 
@@ -218,30 +220,70 @@ export const TNFD_REQUIREMENTS: readonly TnfdRequirement[] = [
     inputTarget: { kind: 'notice' },
     guide: 'R1 では専用の項目を設けず、各章の「企業固有の補足」で触れる。専用項目を置くかは専門家の判断待ち（docs/tnfd-spec.md U-3）。',
   },
-  // ---- ISSB 公開草案の新要求（任意。TNFD の 14 提言とは別の見出しで出す） ----
+  // ---- ISSB 公開草案（ISSB/ED/2026/1）の要求（任意。項番号は草案の本文で確認） ----
   {
     id: 'REQ-ISSB-001',
     sectionId: null,
-    summary: '自然関連のリスク・機会が生じている地理的位置の情報',
-    references: [{ standard: 'ISSB', paragraphs: 'ED-2026-10: location information' }],
+    summary: '資産・活動の所在地と、センシティブな場所にあたるかの識別（拠点ごとの記録）',
+    references: [{ standard: 'ISSB', paragraphs: '第10項(a)・第26項(b)(ii)' }],
     inputTarget: { kind: 'location' },
-    guide: '拠点の自然関連情報の画面で受ける（TNFD の一般要件「ロケーション」と同じ記録を使う）。草案の最終化で要求の粒度が変わりうる。',
+    guide: '拠点の自然関連情報の画面で受ける（TNFD の一般要件「ロケーション」と同じ記録を使う）。草案は開示する地理的な粒度（拠点・流域・行政区域など）を定めておらず、緯度経度は任意。草案はバリューチェーン全体の所在地を対象にするが、R1 で記録できるのは OGT に登録した拠点だけなので、調達先などの所在地は「所在地の考慮」の文章で書く。',
   },
   {
     id: 'REQ-ISSB-002',
     sectionId: 'strategy',
-    summary: '自然関連のシナリオ分析',
-    references: [{ standard: 'ISSB', paragraphs: 'ED-2026-10: nature-related scenario analysis' }],
+    summary: '自然関連のシナリオ分析を用いたレジリエンスの評価と、リスク・機会の識別への利用',
+    references: [{ standard: 'ISSB', paragraphs: '第20〜24項・第27〜28項' }],
     inputTarget: { kind: 'narrative', itemId: 'strategy.scenario_analysis' },
-    guide: '使ったシナリオ、対象期間、結果の概要を書く。R1 では文章で受け、計算はしない。していない場合は「していない」と書く。',
+    guide: '使ったシナリオとその出所、対象期間、対象にした所在地・事業の範囲、主な前提、結果の概要を書く。草案はレジリエンスの評価にシナリオ分析を使うことを求めるが、企業の状況に見合った方法でよく、定性的な簡易シナリオも認めている。R1 では文章で受け、計算はしない。TNFD の「戦略のレジリエンス」に書いた内容は繰り返さず、その旨を書いてよい。実施していない場合は「していない」と書く（その場合、草案に沿った開示とは言えない）。',
   },
   {
     id: 'REQ-ISSB-003',
     sectionId: 'metrics_targets',
-    summary: '自然関連リスクに脆弱な資産・事業活動の金額または割合',
-    references: [{ standard: 'ISSB', paragraphs: 'ED-2026-10: amount or percentage of assets or business activities vulnerable to nature-related risks' }],
-    inputTarget: { kind: 'metric', metricIds: ['vulnerable_assets_amount', 'vulnerable_assets_share'] },
-    guide: 'OGT は財務データを持たないため、金額と割合を手入力する。算定の範囲（どの資産を対象にしたか）を補足文に書く。',
+    summary: '自然関連リスクに脆弱な資産・事業活動と、自然関連の機会と整合する資産・事業活動の、金額と割合',
+    references: [{ standard: 'ISSB', paragraphs: '第30項(a)・第31〜33項' }],
+    inputTarget: {
+      kind: 'metric',
+      metricIds: [
+        'vulnerable_assets_amount',
+        'vulnerable_assets_share',
+        'opportunity_aligned_assets_amount',
+        'opportunity_aligned_assets_share',
+      ],
+    },
+    guide: 'OGT は財務データを持たないため、金額と割合を手入力する。「脆弱」「整合」の判定基準は草案に定義が無いので、どの資産・事業活動を対象にしたかと判定の考え方を補足文に書く。所在地別などの内訳は R1 では持たず、補足文で受ける。',
+  },
+  {
+    id: 'REQ-ISSB-004',
+    sectionId: null,
+    summary: '所在地をガバナンス・戦略・リスク管理でどう考慮したか、センシティブな場所の識別基準、使った情報の地理的・生態学的な規模',
+    references: [{ standard: 'ISSB', paragraphs: '第15項(a)・第17項(a)・第18項(a)・第26項(b)' }],
+    inputTarget: { kind: 'narrative', itemId: 'strategy.location_considerations' },
+    guide: '監督・管理の場で所在地をどう考慮しているか、リスク・機会がどの所在地に集中しているか、センシティブな場所をどの基準で識別したか、評価に使った情報の規模（拠点単位か流域単位かなど）を書く。草案はセンシティブな場所の種類として、水の状況が厳しい地域、生物多様性の観点で重要な地域、生態系の健全性が高い地域、健全性が急速に低下している地域、生態系サービスの提供の観点で重要な地域を挙げている。識別基準を TNFD の「センシティブロケーションにある拠点」に書いた場合は、繰り返さずその旨を書いてよい。',
+  },
+  {
+    id: 'REQ-ISSB-005',
+    sectionId: null,
+    summary: '自然関連と気候関連のリスク・機会のつながり（相殺・増幅、トレードオフとシナジー）',
+    references: [{ standard: 'ISSB', paragraphs: '第17項(c)・第18項(b)・第19項(c)・第24項(c)・第26項(a)・第33項(b)' }],
+    inputTarget: { kind: 'narrative', itemId: 'strategy.nature_climate_connections' },
+    guide: '自然と気候の両方の影響を受ける資産・事業、気候対策が自然に与える影響（例: 再生可能エネルギー設備の用地）、両方に効く取り組みを書く。GHG 排出量は同じ組織の気候関連開示と同じ算定結果を使っている旨を書いてよい。TNFD の「他のサステナビリティ開示との統合」に書いた内容は繰り返さなくてよい。',
+  },
+  {
+    id: 'REQ-ISSB-006',
+    sectionId: 'metrics_targets',
+    summary: '目標ごとの、対象の所在地・自社単独か共同の取り組みか・法令との関係',
+    references: [{ standard: 'ISSB', paragraphs: '第34項' }],
+    inputTarget: { kind: 'narrative', itemId: 'metrics_targets.targets' },
+    guide: 'TNFD の「目標と実績」と同じ文章で答える（二重に書かない）。目標ごとに、何についての目標か、対象にした資産・活動の所在地、自社単独の目標か地域で共同の取り組みの一部か、法令・規制に基づく目標かを書き添える。',
+  },
+  {
+    id: 'REQ-ISSB-007',
+    sectionId: null,
+    summary: '先住民族・地域社会・影響を受けるステークホルダーとの対話を、監督・戦略・リスクの識別でどう考慮したか',
+    references: [{ standard: 'ISSB', paragraphs: '第15項(b)・第17項(b)・第18項(c)・第19項(d)・第26項(c)' }],
+    inputTarget: { kind: 'narrative', itemId: 'governance.human_rights_engagement' },
+    guide: 'TNFD のガバナンス C の項目と同じ文章で答える（二重に書かない）。対話の対象にした人々と、対話の結果がリスク・機会の認識と対応にどう反映されたかを書き添える。',
   },
 ];
 
@@ -273,7 +315,7 @@ export const TNFD_NARRATIVE_ITEMS: readonly TnfdNarrativeItem[] = [
     id: 'governance.human_rights_engagement',
     kind: 'requirement',
     label: '人権方針とステークホルダーとの関わり',
-    requirementIds: ['REQ-TNFD-003', 'REQ-TNFD-020'],
+    requirementIds: ['REQ-TNFD-003', 'REQ-TNFD-020', 'REQ-ISSB-007'],
     example: '人権方針を定め、工場の立地する地域の自治会と年 1 回の意見交換を行っている。先住民族の居住地域に拠点は無い。',
   },
   supplementaryItem('governance', 'ガバナンスの補足'),
@@ -332,7 +374,21 @@ export const TNFD_NARRATIVE_ITEMS: readonly TnfdNarrativeItem[] = [
     kind: 'issb_placeholder',
     label: '自然関連のシナリオ分析（ISSB 草案）',
     requirementIds: ['REQ-ISSB-002'],
-    example: '（ISSB 公開草案への対応は任意。実施していなければ未入力でよい。）',
+    example: '（ISSB 公開草案への対応は任意。草案に沿う場合はシナリオ分析が必要だが、定性的な簡易シナリオでもよい。実施していなければ「していない」と書く。）',
+  },
+  {
+    id: 'strategy.location_considerations',
+    kind: 'issb_placeholder',
+    label: '所在地の考慮（ISSB 草案）',
+    requirementIds: ['REQ-ISSB-004'],
+    example: '水の状況が厳しい流域にある 1 工場を、取水制限のリスクが集中する拠点として経営会議に個別に報告している。センシティブな場所の識別基準は「センシティブロケーションにある拠点」のとおり。評価は拠点単位で行った。',
+  },
+  {
+    id: 'strategy.nature_climate_connections',
+    kind: 'issb_placeholder',
+    label: '自然と気候のつながり（ISSB 草案）',
+    requirementIds: ['REQ-ISSB-005'],
+    example: '渇水は気候変動の物理リスクと水への依存の両方に関わるため、同じ対策（節水設備）で対応している。太陽光発電設備の新設は、土地利用を変えない屋根置きに限っている。',
   },
   supplementaryItem('strategy', '戦略の補足'),
   // ---- リスクとインパクトの管理 ----
@@ -384,7 +440,7 @@ export const TNFD_NARRATIVE_ITEMS: readonly TnfdNarrativeItem[] = [
     id: 'metrics_targets.targets',
     kind: 'requirement',
     label: '目標と実績',
-    requirementIds: ['REQ-TNFD-014'],
+    requirementIds: ['REQ-TNFD-014', 'REQ-ISSB-006'],
     example: '2030 年度までに取水量を 2024 年度比 10% 削減する目標を設定している。2024 年度の実績は基準年のため削減率は 0%。',
   },
   supplementaryItem('metrics_targets', '指標と目標の補足'),

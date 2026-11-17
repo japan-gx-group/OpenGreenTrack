@@ -10,7 +10,7 @@
 import type { TnfdMetricCategory, TnfdMetricDefinition, TnfdMetricId } from '../types';
 
 /** マスターの版。ID・分類・コードを変えたら上げる（保存版にどの版のマスターで作ったかを残すため）。 */
-export const TNFD_METRIC_MASTER_VERSION = 'r1-provisional-1';
+export const TNFD_METRIC_MASTER_VERSION = 'r1-provisional-2';
 
 /** GHG（OGT の採用値）の表示上の指標 ID。SSBJ の OgtScope2BasisTotals の各値に対応する。 */
 export const TNFD_GHG_METRIC_IDS = {
@@ -244,7 +244,7 @@ export const TNFD_METRICS: readonly TnfdMetricDefinition[] = [
     guide: 'R1 では文章で受ける。',
     requirementIds: ['REQ-TNFD-013'],
   },
-  // ---- リスク・機会（ISSB 公開草案の受け皿。確定） ----
+  // ---- リスク・機会（ISSB 公開草案 第30項(a) の受け皿。リスクに脆弱な側と、機会と整合する側の両方。確定） ----
   {
     id: 'vulnerable_assets_amount',
     tnfdCode: null,
@@ -254,7 +254,7 @@ export const TNFD_METRICS: readonly TnfdMetricDefinition[] = [
     unitSelectable: true,
     inputKind: 'manual_number',
     enabledInR1: true,
-    guide: 'OGT は財務データを持たないため手入力。どの資産を対象にしたかを補足文に書く。ISSB 公開草案への対応は任意。',
+    guide: 'OGT は財務データを持たないため手入力。「脆弱」の判定基準は ISSB 公開草案に定義が無いので、どの資産・事業活動を対象にしたかと判定の考え方を補足文に書く。ISSB 公開草案への対応は任意。',
     requirementIds: ['REQ-ISSB-003', 'REQ-TNFD-012'],
   },
   {
@@ -267,6 +267,30 @@ export const TNFD_METRICS: readonly TnfdMetricDefinition[] = [
     inputKind: 'manual_number',
     enabledInR1: true,
     guide: '分母（総資産か総生産額かなど）を補足文に書く。ISSB 公開草案への対応は任意。',
+    requirementIds: ['REQ-ISSB-003', 'REQ-TNFD-012'],
+  },
+  {
+    id: 'opportunity_aligned_assets_amount',
+    tnfdCode: null,
+    category: 'risk_opportunity',
+    label: '自然関連の機会と整合する資産・事業活動の金額',
+    unit: '円',
+    unitSelectable: true,
+    inputKind: 'manual_number',
+    enabledInR1: true,
+    guide: '自然関連の機会（例: 節水や再生材の利用で得られる事業）に当たる資産・事業活動の金額。何を機会と整合すると判断したかを補足文に書く。ISSB 公開草案への対応は任意。',
+    requirementIds: ['REQ-ISSB-003', 'REQ-TNFD-012'],
+  },
+  {
+    id: 'opportunity_aligned_assets_share',
+    tnfdCode: null,
+    category: 'risk_opportunity',
+    label: '自然関連の機会と整合する資産・事業活動の割合',
+    unit: '%',
+    unitSelectable: false,
+    inputKind: 'manual_number',
+    enabledInR1: true,
+    guide: '分母（総資産か売上高かなど）を補足文に書く。ISSB 公開草案への対応は任意。',
     requirementIds: ['REQ-ISSB-003', 'REQ-TNFD-012'],
   },
 ];
