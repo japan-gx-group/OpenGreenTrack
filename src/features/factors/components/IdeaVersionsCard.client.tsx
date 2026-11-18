@@ -20,9 +20,11 @@ interface IdeaVersionsCardProps {
   versions: IdeaVersionHistoryController;
   /** 会計年度（開始日の昇順で並べ替えて表示する） */
   fiscalYears: FiscalYearOption[];
+  /** 閲覧者向け。年度ごとの版を選べなくし、版の削除を出さない */
+  readOnly?: boolean;
 }
 
-export const IdeaVersionsCard = ({ versions, fiscalYears }: IdeaVersionsCardProps) => {
+export const IdeaVersionsCard = ({ versions, fiscalYears, readOnly = false }: IdeaVersionsCardProps) => {
   const { history } = versions;
   const imports = history?.imports ?? [];
   const activeImport = imports.find((record) => record.isActive) ?? null;
@@ -88,7 +90,7 @@ export const IdeaVersionsCard = ({ versions, fiscalYears }: IdeaVersionsCardProp
                                 id={selectId}
                                 className="gt-field gt-field-select"
                                 value={assignedImportIdByFiscalYear.get(fiscalYear.id) ?? USE_ACTIVE_VALUE}
-                                disabled={versions.pendingFiscalYearId !== null}
+                                disabled={readOnly || versions.pendingFiscalYearId !== null}
                                 onChange={(event) =>
                                   void versions.assign(
                                     fiscalYear,
@@ -154,17 +156,19 @@ export const IdeaVersionsCard = ({ versions, fiscalYears }: IdeaVersionsCardProp
                           {(history.referenceCountByImportId[record.id] ?? 0).toLocaleString('ja-JP')}件
                         </td>
                         <td>
-                          <button
-                            type="button"
-                            className="gt-btn flex items-center gap-1"
-                            onClick={() => versions.requestDelete(record)}
-                            disabled={blockedReason !== null}
-                            title={blockedReason ?? `${record.version} を削除する`}
-                            aria-label={`${record.version || record.fileName} を削除`}
-                          >
-                            <Trash2 size={14} />
-                            削除
-                          </button>
+                          {!readOnly && (
+                            <button
+                              type="button"
+                              className="gt-btn flex items-center gap-1"
+                              onClick={() => versions.requestDelete(record)}
+                              disabled={blockedReason !== null}
+                              title={blockedReason ?? `${record.version} を削除する`}
+                              aria-label={`${record.version || record.fileName} を削除`}
+                            >
+                              <Trash2 size={14} />
+                              削除
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -172,9 +176,11 @@ export const IdeaVersionsCard = ({ versions, fiscalYears }: IdeaVersionsCardProp
                 </tbody>
               </table>
             </div>
-            <p className="text-xs text-text-muted">
-              削除できるのは、有効な版でなく、算定年度に割り当てておらず、算定結果でも使われていない版だけです。
-            </p>
+            {!readOnly && (
+              <p className="text-xs text-text-muted">
+                削除できるのは、有効な版でなく、算定年度に割り当てておらず、算定結果でも使われていない版だけです。
+              </p>
+            )}
           </section>
         </>
       )}

@@ -22,6 +22,9 @@ const fiscalYearMock = vi.hoisted(() => ({
 }));
 
 vi.mock('@/hooks/useFiscalYear', () => ({ useFiscalYear: () => fiscalYearMock }));
+vi.mock('@/hooks/useCurrentUser', () => ({
+  useCurrentUser: () => ({ profile: null, role: 'logger', isLoading: false }),
+}));
 vi.mock('@/hooks/useAppRefresh', () => ({
   useAppRefresh: () => ({ refreshToken: 0, requestRefresh: () => {} }),
 }));

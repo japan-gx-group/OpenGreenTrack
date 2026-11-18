@@ -8,6 +8,7 @@ import { RefreshingIndicator } from '@/components/ui/RefreshingIndicator';
 import { LoadingIndicator } from '@/components/ui/PageLoading';
 import { useFiscalYear } from '@/hooks/useFiscalYear';
 import { useAppRefresh } from '@/hooks/useAppRefresh';
+import { useReadOnly } from '@/hooks/useReadOnly';
 import { isFiscalYearEnded } from '@/lib/fiscal-year/fiscalYearPeriod';
 import { formatEmissionsNumber } from '@/lib/emissionsFormat';
 import { ArrowUpRight, X } from 'lucide-react';
@@ -74,6 +75,8 @@ const stripCategoryPrefix = (name: string) => name.replace(/^カテゴリ\s*\d+\
 
 export const Dashboard = () => {
   const { fiscalYear, fiscalYearId, fiscalYears, isLoading: isFiscalYearLoading } = useFiscalYear();
+  // 閲覧者には削減目標の設定・変更を出さない。
+  const readOnly = useReadOnly();
   const { refreshToken } = useAppRefresh();
   // 年度が1件も無い（初期セットアップ直後・最後の年度を削除した後）。この状態では
   // fiscalYear が永遠に空文字のままで下の取得 effect が走らず、「読み込んでいます...」から
@@ -628,6 +631,7 @@ export const Dashboard = () => {
           fiscalYears={fiscalYears}
           refreshToken={refreshToken}
           onTargetChange={handleTargetChange}
+          readOnly={readOnly}
         />
       </div>
 

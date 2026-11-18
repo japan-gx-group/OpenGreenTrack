@@ -17,6 +17,7 @@ import { OpenGreenTrackMark } from '@/components/ui/OpenGreenTrackMark';
 import clsx from 'clsx';
 import { createClient } from '@/lib/supabase/client';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { memberRoleLabel } from '@/types/role';
 import { HelpModal } from './HelpModal.client';
 import { NAV_GROUPS } from './navItems';
 
@@ -281,7 +282,9 @@ export const Sidebar = () => {
                 >
                   {displayName}
                 </span>
-                <span style={{ display: 'block', fontSize: '11.5px', color: 'var(--color-text-subtle)' }}>メンバー</span>
+                <span style={{ display: 'block', fontSize: '11.5px', color: 'var(--color-text-subtle)' }}>
+                  {profile ? memberRoleLabel(profile.role) : ''}
+                </span>
               </span>
               <ChevronsUpDown size={14} style={{ color: 'var(--color-text-subtle)', flex: 'none' }} />
             </button>

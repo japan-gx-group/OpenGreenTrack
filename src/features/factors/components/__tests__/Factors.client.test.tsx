@@ -44,8 +44,9 @@ vi.mock('@/features/data-input/services/autoCalculation', async (importOriginal)
   requestCalculationBatch: vi.fn(),
 }));
 
+const currentUser = vi.hoisted(() => ({ role: 'logger' as 'admin' | 'logger' | 'viewer' }));
 vi.mock('@/hooks/useCurrentUser', () => ({
-  useCurrentUser: () => ({ profile: { organizationId: 'org-1' } }),
+  useCurrentUser: () => ({ profile: { organizationId: 'org-1' }, role: currentUser.role, isLoading: false }),
 }));
 
 vi.mock('../../services/ideaImportClient', () => ({
@@ -428,5 +429,29 @@ describe('排出係数の一覧（エネルギー・燃料 / Scope 3 活動の�
     // 候補も開いているタブの群から作るため、選んでも必ず0件になる事業者名は並ばない
     const activityOptions = Array.from(providerSelect().options).map(option => option.value);
     expect(activityOptions).not.toContain(providerFactor.providerName);
+  });
+});
+
+describe('排出係数 閲覧者', () => {
+  afterEach(() => {
+    currentUser.role = 'logger';
+  });
+
+  it('閲覧者には係数の追加・CSV インポート・編集・削除を出さず、CSV エクスポートは出す', async () => {
+    currentUser.role = 'viewer';
+    view = render(<Factors />);
+    await flush();
+    await flush();
+
+    const labels = Array.from(view.container.querySelectorAll('button')).map((button) => button.textContent?.trim());
+    expect(labels).toContain('CSVエクスポート');
+    expect(labels).not.toContain('新規係数を追加');
+    expect(labels).not.toContain('CSVインポート');
+    // カスタム係数の行はあるが、編集・削除のボタンは出さない
+    expect(view.container.textContent).toContain('カスタム');
+    expect(view.container.querySelector('button[title="編集"]')).toBeNull();
+    expect(view.container.querySelector('button[title="削除"]')).toBeNull();
+    // IDEA の取込フォームも出さない
+    expect(view.container.querySelector('#idea-import-file')).toBeNull();
   });
 });

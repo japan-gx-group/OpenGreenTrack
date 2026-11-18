@@ -53,9 +53,11 @@ const formatDate = (value?: string | null): string => {
 interface IdeaDatabaseCardProps {
   /** 取込の完了・失敗や有効な版の削除で取込状況が変わったときに呼ぶ（取込履歴を読み直させる） */
   onImportsChanged?: () => void;
+  /** 閲覧者向け。取込・削除の操作を出さず、取込状況を見せるだけにする */
+  readOnly?: boolean;
 }
 
-export const IdeaDatabaseCard = ({ onImportsChanged }: IdeaDatabaseCardProps = {}) => {
+export const IdeaDatabaseCard = ({ onImportsChanged, readOnly = false }: IdeaDatabaseCardProps = {}) => {
   const [overview, setOverview] = useState<IdeaImportOverview | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -137,8 +139,9 @@ export const IdeaDatabaseCard = ({ onImportsChanged }: IdeaDatabaseCardProps = {
   // 取込の裏の処理が中断される（サーバーの再起動・実行時間の上限など）と、取込記録は processing のまま残る。
   // 回収処理は取込の開始操作の中でも動くが、取込中はその操作を受け付けないため、ここで定期的に回収を依頼する。
   // 取込中の表示を見つけた時点（再読み込み直後を含む）でまず 1 回依頼し、以後は一定間隔で依頼する。
+  // 回収の依頼は書き込みのため、閲覧者からは出さない（進捗は上のポーリングで追う）。
   useEffect(() => {
-    if (!isProcessing) return;
+    if (!isProcessing || readOnly) return;
     const recoverAndRefresh = async () => {
       await requestStaleIdeaImportRecovery();
       await refresh();
@@ -148,7 +151,7 @@ export const IdeaDatabaseCard = ({ onImportsChanged }: IdeaDatabaseCardProps = {
       void recoverAndRefresh();
     }, RECOVERY_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [isProcessing, refresh]);
+  }, [isProcessing, readOnly, refresh]);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -347,82 +350,84 @@ export const IdeaDatabaseCard = ({ onImportsChanged }: IdeaDatabaseCardProps = {
         )
       )}
 
-      {/* 取込フォーム（初回取込・版更新の再取込で共通） */}
-      <form onSubmit={handleSubmit} className="flex-col gap-3" style={{ display: 'flex' }}>
-        <div className="flex gap-4 items-end">
-          <div className="flex-col gap-1 flex-1" style={{ display: 'flex' }}>
-            <label className="text-xs font-semibold text-text-muted" htmlFor="idea-import-file">
-              IDEA Excelファイル（.xlsx）
-            </label>
-            <input
-              id="idea-import-file"
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx"
-              className="gt-field"
-              style={{ padding: '0.4rem 0.75rem' }}
-              disabled={isProcessing || isSubmitting}
-              onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
-            />
-          </div>
-          <div className="flex-col gap-1 flex-1" style={{ display: 'flex' }}>
-            <label className="text-xs font-semibold text-text-muted" htmlFor="idea-import-gwp-model">
-              GWPモデル
-            </label>
-            <select
-              id="idea-import-gwp-model"
-              className="gt-field"
-              style={{ height: '40px', padding: '0.5rem 0.75rem' }}
-              value={gwpModel}
-              disabled={isProcessing || isSubmitting}
-              onChange={(event) => setGwpModel(event.target.value)}
-            >
-              {IDEA_GWP_MODEL_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="submit"
-              className="gt-btn-primary"
-              disabled={!selectedFile || !licenseConfirmed || isSubmitting || isProcessing}
-            >
-              {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-              {submitPhase === 'uploading'
-                ? 'アップロード中…'
-                : submitPhase === 'starting'
-                  ? '取込を開始中…'
-                  : active
-                    ? '版を更新（再取込）'
-                    : '取り込む'}
-            </button>
-            {active && (
-              <button
-                type="button"
-                className="gt-btn text-danger"
+      {/* 取込フォーム（初回取込・版更新の再取込で共通）。閲覧者には出さない */}
+      {!readOnly && (
+        <form onSubmit={handleSubmit} className="flex-col gap-3" style={{ display: 'flex' }}>
+          <div className="flex gap-4 items-end">
+            <div className="flex-col gap-1 flex-1" style={{ display: 'flex' }}>
+              <label className="text-xs font-semibold text-text-muted" htmlFor="idea-import-file">
+                IDEA Excelファイル（.xlsx）
+              </label>
+              <input
+                id="idea-import-file"
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx"
+                className="gt-field"
+                style={{ padding: '0.4rem 0.75rem' }}
                 disabled={isProcessing || isSubmitting}
-                onClick={() => setIsDeleteModalOpen(true)}
+                onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
+              />
+            </div>
+            <div className="flex-col gap-1 flex-1" style={{ display: 'flex' }}>
+              <label className="text-xs font-semibold text-text-muted" htmlFor="idea-import-gwp-model">
+                GWPモデル
+              </label>
+              <select
+                id="idea-import-gwp-model"
+                className="gt-field"
+                style={{ height: '40px', padding: '0.5rem 0.75rem' }}
+                value={gwpModel}
+                disabled={isProcessing || isSubmitting}
+                onChange={(event) => setGwpModel(event.target.value)}
               >
-                <Trash2 size={16} /> 削除
+                {IDEA_GWP_MODEL_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                className="gt-btn-primary"
+                disabled={!selectedFile || !licenseConfirmed || isSubmitting || isProcessing}
+              >
+                {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                {submitPhase === 'uploading'
+                  ? 'アップロード中…'
+                  : submitPhase === 'starting'
+                    ? '取込を開始中…'
+                    : active
+                      ? '版を更新（再取込）'
+                      : '取り込む'}
               </button>
-            )}
+              {active && (
+                <button
+                  type="button"
+                  className="gt-btn text-danger"
+                  disabled={isProcessing || isSubmitting}
+                  onClick={() => setIsDeleteModalOpen(true)}
+                >
+                  <Trash2 size={16} /> 削除
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-        <label className="flex items-center gap-2 text-xs text-text-main" style={{ cursor: 'pointer' }}>
-          <input
-            type="checkbox"
-            checked={licenseConfirmed}
-            disabled={isProcessing || isSubmitting}
-            onChange={(event) => setLicenseConfirmed(event.target.checked)}
-          />
-          当組織は SuMPO と IDEA の使用許諾契約を締結しており、このファイルを自組織のために取り込む権利があることを確認しました
-        </label>
-        <p className="text-xs text-text-muted">
-          版更新（再取込）では、版を割り当てていない年度の未算定の明細が、同一製品コードで新しい版へ自動で付け替えられます。
-          算定済みの結果は取込時点の係数のまま変わりません。年度ごとに使う版は「IDEAの版と算定年度」で選べます。
-        </p>
-      </form>
+          <label className="flex items-center gap-2 text-xs text-text-main" style={{ cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={licenseConfirmed}
+              disabled={isProcessing || isSubmitting}
+              onChange={(event) => setLicenseConfirmed(event.target.checked)}
+            />
+            当組織は SuMPO と IDEA の使用許諾契約を締結しており、このファイルを自組織のために取り込む権利があることを確認しました
+          </label>
+          <p className="text-xs text-text-muted">
+            版更新（再取込）では、版を割り当てていない年度の未算定の明細が、同一製品コードで新しい版へ自動で付け替えられます。
+            算定済みの結果は取込時点の係数のまま変わりません。年度ごとに使う版は「IDEAの版と算定年度」で選べます。
+          </p>
+        </form>
+      )}
 
       {/* 削除確認 */}
       <Modal
