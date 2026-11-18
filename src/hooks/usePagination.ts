@@ -2,8 +2,10 @@
 
 // 一覧のクライアント側ページング。絞り込み済みの配列を渡すと、現在ページ分だけを切り出して返す。
 //
-// 絞り込みで件数が減って現在ページが末尾を越えたときは、状態を書き換えずに最終ページへ丸めて返す
-// （currentPage は常に 1〜totalPages に収まる）。絞り込み条件を変えたときに 1 ページ目へ戻すかどうかは
+// 絞り込みで件数が減って現在ページが末尾を越えたときは、最終ページへ丸めて返す。そのうえで state 自体も
+// 最終ページへ補正する：補正しないと、削除でページが減った後に追加で件数が戻った瞬間、古いページ番号が
+// 復活して表示が先へ飛ぶ（削除で4ページ目へ丸められても、保存された 5 が残っているため）。
+// 件数が同じままの中身の入れ替えではページは動かさない。絞り込み条件を変えたときに 1 ページ目へ戻すかどうかは
 // 呼び出し側が resetPage() で決める（条件によっては戻さない画面もあるため、ここでは自動で戻さない）。
 //
 // 例外は resetKey で、データの取り直し（初回取得・更新ボタン・CSV 取込後の再取得）のように
@@ -48,6 +50,11 @@ export function usePagination<T>(
 
   const totalCount = items.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  // 末尾を越えたページは state も補正する（resetKey と同じ「描画の中で state を直す」パターン）。
+  // 丸めだけだと currentPage に古い値が残り、追加で件数が戻ったとき表示が先へ飛ぶ。
+  if (currentPage > totalPages) {
+    setCurrentPage(totalPages);
+  }
   const safeCurrentPage = Math.min(currentPage, totalPages);
 
   const pageItems = useMemo(() => {
