@@ -12,7 +12,7 @@ import {
 export interface MemberRoleChange {
   /** ロールを変えるメンバーの profiles.id */
   memberId: string;
-  /** 変更後のロール（'admin' = 管理者 / 'logger' = メンバー） */
+  /** 変更後のロール（'admin' = 管理者 / 'logger' = メンバー / 'viewer' = 閲覧者） */
   role: AssignableMemberRole;
 }
 
@@ -36,12 +36,14 @@ export interface MemberRemoval {
 }
 
 /**
- * 反映の順番は「管理者への昇格 → メンバーへの降格 → 削除」。
+ * 反映の順番は「管理者への昇格 → 管理者からの降格 → 管理者以外どうしの変更 → 削除」。
  * 「別の人を管理者にして、自分をメンバーにする」を 1 回で保存しても、途中で管理者が 0 人にならないようにするため。
  */
 export interface MemberChangePlan {
   promotions: MemberRoleChange[];
   demotions: MemberRoleChange[];
+  /** 管理者かどうかが変わらない変更（メンバー ↔ 閲覧者）。管理者の人数に影響しない */
+  lateralChanges: MemberRoleChange[];
   removals: MemberRemoval[];
 }
 
@@ -92,10 +94,13 @@ export const planMemberChanges = (
     return { ok: false, error: '組織に存在しないメンバーが含まれています' };
   }
 
-  // 管理者かどうかが変わる変更だけを残す（'viewer' → 'logger' のような変更は何もしない）。
-  const wasAdmin = (memberId: string) => isAdmin(currentById.get(memberId)?.role);
-  const promotions = changes.filter((change) => isAdmin(change.role) && !wasAdmin(change.memberId));
-  const demotions = changes.filter((change) => !isAdmin(change.role) && wasAdmin(change.memberId));
+  // ロールの値が今と同じ変更は何もしない。
+  const currentRole = (memberId: string) => currentById.get(memberId)?.role;
+  const wasAdmin = (memberId: string) => isAdmin(currentRole(memberId));
+  const effectiveChanges = changes.filter((change) => change.role !== currentRole(change.memberId));
+  const promotions = effectiveChanges.filter((change) => isAdmin(change.role) && !wasAdmin(change.memberId));
+  const demotions = effectiveChanges.filter((change) => !isAdmin(change.role) && wasAdmin(change.memberId));
+  const lateralChanges = effectiveChanges.filter((change) => !isAdmin(change.role) && !wasAdmin(change.memberId));
 
   const removedSet = new Set(removedIds);
   const removals = members
@@ -114,5 +119,5 @@ export const planMemberChanges = (
     return { ok: false, error: LAST_ADMIN_MESSAGE };
   }
 
-  return { ok: true, plan: { promotions, demotions, removals } };
+  return { ok: true, plan: { promotions, demotions, lateralChanges, removals } };
 };

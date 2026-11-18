@@ -11,7 +11,9 @@ const mocks = vi.hoisted(() => ({
   rpcErrorAt: -1,
   deleteUserError: null as null | { message: string },
   auditInserts: [] as Record<string, unknown>[],
+  rpcNoopAt: -1,
   logError: vi.fn(),
+  logWarn: vi.fn(),
 }));
 
 vi.mock('@/lib/authz', async (importOriginal) => ({
@@ -20,7 +22,7 @@ vi.mock('@/lib/authz', async (importOriginal) => ({
 }));
 
 vi.mock('@/lib/logging/requestLogger', () => ({
-  getRequestLogger: async () => ({ error: mocks.logError }),
+  getRequestLogger: async () => ({ error: mocks.logError, warn: mocks.logWarn }),
 }));
 
 vi.mock('@/lib/supabase/admin', () => ({
@@ -49,7 +51,11 @@ vi.mock('@/lib/supabase/admin', () => ({
       if (index === mocks.rpcErrorAt) {
         return { data: null, error: mocks.rpcError };
       }
-      return { data: { changed: true }, error: null };
+      // 管理者かどうかが変わらない変更を何もせずに返す、閲覧者に対応する前の RPC の振る舞い
+      if (index === mocks.rpcNoopAt) {
+        return { data: { changed: false, previousRole: 'viewer', role: 'viewer' }, error: null };
+      }
+      return { data: { changed: true, role: args.p_role }, error: null };
     },
     auth: {
       admin: {
@@ -73,6 +79,7 @@ describe('saveMemberChanges', () => {
     mocks.auditInserts = [];
     mocks.rpcError = null;
     mocks.rpcErrorAt = -1;
+    mocks.rpcNoopAt = -1;
     mocks.deleteUserError = null;
     mocks.members = [
       { id: 'admin-1', role: 'admin' },
@@ -162,6 +169,50 @@ describe('saveMemberChanges', () => {
     const result = await saveMemberChanges({ removedMemberIds: ['member-1'] });
     expect(result).toEqual({ ok: false, error: 'メンバーの削除に失敗しました' });
     expect(mocks.auditInserts).toEqual([]);
+  });
+
+  it('メンバー ↔ 閲覧者の変更は、管理者の昇格・降格の後に反映する', async () => {
+    const result = await saveMemberChanges({
+      removedMemberIds: [],
+      roleChanges: [
+        { memberId: 'member-1', role: 'viewer' },
+        { memberId: 'member-2', role: 'admin' },
+      ],
+    });
+    expect(result).toEqual({ ok: true, data: undefined });
+    expect(mocks.calls).toEqual([
+      'change_member_role:member-2:admin',
+      'change_member_role:member-1:viewer',
+    ]);
+  });
+
+  it('RPC が閲覧者の値を断ったら（P2084）、反映できない旨を伝える', async () => {
+    mocks.rpcErrorAt = 0;
+    mocks.rpcError = { code: 'P2084', message: 'invalid role' };
+    const result = await saveMemberChanges({
+      removedMemberIds: [],
+      roleChanges: [{ memberId: 'member-1', role: 'viewer' }],
+    });
+    expect(result).toEqual({
+      ok: false,
+      error: 'このロールの変更は、いまのデータベースでは反映できません。運用担当に連絡してください',
+    });
+    expect(mocks.logError).not.toHaveBeenCalled();
+  });
+
+  it('RPC が変更せずに返したら、成功として扱わずに止める', async () => {
+    mocks.rpcNoopAt = 0;
+    const result = await saveMemberChanges({
+      removedMemberIds: ['member-1'],
+      roleChanges: [{ memberId: 'member-2', role: 'logger' }],
+    });
+    expect(result).toEqual({
+      ok: false,
+      error: 'このロールの変更は、いまのデータベースでは反映できません。運用担当に連絡してください',
+    });
+    expect(mocks.logWarn).toHaveBeenCalled();
+    // 止めた後の削除には進まない
+    expect(mocks.calls).toEqual(['change_member_role:member-2:logger']);
   });
 
   it('変更が無ければ何もしない', async () => {

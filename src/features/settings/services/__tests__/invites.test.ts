@@ -105,8 +105,14 @@ describe('createInvite', () => {
     expect(mocks.inviteInserts[0]).toMatchObject({ role: 'admin' });
   });
 
-  it('書けないロール（viewer など）は断る', async () => {
-    const result = await createInvite({ email: 'new@example.com', role: 'viewer' as never });
+  it('閲覧者として招待できる', async () => {
+    const result = await createInvite({ email: 'reader@example.com', role: 'viewer' });
+    expect(result.ok).toBe(true);
+    expect(mocks.inviteInserts[0]).toMatchObject({ role: 'viewer' });
+  });
+
+  it('ロールに無い値（member など）は断る', async () => {
+    const result = await createInvite({ email: 'new@example.com', role: 'member' as never });
     expect(result).toEqual({ ok: false, error: 'ロールの値が正しくありません' });
     expect(mocks.inviteInserts).toEqual([]);
   });

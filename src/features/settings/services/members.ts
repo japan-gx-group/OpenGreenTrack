@@ -23,11 +23,17 @@ import {
   type MemberChangesInput,
 } from './memberChangePlan';
 
+// 閲覧者への変更・閲覧者からの変更を、DB の change_member_role がまだ受け付けない場合の案内。
+// RPC は値を断る（P2084）か、管理者かどうかが変わらない変更を何もせずに返す（changed: false）。
+// どちらも「保存できた」と見せないようにする。
+const ROLE_NOT_APPLIED_MESSAGE = 'このロールの変更は、いまのデータベースでは反映できません。運用担当に連絡してください';
+
 // change_member_role の SQLSTATE（supabase/migrations/20261024090000_member_roles.sql）。
 const ROLE_CHANGE_ERROR_MESSAGES: Record<string, string> = {
   P2081: LAST_ADMIN_MESSAGE,
   P2082: ADMIN_ONLY_MESSAGE,
   P2083: '対象のメンバーが見つかりません',
+  P2084: ROLE_NOT_APPLIED_MESSAGE,
 };
 
 // 途中で失敗したときは、どこまで反映したかを添える（画面側は一覧を取り直して整合させる）。
@@ -68,15 +74,15 @@ export const saveMemberChanges = async (
   if (!planned.ok) {
     return { ok: false, error: planned.error };
   }
-  const { promotions, demotions, removals } = planned.plan;
+  const { promotions, demotions, lateralChanges, removals } = planned.plan;
 
   const log = await getRequestLogger();
   let applied = 0;
 
   // 複数件の変更は個別の呼び出しになるため厳密には原子的でない。途中で失敗したら止め、
   // 反映済みの件数を伝える。
-  for (const change of [...promotions, ...demotions]) {
-    const { error } = await admin.rpc('change_member_role', {
+  for (const change of [...promotions, ...demotions, ...lateralChanges]) {
+    const { data, error } = await admin.rpc('change_member_role', {
       p_actor_id: caller.id,
       p_target_user_id: change.memberId,
       p_role: change.role,
@@ -90,6 +96,12 @@ export const saveMemberChanges = async (
         ok: false,
         error: withAppliedCount(known ?? 'ロールの変更に失敗しました', applied),
       };
+    }
+    // RPC が変更せずに返した（反映後のロールが頼んだ値と違う）ときは、成功として数えずに止める。
+    const appliedRole = (data as { role?: unknown } | null)?.role;
+    if (appliedRole !== change.role) {
+      log.warn({ memberId: change.memberId, requestedRole: change.role, appliedRole }, 'メンバーのロールが反映されませんでした');
+      return { ok: false, error: withAppliedCount(ROLE_NOT_APPLIED_MESSAGE, applied) };
     }
     applied += 1;
   }

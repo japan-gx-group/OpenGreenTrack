@@ -2,7 +2,7 @@
 
 // ログイン中ユーザーのプロフィール（ID・所属組織・表示名）をアプリ全体へ配る Context。
 // 組織名の表示やユーザー識別に使う。
-// ※ role は画面の出し分け（src/types/role.ts の isAdmin）にだけ使う。書き込み可否は
+// ※ role は画面の出し分け（src/types/role.ts の isAdmin・canWrite）にだけ使う。書き込み可否は
 //   RLS とサーバ側の組織・ロールのチェック（src/lib/authz.ts の requireAdmin）で担保しており、
 //   クライアントの値では決めない。ここへ「このロールなら○○できる」というフラグを生やさないこと。
 
