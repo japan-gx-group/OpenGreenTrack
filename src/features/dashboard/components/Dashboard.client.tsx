@@ -30,6 +30,7 @@ import {
 } from '@/features/targets/components/ReductionTargetCard.client';
 import { KpiCard } from './KpiCard';
 import { TopLocationsTable } from './TopLocationsTable.client';
+import { formatEmissionsAxisTick, formatEmissionsTooltipValue } from '../utils/chartFormat';
 
 // KPI カードのラベル左に付く系列ドット（デザイン正の配色）。
 const SCOPE_DOT: Record<DashboardSummaryItem['title'], string> = {
@@ -737,14 +738,21 @@ export const Dashboard = () => {
               <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid vertical={false} stroke="var(--color-border)" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--color-text-subtle)' }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--color-text-subtle)' }} width={52} />
+                <YAxis
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 12, fill: 'var(--color-text-subtle)' }}
+                  // 目盛りにカンマが付くため、年度別の「100,000」が左端で欠けない幅にする。
+                  width={60}
+                  tickFormatter={formatEmissionsAxisTick}
+                />
                 <Tooltip
                   cursor={{ fill: 'var(--color-bg-subtle)' }}
                   // 前年度ラインは未記録の月を null で持つ。既定の filterNull だと
                   // ツールチップから行ごと消えて「0」なのか「未記録」なのか読めないため、
                   // 月別表示では null を落とさず「データなし」と明示する。
                   filterNull={!showPreviousYearSeries}
-                  formatter={value => (value === null || value === undefined ? 'データなし' : value)}
+                  formatter={value => formatEmissionsTooltipValue(value)}
                   contentStyle={{
                     backgroundColor: 'var(--color-bg-card)',
                     border: '1px solid var(--color-border)',
