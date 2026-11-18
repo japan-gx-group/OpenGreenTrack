@@ -23,8 +23,12 @@ import type { MemberRoleChange } from '@/features/settings/services/memberChange
 import type { InviteEmailStatus } from '@/features/settings/services/inviteEmail';
 import {
   ADMIN_ROLE,
+  ASSIGNABLE_MEMBER_ROLES,
   MEMBER_ROLE,
+  MEMBER_ROLE_DESCRIPTIONS,
+  VIEWER_ROLE,
   isAdmin,
+  isAssignableMemberRole,
   isMemberRole,
   memberRoleLabel,
   type AssignableMemberRole,
@@ -38,17 +42,23 @@ interface Member {
   role: MemberRole;
 }
 
-// 下書きと現状の差分。削除と、管理者かどうかが変わったロールの変更だけを送る
-// （'viewer' のメンバーを「メンバー」のまま保存しても変更にしない）。
+// 下書きと現状の差分。削除と、ロールの値が変わった変更だけを送る。
 const diffMemberDraft = (members: Member[], draftMembers: Member[]) => {
   const draftById = new Map(draftMembers.map(m => [m.id, m]));
   const removedMemberIds = members.filter(m => !draftById.has(m.id)).map(m => m.id);
   const roleChanges: MemberRoleChange[] = members.flatMap(m => {
     const draft = draftById.get(m.id);
-    if (!draft || isAdmin(draft.role) === isAdmin(m.role)) return [];
-    return [{ memberId: m.id, role: isAdmin(draft.role) ? ADMIN_ROLE : MEMBER_ROLE }];
+    if (!draft || draft.role === m.role || !isAssignableMemberRole(draft.role)) return [];
+    return [{ memberId: m.id, role: draft.role }];
   });
   return { removedMemberIds, roleChanges };
+};
+
+// ロールの Badge の色。管理者は強調、閲覧者は書けないことが分かる色にする。
+const ROLE_BADGE_VARIANTS: Record<MemberRole, 'accent' | 'neutral' | 'info'> = {
+  admin: 'accent',
+  logger: 'neutral',
+  viewer: 'info',
 };
 
 // 保存の確認モーダルの文。
@@ -76,6 +86,9 @@ interface PendingInvite {
   /** 取得時点で期限切れか（レンダー中に Date.now() を呼ばないよう取得時に判定する） */
   expired: boolean;
 }
+
+// 招待フォームの選択肢の並び。既定のメンバーを先頭に置く。
+const INVITE_ROLE_OPTIONS: AssignableMemberRole[] = [MEMBER_ROLE, ADMIN_ROLE, VIEWER_ROLE];
 
 const buildInviteUrl = (token: string) => `${window.location.origin}/invite/${token}`;
 
@@ -385,15 +398,19 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
                     {canManageMembers ? (
                       <select
                         aria-label={`${member.name} のロール`}
-                        value={isAdmin(member.role) ? ADMIN_ROLE : MEMBER_ROLE}
-                        onChange={e => handleRoleChange(member.id, isAdmin(e.target.value as MemberRole) ? ADMIN_ROLE : MEMBER_ROLE)}
+                        value={member.role}
+                        onChange={e => {
+                          const role = e.target.value;
+                          if (isAssignableMemberRole(role)) handleRoleChange(member.id, role);
+                        }}
                         className="gt-field"
                       >
-                        <option value={ADMIN_ROLE}>{memberRoleLabel(ADMIN_ROLE)}</option>
-                        <option value={MEMBER_ROLE}>{memberRoleLabel(MEMBER_ROLE)}</option>
+                        {ASSIGNABLE_MEMBER_ROLES.map(role => (
+                          <option key={role} value={role}>{memberRoleLabel(role)}</option>
+                        ))}
                       </select>
                     ) : (
-                      <Badge variant={isAdmin(member.role) ? 'accent' : 'neutral'}>
+                      <Badge variant={ROLE_BADGE_VARIANTS[member.role]}>
                         {memberRoleLabel(member.role)}
                       </Badge>
                     )}
@@ -603,20 +620,27 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
               <select
                 id="inviteRole"
                 value={inviteForm.role}
-                onChange={e =>
-                  setInviteForm(prev => ({
-                    ...prev,
-                    role: isAdmin(e.target.value as MemberRole) ? ADMIN_ROLE : MEMBER_ROLE,
-                  }))
-                }
+                aria-describedby="inviteRoleDescription"
+                onChange={e => {
+                  const role = e.target.value;
+                  if (isAssignableMemberRole(role)) setInviteForm(prev => ({ ...prev, role }));
+                }}
                 className="gt-field"
               >
-                <option value={MEMBER_ROLE}>{memberRoleLabel(MEMBER_ROLE)}</option>
-                <option value={ADMIN_ROLE}>{memberRoleLabel(ADMIN_ROLE)}</option>
+                {INVITE_ROLE_OPTIONS.map(role => (
+                  <option key={role} value={role}>{memberRoleLabel(role)}</option>
+                ))}
               </select>
-              <p className="text-xs text-text-muted">
-                招待を受けた人は、ここで選んだロールになります。管理者は、組織の設定（企業情報・算定年度・メンバー）を変えられます。
-              </p>
+              <div id="inviteRoleDescription" className="text-xs text-text-muted flex flex-col gap-1">
+                <p className="m-0">招待を受けた人は、ここで選んだロールになります。</p>
+                <ul className="m-0 pl-4 list-disc">
+                  {INVITE_ROLE_OPTIONS.map(role => (
+                    <li key={role}>
+                      {memberRoleLabel(role)}: {MEMBER_ROLE_DESCRIPTIONS[role]}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
             <div className="flex justify-end gap-2 mt-6 pt-6">
               <button
