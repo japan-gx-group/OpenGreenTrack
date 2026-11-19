@@ -175,7 +175,13 @@ export const SsbjReportDetail = ({ reportId }: { reportId: string }) => {
               )}
             </Card>
             <SsbjReportStatusCard report={report} disabled={isEditing} onChanged={handleStatusChanged} />
-            <SsbjReportContentsNav reportId={report.id} workingAccess={myRole.isLoading || canViewSsbjWorking(myRole.role)} />
+            <SsbjReportContentsNav
+              reportId={report.id}
+              workingAccess={myRole.isLoading || canViewSsbjWorking(myRole.role)}
+              // 進み具合は画面の上のタブと同じ値（Provider が 1 回だけ数える）。閲覧者には数えない。
+              progress={overview?.workingAccess ? overview.progress : null}
+              withTabs={!!overview}
+            />
             {canEditSsbj(myRole.role) && (
               <SsbjVersionSaveCard
                 isSaving={versionSave.isSaving}

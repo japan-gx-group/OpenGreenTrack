@@ -18,6 +18,7 @@ import {
   toSsbjRiskOpportunityWorkingRecord,
   type SsbjRiskOpportunityWorkingRow,
 } from './riskOpportunityService';
+import { notifySsbjWorkingChanged } from '../utils/workingChange';
 
 type SsbjRiskCandidateDecisionRow = {
   candidateId: string;
@@ -101,6 +102,7 @@ export const adoptSsbjRiskCandidate = async (
   }
   // 登録したリスク・機会は updatedAt 付きで返る（一覧から続けて編集するときの競合検知に使う）。
   const result = data as { riskOpportunity: SsbjRiskOpportunityWorkingRow; decision: SsbjRiskCandidateDecisionRow };
+  notifySsbjWorkingChanged(reportId);
   return {
     riskOpportunity: toSsbjRiskOpportunityWorkingRecord(result.riskOpportunity),
     decision: toSsbjRiskCandidateDecision(result.decision),
