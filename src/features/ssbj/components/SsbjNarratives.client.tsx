@@ -7,6 +7,7 @@
 // 右側（SsbjEditorLayout）に、編集中の文章をその場で反映したプレビューと、OGT の値（参照用）を出す。
 // 保存していない文章がある間は、見出しの横に「未保存 n」を出し、画面を離れる操作を止めて聞く
 // （タブを閉じる・再読み込みはブラウザの確認、アプリの中の移動は SsbjUnsavedChangesDialog）。
+// 左で扱っている項目（編集を始めた・フォーカスした）へ右のプレビューも動き、右の項目を押すと左のその入力カードへ移る。
 
 import Link from 'next/link';
 import { ArrowLeft, FileCheck2 } from 'lucide-react';
@@ -15,6 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { LoadingIndicator } from '@/components/ui/PageLoading';
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
+import { useSsbjEditorItemFocus } from '../hooks/useSsbjEditorItemFocus';
 import { useSsbjNarrativeDrafts } from '../hooks/useSsbjNarrativeDrafts';
 import { useSsbjNarratives } from '../hooks/useSsbjNarratives';
 import { useSsbjReport } from '../hooks/useSsbjReport';
@@ -89,6 +91,7 @@ export const SsbjNarratives = ({ reportId }: { reportId: string }) => {
   const { drafts, handleDraftChange, dirtyItemIds, handleDirtyChange } = useSsbjNarrativeDrafts();
   const leaveGuard = useUnsavedChangesGuard(dirtyItemIds.length > 0);
   const dirtyLabels = dirtyItemIds.map(itemId => findSsbjNarrativeItem(itemId)?.label ?? itemId);
+  const itemFocus = useSsbjEditorItemFocus<SsbjItemId>();
 
   const save = async (itemId: SsbjItemId, text: SsbjDisclosableText, templateInput: SsbjNarrativeTemplateInput | null) => {
     if (!report) return;
@@ -142,6 +145,11 @@ export const SsbjNarratives = ({ reportId }: { reportId: string }) => {
             report={report}
             overrides={{ narratives: mergeSsbjNarrativeDrafts(narratives, drafts) }}
             hasUnsavedDrafts={Object.keys(drafts).length > 0}
+            itemFocus={{
+              activeItemId: itemFocus.activeItemId,
+              editingItemIds: Object.keys(drafts) as SsbjItemId[],
+              onSelect: itemFocus.requestEdit,
+            }}
           >
             <Card>
               <p className="m-0 text-sm text-text-muted">
@@ -168,6 +176,9 @@ export const SsbjNarratives = ({ reportId }: { reportId: string }) => {
                     readOnly={isSsbjReadOnly(report.review, myRole.role)}
                     onDraftChange={handleDraftChange}
                     onDirtyChange={handleDirtyChange}
+                    isActive={itemFocus.activeItemId === entry.itemId}
+                    onActivate={itemFocus.activate}
+                    editRequest={itemFocus.editRequest}
                   />
                 ))}
                 <OtherRequirements reportId={reportId} requirements={requirementsOf(sectionId)} />

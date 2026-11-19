@@ -562,3 +562,77 @@ describe('SsbjNarratives（保存していない文章があるまま画面を�
     expect(beforeUnloadPrevented()).toBe(false);
   });
 });
+
+describe('SsbjNarratives（書いている項目へ、右のプレビューも一緒に動く）', () => {
+  const previewItem = (itemId: string) =>
+    document.querySelector<HTMLElement>(`[data-testid="ssbj-editor-preview"] [data-ssbj-item-id="${itemId}"]`);
+  const activePreviewItems = () =>
+    Array.from(document.querySelectorAll('[data-testid="ssbj-editor-preview"] [data-ssbj-item-id][data-active]'))
+      .map(element => element.getAttribute('data-ssbj-item-id'));
+  const textareaOf = (card: HTMLElement) => card.querySelector<HTMLTextAreaElement>('textarea[aria-label="開示する文章"]');
+
+  it('プレビューの各項目に項目 ID の目印を付け、左で編集を始めた項目を右でも目立たせて「編集中」と出す', async () => {
+    rendered = render(<SsbjNarratives reportId={report.id} />);
+    await settle();
+    expect(previewItem('governance.oversight_body')).not.toBeNull();
+    expect(activePreviewItems()).toEqual([]);
+
+    const card = cardOf('監督する機関・責任者');
+    click(buttonIn(card, '編集'));
+    act(() => { textareaOf(card)!.focus(); });
+    expect(activePreviewItems()).toEqual(['governance.oversight_body']);
+    expect(previewItem('governance.oversight_body')?.textContent).toContain('編集中');
+    expect(card.getAttribute('data-active')).toBe('true');
+  });
+
+  it('右の項目を押すと、左のその入力カードで編集を始め、文章の欄へフォーカスを移す', async () => {
+    rendered = render(<SsbjNarratives reportId={report.id} />);
+    await settle();
+    const card = cardOf('監督する機関・責任者');
+    expect(textareaOf(card)).toBeNull();
+
+    click(previewItem('governance.oversight_body')!.querySelector('button')!);
+    expect(textareaOf(card)).not.toBeNull();
+    expect(document.activeElement).toBe(textareaOf(card));
+    expect(card.getAttribute('data-active')).toBe('true');
+    expect(activePreviewItems()).toEqual(['governance.oversight_body']);
+  });
+
+  it('文章の欄が書けない状態なら状態の選択へ移り、編集中のカードはそのまま（書きかけを消さない）', async () => {
+    rendered = render(<SsbjNarratives reportId={report.id} />);
+    await settle();
+    const card = cardOf('経営者の役割');
+    click(previewItem('governance.management_role')!);
+    expect(document.activeElement).toBe(card.querySelector('select'));
+    setSelectValue(card.querySelector('select')!, 'answered');
+    setTextareaValue(textareaOf(card)!, '書きかけの文章');
+    click(previewItem('governance.management_role')!);
+    expect(textareaOf(card)?.value).toBe('書きかけの文章');
+    expect(document.activeElement).toBe(textareaOf(card));
+  });
+
+  it('編集中のカードに、開示する文章の字数を上限と並べて出す', async () => {
+    rendered = render(<SsbjNarratives reportId={report.id} />);
+    await settle();
+    const card = cardOf('経営者の役割');
+    click(buttonIn(card, '編集'));
+    expect(card.querySelector('[data-testid="ssbj-narrative-text-length"]')).toBeNull();
+    setSelectValue(card.querySelector('select')!, 'answered');
+    setTextareaValue(textareaOf(card)!, '管理本部長に委任している。');
+    expect(card.querySelector('[data-testid="ssbj-narrative-text-length"]')?.textContent).toBe('13 / 5000 字');
+  });
+
+  it('承認済みのレポートでは、右の項目を押すと左のカードへ移るだけで、編集は始めない', async () => {
+    vi.mocked(getSsbjReport).mockResolvedValue({
+      ...report,
+      review: { ...report.review, status: 'approved', approverUserId: 'u', approvedAt: '2025-06-05T00:00:00.000Z', approvedByUserId: 'u' },
+    });
+    rendered = render(<SsbjNarratives reportId={report.id} />);
+    await settle();
+    const card = cardOf('監督する機関・責任者');
+    click(previewItem('governance.oversight_body')!);
+    expect(textareaOf(card)).toBeNull();
+    expect(document.activeElement).toBe(card);
+    expect(card.getAttribute('data-active')).toBe('true');
+  });
+});
