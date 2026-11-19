@@ -38,6 +38,7 @@ import { isSsbjReportLocked } from '../utils/reportStatus';
 import { SsbjLockedNotice } from './SsbjLockedNotice';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
 import { SsbjVersionActionDialog } from './SsbjVersionActionDialog.client';
+import { SsbjVersionCompare } from './SsbjVersionCompare.client';
 import { SsbjVersionView } from './SsbjVersionView.client';
 
 const FORMAT_LABELS: Record<SsbjVersionExportFormat, string> = { csv: 'CSV', xlsx: 'Excel' };
@@ -242,6 +243,8 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
                 </ul>
               )}
             </Card>
+            {/* 版どうしの比較は、作業中の内容を見られるロールだけ（閲覧者が読めるのは承認した版 1 つだけで、比べる相手が無い）。 */}
+            {!viewerOnly && versions.length >= 2 && <SsbjVersionCompare reportId={reportId} versions={versions} />}
             {selectedVersion && (
               <Card>
                 <SsbjVersionView
