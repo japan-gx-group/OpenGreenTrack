@@ -25,11 +25,11 @@ import {
   listSsbjVersions,
   recordSsbjCsvGeneration,
   type SsbjCsvHistory,
+  type SsbjStoredVersion,
   type SsbjVersionExportFormat,
   type SsbjVersionSummary,
 } from '../services/versionExportService';
 import { downloadSsbjVersionCsv, ssbjVersionToCsvRows } from '../services/versionCsv';
-import type { SsbjCsvVersion } from '../services/versionCsv';
 import { saveSsbjReportVersion } from '../services/versionClient';
 import { buildSsbjWorkbook, downloadSsbjWorkbook, ssbjVersionSheet, ssbjVersionXlsxFileName } from '../services/versionXlsx';
 import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
@@ -38,7 +38,7 @@ import { isSsbjReportLocked } from '../utils/reportStatus';
 import { SsbjLockedNotice } from './SsbjLockedNotice';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
 import { SsbjVersionActionDialog } from './SsbjVersionActionDialog.client';
-import { SsbjVersionContents } from './SsbjVersionContents';
+import { SsbjVersionView } from './SsbjVersionView.client';
 
 const FORMAT_LABELS: Record<SsbjVersionExportFormat, string> = { csv: 'CSV', xlsx: 'Excel' };
 
@@ -53,7 +53,7 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [busyVersionId, setBusyVersionId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
-  const [selectedVersion, setSelectedVersion] = useState<SsbjCsvVersion | null>(null);
+  const [selectedVersion, setSelectedVersion] = useState<SsbjStoredVersion | null>(null);
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [successMessage, setSuccessMessage] = useState('');
   // 閲覧者は、承認した保存版の開示する内容だけを API から読む。ロールが分かるまでは読まない。
@@ -83,7 +83,7 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
   }, [report, reportId, roleKnown, viewerOnly]);
 
   /** 内容の表示・出力に使う保存版。閲覧者は承認した版（内部記録を除いたもの）だけ。 */
-  const loadVersion = async (versionId: string): Promise<SsbjCsvVersion> => {
+  const loadVersion = async (versionId: string): Promise<SsbjStoredVersion> => {
     if (!viewerOnly) return getSsbjCsvVersion(reportId, versionId);
     const version = await getSsbjApprovedVersion(reportId);
     // 画面を開いた後に差戻し・承認し直しがあれば、表示していた版とは別の版になる。
@@ -244,8 +244,12 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
             </Card>
             {selectedVersion && (
               <Card>
-                <h2 className="m-0 mb-4 text-base font-bold">版 {selectedVersion.versionNumber} の保存内容</h2>
-                <SsbjVersionContents version={selectedVersion} />
+                <SsbjVersionView
+                  key={selectedVersion.id}
+                  version={selectedVersion}
+                  approved={report.review.approvedVersionId === selectedVersion.id}
+                  viewerOnly={viewerOnly}
+                />
               </Card>
             )}
             {/* 出力履歴は組織の全員の出力を読む（OGT 本体の記録）。閲覧者には出さない。 */}

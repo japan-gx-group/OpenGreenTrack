@@ -1087,3 +1087,22 @@ R2 を実際の企業のデータで使う前に、外せない 4 つの条件�
 - **印刷・PDF に内部メモ・内部記録が出ないことは、手順 8 で確かめる**（印刷の URL に `internal=1` を付けても出ない）。内部記録は、画面のプレビューで「内部メモも表示する」を選んだときと CSV で確かめる。
 - **数値の確認は、OGT の採用値と外部算定値を突き合わせる。** 外部算定値のうち CO2 を含む値（Scope 2 を除く）と同じ区分の OGT の採用値が算定済みでないこと、
   CSV の OGT の値が採用値のまま（外部算定値を足していない）であることを、保存版と CSV の両方で確かめる。
+
+### 保存履歴の内容の表示
+
+保存履歴（`/ssbj/[reportId]/versions`）で、保存版の中身をレポートの形で読めるようにした。DB は変えていない。
+
+| 対象 | 内容 |
+|---|---|
+| 画面 | `SsbjVersionView.client.tsx`（「内容を見る」で開く保存版 1 件。「レポートの形」「表で見る」「JSON」のタブ）、`SsbjVersionContents.tsx`（「表で見る」の表） |
+| コード | `utils/preview.ts` の `ssbjVersionPreviewSource`（保存版をプレビューの本文に渡す形にする）、`services/versionExportService.ts` の `getSsbjCsvVersion`（保存日時も読む） |
+| テスト | `utils/__tests__/preview.test.ts`、`components/__tests__/SsbjVersionView.client.test.tsx`・`SsbjVersions.client.test.tsx` |
+
+決めたこと:
+
+- **保存版の「レポートの形」は、プレビュー・印刷と同じ本文（`SsbjPreviewDocument`）で描く。** 見出しは要求項目マスターの名前で、
+  要求 ID は小さく添えるだけにする。保存履歴だけの訳語の表を持つと、項目が増えるたびに直す所が増えるため。
+  保存した項目を漏れなく確かめる表は「表で見る」に、保存データそのものは「JSON」に残す。
+- **内部メモはプレビューの画面と同じく既定で隠し、「内部メモも表示する」を選んだときだけ出す。** 表と JSON も、選んでいない間は
+  `utils/disclosedSnapshot.ts` で内部メモ・内部記録を除いた形で出す（レポートの形と見えるものをそろえる）。
+  閲覧者には切替を出さない（閲覧者の保存版は、API が内部メモ・内部記録を除いて返したもの）。
