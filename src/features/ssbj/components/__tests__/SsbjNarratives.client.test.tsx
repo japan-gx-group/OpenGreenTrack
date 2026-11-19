@@ -487,3 +487,78 @@ describe('SsbjNarratives（SSBJ のロール）', () => {
     expect(rendered.container.textContent).toContain('取締役会');
   });
 });
+
+describe('SsbjNarratives（保存していない文章があるまま画面を離れる前の確認）', () => {
+  const unsavedBadge = () => document.querySelector('[data-testid="ssbj-narratives-unsaved-count"]');
+  const leaveDialog = () => document.querySelector('[data-testid="ssbj-unsaved-changes-dialog"]');
+  const backLink = () => Array.from(document.querySelectorAll('a')).find(a => a.textContent?.includes('レポート詳細へ戻る'))!;
+  const beforeUnloadPrevented = () => {
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  };
+
+  it('編集を始めただけでは未保存にせず、移動も止めない', async () => {
+    rendered = render(<SsbjNarratives reportId={report.id} />);
+    await settle();
+    click(buttonIn(cardOf('監督する機関・責任者'), '編集'));
+    expect(unsavedBadge()).toBeNull();
+    expect(beforeUnloadPrevented()).toBe(false);
+  });
+
+  it('書き換えると見出しの横に「未保存 n」を出し、タブを閉じる・再読み込みを止める。キャンセルすると消える', async () => {
+    rendered = render(<SsbjNarratives reportId={report.id} />);
+    await settle();
+    const first = cardOf('監督する機関・責任者');
+    click(buttonIn(first, '編集'));
+    setTextareaValue(first.querySelector<HTMLTextAreaElement>('textarea[aria-label="開示する文章"]')!, '書きかけの文章');
+    expect(unsavedBadge()?.textContent).toBe('未保存 1');
+    const second = cardOf('経営者の役割');
+    click(buttonIn(second, '編集'));
+    setSelectValue(second.querySelector('select')!, 'unconfirmed');
+    expect(unsavedBadge()?.textContent).toBe('未保存 2');
+    expect(beforeUnloadPrevented()).toBe(true);
+
+    click(buttonIn(first, 'キャンセル'));
+    click(buttonIn(second, 'キャンセル'));
+    expect(unsavedBadge()).toBeNull();
+    expect(beforeUnloadPrevented()).toBe(false);
+  });
+
+  it('アプリの中のリンクで移ろうとすると、どの項目が未保存かを示して止め、「編集に戻る」で入力を残す', async () => {
+    rendered = render(<SsbjNarratives reportId={report.id} />);
+    await settle();
+    const card = cardOf('経営者の役割');
+    click(buttonIn(card, '編集'));
+    setSelectValue(card.querySelector('select')!, 'answered');
+    setTextareaValue(card.querySelector<HTMLTextAreaElement>('textarea[aria-label="開示する文章"]')!, '書きかけの文章');
+
+    click(backLink());
+    await settle();
+    const dialog = leaveDialog();
+    expect(dialog?.textContent).toContain('保存していない文章があります');
+    expect(dialog?.textContent).toContain('「経営者の役割」の文章が保存されていません。');
+    expect(dialog?.textContent).toContain('移動すると、書いた内容は消えます。');
+    expect(buttonIn(dialog!, '破棄して移動')).toBeTruthy();
+
+    click(buttonIn(dialog!, '編集に戻る'));
+    await settle();
+    expect(leaveDialog()).toBeNull();
+    expect(card.querySelector<HTMLTextAreaElement>('textarea[aria-label="開示する文章"]')?.value).toBe('書きかけの文章');
+  });
+
+  it('保存すると未保存が消え、移動を止めない', async () => {
+    vi.mocked(saveSsbjNarrative).mockImplementation(async (_report, itemId, text) => ({ itemId, text }));
+    rendered = render(<SsbjNarratives reportId={report.id} />);
+    await settle();
+    const card = cardOf('経営者の役割');
+    click(buttonIn(card, '編集'));
+    setSelectValue(card.querySelector('select')!, 'answered');
+    setTextareaValue(card.querySelector<HTMLTextAreaElement>('textarea[aria-label="開示する文章"]')!, '管理本部長に委任している。');
+    expect(unsavedBadge()?.textContent).toBe('未保存 1');
+    await act(async () => { click(buttonIn(card, '保存')); });
+    await settle();
+    expect(unsavedBadge()).toBeNull();
+    expect(beforeUnloadPrevented()).toBe(false);
+  });
+});

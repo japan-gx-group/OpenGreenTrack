@@ -7,6 +7,7 @@
 // 一覧では該当性・重要性を選んで続けて保存でき（詳細の内容は変えない）、未判断・要確認・判断済みで絞り込める。
 // 記載しない理由・開示する説明・内部の検討理由（根拠）は「詳細」のダイアログで扱う。一覧の保存は詳細と同じ検証を通し、
 // 該当性・重要性の 2 列だけを、読込時の更新日時を条件に保存する（他の画面で保存された根拠を古い値に戻さない）。
+// 「詳細」のダイアログに保存していない入力がある間は、タブを閉じる・再読み込みなど画面を離れる操作を止めて聞く。
 
 import { useState, type FormEvent, type KeyboardEvent } from 'react';
 import Link from 'next/link';
@@ -17,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { LoadingIndicator } from '@/components/ui/PageLoading';
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useSsbjJudgementForm } from '../hooks/useSsbjJudgementForm';
 import { useSsbjJudgements } from '../hooks/useSsbjJudgements';
@@ -43,6 +45,7 @@ import {
   SSBJ_JUDGEMENT_STATUS_LABELS,
   SSBJ_JUDGEMENT_STATUSES,
   applySsbjJudgementQuickChange,
+  isSsbjJudgementFormDirty,
   normalizeSsbjJudgementInput,
   ssbjJudgementEntries,
   ssbjJudgementReviewReasons,
@@ -53,7 +56,7 @@ import {
   type SsbjJudgementQuickChange,
   type SsbjJudgementStatus,
 } from '../utils/judgement';
-import { formatParagraphReference } from '../utils/requirementMaster';
+import { findSsbjRequirement, formatParagraphReference } from '../utils/requirementMaster';
 import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
 import { isSsbjReadOnly } from '../utils/reportStatus';
 import { SsbjEditConflictError } from '../utils/writeError';
@@ -62,6 +65,7 @@ import { SsbjJudgementDialog } from './SsbjJudgementDialog.client';
 import { SsbjLockedNotice } from './SsbjLockedNotice';
 import { SsbjRoleNotice } from './SsbjRoleNotice';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
+import { SsbjUnsavedChangesDialog } from './SsbjUnsavedChangesDialog.client';
 
 const muted = (isUnconfirmed: boolean) => (isUnconfirmed ? 'text-text-muted' : '');
 
@@ -318,6 +322,12 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
   const previewJudgements = draftJudgement
     ? [...judgements.filter(judgement => judgement.requirementId !== draftJudgement.requirementId), draftJudgement]
     : judgements;
+  // ダイアログを開いている間だけ、保存済みの判断と違う入力があれば、画面を離れる前に止める。
+  const editingEntry = draftJudgement
+    ? entries.find(entry => entry.judgement.requirementId === draftJudgement.requirementId)
+    : undefined;
+  const isDialogDirty = !!editingEntry && isSsbjJudgementFormDirty(editingEntry.judgement, form.values);
+  const leaveGuard = useUnsavedChangesGuard(isDialogDirty);
 
   return (
     <div className="page-content gt-scroll relative">
@@ -415,6 +425,15 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
               form={form}
               onSubmit={submit}
               onSubmitAndNext={submitAndNext}
+            />
+            <SsbjUnsavedChangesDialog
+              open={leaveGuard.isConfirming}
+              kindLabel="判断"
+              itemLabels={editingEntry
+                ? [findSsbjRequirement(editingEntry.judgement.requirementId)?.summary ?? editingEntry.judgement.requirementId]
+                : []}
+              onStay={leaveGuard.cancelLeave}
+              onLeave={() => { setDialogOpen(false); leaveGuard.confirmLeave(); }}
             />
           </SsbjEditorLayout>
         ) : null}

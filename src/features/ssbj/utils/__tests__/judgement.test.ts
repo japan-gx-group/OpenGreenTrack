@@ -4,6 +4,7 @@ import type { SsbjJudgement } from '../../types';
 import {
   applySsbjJudgementQuickChange,
   emptySsbjJudgement,
+  isSsbjJudgementFormDirty,
   isSsbjJudgementPending,
   isSsbjJudgementRecorded,
   isSsbjOmissionStatementMissing,
@@ -162,5 +163,30 @@ describe('ssbjRisksByRequirement', () => {
     ]);
     expect([...map.keys()]).toEqual(['REQ-GEN-007', 'REQ-CLM-009']);
     expect(map.get('REQ-CLM-009')?.map(item => item.id)).toEqual([risk.id]);
+  });
+});
+
+describe('isSsbjJudgementFormDirty（保存していない入力があるか）', () => {
+  const saved: SsbjJudgement = {
+    ...emptySsbjJudgement('REQ-CLM-020'),
+    applicability: 'applicable',
+    explanation: { disclosure: { state: 'answered', value: '説明' }, internalNote: '理由' },
+  };
+
+  it('保存済みの判断から開いただけ・前後の空白だけの違いは未保存にしない', () => {
+    expect(isSsbjJudgementFormDirty(saved, toSsbjJudgementFormValues(saved))).toBe(false);
+    expect(isSsbjJudgementFormDirty(saved, { ...toSsbjJudgementFormValues(saved), explanationText: ' 説明 ' })).toBe(false);
+  });
+
+  it('区分・説明・内部の検討理由を変えたら未保存', () => {
+    const base = toSsbjJudgementFormValues(saved);
+    expect(isSsbjJudgementFormDirty(saved, { ...base, applicability: 'not_applicable' })).toBe(true);
+    expect(isSsbjJudgementFormDirty(saved, { ...base, explanationText: '別の説明' })).toBe(true);
+    expect(isSsbjJudgementFormDirty(saved, { ...base, internalReason: '' })).toBe(true);
+  });
+
+  it('「入力済み」以外の状態で説明の本文が残っているときも未保存', () => {
+    const empty = emptySsbjJudgement('REQ-CLM-020');
+    expect(isSsbjJudgementFormDirty(empty, { ...toSsbjJudgementFormValues(empty), explanationText: '書きかけ' })).toBe(true);
   });
 });

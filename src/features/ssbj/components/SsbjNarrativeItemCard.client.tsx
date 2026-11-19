@@ -7,6 +7,7 @@
 // （2 画面エディタのプレビューにその場で反映するため。保存はしない）。
 // 入力済み以外の状態では本文を保存しないので、入力した本文が消える保存は、確認のダイアログで止める（取り消せば編集に戻る）。
 // 選択式テンプレートの下書きを一度も編集しないまま入力済みで保存するときも、確認のダイアログで止める。
+// 編集中に保存済みの内容と違う入力があるか（未保存か）を onDirtyChange で親に渡す（画面を離れる前の確認と「未保存 n」のため）。
 
 import { useEffect, useId, useState } from 'react';
 import { ListChecks, Pencil } from 'lucide-react';
@@ -21,6 +22,7 @@ import { SSBJ_FIELD_STATES, type SsbjDisclosableText, type SsbjFieldState, type 
 import { SSBJ_FIELD_STATE_LABELS, formatFieldValue, isAnswered } from '../utils/fieldValue';
 import {
   SSBJ_NARRATIVE_TEXT_MAX_LENGTH,
+  isSsbjNarrativeFormDirty,
   normalizeSsbjNarrativeInput,
   ssbjTemplatePlaceholders,
   type SsbjNarrativeEntry,
@@ -42,9 +44,13 @@ interface SsbjNarrativeItemCardProps {
   readOnly?: boolean;
   /** 編集中の内容（未保存）。編集をやめた・保存したときは null。 */
   onDraftChange?: (itemId: SsbjItemId, text: SsbjDisclosableText | null) => void;
+  /** 保存済みの内容と違う入力（保存しないと消える入力）があるか。編集をやめた・保存したときは false。 */
+  onDirtyChange?: (itemId: SsbjItemId, dirty: boolean) => void;
 }
 
-export const SsbjNarrativeItemCard = ({ entry, onSave, readOnly = false, onDraftChange }: SsbjNarrativeItemCardProps) => {
+export const SsbjNarrativeItemCard = ({
+  entry, onSave, readOnly = false, onDraftChange, onDirtyChange,
+}: SsbjNarrativeItemCardProps) => {
   const id = useId();
   const [isEditing, setIsEditing] = useState(false);
   const [isChoosing, setIsChoosing] = useState(false);
@@ -63,6 +69,14 @@ export const SsbjNarrativeItemCard = ({ entry, onSave, readOnly = false, onDraft
   useEffect(() => {
     onDraftChange?.(itemId, isEditing ? normalizeSsbjNarrativeInput(form.values) : null);
   }, [isEditing, form.values, itemId, onDraftChange]);
+
+  const isDirty = isEditing && isSsbjNarrativeFormDirty(itemId, entry.text, entry.templateInput, form.values);
+  // 未保存になったら知らせ、未保存でなくなった・カードが外れたときは後片付けで取り消す（数え残しで移動を止め続けないように）。
+  useEffect(() => {
+    if (!isDirty) return;
+    onDirtyChange?.(itemId, true);
+    return () => onDirtyChange?.(itemId, false);
+  }, [isDirty, itemId, onDirtyChange]);
 
   const startEdit = () => {
     form.reset(entry.text, entry.templateInput);

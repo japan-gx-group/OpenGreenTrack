@@ -5,13 +5,17 @@
 // 同じ章で文章以外の画面で答える要求（リスク・機会、GHG、基本情報など）は、どこで答えるかを案内する。
 // 変更は作業中の内容で、保存版にはレポート詳細の「保存版を作成」で残す（docs/ssbj-spec.md §8）。
 // 右側（SsbjEditorLayout）に、編集中の文章をその場で反映したプレビューと、OGT の値（参照用）を出す。
+// 保存していない文章がある間は、見出しの横に「未保存 n」を出し、画面を離れる操作を止めて聞く
+// （タブを閉じる・再読み込みはブラウザの確認、アプリの中の移動は SsbjUnsavedChangesDialog）。
 
-import { useCallback, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, FileCheck2 } from 'lucide-react';
 import { PageHeading } from '@/components/layout/PageHeading';
+import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { LoadingIndicator } from '@/components/ui/PageLoading';
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
+import { useSsbjNarrativeDrafts } from '../hooks/useSsbjNarrativeDrafts';
 import { useSsbjNarratives } from '../hooks/useSsbjNarratives';
 import { useSsbjReport } from '../hooks/useSsbjReport';
 import { saveSsbjNarrative } from '../services/narrativeService';
@@ -27,12 +31,13 @@ import {
 import { mergeSsbjNarrativeDrafts, ssbjNarrativeEntriesOfSection } from '../utils/narrative';
 import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
 import { isSsbjReadOnly } from '../utils/reportStatus';
-import { SSBJ_REQUIREMENTS } from '../utils/requirementMaster';
+import { SSBJ_REQUIREMENTS, findSsbjNarrativeItem } from '../utils/requirementMaster';
 import { SsbjEditorLayout } from './SsbjEditorLayout.client';
 import { SsbjLockedNotice } from './SsbjLockedNotice';
 import { SsbjRoleNotice } from './SsbjRoleNotice';
 import { SsbjNarrativeItemCard } from './SsbjNarrativeItemCard.client';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
+import { SsbjUnsavedChangesDialog } from './SsbjUnsavedChangesDialog.client';
 
 // 文章以外で答える要求の案内先（path はレポート配下のパス。null は画面で入力しないもの）。
 const OTHER_TARGETS: Record<Exclude<SsbjRequirement['inputTarget']['kind'], 'narrative'>, { label: string; path: string | null }> = {
@@ -81,18 +86,9 @@ export const SsbjNarratives = ({ reportId }: { reportId: string }) => {
     useSsbjNarratives(report?.id ?? null);
 
   // 編集中（未保存）の文章。プレビューにだけ反映する。
-  const [drafts, setDrafts] = useState<Partial<Record<SsbjItemId, SsbjDisclosableText>>>({});
-  const handleDraftChange = useCallback((itemId: SsbjItemId, text: SsbjDisclosableText | null) => {
-    setDrafts(prev => {
-      if (text === null) {
-        if (!(itemId in prev)) return prev;
-        const next = { ...prev };
-        delete next[itemId];
-        return next;
-      }
-      return { ...prev, [itemId]: text };
-    });
-  }, []);
+  const { drafts, handleDraftChange, dirtyItemIds, handleDirtyChange } = useSsbjNarrativeDrafts();
+  const leaveGuard = useUnsavedChangesGuard(dirtyItemIds.length > 0);
+  const dirtyLabels = dirtyItemIds.map(itemId => findSsbjNarrativeItem(itemId)?.label ?? itemId);
 
   const save = async (itemId: SsbjItemId, text: SsbjDisclosableText, templateInput: SsbjNarrativeTemplateInput | null) => {
     if (!report) return;
@@ -104,7 +100,21 @@ export const SsbjNarratives = ({ reportId }: { reportId: string }) => {
 
   return (
     <div className="page-content gt-scroll relative">
-      <PageHeading title="四本柱の文章" description={report?.title ?? 'SSBJレポート'} showFiscalYear={false} primaryAction={null} />
+      <PageHeading
+        title="四本柱の文章"
+        titleAside={dirtyItemIds.length > 0 ? (
+          <Badge variant="warning" data-testid="ssbj-narratives-unsaved-count">未保存 {dirtyItemIds.length}</Badge>
+        ) : null}
+        description={report?.title ?? 'SSBJレポート'}
+        showFiscalYear={false}
+        primaryAction={null}
+      />
+      <SsbjUnsavedChangesDialog
+        open={leaveGuard.isConfirming}
+        itemLabels={dirtyLabels}
+        onStay={leaveGuard.cancelLeave}
+        onLeave={leaveGuard.confirmLeave}
+      />
       <div className="flex flex-col gap-4">
         <Link
           href={`/ssbj/${encodeURIComponent(reportId)}`}
@@ -157,6 +167,7 @@ export const SsbjNarratives = ({ reportId }: { reportId: string }) => {
                     onSave={save}
                     readOnly={isSsbjReadOnly(report.review, myRole.role)}
                     onDraftChange={handleDraftChange}
+                    onDirtyChange={handleDirtyChange}
                   />
                 ))}
                 <OtherRequirements reportId={reportId} requirements={requirementsOf(sectionId)} />
