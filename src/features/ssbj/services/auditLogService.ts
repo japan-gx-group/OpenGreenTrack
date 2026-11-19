@@ -53,6 +53,23 @@ export const listSsbjAuditLogs = async (reportId: string): Promise<SsbjAuditLog[
 };
 
 /**
+ * レポートの最新の状態の変更 1 件（無ければ null）。差戻しの理由を画面の上に出すかの判定に使う
+ * （状態の変更は必ず 1 件ずつ記録されるので、最新の 1 件が今の状態に至った操作になる）。
+ */
+export const getLatestSsbjStatusChange = async (reportId: string): Promise<SsbjAuditLog | null> => {
+  const { data, error } = await createClient()
+    .from('ssbj_audit_logs')
+    .select(SELECT_COLUMNS)
+    .eq('reportId', reportId)
+    .eq('action', 'status_change')
+    .order('id', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error('差戻しの理由の取得に失敗しました');
+  return data ? toSsbjAuditLog(data as SsbjAuditLogRow) : null;
+};
+
+/**
  * ファイルの出力を操作履歴に記録する（出力の直前に呼ぶ）。記録できなければ例外にし、呼び出し元は出力を中止する
  * （誰がいつ出力したかを残せない出力をさせないため）。
  */

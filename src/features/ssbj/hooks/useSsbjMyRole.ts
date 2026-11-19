@@ -13,10 +13,15 @@ export interface SsbjMyRoleState {
   errorMessage: string;
 }
 
-export const useSsbjMyRole = (): SsbjMyRoleState => {
+/**
+ * enabled = false のときは読まない（レポートの中の画面で、SsbjReportOverviewProvider が読んだロールを使うとき。
+ * hooks/useSsbjReportOverview.ts の useSsbjReportMyRole）。そのときの値は読み込み中のまま。
+ */
+export const useSsbjMyRole = (enabled = true): SsbjMyRoleState => {
   const [state, setState] = useState<SsbjMyRoleState>({ role: null, isLoading: true, errorMessage: '' });
 
   useEffect(() => {
+    if (!enabled) return;
     let active = true;
     getMySsbjRole()
       .then(role => {
@@ -28,7 +33,7 @@ export const useSsbjMyRole = (): SsbjMyRoleState => {
           errorMessage: error instanceof Error ? error.message : 'SSBJ のロールの取得に失敗しました' });
       });
     return () => { active = false; };
-  }, []);
+  }, [enabled]);
 
   return state;
 };
