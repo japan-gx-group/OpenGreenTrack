@@ -21,6 +21,7 @@ import { useSsbjVersionSave } from '../hooks/useSsbjVersionSave';
 import type { SsbjReportStatusChangeResult } from '../services/reportWorkflowClient';
 import { updateSsbjReportBasicInfo } from '../services/reportService';
 import { useSsbjReportMyRole, useSsbjReportOverview } from '../hooks/useSsbjReportOverview';
+import { useSsbjReviewChecklist } from '../hooks/useSsbjReviewChecklist';
 import { canEditSsbj, canViewSsbjWorking } from '../utils/memberRole';
 import { isSsbjReadOnly } from '../utils/reportStatus';
 import { toSsbjReportFormValues } from '../utils/reportValidation';
@@ -30,6 +31,7 @@ import { SsbjReportBasicInfo } from './SsbjReportBasicInfo';
 import { SsbjReportContentsNav } from './SsbjReportContentsNav';
 import { SsbjReportFormFields } from './SsbjReportFormFields.client';
 import { SsbjReportStatusCard } from './SsbjReportStatusCard.client';
+import { SsbjReviewChecklist } from './SsbjReviewChecklist';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
 import { SsbjVersionSaveCard } from './SsbjVersionSaveCard';
 
@@ -68,6 +70,10 @@ export const SsbjReportDetail = ({ reportId }: { reportId: string }) => {
   };
 
   const versionSave = useSsbjVersionSave(reportId);
+
+  // 依頼の前の点検表は、作成中のレポートで依頼できる人（入力担当か管理者）にだけ出す。数は画面の上のタブと同じ値を使う。
+  const showChecklist = !!report && report.review.status === 'draft' && canEditSsbj(myRole.role) && !!overview?.workingAccess;
+  const checklist = useSsbjReviewChecklist(showChecklist ? report : null, overview?.progress ?? null);
 
   const handleSave = async (event: FormEvent) => {
     if (await form.submit(event)) {
@@ -174,7 +180,14 @@ export const SsbjReportDetail = ({ reportId }: { reportId: string }) => {
                 <SsbjReportBasicInfo report={report} />
               )}
             </Card>
-            <SsbjReportStatusCard report={report} disabled={isEditing} onChanged={handleStatusChanged} />
+            <SsbjReportStatusCard
+              report={report}
+              disabled={isEditing}
+              onChanged={handleStatusChanged}
+              checklist={showChecklist ? (
+                <SsbjReviewChecklist reportId={report.id} rows={checklist.rows} errorMessage={checklist.errorMessage} />
+              ) : undefined}
+            />
             <SsbjReportContentsNav
               reportId={report.id}
               workingAccess={myRole.isLoading || canViewSsbjWorking(myRole.role)}

@@ -13,6 +13,8 @@ const WORKING = { kind: 'working' } as const;
 
 export interface SsbjReportProgressState {
   progress: SsbjReportProgress | null;
+  /** 数えた元の作業中の内容（依頼の前の点検表で、判断と文章の食い違い・採用した OGT の値を見るのに使う）。 */
+  sections: Partial<SsbjSnapshotSections> | null;
   isLoading: boolean;
   errorMessage: string;
   /** 作業中の内容を読み直す（前の値は読み終わるまで残す）。 */
@@ -27,5 +29,5 @@ export const useSsbjReportProgress = (reportId: string | null): SsbjReportProgre
   if (reportId && loaded && last?.sections !== loaded) setLast({ reportId, sections: loaded });
   const sections = loaded ?? (reportId && last?.reportId === reportId && !errorMessage ? last.sections : null);
   const progress = useMemo(() => (sections ? ssbjReportProgress(sections) : null), [sections]);
-  return { progress, isLoading, errorMessage, reload };
+  return { progress, sections, isLoading, errorMessage, reload };
 };
