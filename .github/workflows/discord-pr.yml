@@ -1,0 +1,28 @@
+name: Discord PR Notifications
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, ready_for_review, reopened, closed]
+
+permissions: {}
+
+jobs:
+  notify:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_PR_WEBHOOK_PRIMARY }}
+    steps:
+      - name: Notify Discord
+        if: env.DISCORD_WEBHOOK_URL != ''
+        uses: Qbox-project/pipeline-pling@861fcdb2afd72c5fe95e0fa1813a9f0c840914ce # v1.5.0
+        with:
+          webhook-url: ${{ env.DISCORD_WEBHOOK_URL }}
+          pull-request-actions: opened,ready_for_review,reopened,closed
+          pull-request-drafts: exclude
+          skip-bots: false
+          body-max-length: '180'
