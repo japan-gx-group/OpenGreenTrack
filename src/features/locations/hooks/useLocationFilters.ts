@@ -61,10 +61,10 @@ export function useLocationFilters(database: LocationRecord[]): LocationFilters 
       result = result.filter(item => item.status === selectedStatus);
     }
     if (searchQuery.trim() !== '') {
-      const q = searchQuery.toLowerCase();
+      const q = searchQuery.trim().normalize('NFKC').toLowerCase();
       result = result.filter(item =>
-        item.name.toLowerCase().includes(q) ||
-        item.person.toLowerCase().includes(q)
+        item.name.normalize('NFKC').toLowerCase().includes(q) ||
+        item.person.normalize('NFKC').toLowerCase().includes(q)
       );
     }
     return result;
