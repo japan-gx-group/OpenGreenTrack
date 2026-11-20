@@ -36,6 +36,11 @@ export interface CsvImportConfirmModalProps {
   onConfirm: () => void;
 }
 
+// 取込中は Escape・オーバーレイ・×ボタンで閉じさせない。閉じると進捗表示が消え、
+// 書き込みが続いている間に同じファイルを再度取り込めてしまうため。
+// Modal の keydown effect が毎レンダー張り直されないよう、関数は固定の参照にしておく。
+const ignoreClose = () => {};
+
 export const CsvImportConfirmModal = ({
   summary,
   entityLabel,
@@ -44,7 +49,7 @@ export const CsvImportConfirmModal = ({
   onCancel,
   onConfirm,
 }: CsvImportConfirmModalProps) => (
-  <Modal isOpen={summary !== null} onClose={onCancel} title="CSVインポートの確認" size="lg">
+  <Modal isOpen={summary !== null} onClose={isRunning ? ignoreClose : onCancel} title="CSVインポートの確認" size="lg">
     {summary && (
       <div className="flex flex-col gap-4">
         <p className="text-sm text-text-muted">
