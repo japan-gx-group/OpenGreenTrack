@@ -185,6 +185,7 @@ export const ReductionTargetCard = ({
   fiscalYears,
   refreshToken,
   onTargetChange,
+  readOnly = false,
 }: {
   fiscalYearId: string | null;
   fiscalYearLabel: string;
@@ -198,6 +199,8 @@ export const ReductionTargetCard = ({
    * 目標未設定・取得失敗時は空のサマリー。
    */
   onTargetChange?: (summary: ReductionTargetSummary) => void;
+  /** 閲覧者向け。目標の設定・変更を出さない */
+  readOnly?: boolean;
 }) => {
   const [data, setData] = useState<TargetProgressData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -477,15 +480,17 @@ export const ReductionTargetCard = ({
               更新中…（表示中の数値は前回の内容です）
             </span>
           )}
-          <button
-            type="button"
-            className="gt-btn"
-            onClick={openEdit}
-            disabled={!fiscalYearId || isLoading || fiscalYears.length === 0}
-          >
-            <Pencil size={15} strokeWidth={1.9} />
-            {target ? '目標を変更' : '目標を設定'}
-          </button>
+          {!readOnly && (
+            <button
+              type="button"
+              className="gt-btn"
+              onClick={openEdit}
+              disabled={!fiscalYearId || isLoading || fiscalYears.length === 0}
+            >
+              <Pencil size={15} strokeWidth={1.9} />
+              {target ? '目標を変更' : '目標を設定'}
+            </button>
+          )}
         </div>
       </div>
 

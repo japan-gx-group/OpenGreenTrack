@@ -65,8 +65,13 @@ vi.mock('@/features/invoice-reading/components/InvoiceReadingCard.client', () =>
   ),
 }));
 
+const currentUser = vi.hoisted(() => ({ role: 'logger' as 'admin' | 'logger' | 'viewer' }));
 vi.mock('@/hooks/useCurrentUser', () => ({
-  useCurrentUser: () => ({ profile: { id: 'user-1', organizationId: 'org-1' }, role: 'member', isLoading: false }),
+  useCurrentUser: () => ({
+    profile: { id: 'user-1', organizationId: 'org-1' },
+    role: currentUser.role,
+    isLoading: false,
+  }),
 }));
 
 vi.mock('@/hooks/useFiscalYear', () => ({
@@ -163,6 +168,25 @@ describe('DataInput 入力履歴', () => {
     )!;
     click(clearButton);
     expect(rowNames()).toEqual(['東京本社', '大阪支社']);
+  });
+
+  it('閲覧者には入力フォーム・請求書の読取りを出さず、行を押しても編集を開かない', async () => {
+    currentUser.role = 'viewer';
+    try {
+      view = render(<DataInput />);
+      await flush();
+
+      expect(rowNames()).toEqual(['東京本社', '大阪支社']);
+      expect(document.querySelector('[data-testid="entry-form"]')).toBeNull();
+      expect(view.container.textContent).not.toContain('行をクリックすると編集できます');
+      // 未算定の行があっても、再計算の導線（バナー）は出さない
+      expect(view.container.textContent).not.toContain('未算定分を再計算');
+
+      click(view.container.querySelector<HTMLTableRowElement>('table.gt-table tbody tr')!);
+      expect(document.querySelector('[data-testid="entry-form"][data-mode="edit"]')).toBeNull();
+    } finally {
+      currentUser.role = 'logger';
+    }
   });
 
   it('行をクリックすると編集モードのフォームが開き、オーバーレイのクリックで閉じる', async () => {

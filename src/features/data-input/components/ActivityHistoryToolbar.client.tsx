@@ -11,6 +11,8 @@ interface ActivityHistoryToolbarProps {
   onRefresh: () => void;
   /** 組織の帳票の一覧を開く。指定したときだけボタンを出す */
   onOpenEvidenceList?: () => void;
+  /** 閲覧者向け。「行をクリックすると編集できます」の案内を出さない */
+  readOnly?: boolean;
 }
 
 export const ActivityHistoryToolbar = ({
@@ -18,12 +20,13 @@ export const ActivityHistoryToolbar = ({
   isRefreshing,
   onRefresh,
   onOpenEvidenceList,
+  readOnly = false,
 }: ActivityHistoryToolbarProps) => (
   <div className="gt-card-head">
     <div>
       <h2 className="gt-card-title">入力履歴</h2>
       <p className="gt-card-sub">
-        登録済み {totalCount} 件・行をクリックすると編集できます
+        登録済み {totalCount} 件{readOnly ? '' : '・行をクリックすると編集できます'}
       </p>
     </div>
     <div className="flex flex-wrap items-center gap-2">

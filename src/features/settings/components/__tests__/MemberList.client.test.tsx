@@ -96,8 +96,8 @@ describe('MemberList のロール', () => {
     expect(container.querySelectorAll('button[class*="text-danger"]')).toHaveLength(0);
     const rows = Array.from(container.querySelectorAll('tbody tr')).map(row => row.textContent);
     expect(rows[0]).toContain('管理者');
-    // viewer も「メンバー」と表示する
-    expect(rows[2]).toContain('メンバー');
+    expect(rows[1]).toContain('メンバー');
+    expect(rows[2]).toContain('閲覧者');
     expect(container.textContent).toContain('メンバーの招待・削除・ロールの変更は、管理者のみできます。');
     expect(buttonByText(container, 'メンバーを招待')).toBeUndefined();
     // 招待中の一覧（招待リンクを含む）は RLS で管理者にしか返らないため、取得もしない
@@ -126,6 +126,42 @@ describe('MemberList のロール', () => {
     expect(saveMemberChanges).toHaveBeenCalledWith({
       removedMemberIds: [],
       roleChanges: [{ memberId: 'member-1', role: 'admin' }],
+    });
+  });
+
+  it('ロールの選択肢は管理者・メンバー・閲覧者の 3 つで、メンバーを閲覧者に変える変更を送る', async () => {
+    mocks.currentProfile = { id: 'admin-1', role: 'admin' };
+    const container = await mount();
+
+    const select = roleSelect(container, '入力 花子') as HTMLSelectElement;
+    expect(Array.from(select.options).map(option => option.textContent)).toEqual(['管理者', 'メンバー', '閲覧者']);
+    // 閲覧者は閲覧者として選ばれた状態で出す（メンバーに畳み込まない）
+    expect(roleSelect(container, '閲覧 次郎')?.value).toBe('viewer');
+
+    selectValue(select, 'viewer');
+    click(buttonByText(container, '変更を保存') as HTMLButtonElement);
+    expect(container.textContent).toContain('ロールの変更 1 件を保存しますか？');
+    click(buttonByText(container, '保存') as HTMLButtonElement);
+    await flush();
+
+    expect(saveMemberChanges).toHaveBeenCalledWith({
+      removedMemberIds: [],
+      roleChanges: [{ memberId: 'member-1', role: 'viewer' }],
+    });
+  });
+
+  it('閲覧者をメンバーに変える変更も差分として送る', async () => {
+    mocks.currentProfile = { id: 'admin-1', role: 'admin' };
+    const container = await mount();
+
+    selectValue(roleSelect(container, '閲覧 次郎') as HTMLSelectElement, 'logger');
+    click(buttonByText(container, '変更を保存') as HTMLButtonElement);
+    click(buttonByText(container, '保存') as HTMLButtonElement);
+    await flush();
+
+    expect(saveMemberChanges).toHaveBeenCalledWith({
+      removedMemberIds: [],
+      roleChanges: [{ memberId: 'viewer-1', role: 'logger' }],
     });
   });
 
@@ -181,6 +217,32 @@ describe('MemberList のロール', () => {
     await flush();
 
     expect(createInvite).toHaveBeenCalledWith({ email: 'new@example.com', role: 'admin' });
+  });
+
+  it('管理者は閲覧者として招待でき、招待フォームに各ロールの説明を出す', async () => {
+    mocks.currentProfile = { id: 'admin-1', role: 'admin' };
+    vi.mocked(createInvite).mockResolvedValue({
+      ok: true,
+      data: {
+        token: '11111111-1111-1111-1111-111111111111',
+        email: 'reader@example.com',
+        expiresAt: '2026-11-01T00:00:00Z',
+        emailStatus: 'skipped',
+      },
+    });
+    const container = await mount();
+
+    click(buttonByText(container, 'メンバーを招待') as HTMLButtonElement);
+    const roleSelectInModal = container.querySelector<HTMLSelectElement>('#inviteRole') as HTMLSelectElement;
+    expect(Array.from(roleSelectInModal.options).map(option => option.value)).toEqual(['logger', 'admin', 'viewer']);
+    expect(container.querySelector('#inviteRoleDescription')?.textContent).toContain('閲覧者: 内容を見ることと');
+
+    setInputValue(container.querySelector('#inviteEmail') as HTMLInputElement, 'reader@example.com');
+    selectValue(roleSelectInModal, 'viewer');
+    click(buttonByText(container, '招待リンクを発行') as HTMLButtonElement);
+    await flush();
+
+    expect(createInvite).toHaveBeenCalledWith({ email: 'reader@example.com', role: 'viewer' });
   });
 
   it('組織に管理者が 1 人もいなければ、復旧の手順へ案内する（だれが見ても出す）', async () => {

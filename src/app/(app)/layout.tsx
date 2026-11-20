@@ -4,6 +4,7 @@ import { CurrentUserProvider } from '@/contexts/CurrentUserContext.client';
 import { AppRefreshProvider } from '@/contexts/AppRefreshContext.client';
 import { Sidebar } from '@/components/layout/Sidebar.client';
 import { AppTopBar } from '@/components/layout/AppTopBar.client';
+import { ReadOnlyNotice } from '@/components/layout/ReadOnlyNotice.client';
 
 // ログイン後の画面はビルド時に事前生成させず、常にリクエスト時に描画する。
 // 事前生成されると `Cache-Control: s-maxage=31536000`（max-age なし）で返り、ブラウザが
@@ -29,6 +30,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 各画面は本文（PageHeading 以降）だけを返す。 */}
             <main className="main-content">
               <AppTopBar />
+              {/* 閲覧者への「編集はできません」の案内。全画面で同じなので layout で1回だけ描く。 */}
+              <ReadOnlyNotice />
               {children}
             </main>
           </div>

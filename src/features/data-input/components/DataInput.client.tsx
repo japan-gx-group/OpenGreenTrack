@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { PageHeading } from '@/components/layout/PageHeading';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useReadOnly } from '@/hooks/useReadOnly';
 import { Pagination } from '@/components/ui/Pagination.client';
 import { useFiscalYear } from '@/hooks/useFiscalYear';
 import { usePagination } from '@/hooks/usePagination';
@@ -31,6 +32,8 @@ const DEFAULT_HISTORY_PAGE_SIZE = HISTORY_PAGE_SIZE_OPTIONS[0];
 export const DataInput = () => {
   // profile は保存後の自動計算（/api/calculations）に渡す organizationId の取得に使う。
   const { profile } = useCurrentUser();
+  // 閲覧者には入力・読取り・編集・再計算・帳票の削除を出さない（見ることと帳票を開くことはできる）。
+  const readOnly = useReadOnly();
   // 年度セレクタは非表示（showFiscalYear=false）で、保存後の自動計算はレコードの年月から
   // 年度を導出する。そのためコンテキストからは会計年度マスタだけを使う。
   const { fiscalYears } = useFiscalYear();
@@ -129,30 +132,34 @@ export const DataInput = () => {
             カテゴリに応じて排出係数の参照方式（供給事業者別 / 標準 / IDEA）をフォーム側で切り替える。
             複数月まとめて入力（一括入力）は履歴全件と照合して登録済みの月を表示する。 */}
         {/* 請求書（電気・都市ガス・燃料）の AI 読取り。読み取った明細は表でまとめて登録するか、「フォームで開く」で下のフォームに入る。 */}
-        <InvoiceReadingCard
-          locations={manualEntryLocations}
-          historyRecords={historyRecords}
-          onApply={applyPrefill}
-          onSaveRows={entrySave.saveMany}
-          onPendingEvidenceChange={setInvoicePendingEvidenceIds}
-        />
-
-        <div ref={entryFormRef} className="scroll-mt-4">
-          <ActivityEntryForm
-            key={entryFormKey}
+        {!readOnly && (
+          <InvoiceReadingCard
             locations={manualEntryLocations}
-            onSave={async (entry, options) => {
-              await entrySave.save(entry, options);
-              setEntryPrefill(undefined);
-            }}
-            onSaveBulk={entrySave.saveBulk}
-            onPendingEvidenceChange={setFormPendingEvidenceIds}
             historyRecords={historyRecords}
-            // 事前警告の「既存のレコードを開く」から編集モーダルを開き、合算入力へ直行できるようにする。
-            onOpenDuplicateRecord={editor.open}
-            prefill={entryPrefill}
+            onApply={applyPrefill}
+            onSaveRows={entrySave.saveMany}
+            onPendingEvidenceChange={setInvoicePendingEvidenceIds}
           />
-        </div>
+        )}
+
+        {!readOnly && (
+          <div ref={entryFormRef} className="scroll-mt-4">
+            <ActivityEntryForm
+              key={entryFormKey}
+              locations={manualEntryLocations}
+              onSave={async (entry, options) => {
+                await entrySave.save(entry, options);
+                setEntryPrefill(undefined);
+              }}
+              onSaveBulk={entrySave.saveBulk}
+              onPendingEvidenceChange={setFormPendingEvidenceIds}
+              historyRecords={historyRecords}
+              // 事前警告の「既存のレコードを開く」から編集モーダルを開き、合算入力へ直行できるようにする。
+              onOpenDuplicateRecord={editor.open}
+              prefill={entryPrefill}
+            />
+          </div>
+        )}
 
         {/* History Table */}
         <section className="gt-card gt-card-table flex flex-col gap-4">
@@ -161,18 +168,24 @@ export const DataInput = () => {
             isRefreshing={isRefreshingHistory}
             onRefresh={refreshManualHistory}
             onOpenEvidenceList={() => setIsEvidenceListOpen(true)}
+            readOnly={readOnly}
           />
 
-          <CalculationStatusBanner
-            calculation={calculation}
-            uncalculatedCount={uncalculatedItems.length}
-            isRefreshingHistory={isRefreshingHistory}
-          />
+          {/* どちらも再計算の導線を兼ねるため、閲覧者には出さない */}
+          {!readOnly && (
+            <>
+              <CalculationStatusBanner
+                calculation={calculation}
+                uncalculatedCount={uncalculatedItems.length}
+                isRefreshingHistory={isRefreshingHistory}
+              />
 
-          <ProvisionalRecalculationBanner
-            provisional={provisional}
-            disabled={calculation.isRunning || calculation.isRecalculating || isRefreshingHistory}
-          />
+              <ProvisionalRecalculationBanner
+                provisional={provisional}
+                disabled={calculation.isRunning || calculation.isRecalculating || isRefreshingHistory}
+              />
+            </>
+          )}
 
           {/* 絞り込みを変えたら 1 ページ目へ戻す */}
           {history.length > 0 && (
@@ -189,7 +202,7 @@ export const DataInput = () => {
             filteredCount={historyFilters.filteredHistory.length}
             hasActiveFilters={historyFilters.hasActiveFilters}
             onClearFilters={clearHistoryFilters}
-            onSelect={editor.open}
+            onSelect={readOnly ? undefined : editor.open}
           />
 
           {pagination.totalCount > 0 && (
@@ -229,6 +242,7 @@ export const DataInput = () => {
         isOpen={isEvidenceListOpen}
         onClose={() => setIsEvidenceListOpen(false)}
         pendingFileIds={pendingEvidenceIds}
+        readOnly={readOnly}
       />
     </>
   );

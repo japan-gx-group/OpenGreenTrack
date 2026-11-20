@@ -40,6 +40,8 @@ interface LocationTableProps {
   onResetFilters: () => void;
   onEdit: (row: LocationRecord) => void;
   onDelete: (row: LocationRecord) => void;
+  /** 閲覧者向け。行の操作メニュー（編集・削除）を出さない */
+  readOnly?: boolean;
 }
 
 export const LocationTable = ({
@@ -53,6 +55,7 @@ export const LocationTable = ({
   onResetFilters,
   onEdit,
   onDelete,
+  readOnly = false,
 }: LocationTableProps) => {
   const router = useRouter();
   // 行ごとの操作メニュー（⋮）の開閉。開いている行の id を保持する。
@@ -139,67 +142,69 @@ export const LocationTable = ({
                       Escape で閉じて ⋮ へフォーカスを戻す / 開いたら先頭の項目へフォーカス / ↑↓ で移動。
                       メニューは Portal に描かれるが、React のイベントは親（<tr onClick>）へ伝わるため、
                       項目クリックで行遷移が起きないよう Content で止める。 */}
-                  <DropdownMenu
-                    // 非モーダル: 透明な背景が次のクリックを吸い込まず、別の行の ⋮ は 1 クリックで開ける
-                    modal={false}
-                    open={openMenuId === row.id}
-                    onOpenChange={(open) => {
-                      if (open) {
-                        menuTriggerRef.current = triggerButtonsByRowId.current.get(row.id) ?? null;
-                      }
-                      // 別の行のメニューが開いた後に、閉じる側の通知が遅れて届いても上書きしない
-                      setOpenMenuId((current) => (open ? row.id : current === row.id ? null : current));
-                    }}
-                  >
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        ref={(el) => {
-                          if (el) triggerButtonsByRowId.current.set(row.id, el);
-                          else triggerButtonsByRowId.current.delete(row.id);
-                        }}
-                        className="text-text-muted hover:text-text-main"
-                        title="操作"
-                        // 行クリック（拠点詳細への遷移）と干渉させない
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <MoreVertical size={16} />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                      align="end"
-                      className="w-32"
-                      onClick={(e) => e.stopPropagation()}
-                      onCloseAutoFocus={(e) => {
-                        // 項目を選んだ場合はモーダルが開いてフォーカスを持つので、⋮ へは戻さない。
-                        // Escape・外側クリックで閉じた場合だけ、Radix の既定で ⋮ へ戻す。
-                        if (actionChosenRef.current) {
-                          actionChosenRef.current = false;
-                          e.preventDefault();
+                  {!readOnly && (
+                    <DropdownMenu
+                      // 非モーダル: 透明な背景が次のクリックを吸い込まず、別の行の ⋮ は 1 クリックで開ける
+                      modal={false}
+                      open={openMenuId === row.id}
+                      onOpenChange={(open) => {
+                        if (open) {
+                          menuTriggerRef.current = triggerButtonsByRowId.current.get(row.id) ?? null;
                         }
+                        // 別の行のメニューが開いた後に、閉じる側の通知が遅れて届いても上書きしない
+                        setOpenMenuId((current) => (open ? row.id : current === row.id ? null : current));
                       }}
                     >
-                      <DropdownMenuItem
-                        className="text-xs"
-                        onSelect={() => {
-                          actionChosenRef.current = true;
-                          onEdit(row);
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          ref={(el) => {
+                            if (el) triggerButtonsByRowId.current.set(row.id, el);
+                            else triggerButtonsByRowId.current.delete(row.id);
+                          }}
+                          className="text-text-muted hover:text-text-main"
+                          title="操作"
+                          // 行クリック（拠点詳細への遷移）と干渉させない
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <MoreVertical size={16} />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="end"
+                        className="w-32"
+                        onClick={(e) => e.stopPropagation()}
+                        onCloseAutoFocus={(e) => {
+                          // 項目を選んだ場合はモーダルが開いてフォーカスを持つので、⋮ へは戻さない。
+                          // Escape・外側クリックで閉じた場合だけ、Radix の既定で ⋮ へ戻す。
+                          if (actionChosenRef.current) {
+                            actionChosenRef.current = false;
+                            e.preventDefault();
+                          }
                         }}
                       >
-                        <Pencil size={14} /> 編集
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        variant="destructive"
-                        className="text-xs"
-                        onSelect={() => {
-                          actionChosenRef.current = true;
-                          onDelete(row);
-                        }}
-                      >
-                        <Trash2 size={14} /> 削除
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                        <DropdownMenuItem
+                          className="text-xs"
+                          onSelect={() => {
+                            actionChosenRef.current = true;
+                            onEdit(row);
+                          }}
+                        >
+                          <Pencil size={14} /> 編集
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          variant="destructive"
+                          className="text-xs"
+                          onSelect={() => {
+                            actionChosenRef.current = true;
+                            onDelete(row);
+                          }}
+                        >
+                          <Trash2 size={14} /> 削除
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                 </td>
               </tr>
             ))}

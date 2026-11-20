@@ -25,11 +25,14 @@ export const EvidenceListModal = ({
   isOpen,
   onClose,
   pendingFileIds = NO_PENDING,
+  readOnly = false,
 }: {
   isOpen: boolean;
   onClose: () => void;
   /** 入力中の帳票の ID（フォームの欄・請求書の一括登録の表。保存で記録に紐づけるので、ここでは削除させない） */
   pendingFileIds?: readonly string[];
+  /** 閲覧者向け。開くことだけができ、削除の操作を出さない */
+  readOnly?: boolean;
 }) => {
   const list = useEvidenceList(isOpen);
   const unlinkedOnlyId = useId();
@@ -44,9 +47,11 @@ export const EvidenceListModal = ({
     <Modal isOpen={isOpen} onClose={onClose} title="帳票の一覧" size="xl">
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs text-text-muted">
-            記録を削除しても帳票は残ります。どの記録にも紐づいていない帳票は、ここから削除できます。
-          </p>
+          {!readOnly && (
+            <p className="text-xs text-text-muted">
+              記録を削除しても帳票は残ります。どの記録にも紐づいていない帳票は、ここから削除できます。
+            </p>
+          )}
           <div className="flex items-center gap-2">
             <Checkbox
               id={unlinkedOnlyId}
@@ -133,7 +138,7 @@ export const EvidenceListModal = ({
                             <ExternalLink />
                             開く
                           </Button>
-                          {confirmingId === file.id ? (
+                          {readOnly ? null : confirmingId === file.id ? (
                             <>
                               <Button
                                 type="button"

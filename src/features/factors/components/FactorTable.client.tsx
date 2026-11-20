@@ -24,6 +24,8 @@ interface FactorTableProps {
   onSelect: (factor: EmissionFactor) => void;
   onEdit: (factor: EmissionFactor) => void;
   onDelete: (factor: EmissionFactor) => void;
+  /** 閲覧者向け。カスタム係数の編集・削除を出さない */
+  readOnly?: boolean;
 }
 
 export const FactorTable = ({
@@ -35,6 +37,7 @@ export const FactorTable = ({
   onSelect,
   onEdit,
   onDelete,
+  readOnly = false,
 }: FactorTableProps) => (
   <div style={{ position: 'relative', minHeight: '120px', overflowX: 'auto', marginTop: '1rem' }}>
     {isBusy && (
@@ -156,7 +159,7 @@ export const FactorTable = ({
                 </span>
               </td>
               <td className="py-4 text-right whitespace-nowrap">
-                {row.isCustom && (
+                {row.isCustom && !readOnly && (
                   <>
                     <button
                       type="button"

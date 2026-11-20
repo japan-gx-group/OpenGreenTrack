@@ -7,6 +7,7 @@ import { RefreshingIndicator } from '@/components/ui/RefreshingIndicator';
 import { CheckCircle, X } from 'lucide-react';
 import { useFiscalYear } from '@/hooks/useFiscalYear';
 import { useAppRefresh } from '@/hooks/useAppRefresh';
+import { useReadOnly } from '@/hooks/useReadOnly';
 import { useFiscalYearFromQuery } from '../hooks/useFiscalYearFromQuery';
 import { Scope3CategoryChart } from './Scope3CategoryChart.client';
 import { Scope2BasisCard } from './Scope2BasisCard';
@@ -24,6 +25,8 @@ export const ScopeAnalysis = () => {
   // 他画面の導線が URL で運んできた年度（?fy=）を選択年度へ適用する。
   useFiscalYearFromQuery();
   const { fiscalYear, fiscalYearId, fiscalYears, isLoading: isFiscalYearLoading } = useFiscalYear();
+  // 閲覧者には Scope 3 の算定方法の切替と直接入力値の編集を出さない。
+  const readOnly = useReadOnly();
   const { refreshToken } = useAppRefresh();
   // 年度が1件も無い（初期セットアップ直後・最後の年度を削除した後）。fiscalYear が空文字の
   // ままだと下の取得 effect が走らず「読み込んでいます...」から抜けられないため、
@@ -251,6 +254,7 @@ export const ScopeAnalysis = () => {
                 fiscalYearId={scopeAnalysisData.fiscalYearId}
                 onSwitchMethod={handleSwitchMethod}
                 onSaveDirect={handleSaveDirect}
+                readOnly={readOnly}
               />
             </>
           )}

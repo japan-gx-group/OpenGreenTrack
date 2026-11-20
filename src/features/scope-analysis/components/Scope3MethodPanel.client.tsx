@@ -36,6 +36,8 @@ interface Scope3MethodPanelProps {
   onSwitchMethod: (categoryId: number, method: Scope3Method) => Promise<void>;
   /** direct 値の保存（upsert ＋ 再集計 ＋ 再取得は親が行う）。 */
   onSaveDirect: (categoryId: number, emissions: number, dataSourceNote: string) => Promise<void>;
+  /** 閲覧者向け。直接入力値の編集と算定方法の切替を出さない（内訳のドリルダウンは見られる） */
+  readOnly?: boolean;
 }
 
 type DrilldownState =
@@ -48,6 +50,7 @@ export const Scope3MethodPanel: React.FC<Scope3MethodPanelProps> = ({
   fiscalYearId,
   onSwitchMethod,
   onSaveDirect,
+  readOnly = false,
 }) => {
   // 方式切替の実行中カテゴリ（ボタンの二重押下防止）。
   const [switchingCategoryId, setSwitchingCategoryId] = useState<number | null>(null);
@@ -312,24 +315,26 @@ export const Scope3MethodPanel: React.FC<Scope3MethodPanelProps> = ({
                     {formatEmissionsNumber(item.adoptedEmissions, { precision: 'detail' })}
                   </td>
                   <td className="px-2 py-2.5">
-                    <div className="flex items-center justify-end gap-2 whitespace-nowrap">
-                      <button
-                        type="button"
-                        className="gt-btn h-auto gap-1 px-2 py-1 text-xs"
-                        onClick={() => openEditModal(item)}
-                      >
-                        <Pencil size={12} /> 直接入力値
-                      </button>
-                      <button
-                        type="button"
-                        className="gt-btn h-auto gap-1 px-2 py-1 text-xs"
-                        onClick={() => handleSwitch(item)}
-                        disabled={switchingCategoryId !== null}
-                      >
-                        {isSwitching && <Loader2 size={12} className="animate-spin" />}
-                        {isCalculated ? '直接入力に切替' : '積上げに切替'}
-                      </button>
-                    </div>
+                    {!readOnly && (
+                      <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+                        <button
+                          type="button"
+                          className="gt-btn h-auto gap-1 px-2 py-1 text-xs"
+                          onClick={() => openEditModal(item)}
+                        >
+                          <Pencil size={12} /> 直接入力値
+                        </button>
+                        <button
+                          type="button"
+                          className="gt-btn h-auto gap-1 px-2 py-1 text-xs"
+                          onClick={() => handleSwitch(item)}
+                          disabled={switchingCategoryId !== null}
+                        >
+                          {isSwitching && <Loader2 size={12} className="animate-spin" />}
+                          {isCalculated ? '直接入力に切替' : '積上げに切替'}
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
                 {isExpanded && (

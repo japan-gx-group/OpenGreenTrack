@@ -17,7 +17,8 @@ interface ActivityHistoryTableProps {
   filteredCount: number;
   hasActiveFilters: boolean;
   onClearFilters: () => void;
-  onSelect: (record: SavedManualActivityRecord) => void;
+  /** 行クリックで編集モーダルを開く。渡さない（閲覧者）ときは行を押せなくする */
+  onSelect?: (record: SavedManualActivityRecord) => void;
 }
 
 export const ActivityHistoryTable = ({
@@ -71,11 +72,11 @@ export const ActivityHistoryTable = ({
         )}
         {rows.map((row) => {
           // 編集できるのは、サーバ取得済みで元レコードを保持する行のみ。
-          const editableRecord = row.record;
+          const editableRecord = onSelect ? row.record : undefined;
           return (
           <tr
             key={row.id}
-            onClick={editableRecord ? () => onSelect(editableRecord) : undefined}
+            onClick={editableRecord && onSelect ? () => onSelect(editableRecord) : undefined}
             title={editableRecord ? 'クリックして編集' : undefined}
             className={`${row.isNew ? 'new-table-row' : ''} ${editableRecord ? 'gt-row-link' : ''}`}
           >

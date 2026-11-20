@@ -8,7 +8,7 @@
 // 二重の防壁になり、万一サーバ側チェックに漏れがあっても DB 側で拒否される。
 // 招待の発行・取り消しは管理者だけに許す。RLS（current_user_is_admin()）でも止まるが、
 // 拒否された操作は「0 行」で返り理由が分からないため、先に requireAdmin で分かりやすく断る。
-// 招待の role は 'admin'（管理者）/ 'logger'（メンバー）だけを受け付ける。受諾時にそのまま profiles に写る。
+// 招待の role は 'admin'（管理者）/ 'logger'（メンバー）/ 'viewer'（閲覧者）を受け付ける。受諾時にそのまま profiles に写る。
 // token・expiresAt・acceptedAt は列指定 GRANT の対象外なのでクライアントから指定できず、
 // invitedByUserId はトリガで実行ユーザーに強制される。
 // 発行・取り消しは system_audit_logs に残す（招待リンクの秘密である token は残さない。監査ログはメンバー全員が読めるため）。

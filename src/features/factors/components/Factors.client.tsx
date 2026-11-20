@@ -7,6 +7,7 @@ import { CsvImportErrorPanel } from '@/components/ui/CsvImportErrorPanel.client'
 import { Toast } from '@/components/ui/Toast.client';
 import { downloadCsv } from '@/lib/files/csv';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useReadOnly } from '@/hooks/useReadOnly';
 import { useFiscalYear } from '@/hooks/useFiscalYear';
 import { usePagination } from '@/hooks/usePagination';
 import { useToast } from '@/hooks/useToast';
@@ -40,6 +41,8 @@ export const Factors = () => {
   const { fiscalYear, fiscalYears } = useFiscalYear();
   // profile は係数変更後の再算定（/api/calculations）に渡す organizationId の取得に使う。
   const { profile } = useCurrentUser();
+  // 閲覧者には係数の追加・編集・削除・CSV インポート・IDEA の取込を出さない（見ることとエクスポートはできる）。
+  const readOnly = useReadOnly();
   const { toast, showToast } = useToast();
   const { database, setDatabase, isLoading, loadFailed } = useFactorDatabase(showToast);
   const filters = useFactorFilters(database, fiscalYear);
@@ -120,6 +123,7 @@ export const Factors = () => {
             onExportCsv={handleExportCSV}
             onSelectImportFile={(file) => void csvImport.selectFile(file)}
             onCreate={form.openCreate}
+            readOnly={readOnly}
           />
 
           <FactorGroupTabs
@@ -149,6 +153,7 @@ export const Factors = () => {
               onSelect={setDetailFactor}
               onEdit={form.openEdit}
               onDelete={factorDelete.requestDelete}
+              readOnly={readOnly}
             />
 
             {/* Pagination Controls */}
@@ -172,12 +177,12 @@ export const Factors = () => {
 
         {/* IDEAデータベース（BYOライセンス取込。設計書 §5.2） */}
         <div style={{ marginTop: '14px' }}>
-          <IdeaDatabaseCard onImportsChanged={() => void ideaVersions.reload()} />
+          <IdeaDatabaseCard onImportsChanged={() => void ideaVersions.reload()} readOnly={readOnly} />
         </div>
 
         {/* IDEA の版と算定年度（年度ごとに使う版の割り当てと取込履歴。設計書 §3.6-5） */}
         <div style={{ marginTop: '14px' }}>
-          <IdeaVersionsCard versions={ideaVersions} fiscalYears={fiscalYears} />
+          <IdeaVersionsCard versions={ideaVersions} fiscalYears={fiscalYears} readOnly={readOnly} />
         </div>
 
         {/* Bottom Details (Sources & Logs) */}

@@ -7,6 +7,7 @@ import { Pagination } from '@/components/ui/Pagination.client';
 import { Toast } from '@/components/ui/Toast.client';
 import { downloadCsv } from '@/lib/files/csv';
 import { usePagination } from '@/hooks/usePagination';
+import { useReadOnly } from '@/hooks/useReadOnly';
 import { useToast } from '@/hooks/useToast';
 import {
   LOCATION_CSV_HEADERS,
@@ -31,6 +32,8 @@ const PAGE_SIZE_OPTIONS = [5, 10, 20] as const;
 
 export const Locations = () => {
   const { toast, showToast } = useToast();
+  // 閲覧者には拠点の追加・編集・削除・CSV インポートを出さない（見ることとエクスポートはできる）。
+  const readOnly = useReadOnly();
   const { database, setDatabase, isLoading, hasFetchedOnce, hasError, dataVersion, reload } = useLocationDatabase(showToast);
   const filters = useLocationFilters(database);
   // 一覧を取り直したとき（初回・更新ボタン・CSV 取込後）は 1 ページ目へ戻す。
@@ -110,6 +113,7 @@ export const Locations = () => {
             onExportCsv={handleExportCSV}
             onSelectImportFile={(file) => void csvImport.selectFile(file)}
             onCreate={openAddModal}
+            readOnly={readOnly}
           />
 
           <CsvImportErrorPanel errors={csvImport.importErrors} onClose={csvImport.clearErrors} />
@@ -131,6 +135,7 @@ export const Locations = () => {
             onResetFilters={handleResetFilters}
             onEdit={form.openEdit}
             onDelete={locationDelete.openDeleteModal}
+            readOnly={readOnly}
           />
 
           {/* Paginated Footer */}

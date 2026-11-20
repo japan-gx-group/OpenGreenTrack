@@ -30,6 +30,11 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
 // 「最新データに更新」で増える値は、一覧取得エラーのテストから切り替える。
+const currentUser = vi.hoisted(() => ({ role: 'logger' as 'admin' | 'logger' | 'viewer' }));
+vi.mock('@/hooks/useCurrentUser', () => ({
+  useCurrentUser: () => ({ profile: null, role: currentUser.role, isLoading: false }),
+}));
+
 const appRefresh = vi.hoisted(() => ({ refreshToken: 0 }));
 vi.mock('@/hooks/useAppRefresh', () => ({
   useAppRefresh: () => ({ refreshToken: appRefresh.refreshToken, requestRefresh: () => {} }),
@@ -230,6 +235,30 @@ describe('Locations 一覧取得エラー', () => {
     expect(getLocations).toHaveBeenCalledTimes(2);
     expect(rendered.container.textContent).toContain('東京本社');
     expect(rendered.container.textContent).not.toContain('拠点を取得できませんでした');
+    rendered.unmount();
+  });
+});
+
+describe('Locations 閲覧者', () => {
+  afterEach(() => {
+    currentUser.role = 'logger';
+    vi.clearAllMocks();
+    document.body.innerHTML = '';
+  });
+
+  it('閲覧者には追加・CSV インポート・行メニューを出さず、CSV エクスポートは出す', async () => {
+    currentUser.role = 'viewer';
+    vi.mocked(getLocations).mockResolvedValue([TOKYO]);
+    const rendered = render(<Locations />);
+    await flushPromises();
+
+    expect(rendered.container.textContent).toContain('東京本社');
+    const labels = Array.from(rendered.container.querySelectorAll('button')).map((button) => button.textContent?.trim());
+    expect(labels).toContain('CSVエクスポート');
+    expect(labels).not.toContain('新規拠点を追加');
+    expect(labels).not.toContain('CSVインポート');
+    expect(labels).not.toContain('CSVテンプレート');
+    expect(rendered.container.querySelector('button[title="操作"]')).toBeNull();
     rendered.unmount();
   });
 });

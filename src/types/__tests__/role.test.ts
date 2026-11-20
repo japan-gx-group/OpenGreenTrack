@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isAdmin, isAssignableMemberRole, isMemberRole, memberRoleLabel } from '../role';
+import { canWrite, isAdmin, isAssignableMemberRole, isMemberRole, memberRoleLabel } from '../role';
 
 describe('isAdmin', () => {
   it('admin だけを管理者とみなす', () => {
@@ -14,21 +14,34 @@ describe('isAdmin', () => {
   });
 });
 
+describe('canWrite', () => {
+  it('管理者とメンバーは書け、閲覧者は書けない', () => {
+    expect(canWrite('admin')).toBe(true);
+    expect(canWrite('logger')).toBe(true);
+    expect(canWrite('viewer')).toBe(false);
+  });
+
+  it('ロールが取れていないときは書けない側に倒す', () => {
+    expect(canWrite(null)).toBe(false);
+    expect(canWrite(undefined)).toBe(false);
+  });
+});
+
 describe('memberRoleLabel', () => {
-  it('admin は「管理者」、logger と viewer はどちらも「メンバー」', () => {
+  it('admin は「管理者」、logger は「メンバー」、viewer は「閲覧者」', () => {
     expect(memberRoleLabel('admin')).toBe('管理者');
     expect(memberRoleLabel('logger')).toBe('メンバー');
-    expect(memberRoleLabel('viewer')).toBe('メンバー');
+    expect(memberRoleLabel('viewer')).toBe('閲覧者');
   });
 });
 
 describe('isMemberRole / isAssignableMemberRole', () => {
-  it('DB に入りうる値は 3 つ、新しく書ける値は admin と logger の 2 つ', () => {
+  it('DB に入りうる値も、招待・ロールの変更で書ける値も admin・logger・viewer の 3 つ', () => {
     expect(['admin', 'logger', 'viewer', 'member'].map(isMemberRole)).toEqual([true, true, true, false]);
     expect(['admin', 'logger', 'viewer', 'member'].map(isAssignableMemberRole)).toEqual([
       true,
       true,
-      false,
+      true,
       false,
     ]);
   });
