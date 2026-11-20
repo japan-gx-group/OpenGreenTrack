@@ -133,13 +133,13 @@ describe('Reports - 出力内容のプレビュー', () => {
     const text = previewText(rendered);
     // 全拠点選択: Scope1 30 + Scope2 20 + Scope3 100 = 150
     expect(text).toContain('レポートに載る合計（2025年度）');
-    expect(text).toContain('150 t-CO2e');
+    expect(text).toContain('150.000 t-CO2e');
     expect(text).toContain('= 選択拠点（2拠点） Scope 1・2 + 組織全体 Scope 3');
     expect(text).toContain('Scope 1 / 2（選択拠点（2拠点））');
-    expect(text).toContain('30 t-CO2e / 20 t-CO2e');
+    expect(text).toContain('30.000 t-CO2e / 20.000 t-CO2e');
     expect(text).toContain('算定済みレコード 8 件');
     expect(text).toContain('Scope 3（組織全体）');
-    expect(text).toContain('100 t-CO2e');
+    expect(text).toContain('100.000 t-CO2e');
     expect(text).toContain('4 カテゴリ');
   });
 
@@ -153,11 +153,11 @@ describe('Reports - 出力内容のプレビュー', () => {
 
     const text = previewText(rendered);
     // 東京のみ: Scope1 10 + Scope2 5 + Scope3 100 = 115
-    expect(text).toContain('115 t-CO2e');
+    expect(text).toContain('115.000 t-CO2e');
     expect(text).toContain('= 選択拠点（1拠点） Scope 1・2 + 組織全体 Scope 3');
-    expect(text).toContain('10 t-CO2e / 5 t-CO2e');
+    expect(text).toContain('10.000 t-CO2e / 5.000 t-CO2e');
     expect(text).toContain('算定済みレコード 3 件');
-    expect(text).toContain('100 t-CO2e');
+    expect(text).toContain('100.000 t-CO2e');
     expect(text).toContain('拠点を絞っても Scope 3 は組織全体の値が載ります');
   });
 

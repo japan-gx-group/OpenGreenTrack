@@ -168,7 +168,9 @@ export const ReportPrintView = () => {
                             key={cellIndex}
                             className={isNumericCell(cell) ? 'report-print-td-num' : undefined}
                           >
-                            {formatCellForDisplay(cell)}
+                            {formatCellForDisplay(cell, {
+                              emissions: section.emissionsColumns?.includes(cellIndex),
+                            })}
                           </td>
                         ))}
                       </tr>

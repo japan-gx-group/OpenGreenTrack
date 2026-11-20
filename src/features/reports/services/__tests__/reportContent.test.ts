@@ -1,14 +1,94 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   buildDataCoverageSection,
+  buildReportDocument,
   buildReportMeta,
   buildScope3MethodSection,
   coverageScopeForReport,
+  formatCellForDisplay,
   splitCoverageByAdoption,
   uncalculatedWarningNote,
 } from '../reportContent';
 import type { ActivityCoverageRow, Scope3CoverageRow } from '../reportContent';
 import type { Scope3Method } from '@/features/scope-analysis/services/scopeAnalysisService';
+import type { ReportData, ReportTypeId } from '../reportService';
+import { documentToRows } from '../reportExport';
+
+vi.mock('@/lib/supabase/client', () => ({
+  createClient: () => ({
+    from: () => ({ select: () => ({ eq: async () => ({ data: [], error: null }) }) }),
+    rpc: (name: string) => {
+      const data = name === 'report_location_energy_usage'
+        ? [{ locationId: 'loc-1', energyType: 'electricity', unit: 'kWh', amount: 903.7 }]
+        : [];
+      return { data, error: null, range: async () => ({ data, error: null }) };
+    },
+  }),
+}));
+
+vi.mock('@/features/scope-analysis/services/scopeAnalysisService', async importOriginal => ({
+  ...(await importOriginal<typeof import('@/features/scope-analysis/services/scopeAnalysisService')>()),
+  getScopeAnalysisData: async () => ({
+    categories: [{ id: 1, name: '購入した製品・サービス', emissions: 903.7, percentage: '100.0%' }],
+    suppliers: [{ name: 'Supplier', category: '購入した製品・サービス', emissionsNum: 903.7, rate: 50 }],
+  }),
+}));
+
+describe('formatCellForDisplay', () => {
+  it('排出量のセルは小数3桁固定で表示する', () => {
+    expect(formatCellForDisplay(903.7, { emissions: true })).toBe('903.700');
+    expect(formatCellForDisplay(26529, { emissions: true })).toBe('26,529.000');
+    expect(formatCellForDisplay(12.3456, { emissions: true })).toBe('12.346');
+    expect(formatCellForDisplay(0, { emissions: true })).toBe('0.000');
+  });
+
+  it('活動量・件数・構成比・文字列のセルは従来の表示のまま', () => {
+    expect(formatCellForDisplay(903.7)).toBe('903.7');
+    expect(formatCellForDisplay(12)).toBe('12');
+    expect(formatCellForDisplay('50.0%', { emissions: true })).toBe('50.0%');
+    expect(formatCellForDisplay('未算定')).toBe('未算定');
+  });
+});
+
+describe('レポートの排出量列', () => {
+  const preloaded: ReportData = {
+    fiscalYears: [{ id: 'fy-1', year: '2025', label: '2025年度', startDate: '2025-04-01', endDate: '2026-03-31' }],
+    locations: [{ id: 'loc-1', name: '東京本社', region: 'Kanto', regionLabel: '関東', type: 'headquarters', typeLabel: '本社' }],
+    summaries: [],
+    emissionResults: [{ fiscalYearId: 'fy-1', locationId: 'loc-1', scope: 'scope1', emissions: 903.7, recordCount: 1 }],
+    histories: [],
+  };
+
+  it.each<[ReportTypeId, number[][]]>([
+    ['annual_summary', [[1], [1, 2, 3]]],
+    ['scope3_detail', [[1], [2]]],
+    ['location_breakdown', [[2, 3, 4]]],
+  ])('%s は排出量の列だけを排出量として扱い、CSV は数値のまま出す', async (reportType, columns) => {
+    const report = await buildReportDocument({
+      reportType, reportTypeLabel: reportType, fiscalYearId: 'fy-1',
+      format: 'pdf', locationIds: ['loc-1'], preloaded,
+    });
+
+    expect(report.sections.filter(section => section.emissionsColumns).map(section => section.emissionsColumns))
+      .toEqual(columns);
+    for (const section of report.sections) {
+      section.columns.forEach((column, index) => {
+        expect(section.emissionsColumns?.includes(index) ?? false).toBe(column.includes('t-CO2e'));
+      });
+    }
+    const displayed = report.sections.flatMap(section => section.rows.flatMap(row => row.map((cell, index) =>
+      formatCellForDisplay(cell, { emissions: section.emissionsColumns?.includes(index) }),
+    )));
+    expect(displayed).toContain('903.700');
+    const csvCells = documentToRows(report).flat();
+    expect(csvCells).toContain(903.7);
+    expect(csvCells).not.toContain('903.700');
+    if (reportType === 'location_breakdown') expect(displayed).toContain('903.7');
+    // 一次データ率（数値）は排出量の列ではないため、小数3桁にしない。
+    if (reportType === 'scope3_detail') expect(displayed).toContain('50');
+    expect(displayed).toContain('0');
+  });
+});
 
 const methodsOf = (entries: [number, Scope3Method][]): Map<number, Scope3Method> =>
   new Map(entries);

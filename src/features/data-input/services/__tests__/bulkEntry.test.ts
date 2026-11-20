@@ -336,15 +336,15 @@ describe('buildBulkPreview', () => {
       label: '2026年4月',
       actionLabel: '新規登録',
       amountText: '10,000 kWh',
-      emissionsText: '5',
+      emissionsText: '5.000',
       warning: null,
     });
     expect(preview.monthRows[1]).toMatchObject({
       actionLabel: '上書き',
-      emissionsText: '10',
+      emissionsText: '10.000',
       warning: '選択中の係数はこの月には適用できないため、自動選択された係数で算定されます。',
     });
-    expect(preview.totalEmissionsText).toBe('15 t-CO2e');
+    expect(preview.totalEmissionsText).toBe('15.000 t-CO2e');
     expect(preview.createCount).toBe(1);
     expect(preview.overwriteCount).toBe(1);
   });
@@ -408,9 +408,9 @@ describe('buildBulkPreview', () => {
     );
     expect(preview.monthRows[1]).toMatchObject({
       amountText: '0 kWh',
-      emissionsText: '0',
+      emissionsText: '0.000',
       warning: ZERO_AMOUNT_PREVIEW_NOTICE,
     });
-    expect(preview.totalEmissionsText).toBe('5 t-CO2e');
+    expect(preview.totalEmissionsText).toBe('5.000 t-CO2e');
   });
 });

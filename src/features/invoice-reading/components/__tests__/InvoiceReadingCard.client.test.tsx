@@ -313,7 +313,7 @@ describe('InvoiceReadingCard', () => {
     expect(document.body.querySelectorAll('[data-testid="invoice-review-row"]')).toHaveLength(2);
     expect(isChecked('電気 2025年9月分')).toBe(true);
     expect(isChecked('ガソリン 2025年9月分')).toBe(true);
-    expect(document.body.textContent).toContain('0.4 t-CO2e');
+    expect(document.body.textContent).toContain('0.400 t-CO2e');
     expect(document.body.textContent).toContain('0.229 t-CO2e');
     // フォームに入れられない明細は、理由と一緒に表の下に出す。
     expect(document.body.textContent).toContain('9月分.pdf「水道 2025年9月分」: 対象外の請求書です');

@@ -11,6 +11,7 @@
 
 import { createClient } from '@/lib/supabase/client';
 import { fetchAllRows } from '@/lib/supabaseRows';
+import { formatEmissionsNumber } from '@/lib/emissionsFormat';
 import type { EnergyType } from '@/features/calculation/types';
 import {
   isScope3EnergyType,
@@ -46,6 +47,13 @@ export type ReportSection = {
   heading: string;
   note?: string;
   columns: string[];
+  /**
+   * 排出量（t-CO2e）の列の位置（0 始まり）。画面・PDF ではこの列だけを小数3桁固定で表示し、
+   * 活動量・件数などほかの数値セルは従来の表示のままにする。
+   * columns と別に持つため、列を足したり並べ替えたりしたらここも直すこと
+   * （見出しに t-CO2e を含む列と一致するかを reportContent.test.ts で確かめている）。
+   */
+  emissionsColumns?: number[];
   rows: ReportCell[][];
 };
 
@@ -483,6 +491,7 @@ const buildAnnualSummarySections = (
       uncalculatedWarningNote(uncalculatedCount),
     ),
     columns: ['区分', '排出量 (t-CO2e)', '構成比'],
+    emissionsColumns: [1],
     rows: [
       ['Scope 1', selectedScope1, ratio(selectedScope1)],
       ['Scope 2', selectedScope2, ratio(selectedScope2)],
@@ -494,6 +503,7 @@ const buildAnnualSummarySections = (
   const locationSection: ReportSection = {
     heading: '対象拠点別 Scope 1・2 排出量',
     columns: ['拠点名', 'Scope 1 (t-CO2e)', 'Scope 2 (t-CO2e)', '合計 (t-CO2e)'],
+    emissionsColumns: [1, 2, 3],
     rows: selectedLocations.map(location => {
       const scope = perLocation.get(location.id) ?? { scope1: 0, scope2: 0 };
       return [location.name, scope.scope1, scope.scope2, scope.scope1 + scope.scope2];
@@ -623,6 +633,7 @@ const buildScope3DetailSections = (
   const categorySection: ReportSection = {
     heading: 'Scope 3 カテゴリ別排出量',
     columns: ['カテゴリ', '排出量 (t-CO2e)', '構成比'],
+    emissionsColumns: [1],
     rows: scope.categories.map(category => [
       `${category.id}. ${category.name}`,
       category.emissions,
@@ -634,6 +645,7 @@ const buildScope3DetailSections = (
     heading: '主要サプライヤー',
     note: 'サプライヤー別排出量は、サプライヤー×年度×カテゴリ単位で登録された実績値です。',
     columns: ['サプライヤー', 'カテゴリ', '排出量 (t-CO2e)', '一次データ率 (%)'],
+    emissionsColumns: [2],
     rows: scope.suppliers.map(supplier => [
       supplier.name,
       supplier.category,
@@ -655,6 +667,7 @@ const buildLocationBreakdownSections = (
     heading: '拠点別排出量（Scope 1・2）',
     note: uncalculatedWarningNote(uncalculatedCount),
     columns: ['拠点名', '地域', 'Scope 1 (t-CO2e)', 'Scope 2 (t-CO2e)', '合計 (t-CO2e)'],
+    emissionsColumns: [2, 3, 4],
     rows: selectedLocations.map(location => {
       const scope = perLocation.get(location.id) ?? { scope1: 0, scope2: 0 };
       return [
@@ -823,8 +836,11 @@ export const buildReportMeta = (input: {
 ];
 
 // 画面・PDFビュー用の数値整形（桁区切りあり）。
-export const formatCellForDisplay = (cell: ReportCell): string => {
+export const formatCellForDisplay = (cell: ReportCell, options?: { emissions?: boolean }): string => {
   if (typeof cell === 'number') {
+    if (options?.emissions) {
+      return formatEmissionsNumber(cell, { precision: 'detail' });
+    }
     return cell.toLocaleString('ja-JP', { maximumFractionDigits: 3 });
   }
   return cell;

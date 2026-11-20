@@ -300,7 +300,7 @@ const chipText = (container: HTMLElement) =>
 const unitText = (container: HTMLElement) => q(container, '[data-testid="manual-unit-display"]').textContent;
 const factorDetailText = (container: HTMLElement) =>
   q(container, '[data-testid="manual-factor-detail"]').textContent ?? '';
-/** 計算結果ブロックの末尾（太字の推定排出量 '5.5 t-CO2e' など）。 */
+/** 計算結果ブロックの末尾（太字の推定排出量 '5.500 t-CO2e' など）。 */
 const resultEmissionsText = (container: HTMLElement) =>
   q(container, '[data-testid="manual-calculation-result"]').lastElementChild?.textContent;
 const alertText = (container: HTMLElement) => q(container, '[role="alert"]').textContent ?? '';
@@ -436,7 +436,7 @@ describe('ActivityEntryForm', () => {
       '燃料 A重油（2.75 tCO2/kL）',
       '燃料 B・C重油（3.1 tCO2/kL）',
     ]);
-    expect(resultEmissionsText(container)).toBe('2.75 t-CO2e');
+    expect(resultEmissionsText(container)).toBe('2.750 t-CO2e');
 
     openPreview(container);
     await saveFromPreview(container);
@@ -477,7 +477,7 @@ describe('ActivityEntryForm', () => {
 
     setSelectValue(monthInput(container), '2024-11');
     setInputValue(amountInput(container), '10000');
-    expect(resultEmissionsText(container)).toBe('5.5 t-CO2e');
+    expect(resultEmissionsText(container)).toBe('5.500 t-CO2e');
 
     const preview = openPreview(container);
     expect(preview.querySelector('h2')?.textContent).toBe('入力内容の確認');
@@ -646,7 +646,7 @@ describe('ActivityEntryForm', () => {
     expect(factorDetailText(container)).toContain('0.0004 t-CO2/kWh');
 
     setInputValue(amountInput(container), '10000');
-    expect(resultEmissionsText(container)).toBe('4 t-CO2e');
+    expect(resultEmissionsText(container)).toBe('4.000 t-CO2e');
 
     openPreview(container);
     expect(previewRowText(container, '係数の参照方式')).toBe('係数の参照方式供給事業者別係数');
@@ -856,7 +856,7 @@ describe('ActivityEntryForm', () => {
     setSelectValue(monthInput(container), '2024-11');
     setInputValue(amountInput(container), '1000');
     // 1,000 kg × 1.5 kg-CO2e/kg = 1,500 kg-CO2e = 1.5 t-CO2e
-    expect(resultEmissionsText(container)).toBe('1.5 t-CO2e');
+    expect(resultEmissionsText(container)).toBe('1.500 t-CO2e');
 
     openPreview(container);
     // Scope 1・2 と同じ 8 行構成: 製品は「適用係数」行に出し、原単位と出典を補足に出す
@@ -1078,11 +1078,11 @@ describe('ActivityEntryForm', () => {
 
     setInputValue(amountInput(container), '0');
     expect(container.querySelector('[data-testid="manual-amount-error"]')).toBeNull();
-    expect(resultEmissionsText(container)).toBe('0 t-CO2e');
+    expect(resultEmissionsText(container)).toBe('0.000 t-CO2e');
 
     const preview = openPreview(container);
     expect(previewRowText(container, '活動量')).toContain('0 kWh');
-    expect(previewRowText(container, '推定排出量')).toContain('0 t-CO2e');
+    expect(previewRowText(container, '推定排出量')).toContain('0.000 t-CO2e');
     expect(preview.textContent).toContain(
       '活動量 0 で保存します。実績ゼロの記録として排出量 0 で算定されます。入力漏れでないかご確認ください。',
     );
@@ -1590,7 +1590,7 @@ describe('ActivityEntryForm', () => {
     expect(table.textContent).toContain('2024年11月');
     expect(table.textContent).toContain('2024年12月');
     // 代替値 0.00055 t-CO2/kWh × (10,000 + 20,000) kWh = 16.5 t-CO2e
-    expect(q(preview, '[data-testid="manual-bulk-preview-total"]').textContent).toBe('16.5 t-CO2e');
+    expect(q(preview, '[data-testid="manual-bulk-preview-total"]').textContent).toBe('16.500 t-CO2e');
 
     await clickAsync(q(container, '#manual-bulk-save-button'));
 
@@ -1753,7 +1753,7 @@ describe('ActivityEntryForm', () => {
     expect(noteInput(container).value).toBe('請求書から読取り 東京電力エナジーパートナー株式会社 2024年11月分');
     expect(q<HTMLInputElement>(container, '#manual-provider-select').value).toContain(TEPCO);
     expect(factorDetailText(container)).toContain('0.0004 t-CO2/kWh');
-    expect(resultEmissionsText(container)).toBe('4 t-CO2e');
+    expect(resultEmissionsText(container)).toBe('4.000 t-CO2e');
 
     openPreview(container);
     await saveFromPreview(container);
@@ -1784,11 +1784,11 @@ describe('ActivityEntryForm', () => {
     expect(categorySelect(container).value).toBe('energy:fuel_heavy_oil');
     const factorSelect = q<HTMLSelectElement>(container, '#manual-factor-select');
     expect(factorSelect.value).toBe('heavy-bc');
-    expect(resultEmissionsText(container)).toBe('3.1 t-CO2e');
+    expect(resultEmissionsText(container)).toBe('3.100 t-CO2e');
 
     setSelectValue(factorSelect, 'heavy-a');
     expect(factorSelect.value).toBe('heavy-a');
-    expect(resultEmissionsText(container)).toBe('2.75 t-CO2e');
+    expect(resultEmissionsText(container)).toBe('2.750 t-CO2e');
   });
 
   it('編集では prefill を使わない（初期値は登録済みの記録）', async () => {
@@ -1976,7 +1976,7 @@ describe('ActivityEntryForm', () => {
       expect(container.querySelector('#manual-location-select-error')).toBeNull();
       expect([...locationSelect(container).options].map((option) => option.textContent)).toEqual(['大阪支社', '名古屋工場']);
       expect(previewButton(container).disabled).toBe(false);
-      expect(resultEmissionsText(container)).toBe('5.5 t-CO2e');
+      expect(resultEmissionsText(container)).toBe('5.500 t-CO2e');
     });
 
     it('住所が読めなかったときは、読めなかったことを案内する', async () => {
