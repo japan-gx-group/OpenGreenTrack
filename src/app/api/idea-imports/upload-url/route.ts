@@ -15,8 +15,8 @@
 //   を応答後に削除する。スケジューラを持たずにホスティングを問わず掃除するため
 
 import { NextResponse, after } from 'next/server';
-import { getCurrentProfile } from '@/lib/currentProfile';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { requireWrite } from '@/lib/authz';
 import { getRequestLogger } from '@/lib/logging/requestLogger';
 import {
   IDEA_IMPORT_PROCESSING_MESSAGE,
@@ -40,10 +40,11 @@ interface UploadUrlRequestBody {
 
 export const POST = async (request: Request) => {
   const log = await getRequestLogger();
-  const profile = await getCurrentProfile();
-  if (!profile) {
-    return NextResponse.json({ error: 'ログインが必要です' }, { status: 401 });
+  const check = await requireWrite();
+  if (!check.ok) {
+    return NextResponse.json({ error: check.error }, { status: check.status });
   }
+  const { profile } = check;
 
   let body: Partial<UploadUrlRequestBody> | null = null;
   try {

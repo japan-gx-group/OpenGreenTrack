@@ -24,8 +24,8 @@
 //   数十MB程度に収まる（docs/setup-guide.md 2-F に実測値）。
 
 import { NextResponse, after } from 'next/server';
-import { getCurrentProfile } from '@/lib/currentProfile';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { requireWrite } from '@/lib/authz';
 import { getRequestLogger } from '@/lib/logging/requestLogger';
 import { IDEA_GWP_MODEL_OPTIONS } from '@/features/factors/services/ideaImport';
 import {
@@ -78,10 +78,11 @@ const parseRequestBody = async (request: Request): Promise<Partial<IdeaImportReq
 
 export const POST = async (request: Request) => {
   const log = await getRequestLogger();
-  const profile = await getCurrentProfile();
-  if (!profile) {
-    return NextResponse.json({ error: 'ログインが必要です' }, { status: 401 });
+  const check = await requireWrite();
+  if (!check.ok) {
+    return NextResponse.json({ error: check.error }, { status: check.status });
   }
+  const { profile } = check;
 
   const body = await parseRequestBody(request);
   if (!body) {

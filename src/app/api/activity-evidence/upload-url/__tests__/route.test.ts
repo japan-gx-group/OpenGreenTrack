@@ -29,6 +29,7 @@ vi.mock('@/features/activity-evidence/services/evidenceServer', async (importOri
 
 import { resetEvidenceUploadUrlQuota } from '@/features/activity-evidence/services/evidenceServer';
 import { POST as postUploadUrl } from '../route';
+import { WRITE_FORBIDDEN_MESSAGE } from '@/lib/writePermission';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
 const UPLOAD_PATH = `${ORG}/activity-evidence/33333333-3333-4333-8333-333333333333`;
@@ -37,7 +38,7 @@ const jsonRequest = (url: string, body: unknown) =>
   new Request(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
 beforeEach(() => {
-  mocks.profile = { id: 'member-1', organizationId: ORG, role: 'member' };
+  mocks.profile = { id: 'member-1', organizationId: ORG, role: 'logger' };
   for (const mock of [mocks.after, mocks.finalize, mocks.createUploadUrl, mocks.removeStale, mocks.deleteFile]) mock.mockReset();
   resetEvidenceUploadUrlQuota();
 });
@@ -46,6 +47,14 @@ describe('POST /api/activity-evidence/upload-url', () => {
   it('ログインしていなければ 401', async () => {
     mocks.profile = null;
     expect((await postUploadUrl(jsonRequest('http://localhost/x', { fileName: 'a.pdf', fileSize: 10 }))).status).toBe(401);
+  });
+
+  it('閲覧者は 403 で、URL を発行しない', async () => {
+    mocks.profile = { id: 'viewer-1', organizationId: ORG, role: 'viewer' };
+    const response = await postUploadUrl(jsonRequest('http://localhost/x', { fileName: 'a.pdf', fileSize: 10 }));
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: WRITE_FORBIDDEN_MESSAGE });
+    expect(mocks.createUploadUrl).not.toHaveBeenCalled();
   });
 
   it('申告のファイル名・大きさで先に弾く', async () => {

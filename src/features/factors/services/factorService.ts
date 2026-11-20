@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { scopeForEnergyType } from '@/features/calculation/engine/energyTypeScope';
 import { createClient } from '@/lib/supabase/client';
+import { throwIfWriteForbidden } from '@/lib/writePermission';
 import { fetchAllRows } from '@/lib/supabaseRows';
 
 export const ACTIVE_FACTOR_UNIQUE_ERROR_MESSAGE = '同条件の有効係数が既に存在します';
@@ -361,6 +362,8 @@ export const addEmissionFactor = async (
     .single();
 
   if (error) {
+    // 閲覧者の insert は RLS（42501）で失敗する。
+    await throwIfWriteForbidden();
     throw new Error(getEmissionFactorMutationErrorMessage(error, '排出係数の登録に失敗しました'));
   }
 
@@ -383,8 +386,9 @@ export const updateEmissionFactor = async (
     .single();
 
   if (error) {
-    // PGRST116 = 該当行なし（標準係数 or 他組織）。それ以外は通信・DB障害として区別する。
+    // PGRST116 = 該当行なし（標準係数 or 他組織、または閲覧者で RLS に止められた）。それ以外は通信・DB障害として区別する。
     if (error.code === 'PGRST116') {
+      await throwIfWriteForbidden();
       throw new Error('標準係数は画面から直接更新できません。カスタム係数のみ編集できます');
     }
     throw new Error(getEmissionFactorMutationErrorMessage(error, '排出係数の更新に失敗しました'));
@@ -405,8 +409,9 @@ export const deleteEmissionFactor = async (id: string): Promise<void> => {
     .single();
 
   if (error) {
-    // PGRST116 = 該当行なし（標準係数 or 他組織）。それ以外は通信・DB障害として区別する。
+    // PGRST116 = 該当行なし（標準係数 or 他組織、または閲覧者で RLS に止められた）。それ以外は通信・DB障害として区別する。
     if (error.code === 'PGRST116') {
+      await throwIfWriteForbidden();
       throw new Error('標準係数は画面から直接削除できません。カスタム係数のみ削除できます');
     }
     throw new Error('排出係数の削除に失敗しました');

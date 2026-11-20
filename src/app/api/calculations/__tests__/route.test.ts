@@ -26,6 +26,7 @@ import {
   RateLimitExceededError,
 } from '@/lib/security/apiRateLimit';
 import { POST } from '../route';
+import { WRITE_FORBIDDEN_MESSAGE } from '@/lib/writePermission';
 
 const postRequest = (body: unknown) =>
   new Request('http://localhost/api/calculations', {
@@ -35,10 +36,31 @@ const postRequest = (body: unknown) =>
 
 const validBody = { organizationId: 'org-id', fiscalYearId: 'fy-id' };
 
+describe('POST /api/calculations の権限', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('未ログインは401で、算定しない', async () => {
+    mocks.getCurrentProfile.mockResolvedValue(null);
+    const response = await POST(postRequest(validBody));
+    expect(response.status).toBe(401);
+    expect(mocks.runCalculationBatch).not.toHaveBeenCalled();
+  });
+
+  it('閲覧者は403で、算定しない', async () => {
+    mocks.getCurrentProfile.mockResolvedValue({ organizationId: 'org-id', role: 'viewer' });
+    const response = await POST(postRequest(validBody));
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: WRITE_FORBIDDEN_MESSAGE });
+    expect(mocks.runCalculationBatch).not.toHaveBeenCalled();
+  });
+});
+
 describe('POST /api/calculations のレート制限応答', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getCurrentProfile.mockResolvedValue({ organizationId: 'org-id' });
+    mocks.getCurrentProfile.mockResolvedValue({ organizationId: 'org-id', role: 'logger' });
   });
 
   it('同時実行制限では429と処理時間目安のRetry-Afterを返す', async () => {

@@ -11,6 +11,7 @@
 // 解決する処理（getFiscalYearCandidates 等）は不要。その分シンプルな実装にしている。
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
+import { throwIfWriteForbidden } from '@/lib/writePermission';
 import { getFallbackFiscalYearTotal } from '@/features/dashboard/services/dashboardService';
 import {
   buildAnnualProgress,
@@ -230,6 +231,8 @@ export const saveReductionTarget = async (
     .from('reduction_targets')
     .upsert({ organizationId, baseFiscalYearId }, { onConflict: 'organizationId' });
   if (baseError) {
+    // 閲覧者の upsert は RLS（42501）で失敗する。
+    await throwIfWriteForbidden();
     throw new Error('削減目標の保存に失敗しました');
   }
 
@@ -265,11 +268,17 @@ export const clearReductionTarget = async (): Promise<void> => {
   const supabase = createClient();
   const organizationId = await getCurrentOrganizationId(supabase);
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('reduction_targets')
     .delete()
-    .eq('organizationId', organizationId);
+    .eq('organizationId', organizationId)
+    .select('organizationId');
   if (error) {
     throw new Error('削減目標の削除に失敗しました');
+  }
+  // 閲覧者の削除は RLS でエラーにならず 0 件になるため、削除できたように見せない
+  // （目標が元から無いときの 0 件は、そのまま成功として扱う）。
+  if ((data ?? []).length === 0) {
+    await throwIfWriteForbidden();
   }
 };

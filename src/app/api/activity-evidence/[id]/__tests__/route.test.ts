@@ -29,12 +29,13 @@ vi.mock('@/features/activity-evidence/services/evidenceServer', async (importOri
 
 import { resetEvidenceUploadUrlQuota } from '@/features/activity-evidence/services/evidenceServer';
 import { DELETE as deleteEvidence } from '../route';
+import { WRITE_FORBIDDEN_MESSAGE } from '@/lib/writePermission';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
 const FILE_ID = '44444444-4444-4444-8444-444444444444';
 
 beforeEach(() => {
-  mocks.profile = { id: 'member-1', organizationId: ORG, role: 'member' };
+  mocks.profile = { id: 'member-1', organizationId: ORG, role: 'logger' };
   for (const mock of [mocks.after, mocks.finalize, mocks.createUploadUrl, mocks.removeStale, mocks.deleteFile]) mock.mockReset();
   resetEvidenceUploadUrlQuota();
 });
@@ -45,8 +46,16 @@ describe('DELETE /api/activity-evidence/[id]', () => {
   it('ログインしていなければ 401、ID の形が違えば 404', async () => {
     mocks.profile = null;
     expect((await deleteEvidence(new Request('http://localhost/x'), params(FILE_ID))).status).toBe(401);
-    mocks.profile = { id: 'member-1', organizationId: ORG, role: 'member' };
+    mocks.profile = { id: 'member-1', organizationId: ORG, role: 'logger' };
     expect((await deleteEvidence(new Request('http://localhost/x'), params('../x'))).status).toBe(404);
+    expect(mocks.deleteFile).not.toHaveBeenCalled();
+  });
+
+  it('閲覧者は 403 で、帳票を消さない', async () => {
+    mocks.profile = { id: 'viewer-1', organizationId: ORG, role: 'viewer' };
+    const response = await deleteEvidence(new Request('http://localhost/x'), params(FILE_ID));
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: WRITE_FORBIDDEN_MESSAGE });
     expect(mocks.deleteFile).not.toHaveBeenCalled();
   });
 

@@ -24,6 +24,7 @@ vi.mock('@/lib/supabase/admin', () => ({
 
 import { IDEA_IMPORT_SQLSTATE } from '@/features/factors/services/ideaImportServer';
 import { POST } from '../route';
+import { WRITE_FORBIDDEN_MESSAGE } from '@/lib/writePermission';
 
 const FISCAL_YEAR_ID = '11111111-0000-0000-0000-000000002024';
 const IMPORT_ID = '019890ab-1234-4cde-8f01-23456789abcd';
@@ -43,13 +44,22 @@ const stubSupabase = (rpcResult: { data: unknown; error: { code?: string } | nul
 describe('POST /api/idea-imports/fiscal-year-assignment', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getCurrentProfile.mockResolvedValue({ id: 'user-1', organizationId: 'org-1' });
+    mocks.getCurrentProfile.mockResolvedValue({ id: 'user-1', organizationId: 'org-1', role: 'logger' });
   });
 
   it('未ログインは401', async () => {
     mocks.getCurrentProfile.mockResolvedValue(null);
     const response = await POST(request({ fiscalYearId: FISCAL_YEAR_ID, importId: IMPORT_ID }));
     expect(response.status).toBe(401);
+  });
+
+  it('閲覧者は403で、割り当てを変えない', async () => {
+    mocks.getCurrentProfile.mockResolvedValue({ id: 'viewer-1', organizationId: 'org-1', role: 'viewer' });
+    const rpc = stubSupabase({ data: null, error: null });
+    const response = await POST(request({ fiscalYearId: FISCAL_YEAR_ID, importId: IMPORT_ID }));
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: WRITE_FORBIDDEN_MESSAGE });
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it('fiscalYearId が UUID でない・importId が文字列でも null でもない場合は400', async () => {

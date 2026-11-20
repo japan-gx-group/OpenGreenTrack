@@ -1,5 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { isAdmin, isAssignableMemberRole, isMemberRole, memberRoleLabel } from '../role';
+import { canWrite, isAdmin, isAssignableMemberRole, isMemberRole, memberRoleLabel } from '../role';
+
+describe('canWrite', () => {
+  it('admin と logger は書け、viewer は書けない', () => {
+    expect(canWrite('admin')).toBe(true);
+    expect(canWrite('logger')).toBe(true);
+    expect(canWrite('viewer')).toBe(false);
+  });
+
+  it('ロールが取れていないときは書けない', () => {
+    expect(canWrite(null)).toBe(false);
+    expect(canWrite(undefined)).toBe(false);
+  });
+});
 
 describe('isAdmin', () => {
   it('admin だけを管理者とみなす', () => {

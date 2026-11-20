@@ -5,8 +5,7 @@
 // Storage に触れる前に確かめる（他組織のパスなら、他人のファイルかもしれないので消しもしない）。
 
 import { NextResponse } from 'next/server';
-import { getCurrentProfile } from '@/lib/currentProfile';
-import { SIGNED_OUT_MESSAGE } from '@/lib/authz';
+import { requireWrite } from '@/lib/authz';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getRequestLogger } from '@/lib/logging/requestLogger';
 import {
@@ -20,10 +19,11 @@ const CONVERTIBLE = ['image/png', 'image/jpeg'] as const;
 
 export const POST = async (request: Request) => {
   const log = await getRequestLogger();
-  const profile = await getCurrentProfile();
-  if (!profile) {
-    return NextResponse.json({ error: SIGNED_OUT_MESSAGE }, { status: 401 });
+  const check = await requireWrite();
+  if (!check.ok) {
+    return NextResponse.json({ error: check.error }, { status: check.status });
   }
+  const { profile } = check;
 
   const body: unknown = await request.json().catch(() => null);
   const { storagePath, fileName, convertedFrom } = (typeof body === 'object' && body !== null ? body : {}) as Record<

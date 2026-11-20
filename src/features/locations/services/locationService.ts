@@ -5,6 +5,7 @@
 // このファイルで「DBの列（enum・英語名）」と「画面表示用の LocationRecord」の相互変換を行う。
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
+import { throwIfWriteForbidden } from '@/lib/writePermission';
 import { refreshDashboardAggregates } from '@/features/scope-analysis/services/scope3MethodService';
 import {
   LOCATION_DELETE_BLOCKED_MESSAGE,
@@ -131,6 +132,8 @@ export const addLocation = async (location: NewLocationInput): Promise<LocationR
     .single();
 
   if (error) {
+    // 閲覧者の insert は RLS（42501）で失敗する。
+    await throwIfWriteForbidden();
     throw new Error('拠点の登録に失敗しました');
   }
 
@@ -176,6 +179,8 @@ export const addLocations = async (
     }
 
     // 一括 insert は1行でも弾かれるとチャンク全体が失敗する。原因行を特定する。
+    // 閲覧者なら全行が RLS で弾かれるため、入れ直す前に権限の文言で止める。
+    await throwIfWriteForbidden();
     for (let start = 0; start < chunk.length; start += MAX_PARALLEL_WRITES) {
       const batch = chunk.slice(start, start + MAX_PARALLEL_WRITES);
       const results = await Promise.all(
@@ -230,13 +235,15 @@ export const updateLocations = async (
     onProgress?.(offset + chunk.length);
   }
 
+  // 閲覧者の更新は RLS で 0 件（PGRST116）になり、行ごとの失敗に見える。権限の文言で止める。
+  if (failures.length > 0) await throwIfWriteForbidden();
+
   return { updated, failures };
 };
 
 // 既存拠点の更新。編集後の LocationRecord を返す。
-// organizationId は変更しない（所属組織の付け替えは対象外）。RLS は組織一致のみを見るため、
-// 自組織の拠点であれば所属メンバーの誰でも更新できる（拠点はロールにかかわらず編集できる。
-// current_user_can_edit はポリシー未参照）。
+// organizationId は変更しない（所属組織の付け替えは対象外）。RLS は自組織の拠点だけを更新させ、
+// 閲覧者の更新は 0 件にする（current_user_can_edit()）。0 件のときは権限で止められたのかを確かめる。
 export const updateLocation = async (
   locationId: string,
   location: NewLocationInput,
@@ -250,6 +257,8 @@ export const updateLocation = async (
     .single();
 
   if (error) {
+    // PGRST116 = 更新が 0 件（閲覧者は RLS で止められる）
+    if (error.code === 'PGRST116') await throwIfWriteForbidden();
     throw new Error('拠点の更新に失敗しました');
   }
 
@@ -410,13 +419,18 @@ export const deleteLocation = async (locationId: string): Promise<LocationDelete
       ? await getFiscalYearIdsWithEmissionResults(supabase, locationId)
       : [];
 
-  const { error } = await supabase
+  const { data: deletedRows, error } = await supabase
     .from('locations')
     .delete()
-    .eq('id', locationId);
+    .eq('id', locationId)
+    .select('id');
 
   if (error) {
     throw new Error('拠点の削除に失敗しました');
+  }
+  // 閲覧者の削除は RLS でエラーにならず 0 件になるため、削除できたように見せない。
+  if ((deletedRows ?? []).length === 0) {
+    await throwIfWriteForbidden();
   }
 
   const refreshedFiscalYearIds: string[] = [];

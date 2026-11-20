@@ -33,6 +33,7 @@ vi.mock('@/lib/supabase/server', () => ({
 vi.mock('@/features/invoice-reading/services/readInvoice', () => ({ readInvoice: mocks.readInvoice }));
 
 import { POST } from '../route';
+import { WRITE_FORBIDDEN_MESSAGE } from '@/lib/writePermission';
 
 const PDF = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31]);
 const EVIDENCE_ID = '0b6f1c1e-2f7a-4a39-9d55-7f1d2a3b4c5d';
@@ -57,7 +58,7 @@ const request = (body: unknown) =>
 
 describe('POST /api/ai/invoice-reading', () => {
   beforeEach(() => {
-    mocks.profile = { id: 'member-1', organizationId: 'org-1', role: 'member' };
+    mocks.profile = { id: 'member-1', organizationId: 'org-1', role: 'logger' };
     mocks.evidence = { ...EVIDENCE };
     mocks.selectError = null;
     mocks.selectedId = null;
@@ -69,6 +70,15 @@ describe('POST /api/ai/invoice-reading', () => {
     mocks.profile = null;
     const response = await POST(request({ evidenceFileId: EVIDENCE_ID }));
     expect(response.status).toBe(401);
+    expect(mocks.download).not.toHaveBeenCalled();
+    expect(mocks.readInvoice).not.toHaveBeenCalled();
+  });
+
+  it('閲覧者は 403（帳票も読取りも呼ばない。外部 API への送信と課金を伴うため）', async () => {
+    mocks.profile = { id: 'viewer-1', organizationId: 'org-1', role: 'viewer' };
+    const response = await POST(request({ evidenceFileId: EVIDENCE_ID }));
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: WRITE_FORBIDDEN_MESSAGE });
     expect(mocks.download).not.toHaveBeenCalled();
     expect(mocks.readInvoice).not.toHaveBeenCalled();
   });
