@@ -8,6 +8,7 @@ type QueryResult = { data: unknown; error: { message: string } | null };
 
 type QueryLog = {
   table: string;
+  action: 'select' | 'delete' | 'insert';
   filters: { op: string; column: string; value: unknown }[];
   orders: { column: string; ascending: boolean }[];
   range: [number, number] | null;
@@ -17,9 +18,19 @@ let resolveQuery: (query: QueryLog) => QueryResult = () => ({ data: null, error:
 
 // select → eq / in → order → range → await（thenable）のチェーンを記録して結果を返す簡易ビルダー。
 const makeBuilder = (table: string) => {
-  const query: QueryLog = { table, filters: [], orders: [], range: null };
+  const query: QueryLog = { table, action: 'select', filters: [], orders: [], range: null };
   const builder = {
     select: () => builder,
+    delete: () => {
+      query.action = 'delete';
+      return builder;
+    },
+    insert: () => {
+      query.action = 'insert';
+      return builder;
+    },
+    neq: () => builder,
+    limit: () => builder,
     eq: (column: string, value: unknown) => {
       query.filters.push({ op: 'eq', column, value });
       return builder;
@@ -55,7 +66,15 @@ vi.mock('@/lib/supabase/client', () => ({
   }),
 }));
 
-import { getActivityHistoryRecords } from '../activityRecordService';
+const throwIfWriteForbidden = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/writePermission', () => ({ throwIfWriteForbidden }));
+
+import {
+  addManualActivityRecord,
+  addScope3ActivityRecord,
+  deleteActivityRecord,
+  getActivityHistoryRecords,
+} from '../activityRecordService';
 
 const makeRecordRow = (index: number) => ({
   id: `rec-${String(index).padStart(5, '0')}`,
@@ -172,5 +191,62 @@ describe('getActivityHistoryRecords', () => {
         : makeResolver(0)(query);
 
     await expect(getActivityHistoryRecords()).rejects.toThrow('入力履歴の取得に失敗しました');
+  });
+});
+
+describe('deleteActivityRecord', () => {
+  beforeEach(() => {
+    queryLog = [];
+    throwIfWriteForbidden.mockReset();
+  });
+
+  it('削除が 0 件（閲覧者は RLS で止められる）なら権限を確かめ、権限の文言で失敗させる', async () => {
+    resolveQuery = () => ({ data: [], error: null });
+    throwIfWriteForbidden.mockRejectedValue(new Error('閲覧者は閲覧のみ可能です。編集はできません'));
+
+    await expect(deleteActivityRecord('rec-1')).rejects.toThrow('閲覧者は閲覧のみ可能です。編集はできません');
+    expect(queryLog).toEqual([
+      expect.objectContaining({ table: 'activity_records', action: 'delete', filters: [{ op: 'eq', column: 'id', value: 'rec-1' }] }),
+    ]);
+  });
+
+  it('削除できたときは権限を確かめない', async () => {
+    resolveQuery = () => ({ data: [{ id: 'rec-1' }], error: null });
+
+    await expect(deleteActivityRecord('rec-1')).resolves.toBeUndefined();
+    expect(throwIfWriteForbidden).not.toHaveBeenCalled();
+  });
+});
+
+// 閲覧者の insert は RLS（42501）で失敗する。画面を開いたまま閲覧者に変えられた人にも権限の文言を出す。
+describe('addManualActivityRecord / addScope3ActivityRecord が RLS で失敗したとき', () => {
+  const FORBIDDEN = '閲覧者は閲覧のみ可能です。編集はできません';
+  const period = { amount: 10, periodStart: '2025-04-01', periodEnd: '2025-04-30', note: null };
+  const manual = { ...period, locationId: 'loc-1', energyType: 'electricity', unit: 'kWh', emissionFactorId: null };
+  const scope3 = { ...period, locationId: 'loc-1', scope3CategoryId: 1, ideaFactorId: 'idea-1', unit: 'kg' };
+
+  beforeEach(() => {
+    queryLog = [];
+    throwIfWriteForbidden.mockReset();
+    resolveQuery = query => {
+      if (query.table === 'profiles') return { data: { organizationId: 'org-1' }, error: null };
+      if (query.action === 'insert') {
+        return { data: null, error: { code: '42501', message: 'new row violates row-level security policy' } } as QueryResult;
+      }
+      return { data: [], error: null };
+    };
+  });
+
+  it('閲覧者には権限の文言を出す', async () => {
+    throwIfWriteForbidden.mockRejectedValue(new Error(FORBIDDEN));
+    await expect(addManualActivityRecord(manual as Parameters<typeof addManualActivityRecord>[0])).rejects.toThrow(FORBIDDEN);
+    await expect(addScope3ActivityRecord(scope3)).rejects.toThrow(FORBIDDEN);
+  });
+
+  it('書ける人には今までどおりの文言を出す', async () => {
+    await expect(addManualActivityRecord(manual as Parameters<typeof addManualActivityRecord>[0])).rejects.toThrow(
+      '活動量レコードの登録に失敗しました',
+    );
+    await expect(addScope3ActivityRecord(scope3)).rejects.toThrow('Scope3活動量レコードの登録に失敗しました');
   });
 });

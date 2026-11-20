@@ -6,6 +6,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
+import { throwIfWriteForbidden } from '@/lib/writePermission';
 import type { Scope3Method } from './scopeAnalysisService';
 
 const getCurrentOrganizationId = async (supabase: SupabaseClient): Promise<string> => {
@@ -61,6 +62,8 @@ export const saveScope3CategoryMethod = async (
     { onConflict: 'organizationId,fiscalYearId,categoryId' },
   );
   if (error) {
+    // 閲覧者の upsert は RLS（42501）で失敗する。
+    await throwIfWriteForbidden();
     throw new Error('算定方法の切替に失敗しました');
   }
 
@@ -96,6 +99,8 @@ export const saveScope3DirectEmissions = async (
     { onConflict: 'organizationId,fiscalYearId,categoryId' },
   );
   if (error) {
+    // 閲覧者の upsert は RLS（42501）で失敗する。
+    await throwIfWriteForbidden();
     throw new Error('Scope 3カテゴリ別排出量の保存に失敗しました');
   }
 

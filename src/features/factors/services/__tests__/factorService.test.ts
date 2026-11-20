@@ -1,13 +1,38 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+// 係数の書き込みの結果（mocks.result）を返す簡易クライアント。組織の解決（profiles）だけは自組織を返す。
+const mocks = vi.hoisted(() => ({
+  result: { data: null as unknown, error: null as { code?: string; message: string } | null },
+  throwIfWriteForbidden: vi.fn(),
+}));
+vi.mock('@/lib/supabase/client', () => {
+  const makeBuilder = (table: string) => {
+    const builder: Record<string, unknown> = {};
+    for (const method of ['insert', 'update', 'delete', 'eq', 'select']) builder[method] = () => builder;
+    builder.single = async () =>
+      table === 'profiles' ? { data: { organizationId: 'org-1' }, error: null } : mocks.result;
+    return builder;
+  };
+  return {
+    createClient: () => ({
+      auth: { getUser: async () => ({ data: { user: { id: 'user-1' } } }) },
+      from: (table: string) => makeBuilder(table),
+    }),
+  };
+});
+vi.mock('@/lib/writePermission', () => ({ throwIfWriteForbidden: mocks.throwIfWriteForbidden }));
 import {
   ACTIVE_FACTOR_UNIQUE_ERROR_MESSAGE,
   ACTIVE_FACTOR_UNIQUE_INDEX_NAMES,
   ENERGY_VALUE_BY_LABEL,
+  addEmissionFactor,
+  deleteEmissionFactor,
   getEmissionFactorMutationErrorMessage,
   toFactorFormValues,
   toMutationRow,
+  updateEmissionFactor,
   type EmissionFactor,
 } from '../factorService';
 
@@ -187,5 +212,72 @@ describe('toFactorFormValues', () => {
     const savedDirectly = { ...stored };
 
     expect(toMutationRow(toFactorFormValues(stored))).toEqual(toMutationRow(savedDirectly));
+  });
+});
+
+// RLS で止められた閲覧者の更新・削除も 0 件（PGRST116）になる。標準係数の案内を出すと理由を取り違えるため、
+// 先に権限を確かめる。
+describe('updateEmissionFactor / deleteEmissionFactor が 0 件のとき', () => {
+  const factor: Omit<EmissionFactor, 'id'> = {
+    name: '都市ガス（自社算定値）',
+    energyType: 'ガス',
+    scope: 'Scope 1',
+    factorValue: 0.00224,
+    unit: 't-CO2e/m3',
+    applicableYear: 2024,
+    region: '全国',
+    source: '自社設定',
+    status: '有効',
+    isCustom: true,
+  };
+  const forbidden = new Error('閲覧者は閲覧のみ可能です。編集はできません');
+
+  beforeEach(() => {
+    mocks.result = { data: null, error: { code: 'PGRST116', message: 'no rows' } };
+    mocks.throwIfWriteForbidden.mockReset();
+  });
+
+  it('閲覧者には標準係数の案内ではなく権限の文言を出す', async () => {
+    mocks.throwIfWriteForbidden.mockRejectedValue(forbidden);
+    await expect(updateEmissionFactor('factor-1', factor)).rejects.toThrow(forbidden.message);
+    await expect(deleteEmissionFactor('factor-1')).rejects.toThrow(forbidden.message);
+  });
+
+  it('書ける人には今までどおり標準係数の案内を出す', async () => {
+    await expect(updateEmissionFactor('factor-1', factor)).rejects.toThrow(
+      '標準係数は画面から直接更新できません。カスタム係数のみ編集できます',
+    );
+    await expect(deleteEmissionFactor('factor-1')).rejects.toThrow(
+      '標準係数は画面から直接削除できません。カスタム係数のみ削除できます',
+    );
+  });
+});
+
+describe('addEmissionFactor が RLS（42501）で失敗したとき', () => {
+  const factor: Omit<EmissionFactor, 'id'> = {
+    name: '都市ガス（自社算定値）',
+    energyType: 'ガス',
+    scope: 'Scope 1',
+    factorValue: 0.00224,
+    unit: 't-CO2e/m3',
+    applicableYear: 2024,
+    region: '全国',
+    source: '自社設定',
+    status: '有効',
+    isCustom: true,
+  };
+
+  beforeEach(() => {
+    mocks.result = { data: null, error: { code: '42501', message: 'new row violates row-level security policy' } };
+    mocks.throwIfWriteForbidden.mockReset();
+  });
+
+  it('閲覧者には権限の文言を出す', async () => {
+    mocks.throwIfWriteForbidden.mockRejectedValue(new Error('閲覧者は閲覧のみ可能です。編集はできません'));
+    await expect(addEmissionFactor(factor)).rejects.toThrow('閲覧者は閲覧のみ可能です。編集はできません');
+  });
+
+  it('書ける人には今までどおりの文言を出す', async () => {
+    await expect(addEmissionFactor(factor)).rejects.toThrow('排出係数の登録に失敗しました');
   });
 });
