@@ -9,8 +9,13 @@ const SUMMARY_DECIMAL_THRESHOLD = 100;
 // summary で 0 と区別する微小値の境界。100 の表示切替とは独立して判定する。
 const SUMMARY_SMALL_VALUE_CUTOFF = 0.05;
 
-// detail: 精度が意味を持つ出力（レポートの表・データ入力の算定結果など）向け。小数3位まで。
-const detailFormatter = new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 3 });
+// detail: 精度が意味を持つ出力（レポートの表・データ入力の算定結果・Scope 3 の算定方法表・請求書読取の確認表など）向け。小数3桁固定。
+const detailFormatter = new Intl.NumberFormat('ja-JP', {
+  minimumFractionDigits: 3,
+  maximumFractionDigits: 3,
+});
+// detail で 0.000 に丸まる境界（小数3位の半分）。
+const DETAIL_ZERO_CUTOFF = 0.0005;
 // summary: KPI カードなどの要約向け。
 const oneDecimalFormatter = new Intl.NumberFormat('ja-JP', {
   minimumFractionDigits: 1,
@@ -23,7 +28,7 @@ const integerFormatter = new Intl.NumberFormat('ja-JP', { maximumFractionDigits:
  *
  * - `summary`（既定）: 整数。ただし絶対値が 100 未満なら小数1桁（小規模な組織で値が 0 に潰れないようにする）。
  *   真の 0 は `0`、0 より大きく 0.05 未満は `<0.1`、-0.05 より大きく 0 未満は `>-0.1` と表示する。
- * - `detail`: 小数3位まで（末尾のゼロは出さない）。
+ * - `detail`: 小数3桁固定（末尾のゼロも出す）。0.000 に丸まる値は符号を付けない。
  *
  * null や「未算定」の扱いは呼び出し側で行う。
  */
@@ -32,7 +37,8 @@ export const formatEmissionsNumber = (
   options?: { precision?: EmissionsPrecision },
 ): string => {
   if (options?.precision === 'detail') {
-    return detailFormatter.format(value);
+    // 0.000 に丸まる負の値（-0 や浮動小数の誤差 -1e-12 など）は「-0.000」にせず「0.000」と出す。
+    return detailFormatter.format(Math.abs(value) < DETAIL_ZERO_CUTOFF ? 0 : value);
   }
 
   if (value === 0) {

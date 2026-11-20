@@ -63,6 +63,15 @@ describe('toHistoryItem の適用係数表示', () => {
   });
 });
 
+describe('toHistoryItem の排出量表示', () => {
+  it('算定済みは小数3桁固定（末尾のゼロも出す）、未算定は「未算定」と表示する', () => {
+    expect(toHistoryItem(record({ id: 'rec-1', emissions: 0.438 })).emissionsText).toBe('0.438');
+    expect(toHistoryItem(record({ id: 'rec-2', emissions: 12.5 })).emissionsText).toBe('12.500');
+    expect(toHistoryItem(record({ id: 'rec-3', emissions: 0 })).emissionsText).toBe('0.000');
+    expect(toHistoryItem(record({ id: 'rec-4', emissions: null })).emissionsText).toBe('未算定');
+  });
+});
+
 describe('適用係数のキーワード検索', () => {
   const items = [
     toHistoryItem(record({ id: 'rec-1' })),

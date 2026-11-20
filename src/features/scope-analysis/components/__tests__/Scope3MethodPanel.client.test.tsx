@@ -79,7 +79,24 @@ afterEach(() => {
 });
 
 describe('Scope3MethodPanel の排出量の表示', () => {
-  it('直接入力値・算定値・採用値は入力した桁のまま小数3位まで表示する', () => {
+  it('直接入力値・算定値・採用値は小数3桁固定で表示する（整数・0 も末尾のゼロを出す）', () => {
+    const result = render(
+      <Scope3MethodPanel
+        items={[{ ...ITEM, directEmissions: 9694, calculatedEmissions: 0, adoptedEmissions: 903.7 }]}
+        fiscalYearId="fy2024"
+        onSwitchMethod={vi.fn()}
+        onSaveDirect={vi.fn()}
+      />,
+    );
+    mounted = result;
+
+    const text = result.container.textContent ?? '';
+    expect(text).toContain('9,694.000');
+    expect(text).toContain('0.000');
+    expect(text).toContain('903.700');
+  });
+
+  it('小数3位までの値はそのまま表示する', () => {
     const result = render(
       <Scope3MethodPanel
         items={[{ ...ITEM, directEmissions: 12.345, calculatedEmissions: 30690.594, adoptedEmissions: 12.345 }]}

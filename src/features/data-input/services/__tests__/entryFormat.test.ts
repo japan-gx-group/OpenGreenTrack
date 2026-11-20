@@ -61,9 +61,9 @@ const period = { start: '2024-11-01', end: '2024-11-30' };
 
 describe('表示文字列', () => {
   it('排出量は ja-JP 小数第3位、係数・出典・事業者/地域を整形する', () => {
-    expect(formatEmissions(5.5)).toBe('5.5');
+    expect(formatEmissions(5.5)).toBe('5.500');
     expect(formatEmissions(0.1234567)).toBe('0.123');
-    expect(formatEmissions(1234.5)).toBe('1,234.5');
+    expect(formatEmissions(1234.5)).toBe('1,234.500');
     expect(factorNameWithValue(national)).toBe('電気（代替値・全国）（0.00055 t-CO2/kWh）');
     expect(factorSourceText(national)).toBe('環境省');
     expect(factorSourceText(factor({ id: 'x', source: 'ketsoho', sourceDocumentName: '算定方法・排出係数一覧' }))).toBe(
@@ -135,7 +135,7 @@ describe('buildCalculationResultView', () => {
       amountText: '10,000',
       unit: 'kWh',
       factorText: '0.00055 t-CO2/kWh',
-      emissionsText: '5.5 t-CO2e',
+      emissionsText: '5.500 t-CO2e',
     });
   });
 
@@ -163,7 +163,7 @@ describe('buildCalculationResultView', () => {
         amount: 1000,
         estimatedEmissions: 1.5,
       }),
-    ).toMatchObject({ kind: 'result', factorText: '1.5 kg-CO2e/kg', emissionsText: '1.5 t-CO2e' });
+    ).toMatchObject({ kind: 'result', factorText: '1.5 kg-CO2e/kg', emissionsText: '1.500 t-CO2e' });
   });
 });
 
@@ -223,7 +223,7 @@ describe('buildPreviewRows', () => {
       value: '電気（代替値・全国）（0.00055 t-CO2/kWh）',
       note: '出典: 環境省 / 地域: 全国',
     });
-    expect(rows[6].value).toBe('5.5 t-CO2e');
+    expect(rows[6].value).toBe('5.500 t-CO2e');
     expect(rows[7].value).toBe('—');
   });
 

@@ -53,11 +53,22 @@ describe('formatEmissionsNumber（summary）', () => {
 });
 
 describe('formatEmissionsNumber（detail）', () => {
-  it('小数3位まで表示し、末尾のゼロは出さない', () => {
+  it('小数3桁固定で表示し、末尾のゼロも出す', () => {
     expect(formatEmissionsNumber(30690.594, { precision: 'detail' })).toBe('30,690.594');
-    expect(formatEmissionsNumber(903.7, { precision: 'detail' })).toBe('903.7');
-    expect(formatEmissionsNumber(26529, { precision: 'detail' })).toBe('26,529');
+    expect(formatEmissionsNumber(903.7, { precision: 'detail' })).toBe('903.700');
+    expect(formatEmissionsNumber(26529, { precision: 'detail' })).toBe('26,529.000');
     expect(formatEmissionsNumber(12.3456, { precision: 'detail' })).toBe('12.346');
-    expect(formatEmissionsNumber(0.04, { precision: 'detail' })).toBe('0.04');
+    expect(formatEmissionsNumber(0.04, { precision: 'detail' })).toBe('0.040');
+    expect(formatEmissionsNumber(0, { precision: 'detail' })).toBe('0.000');
+    expect(formatEmissionsNumber(-903.7, { precision: 'detail' })).toBe('-903.700');
+    expect(formatEmissionsNumber(0.000499, { precision: 'detail' })).toBe('0.000');
+    expect(formatEmissionsNumber(0.0005, { precision: 'detail' })).toBe('0.001');
+  });
+
+  it('0.000 に丸まる負の値は符号を付けずに 0.000 と表示する', () => {
+    expect(formatEmissionsNumber(-0, { precision: 'detail' })).toBe('0.000');
+    expect(formatEmissionsNumber(-1e-12, { precision: 'detail' })).toBe('0.000');
+    expect(formatEmissionsNumber(-0.000499, { precision: 'detail' })).toBe('0.000');
+    expect(formatEmissionsNumber(-0.0005, { precision: 'detail' })).toBe('-0.001');
   });
 });

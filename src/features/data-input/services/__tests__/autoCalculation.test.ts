@@ -169,6 +169,20 @@ describe('buildCalculationMessages', () => {
     expect(messages[4]).toContain('サーバー内部エラーが発生しました');
   });
 
+  it('合計の差分は小数3桁固定で出し、浮動小数の誤差による負の値は 0.000 と出す', () => {
+    const run = createEmptyRunResult();
+    run.processedCount = 2;
+    run.totalEmissionsDelta = 1.5;
+    expect(buildCalculationMessages(run, { uncoveredCount: 0 })[0]).toBe(
+      '排出量の自動計算が完了しました（2件、合計 1.500 t-CO2e）。',
+    );
+
+    run.totalEmissionsDelta = -1e-12;
+    expect(buildCalculationMessages(run, { uncoveredCount: 0 })[0]).toBe(
+      '排出量の自動計算が完了しました（2件、合計 0.000 t-CO2e）。',
+    );
+  });
+
   it('Scope 2 基準別の未解決は理由別に件数と、再計算で解消するかを伝える', () => {
     const run = createEmptyRunResult();
     run.processedCount = 1;
