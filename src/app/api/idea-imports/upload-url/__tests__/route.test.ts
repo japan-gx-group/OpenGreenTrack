@@ -37,6 +37,7 @@ import {
   resetIdeaUploadUrlQuota,
 } from '@/features/factors/services/ideaImportServer';
 import { POST } from '../route';
+import { WRITE_FORBIDDEN_MESSAGE } from '@/lib/writePermission';
 
 const ORG_ID = '0198a0b1-1111-4aaa-8bbb-000000000001';
 
@@ -95,7 +96,7 @@ describe('POST /api/idea-imports/upload-url', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetIdeaUploadUrlQuota();
-    mocks.getCurrentProfile.mockResolvedValue({ id: 'user-1', organizationId: ORG_ID });
+    mocks.getCurrentProfile.mockResolvedValue({ id: 'user-1', organizationId: ORG_ID, role: 'logger' });
     mocks.createAdminClient.mockReturnValue(stubSupabase().client);
   });
 
@@ -103,6 +104,15 @@ describe('POST /api/idea-imports/upload-url', () => {
     mocks.getCurrentProfile.mockResolvedValue(null);
     const response = await POST(buildRequest({ fileName: 'IDEA.xlsx', fileSize: 1024 }));
     expect(response.status).toBe(401);
+  });
+
+  it('閲覧者は403で、URL を発行しない', async () => {
+    mocks.getCurrentProfile.mockResolvedValue({ id: 'viewer-1', organizationId: 'org-1', role: 'viewer' });
+    mocks.createAdminClient.mockClear();
+    const response = await POST(buildRequest({ fileName: 'IDEA.xlsx', fileSize: 1024 }));
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: WRITE_FORBIDDEN_MESSAGE });
+    expect(mocks.createAdminClient).not.toHaveBeenCalled();
   });
 
   it('JSON でない・fileName / fileSize の型が違うボディは400', async () => {
@@ -187,7 +197,7 @@ describe('POST /api/idea-imports/upload-url', () => {
     expect(stub.requestedPaths).toHaveLength(IDEA_UPLOAD_URL_RATE_LIMIT.limit);
 
     // 別組織は別枠
-    mocks.getCurrentProfile.mockResolvedValue({ id: 'user-2', organizationId: '0198a0b1-2222-4aaa-8bbb-000000000002' });
+    mocks.getCurrentProfile.mockResolvedValue({ id: 'user-2', organizationId: '0198a0b1-2222-4aaa-8bbb-000000000002', role: 'logger' });
     expect((await POST(buildRequest({ fileName: 'IDEA.xlsx', fileSize: 1024 }))).status).toBe(200);
   });
 

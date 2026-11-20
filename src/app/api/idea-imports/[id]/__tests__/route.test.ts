@@ -23,6 +23,7 @@ vi.mock('@/lib/supabase/admin', () => ({
 
 import { IDEA_IMPORT_SQLSTATE } from '@/features/factors/services/ideaImportServer';
 import { DELETE } from '../route';
+import { WRITE_FORBIDDEN_MESSAGE } from '@/lib/writePermission';
 
 const IMPORT_ID = '019890ab-1234-4cde-8f01-23456789abcd';
 
@@ -38,13 +39,21 @@ const stubSupabase = (rpcResult: { data: unknown; error: { code?: string } | nul
 describe('DELETE /api/idea-imports/[id]', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getCurrentProfile.mockResolvedValue({ id: 'user-1', organizationId: 'org-1' });
+    mocks.getCurrentProfile.mockResolvedValue({ id: 'user-1', organizationId: 'org-1', role: 'logger' });
   });
 
   it('未ログインは401', async () => {
     mocks.getCurrentProfile.mockResolvedValue(null);
     const response = await DELETE(request(), params());
     expect(response.status).toBe(401);
+  });
+
+  it('閲覧者は403で、版を削除しない', async () => {
+    mocks.getCurrentProfile.mockResolvedValue({ id: 'viewer-1', organizationId: 'org-1', role: 'viewer' });
+    const response = await DELETE(request(), params());
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: WRITE_FORBIDDEN_MESSAGE });
+    expect(mocks.createAdminClient).not.toHaveBeenCalled();
   });
 
   it('UUIDでないIDは404', async () => {

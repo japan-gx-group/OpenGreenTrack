@@ -45,6 +45,7 @@ import {
   buildIdeaUploadPath,
 } from '@/features/factors/services/ideaImportServer';
 import { POST } from '../route';
+import { WRITE_FORBIDDEN_MESSAGE } from '@/lib/writePermission';
 
 const ORG_ID = '0198a0b1-1111-4aaa-8bbb-000000000001';
 const OTHER_ORG_ID = '0198a0b1-2222-4aaa-8bbb-000000000002';
@@ -182,7 +183,7 @@ const stubSupabase = ({
 describe('POST /api/idea-imports', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getCurrentProfile.mockResolvedValue({ id: 'user-1', organizationId: ORG_ID });
+    mocks.getCurrentProfile.mockResolvedValue({ id: 'user-1', organizationId: ORG_ID, role: 'logger' });
     mocks.log.child.mockReturnValue(mocks.log);
     mocks.createAdminClient.mockReturnValue(stubSupabase().client);
   });
@@ -191,6 +192,15 @@ describe('POST /api/idea-imports', () => {
     mocks.getCurrentProfile.mockResolvedValue(null);
     const response = await POST(buildRequest());
     expect(response.status).toBe(401);
+  });
+
+  it('閲覧者は403で、service_role のクライアントを作らない', async () => {
+    mocks.getCurrentProfile.mockResolvedValue({ id: 'viewer-1', organizationId: 'org-1', role: 'viewer' });
+    mocks.createAdminClient.mockClear();
+    const response = await POST(buildRequest());
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: WRITE_FORBIDDEN_MESSAGE });
+    expect(mocks.createAdminClient).not.toHaveBeenCalled();
   });
 
   it('JSON でないボディは400', async () => {

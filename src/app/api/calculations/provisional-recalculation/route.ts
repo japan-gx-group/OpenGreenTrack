@@ -16,6 +16,7 @@ import {
   resetProvisionalCalculatedRecords,
 } from '@/features/calculation/services/provisionalRecalculation';
 import { getCurrentProfile } from '@/lib/currentProfile';
+import { requireWrite } from '@/lib/authz';
 import { getRequestLogger } from '@/lib/logging/requestLogger';
 
 // service_role を使うため Node ランタイムで実行する（Edge では実行しない）
@@ -42,10 +43,11 @@ export const GET = async () => {
 
 export const POST = async (request: Request) => {
   const log = await getRequestLogger();
-  const profile = await getCurrentProfile();
-  if (!profile) {
-    return NextResponse.json({ error: 'ログインが必要です' }, { status: 401 });
+  const check = await requireWrite();
+  if (!check.ok) {
+    return NextResponse.json({ error: check.error }, { status: check.status });
   }
+  const { profile } = check;
 
   let body: unknown;
   try {

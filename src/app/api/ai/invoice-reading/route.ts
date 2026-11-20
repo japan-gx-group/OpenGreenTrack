@@ -7,8 +7,7 @@
 // 本体は src/features/invoice-reading/services/readInvoice.ts。失敗の理由はサーバのログにだけ残し、画面には決まった文を返す。
 
 import { NextResponse, type NextRequest } from 'next/server';
-import { getCurrentProfile } from '@/lib/currentProfile';
-import { SIGNED_OUT_MESSAGE } from '@/lib/authz';
+import { requireWrite } from '@/lib/authz';
 import { getRequestLogger } from '@/lib/logging/requestLogger';
 import { createClient } from '@/lib/supabase/server';
 import { readInvoice } from '@/features/invoice-reading/services/readInvoice';
@@ -35,10 +34,11 @@ const STATUS_BY_CODE: Partial<Record<AiGenerateErrorCode | 'load_failed', number
 
 export const POST = async (request: NextRequest) => {
   const log = await getRequestLogger();
-  const profile = await getCurrentProfile();
-  if (!profile) {
-    return NextResponse.json({ error: SIGNED_OUT_MESSAGE }, { status: 401 });
+  const check = await requireWrite();
+  if (!check.ok) {
+    return NextResponse.json({ error: check.error }, { status: check.status });
   }
+  const { profile } = check;
 
   const body: unknown = await request.json().catch(() => null);
   const evidenceFileId = typeof body === 'object' && body !== null ? (body as { evidenceFileId?: unknown }).evidenceFileId : null;

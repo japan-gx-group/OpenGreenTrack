@@ -32,5 +32,9 @@ export const isAssignableMemberRole = (value: unknown): value is AssignableMembe
 
 export const isAdmin = (role: MemberRole | null | undefined): boolean => role === 'admin';
 
+// ロールが取れていない（未ログイン・プロフィールの取得失敗）ときは書けない側に倒す。
+export const canWrite = (role: MemberRole | null | undefined): boolean =>
+  role === 'admin' || role === 'logger';
+
 // 画面の表示名。'logger'・'viewer' はどちらも「メンバー」。
 export const memberRoleLabel = (role: MemberRole): string => (isAdmin(role) ? '管理者' : 'メンバー');
