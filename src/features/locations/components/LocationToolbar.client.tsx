@@ -5,6 +5,7 @@
 
 import { useRef } from 'react';
 import { Download, FileDown, Plus, Upload } from 'lucide-react';
+import { LOCATION_CSV_MAX_ROWS } from '../services/locationCsvImport';
 
 interface LocationToolbarProps {
   onDownloadTemplate: () => void;
@@ -57,7 +58,7 @@ export const LocationToolbar = ({
           type="button"
           className="gt-btn"
           onClick={() => importFileInputRef.current?.click()}
-          title="CSVテンプレート／CSVエクスポートと同じ列構成のファイルを取り込みます（取り込む前に内容を確認できます）"
+          title={`CSVテンプレート／CSVエクスポートと同じ列構成のファイルを取り込みます（最大 ${LOCATION_CSV_MAX_ROWS.toLocaleString('en-US')} 行、取り込む前に内容を確認できます）`}
         >
           <Upload size={15}/> CSVインポート
         </button>

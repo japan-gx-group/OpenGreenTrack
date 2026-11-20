@@ -26,6 +26,8 @@ import {
   type Region,
 } from '../types';
 
+export const LOCATION_CSV_MAX_ROWS = 1000;
+
 /** CSVエクスポートと同一のヘッダー列（この並びで一致しない場合は取込を中止する） */
 export const LOCATION_CSV_HEADERS = [
   'ID', '拠点名', '地域', '拠点種別', '担当者', '稼働状況',
@@ -195,8 +197,8 @@ export const parseLocationCsvText = (
     if (columns.every(col => col === '')) continue;
 
     dataRowCount++;
-    if (dataRowCount > 1000) {
-      throw new Error('拠点CSVは最大1,000行まで取り込めます。ファイルを分割してください。');
+    if (dataRowCount > LOCATION_CSV_MAX_ROWS) {
+      throw new Error(`拠点CSVは最大${LOCATION_CSV_MAX_ROWS.toLocaleString('en-US')}行まで取り込めます。ファイルを分割してください。`);
     }
 
     const rowNumber = i + 1;
