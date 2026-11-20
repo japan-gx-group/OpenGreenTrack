@@ -626,10 +626,10 @@ AI を使う機能で使う提供元とモデル。企業・メンバー設定�
 | POST | `/api/account/delete` | アカウント削除 |
 | GET | `/api/ai/status` | AI の設定の状態（方式・提供元・設定済みか・選択中のモデル・管理者か）。全メンバー。API キーは返さない |
 | GET | `/api/ai/models` | 使えるモデルの一覧（提供元のモデル一覧 API を絞り込んだもの）。管理者だけ。組織ごとに 1 分 10 回まで |
-| POST | `/api/activity-evidence/upload-url` | 活動量の帳票の署名付きアップロード URL の発行（`upload-quarantine` の自組織フォルダ。組織あたり 10 分に 40 回まで、超過は 429）。全メンバー |
-| POST | `/api/activity-evidence` | 帳票の保存（上げたファイルの中身を確かめて `import-files` に置き直し、帳票の行を作る。同じアップロードの保存が 2 回届いても帳票は 1 件）。全メンバー |
-| DELETE | `/api/activity-evidence/[id]` | 帳票の削除（どの記録にも紐づいていないものだけ。Storage のファイルも消す）。全メンバー |
-| POST | `/api/ai/invoice-reading` | 請求書の AI 読取り（§4.2.4）。JSON の `evidenceFileId`（先に `/api/activity-evidence` で保存した帳票の ID。4MB まで）。ログイン中の人のセッションで帳票の行とファイルを読む（自組織の帳票に限る）。全メンバー |
+| POST | `/api/activity-evidence/upload-url` | 活動量の帳票の署名付きアップロード URL の発行（`upload-quarantine` の自組織フォルダ。組織あたり 10 分に 40 回まで、超過は 429）。管理者・メンバー（閲覧者は 403） |
+| POST | `/api/activity-evidence` | 帳票の保存（上げたファイルの中身を確かめて `import-files` に置き直し、帳票の行を作る。同じアップロードの保存が 2 回届いても帳票は 1 件）。管理者・メンバー（閲覧者は 403） |
+| DELETE | `/api/activity-evidence/[id]` | 帳票の削除（どの記録にも紐づいていないものだけ。Storage のファイルも消す）。管理者・メンバー（閲覧者は 403） |
+| POST | `/api/ai/invoice-reading` | 請求書の AI 読取り（§4.2.4）。JSON の `evidenceFileId`（先に `/api/activity-evidence` で保存した帳票の ID。4MB まで）。ログイン中の人のセッションで帳票の行とファイルを読む（自組織の帳票に限る）。管理者・メンバー（閲覧者は 403） |
 | GET | `/api/health` | ヘルスチェック |
 | POST | `/api/csp-report` | CSP 違反レポートの受信 |
 | GET | `/auth/callback` | Supabase Auth のコールバック |
@@ -637,6 +637,17 @@ AI を使う機能で使う提供元とモデル。企業・メンバー設定�
 `/api/calculations`・`/api/calculations/provisional-recalculation`・`/api/calculations/factor-recalculation`・`/api/dashboard-aggregates/refresh`・`/api/idea-imports/upload-url`・`/api/idea-imports`・`/api/idea-imports/[id]`・`/api/account/delete` の 8 本は `service_role` で RLS を越えて読み書きするため、Route Handler 側でログイン済み・自組織であることを検証する。この組織チェックは RLS では効かず、ここでしか担保できない。`/api/idea-imports/upload-url` は自組織フォルダ（`${organizationId}/idea-imports/<uuid>.xlsx`）にだけ署名付き URL を発行し、`/api/idea-imports` は受け取ったパスがその形であることを検証してから Storage に触れる。`/api/health` も `service_role` を使うが `organizations` を 1 行読む疎通確認のみで、組織データは返さない。
 
 `/api/idea-imports/recovery` も `service_role` で書き込むため、上記と同じくログイン中プロフィールの組織であることを Route Handler 側で検証し、その組織の取込だけを回収する。`/api/idea-imports/fiscal-year-assignment` も同じく、ログイン中プロフィールの組織で RPC を呼び、年度・版がその組織のものであることを RPC が突き合わせる。
+
+閲覧者（`profiles.role = 'viewer'`）の書き込みは、`service_role` の経路では RLS が効かないため Route Handler で止める。データを書き換える次の 13 本は、`service_role` のクライアントを作る前に `src/lib/authz.ts` の `requireWrite()` を通し、閲覧者には 403（「閲覧者は閲覧のみ可能です。編集はできません」）を返す。プロフィールが無い利用者は 401 になり、DB の `current_user_can_edit()` と同じく書けない。
+
+- 算定: `POST /api/calculations`・`POST /api/calculations/provisional-recalculation`・`POST /api/calculations/factor-recalculation`・`POST /api/dashboard-aggregates/refresh`
+- IDEA の取込: `POST /api/idea-imports`・`POST /api/idea-imports/upload-url`・`POST /api/idea-imports/fiscal-year-assignment`・`DELETE /api/idea-imports/[id]`・`POST /api/idea-imports/recovery`
+- 帳票: `POST /api/activity-evidence`・`POST /api/activity-evidence/upload-url`・`DELETE /api/activity-evidence/[id]`
+- AI: `POST /api/ai/invoice-reading`（外部 API への送信と課金を伴う）
+
+読み取りだけの `GET /api/calculations/provisional-recalculation`・`GET /api/ai/status` は閲覧者も呼べる。管理者だけの操作（算定年度・メンバー管理・招待・AI の設定）は今までどおり `requireAdmin()` で守る。`/api/account/delete` は本人の退会のため、ロールを問わない。
+
+ブラウザから Supabase へ直接書く経路（拠点・活動量・排出係数の追加・編集・削除と CSV インポート、削減目標・Scope 3 の入力方式・帳票の紐づけ）は RLS が止める。RLS で止められた update / delete はエラーにならず 0 件で返り、insert / upsert は 42501 で失敗するため、各サービスは書き込みが通らなかったときに `src/lib/writePermission.ts` の `throwIfWriteForbidden()`（RPC `current_user_can_edit()`）で今も書けるかを確かめ、書けなければ同じ権限の文言を出す（「見つかりません」・標準係数の案内・成功したような表示にしない）。問い合わせは失敗したときだけで、成功した保存には増えない。
 
 ### 6.3 主要な RPC
 
