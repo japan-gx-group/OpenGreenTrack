@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { formatEmissionsNumber } from '@/lib/emissionsFormat';
 import type { Scope3CategoryItem } from '../services/scopeAnalysisService';
 
 // ランク（排出量降順）ごとの配色。デザイン正（OpenGreenTrack ダッシュボード）の
@@ -21,8 +22,6 @@ const RANK_COLORS = [
 const RADIUS = 70;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS; // ≈ 439.82
 
-// 合計値は service の formatNumber と同じ書式（ja-JP・小数第3位まで）で揃える。
-const numberFormatter = new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 3 });
 const pad2 = (value: number) => String(value).padStart(2, '0');
 const colorAt = (index: number) => RANK_COLORS[index % RANK_COLORS.length];
 
@@ -61,7 +60,7 @@ export const Scope3CategoryChart = ({ categories }: Scope3CategoryChartProps) =>
       }
     : {
         label: 'Scope 3 合計',
-        value: numberFormatter.format(total),
+        value: formatEmissionsNumber(total),
         sub: 't-CO₂e',
         color: 'var(--color-text-main)',
         labelColor: 'var(--color-text-label)',

@@ -13,6 +13,7 @@ import { Loader2, Pencil, Target } from 'lucide-react';
 import clsx from 'clsx';
 import { Modal } from '@/components/ui/Modal.client';
 import { getFiscalYearStartMonthFromDate, isFiscalYearEnded } from '@/lib/fiscal-year/fiscalYearPeriod';
+import { formatEmissionsNumber } from '@/lib/emissionsFormat';
 import {
   BASE_YEAR_EMISSIONS_MISSING_MESSAGE,
   buildAnnualStatusBadge,
@@ -41,7 +42,6 @@ import {
   type TargetProgressData,
 } from '../services/targetService';
 
-const numberFormatter = new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 3 });
 const percentFormatter = new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 2 });
 
 /** 親（ダッシュボード）へ渡す目標のサマリー。月別・年度別グラフの目標ラインに使う。 */
@@ -103,10 +103,10 @@ const ProgressBar = ({ progress }: { progress: AnnualProgress }) => {
   // remainingEmissions（目標 − 実績）は超過時に負になるため、超過量は符号を反転した別名で持つ。
   const remainingEmissions = progress.remainingEmissions ?? 0;
   const overshootAmount = exceeded ? -remainingEmissions : 0;
-  const overshootLabel = `目標を ${numberFormatter.format(overshootAmount)} t-CO2e${
+  const overshootLabel = `目標を ${formatEmissionsNumber(overshootAmount)} t-CO2e${
     overshootPercent !== null ? `（${overshootPercent.toFixed(1)}%）` : ' '
   }超過`;
-  const remainingLabel = `残り枠 ${numberFormatter.format(remainingEmissions)} t-CO2e${
+  const remainingLabel = `残り枠 ${formatEmissionsNumber(remainingEmissions)} t-CO2e${
     remainingPercent !== null ? `（${remainingPercent.toFixed(1)}%）` : ''
   }`;
 
@@ -138,7 +138,7 @@ const ProgressBar = ({ progress }: { progress: AnnualProgress }) => {
           <span>{remainingLabel}</span>
         )}
         <span>
-          目標 {numberFormatter.format(progress.annualTarget ?? 0)} t-CO2e
+          目標 {formatEmissionsNumber(progress.annualTarget ?? 0)} t-CO2e
         </span>
       </div>
     </div>
@@ -526,7 +526,7 @@ export const ReductionTargetCard = ({
           >
             <Metric
               label="基準年度排出量"
-              value={target ? numberFormatter.format(target.baseYearEmissions) : '未設定'}
+              value={target ? formatEmissionsNumber(target.baseYearEmissions) : '未設定'}
               unit={target ? 't-CO2e' : undefined}
               note={
                 target ? (
@@ -548,7 +548,7 @@ export const ReductionTargetCard = ({
             />
             <Metric
               label={`年間目標（${fiscalYearLabel}）`}
-              value={hasTarget ? numberFormatter.format(progress.annualTarget ?? 0) : '未設定'}
+              value={hasTarget ? formatEmissionsNumber(progress.annualTarget ?? 0) : '未設定'}
               unit={hasTarget ? 't-CO2e' : undefined}
               note={
                 target && target.currentReductionPercent !== null
@@ -561,7 +561,7 @@ export const ReductionTargetCard = ({
             />
             <Metric
               label="年間実績（累計）"
-              value={numberFormatter.format(progress.cumulativeActual)}
+              value={formatEmissionsNumber(progress.cumulativeActual)}
               unit="t-CO2e"
               note={
                 baseYearComparison ? (
@@ -686,7 +686,7 @@ export const ReductionTargetCard = ({
                   : baseYearPreview === null
                     ? '基準年度を選ぶと、その年度の実績と各年度の目標排出量を表示します。'
                     : isBaseYearEmissionsUsable(baseYearPreview)
-                      ? `基準年度の実績 ${numberFormatter.format(baseYearPreview)} t-CO2e${
+                      ? `基準年度の実績 ${formatEmissionsNumber(baseYearPreview)} t-CO2e${
                           isBaseYearDraftUnended ? '（期中の累計）' : ''
                         }`
                       : BASE_YEAR_EMISSIONS_MISSING_MESSAGE}
@@ -743,7 +743,7 @@ export const ReductionTargetCard = ({
                         style={{ flex: 1, minWidth: 0, fontSize: '12px', color: 'var(--color-text-subtle)' }}
                       >
                         {yearTarget !== null
-                          ? `→ 目標 ${numberFormatter.format(yearTarget)} t-CO2e`
+                          ? `→ 目標 ${formatEmissionsNumber(yearTarget)} t-CO2e`
                           : ''}
                       </span>
                     </div>

@@ -18,12 +18,9 @@ export const navigateTo = async (page: Page, linkLabel: string, headingText: str
   await expect(page.getByRole('heading', { name: headingText, level: 1 })).toBeVisible();
 };
 
-/** ダッシュボードの総排出量（t-CO2e）を数値で読む。 */
-export const readDashboardTotal = async (page: Page): Promise<number> => {
-  const text = await page.getByTestId('dashboard-total-emissions').innerText();
-  // ja-JP の桁区切り（1,234.5）が入るのでカンマを落としてから数値化する。
-  return Number(text.replace(/,/g, ''));
-};
+/** ダッシュボードの総排出量（t-CO2e）を表示文字列のまま読む。微小値は不等号を含む。 */
+export const readDashboardTotal = async (page: Page): Promise<string> =>
+  page.getByTestId('dashboard-total-emissions').innerText();
 
 /** 年度切替後の再取得を待つ上限。既定の30秒だと、原因の分かりにくい待ちが長引くだけなので短めにする。 */
 const FISCAL_YEAR_SWITCH_TIMEOUT_MS = 15_000;

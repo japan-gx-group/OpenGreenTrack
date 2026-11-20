@@ -62,10 +62,10 @@ export const isLocationCsvExampleName = (name: string): boolean =>
  */
 export const locationToCsvRow = (location: LocationRecord): string[] => [
   location.id,
-  location.name,
+  escapeLiteralFormulaGuard(location.name),
   REGION_LABELS[location.region],
   LOCATION_TYPE_LABELS[location.type],
-  location.person,
+  escapeLiteralFormulaGuard(location.person),
   LOCATION_STATUS_LABELS[location.status],
 ];
 
@@ -99,14 +99,14 @@ export interface LocationImportPlan {
 interface ParsedLocationRow {
   row: number;
   id: string;
+  rawName: string;
+  rawPerson: string;
   location: NewLocationInput;
 }
 
 // 表示ラベル → 内部値の逆引き。CSVは人が読み書きするためラベル（例「関東」）で入出力する。
-const valueByLabel = <T extends string>(labels: Record<T, string>): Record<string, T> =>
-  Object.fromEntries(
-    (Object.entries(labels) as [T, string][]).map(([value, label]) => [label, value]),
-  ) as Record<string, T>;
+const valueByLabel = <T extends string>(labels: Record<T, string>): Map<string, T> =>
+  new Map((Object.entries(labels) as [T, string][]).map(([value, label]) => [label, value]));
 
 const REGION_VALUE_BY_LABEL = valueByLabel(REGION_LABELS);
 const TYPE_VALUE_BY_LABEL = valueByLabel(LOCATION_TYPE_LABELS);
@@ -115,7 +115,11 @@ const STATUS_VALUE_BY_LABEL = valueByLabel(LOCATION_STATUS_LABELS);
 const labelList = (labels: Record<string, string>): string => Object.values(labels).join(' / ');
 
 // エクスポートのフォーミュラインジェクション対策（=+-@ 始まりの値へ ' を前置）を復元する。
-const unescapeFormulaGuard = (value: string): string => value.replace(/^'(?=[=+\-@])/, '');
+const unescapeFormulaGuard = (value: string): string => value.replace(/^'(?='*[=+\-@])/, '');
+
+// 元から ' で始まる値は、downloadCsv のガードと区別できるようもう1つ ' を付ける。
+const escapeLiteralFormulaGuard = (value: string): string =>
+  /^'+[=+\-@]/.test(value) ? `'${value}` : value;
 
 // 「内容が変わっているか」の比較。
 const valuesEqual = (a: NewLocationInput, b: NewLocationInput): boolean =>
@@ -157,7 +161,8 @@ export const parseLocationCsvText = (
 
   // 区切り文字の自動判別: エクスポート直後はタブ区切り、Excelで再保存するとカンマ区切りになる
   const delimiter = lines[0].includes('\t') ? '\t' : ',';
-  const headers = splitCsvLine(lines[0].trim(), delimiter).map(col => col.trim());
+  const headers = splitCsvLine(lines[0], delimiter).map(col => col.trim());
+  while (headers.at(-1) === '') headers.pop();
 
   // 廃止前のフォーマット（Scope対象区分あり）なら、その列を各行から取り除いて現行の並びに揃える
   const isLegacyFormat = headersMatch(headers, LEGACY_LOCATION_CSV_HEADERS);
@@ -179,7 +184,14 @@ export const parseLocationCsvText = (
     const line = lines[i];
     if (!line.trim()) continue;
 
-    const columns = splitCsvLine(line, delimiter).map(col => unescapeFormulaGuard(col.trim()));
+    const rawColumns = splitCsvLine(line, delimiter).map(col => col.trim());
+    // Excel で再保存すると各行の末尾に区切り文字が残ることがある。必要な列数を超えた
+    // 末尾の空セルだけ取り除く（本当に空の最終列は残す）。
+    const expectedColumnCount = isLegacyFormat
+      ? LEGACY_LOCATION_CSV_HEADERS.length
+      : LOCATION_CSV_HEADERS.length;
+    while (rawColumns.length > expectedColumnCount && rawColumns.at(-1) === '') rawColumns.pop();
+    const columns = rawColumns.map(unescapeFormulaGuard);
     if (columns.every(col => col === '')) continue;
 
     dataRowCount++;
@@ -192,13 +204,12 @@ export const parseLocationCsvText = (
     // 列数の不足はファイルのヘッダー基準で判定する（旧フォーマットなら7列）。
     // 旧フォーマットで列が欠けた行は「どの列が欠けたか」を特定できないため、Scope列を
     // 取り除く前にここで弾き、ユーザーがファイル上で数えた列数と同じ数字で案内する。
-    const expectedColumnCount = isLegacyFormat
-      ? LEGACY_LOCATION_CSV_HEADERS.length
-      : LOCATION_CSV_HEADERS.length;
-    if (columns.length < expectedColumnCount) {
+    if (columns.length !== expectedColumnCount) {
       errors.push({
         row: rowNumber,
-        reasons: [`列数が足りません（${expectedColumnCount}列必要ですが、${columns.length}列のみです）`],
+        reasons: [columns.length < expectedColumnCount
+          ? `列数が足りません（${expectedColumnCount}列必要ですが、${columns.length}列のみです）`
+          : `列数が多すぎます（${expectedColumnCount}列必要ですが、${columns.length}列あります）`],
       });
       continue;
     }
@@ -222,13 +233,13 @@ export const parseLocationCsvText = (
     // 必須・文字数上限は追加/編集フォームと同じ定義（locationValidation.ts）
     const reasons: string[] = validateLocationNameAndPerson(name, person);
 
-    const region = REGION_VALUE_BY_LABEL[regionLabel];
+    const region = REGION_VALUE_BY_LABEL.get(regionLabel);
     if (!region) reasons.push(`地域「${regionLabel}」は認識できません（${labelList(REGION_LABELS)}）`);
 
-    const type = TYPE_VALUE_BY_LABEL[typeLabel];
+    const type = TYPE_VALUE_BY_LABEL.get(typeLabel);
     if (!type) reasons.push(`拠点種別「${typeLabel}」は認識できません（${labelList(LOCATION_TYPE_LABELS)}）`);
 
-    const status = STATUS_VALUE_BY_LABEL[statusLabel];
+    const status = STATUS_VALUE_BY_LABEL.get(statusLabel);
     if (!status) reasons.push(`稼働状況「${statusLabel}」は認識できません（${labelList(LOCATION_STATUS_LABELS)}）`);
 
     if (reasons.length > 0) {
@@ -239,6 +250,8 @@ export const parseLocationCsvText = (
     rows.push({
       row: rowNumber,
       id,
+      rawName: rawColumns[1],
+      rawPerson: rawColumns[4],
       location: {
         name,
         region: region as Region,
@@ -360,14 +373,22 @@ export const buildLocationImportPlan = (
     //    別環境からのCSVなどで未知のIDなら拠点名の照合へフォールバックする。
     const idTarget = row.id ? byId.get(row.id) : undefined;
     if (idTarget) {
+      if (row.rawName === idTarget.name) row.location.name = idTarget.name;
+      if (row.rawPerson === idTarget.person) row.location.person = idTarget.person;
       planUpdate(row, idTarget);
       continue;
     }
 
     // 2) 拠点名で照合
-    const candidates = byName.get(nameKey(row.location.name)) ?? [];
+    const literalCandidates = byName.get(nameKey(row.rawName)) ?? [];
+    const candidates = literalCandidates.length > 0
+      ? literalCandidates
+      : byName.get(nameKey(row.location.name)) ?? [];
+
+    if (literalCandidates.length > 0) row.location.name = row.rawName;
 
     if (candidates.length === 1) {
+      if (row.rawPerson === candidates[0].person) row.location.person = candidates[0].person;
       planUpdate(row, candidates[0]);
       continue;
     }

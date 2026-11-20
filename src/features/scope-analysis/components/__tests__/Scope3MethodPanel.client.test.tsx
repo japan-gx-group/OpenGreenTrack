@@ -78,6 +78,24 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
+describe('Scope3MethodPanel の排出量の表示', () => {
+  it('直接入力値・算定値・採用値は入力した桁のまま小数3位まで表示する', () => {
+    const result = render(
+      <Scope3MethodPanel
+        items={[{ ...ITEM, directEmissions: 12.345, calculatedEmissions: 30690.594, adoptedEmissions: 12.345 }]}
+        fiscalYearId="fy2024"
+        onSwitchMethod={vi.fn()}
+        onSaveDirect={vi.fn()}
+      />,
+    );
+    mounted = result;
+
+    const text = result.container.textContent ?? '';
+    expect(text).toContain('12.345');
+    expect(text).toContain('30,690.594');
+  });
+});
+
 describe('Scope3MethodPanel 直接入力値モーダルの排出量欄', () => {
   it('半角数字はそのまま受け付ける', () => {
     const result = renderPanel();

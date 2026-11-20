@@ -9,6 +9,7 @@ import { LoadingIndicator } from '@/components/ui/PageLoading';
 import { useFiscalYear } from '@/hooks/useFiscalYear';
 import { useAppRefresh } from '@/hooks/useAppRefresh';
 import { isFiscalYearEnded } from '@/lib/fiscal-year/fiscalYearPeriod';
+import { formatEmissionsNumber } from '@/lib/emissionsFormat';
 import { ArrowUpRight, X } from 'lucide-react';
 import { Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer, ComposedChart } from 'recharts';
 import {
@@ -29,6 +30,7 @@ import {
 } from '@/features/targets/components/ReductionTargetCard.client';
 import { KpiCard } from './KpiCard';
 import { TopLocationsTable } from './TopLocationsTable.client';
+import { formatEmissionsAxisTick, formatEmissionsTooltipValue } from '../utils/chartFormat';
 
 // KPI カードのラベル左に付く系列ドット（デザイン正の配色）。
 const SCOPE_DOT: Record<DashboardSummaryItem['title'], string> = {
@@ -66,11 +68,6 @@ type ChartPoint = {
 // 年度別表示で1年度あたりに確保する最小幅（px）。年度が増えるとこの幅で横に伸び、
 // カード幅を超えたぶんは横スクロールで見る。
 const YEAR_CHART_COLUMN_WIDTH = 96;
-
-const formatNumber = (value: number) =>
-  new Intl.NumberFormat('ja-JP', {
-    maximumFractionDigits: 3,
-  }).format(value);
 
 // カテゴリ番号は別バッジで見せるため、ラベル先頭の「カテゴリN: 」表記は落として重複を避ける。
 // コロン無しのフォールバック名（例: 未知カテゴリの「カテゴリ5」）でも番号を除去できるようコロンは任意。
@@ -265,7 +262,7 @@ export const Dashboard = () => {
       (dashboardData?.summary ?? []).map(item => ({
         ...item,
         dotColor: SCOPE_DOT[item.title],
-        formattedValue: formatNumber(item.value),
+        formattedValue: formatEmissionsNumber(item.value),
       })),
     [dashboardData],
   );
@@ -398,7 +395,7 @@ export const Dashboard = () => {
       {
         id: 'total',
         label: `総排出量（${selectedLocationName}）`,
-        formattedValue: formatNumber(locationData.combinedTotal),
+        formattedValue: formatEmissionsNumber(locationData.combinedTotal),
         diff: diffOf(locationData.totalDiffPercent),
         series: sparkSeries.total,
       },
@@ -406,7 +403,7 @@ export const Dashboard = () => {
         id: 'scope1',
         label: 'Scope 1',
         dotColor: SCOPE_DOT['Scope 1'],
-        formattedValue: formatNumber(locationData.scope1Total),
+        formattedValue: formatEmissionsNumber(locationData.scope1Total),
         diff: diffOf(locationData.scope1DiffPercent),
         series: sparkSeries.scope1,
       },
@@ -414,7 +411,7 @@ export const Dashboard = () => {
         id: 'scope2',
         label: 'Scope 2',
         dotColor: SCOPE_DOT['Scope 2'],
-        formattedValue: formatNumber(locationData.scope2Total),
+        formattedValue: formatEmissionsNumber(locationData.scope2Total),
         diff: diffOf(locationData.scope2DiffPercent),
         series: sparkSeries.scope2,
       },
@@ -741,14 +738,21 @@ export const Dashboard = () => {
               <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid vertical={false} stroke="var(--color-border)" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--color-text-subtle)' }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--color-text-subtle)' }} width={52} />
+                <YAxis
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 12, fill: 'var(--color-text-subtle)' }}
+                  // 目盛りにカンマが付くため、年度別の「100,000」が左端で欠けない幅にする。
+                  width={60}
+                  tickFormatter={formatEmissionsAxisTick}
+                />
                 <Tooltip
                   cursor={{ fill: 'var(--color-bg-subtle)' }}
                   // 前年度ラインは未記録の月を null で持つ。既定の filterNull だと
                   // ツールチップから行ごと消えて「0」なのか「未記録」なのか読めないため、
                   // 月別表示では null を落とさず「データなし」と明示する。
                   filterNull={!showPreviousYearSeries}
-                  formatter={value => (value === null || value === undefined ? 'データなし' : value)}
+                  formatter={value => formatEmissionsTooltipValue(value)}
                   contentStyle={{
                     backgroundColor: 'var(--color-bg-card)',
                     border: '1px solid var(--color-border)',
@@ -839,7 +843,7 @@ export const Dashboard = () => {
             <div>
               <h2 className="gt-card-title">Scope 3 内訳</h2>
               <p className="gt-card-sub">
-                計 {formatNumber(scope3Total)} t-CO2e・上位 5 カテゴリ{isFiltered && '（組織全体）'}
+                計 {formatEmissionsNumber(scope3Total)} t-CO2e・上位 5 カテゴリ{isFiltered && '（組織全体）'}
               </p>
             </div>
           </div>
@@ -861,7 +865,7 @@ export const Dashboard = () => {
                     {row.label}
                   </span>
                   <span style={{ flex: 'none', fontWeight: 600, color: row.muted ? 'var(--color-text-muted)' : 'var(--color-text-body)' }}>
-                    {formatNumber(row.value)}
+                    {formatEmissionsNumber(row.value)}
                   </span>
                   <span style={{ flex: 'none', width: '46px', textAlign: 'right', fontSize: '12px', color: 'var(--color-text-subtle)' }}>
                     {row.percent.toFixed(1)}%

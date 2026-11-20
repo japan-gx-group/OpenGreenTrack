@@ -6,6 +6,7 @@
 // 429 は「保存済みだが未算定」の状態を黙って残さないよう、Retry-After を読み取って
 // 自動再試行（calculationScheduler）へ渡す。
 
+import { formatEmissionsNumber } from '@/lib/emissionsFormat';
 import { RATE_LIMIT_RETRY_AFTER_SECONDS } from '@/lib/security/apiRateLimit';
 import {
   SCOPE2_BASIS_UNRESOLVED_REASON_MESSAGES,
@@ -210,10 +211,9 @@ export const buildCalculationMessages = (
 
   if (result.processedCount > 0) {
     messages.push(
-      `排出量の自動計算が完了しました（${result.processedCount}件、合計 ${result.totalEmissionsDelta.toLocaleString(
-        'ja-JP',
-        { maximumFractionDigits: 3 },
-      )} t-CO2e）。`,
+      `排出量の自動計算が完了しました（${result.processedCount}件、合計 ${formatEmissionsNumber(result.totalEmissionsDelta, {
+        precision: 'detail',
+      })} t-CO2e）。`,
     );
   }
   for (const [reason, count] of result.unresolvedCountByReason) {

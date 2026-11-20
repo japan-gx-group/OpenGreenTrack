@@ -3,6 +3,7 @@
 // フォーム本体・係数セクション・プレビューモーダルで共用する。
 
 import type { SearchableSelectOption } from '@/components/ui/searchableSelectFilter';
+import { formatEmissionsNumber } from '@/lib/emissionsFormat';
 import {
   toIdeaProductOptions,
   type IdeaProduct,
@@ -20,7 +21,7 @@ import { toIdeaFactorValue } from './scope3InlineCalculation';
 
 /** 排出量（t-CO2e）の表示。表示は小数第3位、保存値は算定エンジンと同じ第6位で確定する。 */
 export const formatEmissions = (value: number): string =>
-  value.toLocaleString('ja-JP', { maximumFractionDigits: 3 });
+  formatEmissionsNumber(value, { precision: 'detail' });
 
 /** 係数の表示（例 '0.000416 t-CO2/kWh'）。 */
 export const factorValueText = (factor: CandidateFactorRow): string =>

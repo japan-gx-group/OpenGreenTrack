@@ -2,8 +2,7 @@
 // 実数と構成比を3列で並べる。数値の正本はダッシュボードと同じ dashboard_aggregates。
 
 import type { ScopeTotals } from '../services/scopeAnalysisService';
-
-const numberFormatter = new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 3 });
+import { formatEmissionsNumber } from '@/lib/emissionsFormat';
 
 const SCOPES = [
   { key: 'scope1', label: 'Scope 1', description: '自社の直接排出', color: 'var(--color-scope-1)' },
@@ -31,7 +30,7 @@ export const ScopeMixCard = ({ totals, isStale = false }: { totals: ScopeTotals;
         <div>
           <h2 className="gt-card-title">Scope 別構成</h2>
           <p className="gt-card-sub">
-            合計 {numberFormatter.format(totals.total)} t-CO2e・Scope 1・2・3 の構成比
+            合計 {formatEmissionsNumber(totals.total)} t-CO2e・Scope 1・2・3 の構成比
           </p>
         </div>
       </div>
@@ -89,7 +88,7 @@ export const ScopeMixCard = ({ totals, isStale = false }: { totals: ScopeTotals;
             </div>
             <div className="flex items-baseline" style={{ gap: '7px', marginTop: '9px' }}>
               <span style={{ fontSize: '28px', fontWeight: 600, lineHeight: 1, letterSpacing: '-0.025em' }}>
-                {numberFormatter.format(row.value)}
+                {formatEmissionsNumber(row.value)}
               </span>
               <span style={{ fontSize: '12.5px', color: 'var(--color-text-subtle)' }}>t-CO2e</span>
             </div>
