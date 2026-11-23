@@ -221,7 +221,7 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
                     <li key={version.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3">
                       <div className="min-w-0 text-sm">
                         <p className="m-0 flex flex-wrap items-center gap-2 font-semibold">
-                          版 {version.versionNumber}
+                          <span>版 {version.versionNumber}</span>
                           {report.review.approvedVersionId === version.id && <Badge variant="success">承認した版</Badge>}
                         </p>
                         <p className="m-0 text-text-muted">{new Date(version.createdAt).toLocaleString('ja-JP')} · 作成者: {version.creatorName}</p>

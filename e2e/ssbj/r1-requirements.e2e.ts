@@ -281,8 +281,10 @@ test('7. 理由を書かない（空白だけも含む）と差戻せない。�
   await expect(card).toContainText(CHANGED_TEXT);
 
   await page.goto(reportPath('/versions'));
-  await page.getByRole('listitem').filter({ hasText: '承認時の保存版' })
-    .getByRole('button', { name: 'この版の内容に戻す' }).click();
+  // 新版の作成と復元は「その他の操作」に畳んである。
+  const approvedItem = page.getByRole('listitem').filter({ hasText: '承認時の保存版' });
+  await approvedItem.getByText('その他の操作').click();
+  await approvedItem.getByRole('button', { name: 'この版の内容に戻す' }).click();
   await expect(page.getByRole('dialog')).toContainText('自動で残します');
   await page.getByRole('dialog').getByRole('button', { name: 'この版の内容に戻す' }).click();
   await expect(page.getByRole('status').filter({ hasText: '版 1 の内容に戻しました' })).toContainText('版 2 として保存しています');
