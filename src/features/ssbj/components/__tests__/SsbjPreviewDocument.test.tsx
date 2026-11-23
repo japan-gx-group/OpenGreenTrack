@@ -287,3 +287,25 @@ describe('SsbjPreviewDocument（R1 の全体確認）', () => {
     expect(fictionalInternalTexts.filter(value => !text().includes(value))).toEqual([]);
   });
 });
+
+describe('SsbjPreviewDocument（2 画面エディタの項目の目印）', () => {
+  it('itemFocus を渡さない表示（プレビュー画面・印刷ビュー・保存版）には、項目の目印も押せるボタンも出さない', () => {
+    rendered = render(<SsbjPreviewDocument source={saved} showInternalNotes={false} />);
+    expect(rendered.container.querySelector('[data-ssbj-item-id]')).toBeNull();
+    expect(rendered.container.querySelector('button')).toBeNull();
+  });
+
+  it('itemFocus を渡すと、文章の各項目に項目 ID の目印を付け、扱っている項目だけを目立たせる', () => {
+    rendered = render(
+      <SsbjPreviewDocument
+        source={working()}
+        showInternalNotes={false}
+        itemFocus={{ activeItemId: 'governance.oversight_body', editingItemIds: [], onSelect: () => {} }}
+      />,
+    );
+    expect(rendered.container.querySelector('[data-ssbj-item-id="governance.management_role"]')).not.toBeNull();
+    const active = Array.from(rendered.container.querySelectorAll('[data-ssbj-item-id][data-active]'));
+    expect(active.map(element => element.getAttribute('data-ssbj-item-id'))).toEqual(['governance.oversight_body']);
+    expect(active[0].querySelector('button')?.getAttribute('aria-current')).toBe('true');
+  });
+});
