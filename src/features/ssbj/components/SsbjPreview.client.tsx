@@ -4,6 +4,8 @@
 // 表示の本体は SsbjPreviewDocument（印刷ビューと共通）。内部メモは既定で隠し、利用者が選んだときだけ出す。
 // 内部メモの表示は画面の中だけの切替で、印刷ビュー（PDF）には渡さない。印刷・PDF は社外に共有されうるため、
 // 「開示しない」内部メモ・内部記録は画面での表示の有無にかかわらず出力しない。
+// 「印刷・PDFとして保存」を選んだ時点で、表示している版と一緒に操作履歴に記録する（印刷用のタブの読み込みに失敗しても残す。
+// 記録できなくても印刷用のタブは開く: hooks/useSsbjPrintRecorder.ts）。
 // 閲覧者には、承認した保存版の開示する内容（内部メモ・内部記録を除いたもの）だけを API から読んで出し、
 // 内部メモの表示の切替も出さない（docs/authorization-matrix.md §2.3）。
 
@@ -21,6 +23,7 @@ import { formatDateTime } from '@/lib/datetime';
 import { useSsbjApprovedVersion } from '../hooks/useSsbjApprovedVersion';
 import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
 import { useSsbjPreviewSource } from '../hooks/useSsbjPreviewSource';
+import { useSsbjPrintRecorder } from '../hooks/useSsbjPrintRecorder';
 import { useSsbjReport } from '../hooks/useSsbjReport';
 import { useSsbjVersionSummaries } from '../hooks/useSsbjVersionSummaries';
 import { canViewSsbjWorking } from '../utils/memberRole';
@@ -51,6 +54,7 @@ export const SsbjPreview = ({ reportId, initialSource = null }: { reportId: stri
   const printHref = `/ssbj/${encodeURIComponent(reportId)}/preview/print?source=${encodeURIComponent(
     formatPreviewSelection(shown),
   )}`;
+  const printer = useSsbjPrintRecorder(reportId);
   const errorMessage = reportError || (viewerOnly ? approved.errorMessage : versions.errorMessage || working.errorMessage);
 
   return (
@@ -61,7 +65,12 @@ export const SsbjPreview = ({ reportId, initialSource = null }: { reportId: stri
         showFiscalYear={false}
         primaryAction={report ? (
           <Button asChild variant="outline">
-            <Link href={printHref} target="_blank" rel="noopener noreferrer">
+            <Link
+              href={printHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => void printer.recordSelection(shown.kind === 'version' ? shown.versionId : null)}
+            >
               <Printer size={16} /> 印刷・PDFとして保存
             </Link>
           </Button>
@@ -77,6 +86,9 @@ export const SsbjPreview = ({ reportId, initialSource = null }: { reportId: stri
         <SsbjTrialNotice />
         {errorMessage && (
           <div role="alert" className="rounded-md bg-danger-light px-4 py-3 text-sm text-danger">{errorMessage}</div>
+        )}
+        {printer.errorMessage && (
+          <div role="alert" className="rounded-md bg-danger-light px-4 py-3 text-sm text-danger">{printer.errorMessage}</div>
         )}
         {reportLoading ? (
           <Card><LoadingIndicator label="レポートを読み込んでいます..." /></Card>

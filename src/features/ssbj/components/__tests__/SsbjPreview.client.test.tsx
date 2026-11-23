@@ -12,6 +12,7 @@ vi.mock('../../services/previewService', () => ({
   getSsbjVersionPreview: vi.fn(),
 }));
 vi.mock('../../services/versionExportService', () => ({ listSsbjVersions: vi.fn(), getSsbjApprovedVersion: vi.fn() }));
+vi.mock('../../services/auditLogService', () => ({ recordSsbjExport: vi.fn(async () => {}) }));
 
 
 // SSBJ のロールは、既定で入力担当として操作する（編集の操作を出す）。
@@ -19,6 +20,7 @@ vi.mock('../../services/memberRoleService', async importOriginal => ({
   ...(await importOriginal<typeof import('../../services/memberRoleService')>()),
   getMySsbjRole: vi.fn(async () => 'editor'),
 }));
+import { recordSsbjExport } from '../../services/auditLogService';
 import { getSsbjVersionPreview, getSsbjWorkingPreview } from '../../services/previewService';
 import { getSsbjReport } from '../../services/reportService';
 import { getSsbjApprovedVersion, listSsbjVersions } from '../../services/versionExportService';
@@ -59,6 +61,43 @@ describe('SsbjPreview', () => {
     const printLink = Array.from(rendered.container.querySelectorAll('a')).find(a => a.textContent?.includes('印刷・PDF'));
     expect(printLink?.getAttribute('href')).toBe(`/ssbj/${report.id}/preview/print?source=working`);
     expect(printLink?.getAttribute('target')).toBe('_blank');
+  });
+
+  it('「印刷・PDFとして保存」を選んだ時点で、表示中の内容（作業中は版なし）を記録し、印刷用のタブを開く', async () => {
+    rendered = render(<SsbjPreview reportId={report.id} />);
+    await settle();
+    const printLink = Array.from(rendered.container.querySelectorAll('a')).find(a => a.textContent?.includes('印刷・PDF'))!;
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    printLink.addEventListener('click', clicked => clicked.preventDefault(), { once: true });
+    await act(async () => { printLink.dispatchEvent(event); });
+    await settle();
+    expect(recordSsbjExport).toHaveBeenCalledTimes(1);
+    expect(recordSsbjExport).toHaveBeenCalledWith(report.id, 'print', null);
+    expect(rendered.container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('保存版を表示しているときは、その版と一緒に記録する', async () => {
+    rendered = render(<SsbjPreview reportId={report.id} initialSource={fictionalVersion.id} />);
+    await settle();
+    const printLink = Array.from(rendered.container.querySelectorAll('a')).find(a => a.textContent?.includes('印刷・PDF'))!;
+    printLink.addEventListener('click', clicked => clicked.preventDefault(), { once: true });
+    await act(async () => { printLink.click(); });
+    await settle();
+    expect(recordSsbjExport).toHaveBeenCalledWith(report.id, 'print', fictionalVersion.id);
+  });
+
+  it('記録に失敗しても印刷用のタブを開くのは止めず、記録できなかったことを知らせる', async () => {
+    vi.mocked(recordSsbjExport).mockRejectedValueOnce(new Error('network'));
+    rendered = render(<SsbjPreview reportId={report.id} />);
+    await settle();
+    const printLink = Array.from(rendered.container.querySelectorAll('a')).find(a => a.textContent?.includes('印刷・PDF'))!;
+    let defaultPrevented: boolean | null = null;
+    // 画面のハンドラの後に、リンクの既定の動作（タブを開く）が止められていないかを見る。jsdom では遷移させない。
+    rendered.container.addEventListener('click', clicked => { defaultPrevented = clicked.defaultPrevented; clicked.preventDefault(); }, { once: true });
+    await act(async () => { printLink.click(); });
+    await settle();
+    expect(defaultPrevented).toBe(false);
+    expect(rendered.container.querySelector('[role="alert"]')?.textContent).toContain('印刷・PDF 保存はそのまま続けられます');
   });
 
   it('内部メモの表示を選ぶと画面の本文には出すが、印刷ビューへのリンクには渡さない', async () => {

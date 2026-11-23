@@ -47,6 +47,7 @@ const EXPORT_FORMAT_LABELS: Record<string, string> = {
   xlsx: '保存版の Excel',
   audit_csv: '操作履歴の CSV',
   audit_xlsx: '操作履歴の Excel',
+  print: '『印刷・PDFとして保存』を選択',
 };
 
 // 列名 → 画面の言葉（変わった列の表示に使う）。無い列は列名のまま出す。
@@ -128,6 +129,11 @@ export const ssbjAuditDetail = (log: SsbjAuditLog, nameOf: (userId: string | nul
       return `版 ${num(details.versionNumber) ?? '?'} の内容に戻した（戻す前の内容は 版 ${num(details.backupVersionNumber) ?? '?'}）`;
     case 'export': {
       const format = EXPORT_FORMAT_LABELS[String(details.format)] ?? String(details.format ?? '');
+      if (details.format === 'print') {
+        // 印刷は作業中の内容も出せる（版が無い記録 = 作業中の内容）。保存版の出力（CSV / Excel）は必ず版がある。
+        const target = num(details.versionNumber) === null ? '作業中の内容' : `版 ${num(details.versionNumber)}`;
+        return `${format}（${target}）`;
+      }
       return num(details.versionNumber) === null ? format : `${format}（版 ${num(details.versionNumber)}）`;
     }
     default:

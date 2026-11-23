@@ -808,7 +808,10 @@ export type SsbjAuditLog = {
   createdAt: string;
 };
 
-/** ファイルの出力形式（操作履歴・出力履歴に残す）。 */
-export const SSBJ_EXPORT_FORMATS = ['csv', 'xlsx', 'audit_csv', 'audit_xlsx'] as const;
+/**
+ * ファイルの出力形式（操作履歴・出力履歴に残す）。print は印刷・PDF 保存で、「印刷・PDFとして保存」を選んだ時点の記録
+ * （ブラウザの機能で印刷するため、実際に印刷したか取り消したかは区別できない）。
+ */
+export const SSBJ_EXPORT_FORMATS = ['csv', 'xlsx', 'audit_csv', 'audit_xlsx', 'print'] as const;
 
 export type SsbjExportFormat = (typeof SSBJ_EXPORT_FORMATS)[number];
