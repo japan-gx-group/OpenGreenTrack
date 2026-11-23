@@ -386,3 +386,75 @@ describe('SsbjJudgements（詳細のダイアログに保存していない入�
     expect(dialog?.textContent).toContain('「スコープ 3 のカテゴリー別の内訳」の判断が保存されていません。');
   });
 });
+
+describe('SsbjJudgements（まとめて付ける・選択欄の幅）', () => {
+  const checkboxOf = (requirementId: string) =>
+    rowOf(requirementId).querySelector<HTMLElement>(`[role="checkbox"][aria-label="${requirementId} を選ぶ"]`)!;
+  const bulkBar = () => document.querySelector<HTMLElement>('[data-testid="ssbj-judgement-bulk-bar"]');
+  const bulkSelect = (label: string) => {
+    const labelElement = Array.from(bulkBar()!.querySelectorAll('label')).find(element => element.textContent === label)!;
+    return bulkBar()!.querySelector<HTMLSelectElement>(`#${CSS.escape(labelElement.htmlFor)}`)!;
+  };
+
+  it('選んだ要求に該当性・重要性をまとめて付け、保存できた要求を選択から外す', async () => {
+    rendered = render(<SsbjJudgements reportId={report.id} />);
+    await settle();
+    expect(bulkBar()).toBeNull();
+    click(checkboxOf('REQ-GEN-002'));
+    click(checkboxOf('REQ-CLM-002'));
+    expect(bulkBar()?.textContent).toContain('選んだ要求 2 件に');
+    expect(buttonIn(bulkBar()!, 'まとめて付ける').disabled).toBe(true);
+    setSelectValue(bulkSelect('該当性'), 'applicable');
+    setSelectValue(bulkSelect('重要性'), 'material');
+    await act(async () => { click(buttonIn(bulkBar()!, 'まとめて付ける')); });
+    await settle();
+    expect(saveSsbjJudgementQuickChange).toHaveBeenCalledTimes(2);
+    const saved = vi.mocked(saveSsbjJudgementQuickChange).mock.calls.map(call => call[2]);
+    expect(saved.map(judgement => [judgement.requirementId, judgement.applicability, judgement.materiality])).toEqual([
+      ['REQ-GEN-002', 'applicable', 'material'],
+      ['REQ-CLM-002', 'applicable', 'material'],
+    ]);
+    expect(rowOf('REQ-GEN-002').querySelector<HTMLSelectElement>('select[aria-label="REQ-GEN-002 の該当性"]')!.value).toBe('applicable');
+    expect(bulkBar()).toBeNull();
+    expect(document.querySelector('[role="status"]')).toBeNull();
+  });
+
+  it('保存できなかった要求は理由を出して選んだままにする', async () => {
+    vi.mocked(saveSsbjJudgementQuickChange).mockImplementation(async (_report, _savedAt, judgement) => {
+      if (judgement.requirementId === 'REQ-CLM-002') throw new Error('他の画面で先に変更されました');
+      return { ...judgement, updatedAt: SAVED_AT };
+    });
+    rendered = render(<SsbjJudgements reportId={report.id} />);
+    await settle();
+    click(checkboxOf('REQ-GEN-002'));
+    click(checkboxOf('REQ-CLM-002'));
+    setSelectValue(bulkSelect('該当性'), 'not_applicable');
+    await act(async () => { click(buttonIn(bulkBar()!, 'まとめて付ける')); });
+    await settle();
+    expect(bulkBar()?.textContent).toContain('選んだ要求 1 件に');
+    expect(bulkBar()?.textContent).toContain('1 件を保存しました。1 件は保存できませんでした');
+    expect(bulkBar()?.textContent).toContain('REQ-CLM-002: 他の画面で先に変更されました');
+    expect(checkboxOf('REQ-CLM-002').getAttribute('aria-checked')).toBe('true');
+    expect(checkboxOf('REQ-GEN-002').getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('章の見出しのチェックで、表示中のその章の要求をまとめて選ぶ・外す', async () => {
+    rendered = render(<SsbjJudgements reportId={report.id} />);
+    await settle();
+    const governance = document.querySelector<HTMLElement>('[role="region"][aria-label="ガバナンス"]')!;
+    const all = governance.querySelector<HTMLElement>('[role="checkbox"][aria-label="ガバナンスの要求をすべて選ぶ"]')!;
+    const count = governance.querySelectorAll('[data-testid="ssbj-judgement-row"]').length;
+    click(all);
+    expect(bulkBar()?.textContent).toContain(`選んだ要求 ${count} 件に`);
+    click(all);
+    expect(bulkBar()).toBeNull();
+  });
+
+  it('承認済みのレポートでは、チェックもまとめての帯も出さない', async () => {
+    vi.mocked(getSsbjReport).mockResolvedValue({ ...report, review: { ...FICTIONAL_DRAFT_REVIEW, status: 'approved' } });
+    rendered = render(<SsbjJudgements reportId={report.id} />);
+    await settle();
+    expect(document.querySelector('[role="checkbox"]')).toBeNull();
+    expect(document.querySelector('[data-testid="ssbj-judgement-toolbar"]')?.textContent).not.toContain('まとめて付けられます');
+  });
+});
