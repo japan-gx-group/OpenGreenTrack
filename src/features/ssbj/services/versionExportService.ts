@@ -5,6 +5,7 @@
 
 import { createClient } from '@/lib/supabase/client';
 import type { SsbjCsvVersion } from './versionCsv';
+import { ssbjApiErrorMessage } from '../utils/apiError';
 
 // 出力形式ごとの system_audit_logs.action。CSV はこれまでの値のまま（既存の履歴を読み続けるため）。
 const AUDIT_ACTIONS = { csv: 'ssbj.csv.generate', xlsx: 'ssbj.xlsx.generate' } as const;
@@ -84,7 +85,7 @@ export const getSsbjApprovedVersion = async (reportId: string): Promise<SsbjAppr
   const response = await fetch(`/api/ssbj/reports/${encodeURIComponent(reportId)}/approved-version`);
   const body = (await response.json().catch(() => null)) as (Partial<SsbjApprovedVersion> & { error?: string }) | null;
   if (!response.ok || typeof body?.id !== 'string' || typeof body.versionNumber !== 'number' || !body.snapshot) {
-    throw new Error(body?.error ?? '承認した保存版の取得に失敗しました');
+    throw new Error(response.ok ? '承認した保存版の取得に失敗しました' : ssbjApiErrorMessage(response.status, body, '承認した保存版の取得に失敗しました'));
   }
   return body as SsbjApprovedVersion;
 };

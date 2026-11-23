@@ -7,15 +7,19 @@
 // 閲覧者は保存版の行を読めない（RLS）。承認した保存版の開示する内容（内部メモ・内部記録を除いたもの）だけを API から読み、
 // 内容の表示と出力に使う。出力には内部記録の列を入れず、操作履歴・出力履歴（組織の全員の出力）は出さない
 // （docs/authorization-matrix.md §2.3）。
+// 版の行は、内容を見る・CSV・Excel だけを並べ、「この版から新版を作成」「この版の内容に戻す」は「その他の操作」に畳む
+// （強い操作を出力と同じ並びに置かないため。確認のダイアログはこれまでどおり）。版 ID は控えめに出してコピーできるようにする。
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Copy, Download, FileCheck2, FileSpreadsheet, History, RotateCcw } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Copy, Download, FileCheck2, FileSpreadsheet, History, RotateCcw } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { PageHeading } from '@/components/layout/PageHeading';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { LoadingIndicator } from '@/components/ui/PageLoading';
 import { useSsbjReport } from '../hooks/useSsbjReport';
+import { SsbjCopyableId } from './SsbjCopyableId.client';
 import { recordSsbjExport } from '../services/auditLogService';
 import { restoreSsbjReportVersion } from '../services/reportWorkflowClient';
 import {
@@ -210,33 +214,42 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
                   {versions.map(version => (
                     <li key={version.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3">
                       <div className="min-w-0 text-sm">
-                        <p className="m-0 font-semibold">版 {version.versionNumber}</p>
-                        <p className="m-0 text-text-muted">{new Date(version.createdAt).toLocaleString('ja-JP')} · {version.id}</p>
-                        <p className="m-0 text-text-muted">作成者: {version.creatorName}</p>
+                        <p className="m-0 flex flex-wrap items-center gap-2 font-semibold">
+                          版 {version.versionNumber}
+                          {report.review.approvedVersionId === version.id && <Badge variant="success">承認した版</Badge>}
+                        </p>
+                        <p className="m-0 text-text-muted">{new Date(version.createdAt).toLocaleString('ja-JP')} · 作成者: {version.creatorName}</p>
                         {version.sourceVersionId && <p className="m-0 text-text-muted">版 {versions.find(item => item.id === version.sourceVersionId)?.versionNumber ?? version.sourceVersionId} から作成</p>}
                         {version.note && <p className="m-0 text-text-muted">{version.note}</p>}
-                        {report.review.approvedVersionId === version.id && <p className="m-0 font-semibold text-success">承認した版</p>}
+                        <SsbjCopyableId value={version.id} label="版 ID" display={`版 ID ${version.id.slice(0, 8)}…`} />
                       </div>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap items-start gap-2">
                         <Button type="button" size="sm" variant="outline" disabled={busyVersionId !== null} onClick={() => void handleInspect(version.id)}>
                           内容を見る
                         </Button>
-                        {canEdit && (
-                          <Button type="button" size="sm" variant="outline" disabled={busyVersionId !== null} onClick={() => setPending({ kind: 'copy', versionId: version.id })}>
-                            <Copy size={14} /> この版から新版を作成
-                          </Button>
-                        )}
-                        {canEdit && !locked && (
-                          <Button type="button" size="sm" variant="outline" disabled={busyVersionId !== null} onClick={() => setPending({ kind: 'restore', versionId: version.id })}>
-                            <RotateCcw size={14} /> この版の内容に戻す
-                          </Button>
-                        )}
-                        <Button type="button" size="sm" disabled={busyVersionId !== null} onClick={() => void handleDownload(version.id, 'csv')}>
+                        <Button type="button" size="sm" variant="outline" disabled={busyVersionId !== null} onClick={() => void handleDownload(version.id, 'csv')}>
                           <Download size={14} /> {busyVersionId === version.id ? '処理中...' : 'CSVを出力'}
                         </Button>
-                        <Button type="button" size="sm" disabled={busyVersionId !== null} onClick={() => void handleDownload(version.id, 'xlsx')}>
+                        <Button type="button" size="sm" variant="outline" disabled={busyVersionId !== null} onClick={() => void handleDownload(version.id, 'xlsx')}>
                           <FileSpreadsheet size={14} /> {busyVersionId === version.id ? '処理中...' : 'Excelを出力'}
                         </Button>
+                        {canEdit && (
+                          <details className="group relative">
+                            <summary className={`${buttonVariants({ variant: 'outline', size: 'sm' })} cursor-pointer list-none [&::-webkit-details-marker]:hidden`}>
+                              その他の操作 <ChevronDown size={14} className="transition-transform group-open:rotate-180" aria-hidden="true" />
+                            </summary>
+                            <div className="absolute right-0 z-10 mt-1 flex w-max flex-col gap-1 rounded-lg border border-border bg-bg-card p-2 shadow-md">
+                              <Button type="button" size="sm" variant="ghost" className="justify-start" disabled={busyVersionId !== null} onClick={() => setPending({ kind: 'copy', versionId: version.id })}>
+                                <Copy size={14} /> この版から新版を作成
+                              </Button>
+                              {!locked && (
+                                <Button type="button" size="sm" variant="ghost" className="justify-start text-danger hover:text-danger" disabled={busyVersionId !== null} onClick={() => setPending({ kind: 'restore', versionId: version.id })}>
+                                  <RotateCcw size={14} /> この版の内容に戻す
+                                </Button>
+                              )}
+                            </div>
+                          </details>
+                        )}
                       </div>
                     </li>
                   ))}

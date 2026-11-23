@@ -3,6 +3,7 @@
 
 import type { SsbjReportStatus, SsbjReportStatusAction } from '../types';
 import { notifySsbjWorkingChanged } from '../utils/workingChange';
+import { ssbjApiErrorMessage } from '../utils/apiError';
 
 export interface SsbjReportStatusChange {
   action: SsbjReportStatusAction;
@@ -29,7 +30,7 @@ const postJson = async <T>(url: string, payload: unknown, fallback: string): Pro
   });
   const body = (await response.json().catch(() => null)) as (T & { error?: string }) | null;
   if (!response.ok || !body) {
-    throw new Error(body?.error ?? fallback);
+    throw new Error(response.ok ? fallback : ssbjApiErrorMessage(response.status, body, fallback));
   }
   return body;
 };

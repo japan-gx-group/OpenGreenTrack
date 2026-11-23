@@ -185,6 +185,18 @@ describe('SsbjVersions', () => {
     expect(container.querySelector('[data-testid="ssbj-locked-notice"]')).not.toBeNull();
   });
 
+  it('版の行は、内容を見る・出力だけを並べ、新版の作成と復元は「その他の操作」に畳む。版 ID は控えめに出す', async () => {
+    const { container } = await renderScreen();
+    const row = container.querySelector('li')!;
+    const more = row.querySelector('details')!;
+    expect(more.querySelector('summary')?.textContent).toContain('その他の操作');
+    expect(more.textContent).toContain('この版から新版を作成');
+    expect(more.textContent).toContain('この版の内容に戻す');
+    expect(more.textContent).not.toContain('CSVを出力');
+    expect(row.textContent).toContain(`版 ID ${fictionalVersion.id.slice(0, 8)}…`);
+    expect(row.querySelector('button[aria-label="版 ID をコピー"]')).not.toBeNull();
+  });
+
   it('SSBJ のロールが入力担当か管理者でなければ、新版の作成と復元を出さない（内容の確認と出力はできる）', async () => {
     vi.mocked(getMySsbjRole).mockResolvedValueOnce('approver');
     const { container } = await renderScreen();

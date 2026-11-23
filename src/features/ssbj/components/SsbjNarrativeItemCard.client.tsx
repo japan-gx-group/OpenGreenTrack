@@ -37,6 +37,7 @@ import {
 } from '../utils/narrativeTemplateChoice';
 import { ssbjScrollBehavior } from '../utils/editorScroll';
 import { formatParagraphReference, ssbjRequirementsOfItem } from '../utils/requirementMaster';
+import { SsbjCopyableId } from './SsbjCopyableId.client';
 import { SsbjNarrativeTemplateChoices } from './SsbjNarrativeTemplateChoices.client';
 
 const PRIORITY_LABELS = { core: '◎', basic: '○' } as const;
@@ -127,7 +128,8 @@ export const SsbjNarrativeItemCard = ({
       <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 className="m-0 text-sm font-bold">{entry.item?.label ?? entry.itemId}</h3>
-          <p className="m-0 text-xs text-text-muted">{entry.itemId}</p>
+          {/* 項目 ID は名前より控えめに出し、問い合わせなどで使えるようコピーできるようにする。 */}
+          <SsbjCopyableId value={entry.itemId} label="項目 ID" />
         </div>
         <div className="flex items-center gap-2">
           {entry.item?.kind === 'company_supplement' && <Badge variant="outline">企業固有の補足</Badge>}
@@ -145,8 +147,10 @@ export const SsbjNarrativeItemCard = ({
         <ul className="m-0 mb-3 flex list-none flex-col gap-1 p-0 text-xs text-text-muted">
           {requirements.map(requirement => (
             <li key={requirement.id}>
-              {PRIORITY_LABELS[requirement.priority]} {requirement.id}（{requirement.references.map(formatParagraphReference).join('・')}）
-              {requirement.summary}
+              {PRIORITY_LABELS[requirement.priority]} {requirement.summary}
+              <span className="text-text-subtle">
+                （{requirement.references.map(formatParagraphReference).join('・')}・{requirement.id}）
+              </span>
             </li>
           ))}
         </ul>

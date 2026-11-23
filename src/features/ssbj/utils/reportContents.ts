@@ -13,6 +13,7 @@ export type SsbjReportContent = {
 };
 
 // viewer = 閲覧者（作業中の内容を見られない）にも出すか。承認した保存版を見る画面だけ。
+// label は、パンくずの画面名（components/layout/navItems.ts の SSBJ_REPORT_PAGE_TITLES）と同じ名前にする（テストで照合する）。
 export const SSBJ_REPORT_CONTENTS: readonly SsbjReportContent[] = [
   {
     path: 'narratives',
