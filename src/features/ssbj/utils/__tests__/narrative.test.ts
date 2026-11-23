@@ -5,8 +5,10 @@ import {
   EMPTY_SSBJ_DISCLOSABLE_TEXT,
   isSsbjNarrativeFormDirty,
   normalizeSsbjNarrativeInput,
+  ssbjNarrativeAnchorId,
   ssbjNarrativeEntriesOfSection,
   ssbjNextNarrativeToEdit,
+  ssbjNarrativeProgress,
   mergeSsbjNarrativeDrafts,
   ssbjNarrativeTextWillBeDiscarded,
   ssbjTemplatePlaceholders,
@@ -160,5 +162,18 @@ describe('ssbjNextNarrativeToEdit', () => {
     const ids = entries.map(entry => entry.itemId);
     expect(ssbjNextNarrativeToEdit(entries, ids[ids.length - 1])).toBeNull();
     expect(ssbjNextNarrativeToEdit(entries, 'governance.unknown' as never)).toBeNull();
+  });
+});
+
+describe('ssbjNarrativeProgress・ssbjNarrativeAnchorId', () => {
+  it('マスターの項目のうち、開示する文章が入力済みの数を数える（未確認・非該当は数えない）', () => {
+    const entries = ssbjNarrativeEntriesOfSection('governance', fictionalNarratives);
+    const answered = entries.filter(entry => entry.text.disclosure.state === 'answered').length;
+    expect(ssbjNarrativeProgress(entries)).toEqual({ answered, total: entries.length });
+    expect(ssbjNarrativeProgress([])).toEqual({ answered: 0, total: 0 });
+  });
+
+  it('アンカーの ID は項目 ID の「.」を「-」にしたもの', () => {
+    expect(ssbjNarrativeAnchorId('governance.oversight_body')).toBe('ssbj-narrative-governance-oversight_body');
   });
 });

@@ -9,8 +9,9 @@
 // （タブを閉じる・再読み込みはブラウザの確認、アプリの中の移動は SsbjUnsavedChangesDialog）。
 // 左で扱っている項目（編集を始めた・フォーカスした）へ右のプレビューも動き、右の項目を押すと左のその入力カードへ移る。
 // 項目の「保存して次へ」で保存したら、画面の並びで次の入力済みでない項目の編集を開く。
+// 一覧の上に、スクロールしても付いてくる目次（SsbjNarrativeToc）を出し、項目ごとの状態の印からその項目へ移れる。
 
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, FileCheck2 } from 'lucide-react';
 import { PageHeading } from '@/components/layout/PageHeading';
@@ -32,7 +33,12 @@ import {
   type SsbjRequirement,
   type SsbjSectionId,
 } from '../types';
-import { mergeSsbjNarrativeDrafts, ssbjNarrativeEntriesOfSection, ssbjNextNarrativeToEdit } from '../utils/narrative';
+import {
+  mergeSsbjNarrativeDrafts,
+  ssbjNarrativeAnchorId,
+  ssbjNarrativeEntriesOfSection,
+  ssbjNextNarrativeToEdit,
+} from '../utils/narrative';
 import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
 import { isSsbjReadOnly } from '../utils/reportStatus';
 import { SSBJ_REQUIREMENTS, findSsbjNarrativeItem } from '../utils/requirementMaster';
@@ -40,6 +46,7 @@ import { SsbjEditorLayout } from './SsbjEditorLayout.client';
 import { SsbjLockedNotice } from './SsbjLockedNotice';
 import { SsbjRoleNotice } from './SsbjRoleNotice';
 import { SsbjNarrativeItemCard, type SsbjNarrativeItemCardHandle } from './SsbjNarrativeItemCard.client';
+import { SsbjNarrativeToc } from './SsbjNarrativeToc';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
 import { SsbjUnsavedChangesDialog } from './SsbjUnsavedChangesDialog.client';
 
@@ -106,6 +113,8 @@ export const SsbjNarratives = ({ reportId }: { reportId: string }) => {
     if (handle) cardHandles.current.set(itemId, handle);
     else cardHandles.current.delete(itemId);
   }, []);
+  // 目次と一覧に使う、章ごとの項目（保存済みの内容）。「入力済みでない項目だけ表示」では一覧だけを絞り、目次は全項目を出す。
+  const [onlyUnanswered, setOnlyUnanswered] = useState(false);
   const entriesBySection = SSBJ_SECTION_IDS.map(sectionId => ({
     sectionId,
     entries: ssbjNarrativeEntriesOfSection(sectionId, narratives),
@@ -174,35 +183,39 @@ export const SsbjNarratives = ({ reportId }: { reportId: string }) => {
                 同じ趣旨の要求にまとめて答えます。「〜していない」場合は、非該当ではなく「していない」と書いて入力済みにします。
                 変更は作業中の内容で、保存版にはレポート詳細の「保存版を作成」で残します。
               </p>
-              <nav aria-label="章" className="mt-3 flex flex-wrap gap-2">
-                {SSBJ_SECTION_IDS.map(sectionId => (
-                  <a key={sectionId} href={`#ssbj-narratives-${sectionId}`} className="text-sm font-semibold text-primary hover:underline">
-                    {SSBJ_SECTION_LABELS[sectionId]}
-                  </a>
-                ))}
-              </nav>
             </Card>
-            {entriesBySection.map(({ sectionId, entries }) => (
-              <section key={sectionId} id={`ssbj-narratives-${sectionId}`} className="flex flex-col gap-3">
+            <SsbjNarrativeToc sections={entriesBySection} onlyUnanswered={onlyUnanswered} onOnlyUnansweredChange={setOnlyUnanswered} />
+            {entriesBySection.map(({ sectionId, entries }) => {
+              // 未保存の入力がある項目は外さない（外すとカードが消え、書きかけの入力が失われるため）。
+              const shown = onlyUnanswered
+                ? entries.filter(entry => entry.text.disclosure.state !== 'answered' || dirtyItemIds.includes(entry.itemId))
+                : entries;
+              return (
+              <section key={sectionId} id={`ssbj-narratives-${sectionId}`} className="flex scroll-mt-40 flex-col gap-3">
                 <h2 className="m-0 text-base font-bold">{SSBJ_SECTION_LABELS[sectionId]}</h2>
-                {entries.map(entry => (
-                  <SsbjNarrativeItemCard
-                    key={entry.itemId}
-                    entry={entry}
-                    onSave={save}
-                    readOnly={isSsbjReadOnly(report.review, myRole.role)}
-                    onDraftChange={handleDraftChange}
-                    onDirtyChange={handleDirtyChange}
-                    isActive={itemFocus.activeItemId === entry.itemId}
-                    onActivate={itemFocus.activate}
-                    editRequest={itemFocus.editRequest}
-                    onSaveAndNext={saveAndNext}
-                    ref={cardRefOf(entry.itemId)}
-                  />
+                {onlyUnanswered && shown.length === 0 && (
+                  <p className="m-0 text-sm text-text-muted">この章の項目は、すべて入力済みです。</p>
+                )}
+                {shown.map(entry => (
+                  <div key={entry.itemId} id={ssbjNarrativeAnchorId(entry.itemId)} className="scroll-mt-40">
+                    <SsbjNarrativeItemCard
+                      entry={entry}
+                      onSave={save}
+                      readOnly={isSsbjReadOnly(report.review, myRole.role)}
+                      onDraftChange={handleDraftChange}
+                      onDirtyChange={handleDirtyChange}
+                      isActive={itemFocus.activeItemId === entry.itemId}
+                      onActivate={itemFocus.activate}
+                      editRequest={itemFocus.editRequest}
+                      onSaveAndNext={saveAndNext}
+                      ref={cardRefOf(entry.itemId)}
+                    />
+                  </div>
                 ))}
                 <OtherRequirements reportId={reportId} requirements={requirementsOf(sectionId)} />
               </section>
-            ))}
+              );
+            })}
             <section className="flex flex-col gap-3">
               <h2 className="m-0 text-base font-bold">全般</h2>
               <OtherRequirements reportId={reportId} requirements={requirementsOf(null)} />

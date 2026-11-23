@@ -196,3 +196,11 @@ export const ssbjNextNarrativeToEdit = (
   const next = entries.slice(index + 1).find(entry => entry.item !== null && entry.text.disclosure.state !== 'answered');
   return next?.itemId ?? null;
 };
+/** 項目の並びのうち、開示する文章が入力済みの数と全体の数（マスターの項目だけを数える）。目次の進み具合に使う。 */
+export const ssbjNarrativeProgress = (entries: readonly SsbjNarrativeEntry[]): { answered: number; total: number } => {
+  const items = entries.filter(entry => entry.item !== null);
+  return { answered: items.filter(entry => entry.text.disclosure.state === 'answered').length, total: items.length };
+};
+
+/** 項目のカードへ移るためのアンカーの ID（項目 ID の「.」は、URL の # で扱いやすいように「-」にする）。 */
+export const ssbjNarrativeAnchorId = (itemId: SsbjItemId): string => `ssbj-narrative-${itemId.replace(/\./g, '-')}`;

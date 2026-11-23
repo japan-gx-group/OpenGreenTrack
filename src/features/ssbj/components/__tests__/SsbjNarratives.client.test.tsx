@@ -708,3 +708,41 @@ describe('SsbjNarratives（書き始めれば入力済み・保存して次へ�
     expect(textareaIn(card)).toBeNull();
   });
 });
+
+describe('SsbjNarratives（目次）', () => {
+  const toc = () => document.querySelector<HTMLElement>('[data-testid="ssbj-narrative-toc"]')!;
+
+  it('入力済みの数と、項目ごとの状態の印を出し、印からその項目へ移れる', async () => {
+    rendered = render(<SsbjNarratives reportId={report.id} />);
+    await settle();
+    const answered = fictionalNarratives.filter(narrative => narrative.text.disclosure.state === 'answered').length;
+    expect(toc().textContent).toContain(`入力済み ${answered} / ${SSBJ_NARRATIVE_ITEMS.length} 項目`);
+    const mark = toc().querySelector<HTMLAnchorElement>('a[aria-label="経営者の役割（未入力）"]')!;
+    expect(mark.dataset.state).toBe('unanswered');
+    expect(document.getElementById(mark.getAttribute('href')!.slice(1))?.textContent).toContain('経営者の役割');
+    expect(toc().querySelector('a[aria-label="監督する機関・責任者（入力済み）"]')).not.toBeNull();
+    expect(toc().querySelector('a[aria-label="ビジネス・モデルとバリュー・チェーンへの影響（未確認）"]')).not.toBeNull();
+  });
+
+  it('「入力済みでない項目だけ表示」で、入力済みの項目を一覧から外す（目次は全項目のまま）', async () => {
+    rendered = render(<SsbjNarratives reportId={report.id} />);
+    await settle();
+    const answered = fictionalNarratives.filter(narrative => narrative.text.disclosure.state === 'answered').length;
+    click(toc().querySelector<HTMLElement>('#ssbj-narratives-only-unanswered')!);
+    expect(cards()).toHaveLength(SSBJ_NARRATIVE_ITEMS.length - answered);
+    expect(cards().some(card => card.querySelector('h3')?.textContent === '監督する機関・責任者')).toBe(false);
+    expect(toc().querySelectorAll('a[data-state]')).toHaveLength(SSBJ_NARRATIVE_ITEMS.length);
+  });
+
+  it('未保存の入力がある項目は、「入力済みでない項目だけ表示」でも外さない（書きかけを消さない）', async () => {
+    rendered = render(<SsbjNarratives reportId={report.id} />);
+    await settle();
+    const card = cardOf('監督する機関・責任者');
+    click(buttonIn(card, '編集'));
+    setTextareaValue(card.querySelector<HTMLTextAreaElement>('textarea[aria-label="開示する文章"]')!, '書き直している文章');
+    click(toc().querySelector<HTMLElement>('#ssbj-narratives-only-unanswered')!);
+    const kept = cardOf('監督する機関・責任者');
+    expect(kept.querySelector<HTMLTextAreaElement>('textarea[aria-label="開示する文章"]')?.value).toBe('書き直している文章');
+    expect(cards().some(other => other.querySelector('h3')?.textContent === '経営者の役割')).toBe(true);
+  });
+});
