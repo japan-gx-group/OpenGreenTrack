@@ -3,6 +3,7 @@
 
 import {
   OGT_EMISSION_UNIT,
+  type OgtCandidateValue,
   type SsbjDecimalString,
   type SsbjFieldValue,
   type SsbjReductionTargetAdoption,
@@ -25,11 +26,26 @@ const decimalOrUnanswered = (value: unknown): SsbjFieldValue<SsbjDecimalString> 
   return { state: 'answered', value };
 };
 
+const isPositive = (value: SsbjFieldValue<SsbjDecimalString>): boolean =>
+  value.state === 'answered' && !value.value.startsWith('-') && !/^0*(\.0*)?$/.test(value.value);
+
+/**
+ * レポートの年度の Scope 別の候補値（Scope 1・Scope 2・Scope 3 の合計）のどれかが算定済みか。すべて未算定なら、
+ * 集計行（0 の行が残ることがある）があっても、削減目標の実績は未算定にする。
+ */
+export const hasCalculatedScopeTotals = (candidates: OgtCandidateValue[]): boolean =>
+  candidates.some(candidate => candidate.scope3CategoryId === null && candidate.value.state === 'answered');
+
 /**
  * ssbj_ogt_reduction_target の結果を採用値の形にする。年度が見えない（null）ときは例外にする
  * （レポートの年度は必ず見えるため、見えないのは権限か年度の不整合）。
+ * reportYearCalculated は hasCalculatedScopeTotals の結果（false なら実績を未算定にする）。
+ * 基準年度に正の実績が無いときは、削減率は残し、目標排出量を未算定にする（0 を基準にした目標で超過に見せない）。
  */
-export const toSsbjReductionTarget = (raw: unknown): SsbjReductionTargetAdoption => {
+export const toSsbjReductionTarget = (
+  raw: unknown,
+  { reportYearCalculated }: { reportYearCalculated: boolean },
+): SsbjReductionTargetAdoption => {
   if (!isObject(raw)) throw new Error('削減目標を取得できませんでした');
   if (raw.status === 'not_set') return { status: 'not_set' };
   if (raw.status !== 'set') throw new Error('削減目標の形式が正しくありません');
@@ -44,6 +60,8 @@ export const toSsbjReductionTarget = (raw: unknown): SsbjReductionTargetAdoption
     throw new Error('削減目標の形式が正しくありません');
   }
 
+  const baseYearEmissions = decimalOrUnanswered(raw.baseYearEmissions);
+  const baseUsable = isPositive(baseYearEmissions);
   const targetYears: SsbjReductionTargetYear[] = raw.targetYears.map(item => {
     if (!isObject(item) || !Number.isInteger(item.targetYear) || !isDecimalString(item.reductionPercent)) {
       throw new Error('削減目標の年度の形式が正しくありません');
@@ -51,7 +69,7 @@ export const toSsbjReductionTarget = (raw: unknown): SsbjReductionTargetAdoption
     return {
       targetYear: item.targetYear as number,
       reductionPercent: item.reductionPercent,
-      targetEmissions: decimalOrUnanswered(item.targetEmissions),
+      targetEmissions: baseUsable ? decimalOrUnanswered(item.targetEmissions) : UNANSWERED,
     };
   });
   const reportYear = raw.reportYear as number;
@@ -61,7 +79,7 @@ export const toSsbjReductionTarget = (raw: unknown): SsbjReductionTargetAdoption
     status: 'set',
     baseFiscalYear: { id: base.id, label: base.label, startDate: base.startDate, endDate: base.endDate },
     baseYearEnded: raw.baseYearEnded,
-    baseYearEmissions: decimalOrUnanswered(raw.baseYearEmissions),
+    baseYearEmissions,
     targetYears,
     reportYear: {
       fiscalYearId: raw.reportFiscalYearId,
@@ -69,7 +87,7 @@ export const toSsbjReductionTarget = (raw: unknown): SsbjReductionTargetAdoption
       // 削減率を入れていない年度は「目標未設定」。0% にしない。
       reductionPercent: current ? { state: 'answered', value: current.reductionPercent } : UNANSWERED,
       targetEmissions: current ? current.targetEmissions : UNANSWERED,
-      actualEmissions: decimalOrUnanswered(raw.reportYearEmissions),
+      actualEmissions: reportYearCalculated ? decimalOrUnanswered(raw.reportYearEmissions) : UNANSWERED,
     },
     unit: OGT_EMISSION_UNIT,
   };
@@ -103,6 +121,14 @@ export const formatReportYearReduction = (target: SsbjReductionTargetAdoption): 
   const { reductionPercent } = target.reportYear;
   return reductionPercent.state === 'answered' ? `基準年度比 ${reductionPercent.value}% 削減` : '目標未設定';
 };
+
+/** 基準年度に正の実績が無く、目標排出量を算定できないか（削減率は設定済み）。 */
+export const isBaseYearUnusable = (target: Extract<SsbjReductionTargetAdoption, { status: 'set' }>): boolean =>
+  !isPositive(target.baseYearEmissions);
+
+/** 基準年度に正の実績が無いときの注意。 */
+export const BASE_YEAR_NO_EMISSIONS_NOTE =
+  '基準年度の排出量が算定されていない（または 0）ため、目標排出量と実績との差は算定できません（削減率は OGT の設定のとおりです）';
 
 /** 基準年度が期中だったときの注意（docs/functional-spec.md §4.7 を採用値に引き継ぐ）。 */
 export const BASE_YEAR_IN_PROGRESS_NOTE =

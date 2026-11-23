@@ -3,7 +3,12 @@
 // 目標未設定・未算定は空欄＋状態の名前にし、0 にしない。
 
 import type { SsbjDecimalString, SsbjFieldValue, SsbjGhgAdoption } from '../types';
-import { BASE_YEAR_IN_PROGRESS_NOTE, reductionTargetGap } from '../utils/reductionTarget';
+import {
+  BASE_YEAR_IN_PROGRESS_NOTE,
+  BASE_YEAR_NO_EMISSIONS_NOTE,
+  isBaseYearUnusable,
+  reductionTargetGap,
+} from '../utils/reductionTarget';
 
 const GROUP = '削減目標';
 const SOURCE_NOTE = '出典: OGT の削減目標（採用した時点の値）';
@@ -22,7 +27,11 @@ export const reductionTargetCsvRows = (ghg: SsbjGhgAdoption): string[][] => {
   }
 
   const { baseFiscalYear, reportYear, unit } = target;
-  const baseNote = target.baseYearEnded ? SOURCE_NOTE : `${SOURCE_NOTE}。${BASE_YEAR_IN_PROGRESS_NOTE}`;
+  const baseNote = [
+    SOURCE_NOTE,
+    ...(target.baseYearEnded ? [] : [BASE_YEAR_IN_PROGRESS_NOTE]),
+    ...(isBaseYearUnusable(target) ? [BASE_YEAR_NO_EMISSIONS_NOTE] : []),
+  ].join('。');
   const rows: string[][] = [
     [GROUP, 'reduction_target.base_year', '基準年度', '入力済み',
       `${baseFiscalYear.label}（${baseFiscalYear.startDate}〜${baseFiscalYear.endDate}）`, '', '', baseNote],

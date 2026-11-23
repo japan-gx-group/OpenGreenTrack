@@ -24,7 +24,11 @@ comment on column ssbj_ogt_adoptions."reductionTarget" is
 --
 -- 基準年度・レポートの年度の排出量は dashboard_aggregates（算定確定時の値）の Scope 1・2・3 の合計。集計行が無い年度は null
 -- （未算定）にする。OGT のダッシュボードは集計行が無い年度を算定結果の合算で補うが、開示に使う値は確定した集計だけにする。
--- 年度の目標排出量は「基準年度の排出量 × (1 − 削減率 / 100)」を numeric のまま計算する（丸めない）。
+-- 年度の目標排出量は「基準年度の排出量 × (1 − 削減率 / 100)」を numeric のまま計算する（丸めない）。基準年度に正の実績が
+-- 無い（集計行が無い・算定データが消えて集計が 0 になった）ときは、削減率は返し、目標排出量は null（算定できない）にする
+-- （0 を基準にすると目標も 0 になり、実績がすべて超過に見えるため）。基準年度に正の実績があり削減率が 100% なら目標は 0。
+-- レポートの年度の実績は、Scope 別の候補値がすべて未算定なら集計行があっても未算定にする（画面・サーバ側で判定する:
+-- src/features/ssbj/utils/reductionTarget.ts）。
 -- security invoker のため組織の RLS が効く。基準年度の行が見えない（他組織・削除済み）ときは目標が無いものとする。
 
 create function ssbj_ogt_reduction_target(p_fiscal_year_id uuid)
@@ -73,7 +77,10 @@ as $$
           select jsonb_agg(jsonb_build_object(
             'targetYear', y."targetYear",
             'reductionPercent', trim_scale(y."reductionPercent")::text,
-            'targetEmissions', (select trim_scale(b.total * (100 - y."reductionPercent") / 100)::text from base_total b)
+            'targetEmissions', (
+              select trim_scale(b.total * (100 - y."reductionPercent") / 100)::text
+              from base_total b where b.total > 0
+            )
           ) order by y."targetYear")
           from reduction_target_years y
           where y."organizationId" = t."organizationId"

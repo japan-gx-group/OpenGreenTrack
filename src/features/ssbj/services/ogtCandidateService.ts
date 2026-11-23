@@ -20,7 +20,7 @@ import {
 } from '../types';
 import { isDecimalString } from '../utils/decimal';
 import { checkOgtCandidateValue, deriveDirectInputDataQuality, deriveOgtDataQuality } from '../utils/ogtValue';
-import { toSsbjReductionTarget } from '../utils/reductionTarget';
+import { hasCalculatedScopeTotals, toSsbjReductionTarget } from '../utils/reductionTarget';
 
 type NumericValues = {
   aggregate: {
@@ -212,5 +212,10 @@ export const fetchOgtCandidates = async (
     scope3Coverage: (scope3Coverage.data ?? []) as Scope3CoverageRow[],
     methods: (methods.data ?? []) as MethodRow[], directRows: (directRows.data ?? []) as DirectRow[],
     batches: (batches.data ?? []) as BatchRow[] });
-  return { ...built, reductionTarget: toSsbjReductionTarget(reductionTarget.data) };
+  return {
+    ...built,
+    reductionTarget: toSsbjReductionTarget(reductionTarget.data, {
+      reportYearCalculated: hasCalculatedScopeTotals(built.candidates),
+    }),
+  };
 };

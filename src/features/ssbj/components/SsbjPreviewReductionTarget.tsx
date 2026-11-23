@@ -5,9 +5,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import type { SsbjGhgAdoption, SsbjReductionTargetAdoption } from '../types';
 import {
   BASE_YEAR_IN_PROGRESS_NOTE,
+  BASE_YEAR_NO_EMISSIONS_NOTE,
   formatReportYearReduction,
   formatTargetEmissions,
   formatTargetGap,
+  isBaseYearUnusable,
   reductionTargetGap,
 } from '../utils/reductionTarget';
 
@@ -57,6 +59,7 @@ export const SsbjReductionTargetDetails = ({ target }: { target: Extract<SsbjRed
         <div><dt className="text-text-muted">実績排出量</dt><dd className="m-0 tabular-nums">{formatTargetEmissions(reportYear.actualEmissions)}</dd></div>
         <div><dt className="text-text-muted">実績と目標の差</dt><dd className="m-0 tabular-nums">{formatTargetGap(reductionTargetGap(target))}</dd></div>
       </dl>
+      {isBaseYearUnusable(target) && <p role="note" className="m-0 text-xs text-warning">{BASE_YEAR_NO_EMISSIONS_NOTE}。</p>}
       {!target.baseYearEnded && <p role="note" className="m-0 text-xs text-warning">{BASE_YEAR_IN_PROGRESS_NOTE}。</p>}
       {target.targetYears.length > 0 ? (
         <Table>

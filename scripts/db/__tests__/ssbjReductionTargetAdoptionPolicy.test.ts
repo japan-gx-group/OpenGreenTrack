@@ -7,6 +7,7 @@
 //   - 書き込みは引き続き service_role 限定の adopt_ssbj_ogt_values だけ（authenticated に insert / update を与えない）
 //   - 古い形（引数 5 つ）の採用 RPC を消し、同じ名前の関数を 2 つ残さない
 //   - 削減目標の読み取りは security invoker（組織の RLS が効く）で、anon には与えない
+//   - 基準年度に正の実績が無いときは目標排出量を null にする（0 を基準にした目標を返さない）
 //   - 保存版・復元が削減目標を運ぶ
 
 import { readdirSync, readFileSync } from 'node:fs';
@@ -61,7 +62,7 @@ describe('削減目標の採用（R2-32）', () => {
 
   it('目標排出量は numeric のまま計算し、確定した集計（dashboard_aggregates）の年度だけを排出量にする', () => {
     const reader = functionBody('ssbj_ogt_reduction_target');
-    expect(reader).toContain(`trim_scale(b.total * (100 - y."reductionPercent") / 100)::text`);
+    expect(reader).toContain(`trim_scale(b.total * (100 - y."reductionPercent") / 100)::text from base_total b where b.total > 0`);
     expect(reader).toContain('join dashboard_aggregates da');
     expect(reader).not.toMatch(/::(float|double|real)/);
   });
