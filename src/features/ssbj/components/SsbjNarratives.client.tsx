@@ -8,7 +8,9 @@
 // 保存していない文章がある間は、見出しの横に「未保存 n」を出し、画面を離れる操作を止めて聞く
 // （タブを閉じる・再読み込みはブラウザの確認、アプリの中の移動は SsbjUnsavedChangesDialog）。
 // 左で扱っている項目（編集を始めた・フォーカスした）へ右のプレビューも動き、右の項目を押すと左のその入力カードへ移る。
+// 項目の「保存して次へ」で保存したら、画面の並びで次の入力済みでない項目の編集を開く。
 
+import { useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, FileCheck2 } from 'lucide-react';
 import { PageHeading } from '@/components/layout/PageHeading';
@@ -30,14 +32,14 @@ import {
   type SsbjRequirement,
   type SsbjSectionId,
 } from '../types';
-import { mergeSsbjNarrativeDrafts, ssbjNarrativeEntriesOfSection } from '../utils/narrative';
+import { mergeSsbjNarrativeDrafts, ssbjNarrativeEntriesOfSection, ssbjNextNarrativeToEdit } from '../utils/narrative';
 import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
 import { isSsbjReadOnly } from '../utils/reportStatus';
 import { SSBJ_REQUIREMENTS, findSsbjNarrativeItem } from '../utils/requirementMaster';
 import { SsbjEditorLayout } from './SsbjEditorLayout.client';
 import { SsbjLockedNotice } from './SsbjLockedNotice';
 import { SsbjRoleNotice } from './SsbjRoleNotice';
-import { SsbjNarrativeItemCard } from './SsbjNarrativeItemCard.client';
+import { SsbjNarrativeItemCard, type SsbjNarrativeItemCardHandle } from './SsbjNarrativeItemCard.client';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
 import { SsbjUnsavedChangesDialog } from './SsbjUnsavedChangesDialog.client';
 
@@ -96,6 +98,21 @@ export const SsbjNarratives = ({ reportId }: { reportId: string }) => {
   const save = async (itemId: SsbjItemId, text: SsbjDisclosableText, templateInput: SsbjNarrativeTemplateInput | null) => {
     if (!report) return;
     replace(await saveSsbjNarrative(report, itemId, text, templateInput));
+  };
+
+  // 項目ごとのカードの操作（「保存して次へ」で次の項目の編集を開くため）。
+  const cardHandles = useRef(new Map<SsbjItemId, SsbjNarrativeItemCardHandle>());
+  const cardRefOf = useCallback((itemId: SsbjItemId) => (handle: SsbjNarrativeItemCardHandle | null) => {
+    if (handle) cardHandles.current.set(itemId, handle);
+    else cardHandles.current.delete(itemId);
+  }, []);
+  const entriesBySection = SSBJ_SECTION_IDS.map(sectionId => ({
+    sectionId,
+    entries: ssbjNarrativeEntriesOfSection(sectionId, narratives),
+  }));
+  const saveAndNext = (itemId: SsbjItemId) => {
+    const next = ssbjNextNarrativeToEdit(entriesBySection.flatMap(section => section.entries), itemId);
+    if (next) cardHandles.current.get(next)?.openForEdit();
   };
 
   const requirementsOf = (sectionId: SsbjSectionId | null) =>
@@ -165,10 +182,10 @@ export const SsbjNarratives = ({ reportId }: { reportId: string }) => {
                 ))}
               </nav>
             </Card>
-            {SSBJ_SECTION_IDS.map(sectionId => (
+            {entriesBySection.map(({ sectionId, entries }) => (
               <section key={sectionId} id={`ssbj-narratives-${sectionId}`} className="flex flex-col gap-3">
                 <h2 className="m-0 text-base font-bold">{SSBJ_SECTION_LABELS[sectionId]}</h2>
-                {ssbjNarrativeEntriesOfSection(sectionId, narratives).map(entry => (
+                {entries.map(entry => (
                   <SsbjNarrativeItemCard
                     key={entry.itemId}
                     entry={entry}
@@ -179,6 +196,8 @@ export const SsbjNarratives = ({ reportId }: { reportId: string }) => {
                     isActive={itemFocus.activeItemId === entry.itemId}
                     onActivate={itemFocus.activate}
                     editRequest={itemFocus.editRequest}
+                    onSaveAndNext={saveAndNext}
+                    ref={cardRefOf(entry.itemId)}
                   />
                 ))}
                 <OtherRequirements reportId={reportId} requirements={requirementsOf(sectionId)} />

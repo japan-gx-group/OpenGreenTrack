@@ -16,6 +16,7 @@ import {
   validateSsbjNarrativeInput,
   type SsbjNarrativeFormValues,
 } from '../utils/narrative';
+import { ssbjFieldStateAfterTyping } from '../utils/fieldValue';
 import {
   normalizeSsbjNarrativeTemplateInput,
   validateSsbjNarrativeTemplateInput,
@@ -30,6 +31,7 @@ export type SsbjNarrativeSave = (
 export interface SsbjNarrativeFormController {
   values: SsbjNarrativeFormValues;
   setState: (state: SsbjFieldState) => void;
+  /** 本文を変える。書き始めたら状態を「入力済み」に、全部消したら「未入力」にする（ssbjFieldStateAfterTyping）。 */
   setText: (text: string) => void;
   setInternalNote: (internalNote: string) => void;
   /** 選択式テンプレートの選択・補足入力を変える（本文は変えない）。 */
@@ -132,7 +134,7 @@ export function useSsbjNarrativeForm(
   return {
     values,
     setState: state => setValues(prev => ({ ...prev, state })),
-    setText: text => setValues(prev => ({ ...prev, text })),
+    setText: text => setValues(prev => ({ ...prev, text, state: ssbjFieldStateAfterTyping(prev.state, text) })),
     setInternalNote: internalNote => setValues(prev => ({ ...prev, internalNote })),
     setTemplateInput: templateInput => setValues(prev => ({ ...prev, templateInput })),
     insertDraft: draft => {

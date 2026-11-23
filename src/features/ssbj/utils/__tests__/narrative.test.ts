@@ -6,6 +6,7 @@ import {
   isSsbjNarrativeFormDirty,
   normalizeSsbjNarrativeInput,
   ssbjNarrativeEntriesOfSection,
+  ssbjNextNarrativeToEdit,
   mergeSsbjNarrativeDrafts,
   ssbjNarrativeTextWillBeDiscarded,
   ssbjTemplatePlaceholders,
@@ -133,5 +134,31 @@ describe('isSsbjNarrativeFormDirty（保存していない入力があるか）'
     expect(isSsbjNarrativeFormDirty(itemId, saved, null, values)).toBe(true);
     expect(isSsbjNarrativeFormDirty(itemId, saved, chosen, { ...values, templateInput: { ...reordered, choices: { scope: 'climate' } } }))
       .toBe(true);
+  });
+});
+
+describe('ssbjNextNarrativeToEdit', () => {
+  const entries = ssbjNarrativeEntriesOfSection('governance', [
+    { itemId: 'governance.oversight_body', text: { disclosure: { state: 'answered', value: '取締役会が監督する。' }, internalNote: null }, templateInput: null },
+  ] as SsbjNarrative[]);
+
+  it('後ろにある、入力済みでない項目のうち最初のものを返す', () => {
+    const ids = entries.map(entry => entry.itemId);
+    expect(ids[0]).toBe('governance.oversight_body');
+    expect(ssbjNextNarrativeToEdit(entries, ids[0])).toBe(ids[1]);
+  });
+
+  it('入力済みの項目は飛ばす', () => {
+    const ids = entries.map(entry => entry.itemId);
+    const answered = entries.map((entry, index) => index === 1
+      ? { ...entry, text: { disclosure: { state: 'answered' as const, value: '書いた' }, internalNote: null } }
+      : entry);
+    expect(ssbjNextNarrativeToEdit(answered, ids[0])).toBe(ids[2]);
+  });
+
+  it('後ろに残りが無ければ null', () => {
+    const ids = entries.map(entry => entry.itemId);
+    expect(ssbjNextNarrativeToEdit(entries, ids[ids.length - 1])).toBeNull();
+    expect(ssbjNextNarrativeToEdit(entries, 'governance.unknown' as never)).toBeNull();
   });
 });

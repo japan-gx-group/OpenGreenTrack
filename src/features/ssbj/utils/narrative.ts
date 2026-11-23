@@ -181,3 +181,18 @@ export const isSsbjNarrativeFormDirty = (
     normalizeSsbjNarrativeTemplateInput(itemId, values.templateInput),
     normalizeSsbjNarrativeTemplateInput(itemId, savedTemplateInput),
   );
+
+/**
+ * 「保存して次へ」で次に開く項目。画面の並び（章の順・マスターの順）で current より後ろにある、
+ * 開示する文章がまだ入力済みでない項目のうち最初のもの。無ければ null（最後まで書き終えた）。
+ * マスターに無い項目（item が null）は編集できないので飛ばす。
+ */
+export const ssbjNextNarrativeToEdit = (
+  entries: readonly SsbjNarrativeEntry[],
+  current: SsbjItemId,
+): SsbjItemId | null => {
+  const index = entries.findIndex(entry => entry.itemId === current);
+  if (index < 0) return null;
+  const next = entries.slice(index + 1).find(entry => entry.item !== null && entry.text.disclosure.state !== 'answered');
+  return next?.itemId ?? null;
+};

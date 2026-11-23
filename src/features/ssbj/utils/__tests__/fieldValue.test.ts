@@ -6,6 +6,7 @@ import {
   fromFieldValue,
   isAnswered,
   isSsbjFieldState,
+  ssbjFieldStateAfterTyping,
   toFieldValue,
 } from '../fieldValue';
 
@@ -104,5 +105,25 @@ describe('isSsbjFieldState', () => {
     expect(isSsbjFieldState('answered')).toBe(true);
     expect(isSsbjFieldState('empty')).toBe(false);
     expect(isSsbjFieldState(0)).toBe(false);
+  });
+});
+
+describe('ssbjFieldStateAfterTyping', () => {
+  it('書き始めたら、どの状態からでも入力済みにする', () => {
+    expect(ssbjFieldStateAfterTyping('unanswered', 'a')).toBe('answered');
+    expect(ssbjFieldStateAfterTyping('unconfirmed', 'a')).toBe('answered');
+    expect(ssbjFieldStateAfterTyping('not_applicable', 'a')).toBe('answered');
+    expect(ssbjFieldStateAfterTyping('answered', 'ab')).toBe('answered');
+  });
+
+  it('入力済みの本文を全部消したら未入力に戻す', () => {
+    expect(ssbjFieldStateAfterTyping('answered', '')).toBe('unanswered');
+    expect(ssbjFieldStateAfterTyping('answered', '  \n')).toBe('unanswered');
+  });
+
+  it('空白だけの入力では、選んだ未確認・非該当・未入力を変えない', () => {
+    expect(ssbjFieldStateAfterTyping('unconfirmed', ' ')).toBe('unconfirmed');
+    expect(ssbjFieldStateAfterTyping('not_applicable', '')).toBe('not_applicable');
+    expect(ssbjFieldStateAfterTyping('unanswered', ' ')).toBe('unanswered');
   });
 });

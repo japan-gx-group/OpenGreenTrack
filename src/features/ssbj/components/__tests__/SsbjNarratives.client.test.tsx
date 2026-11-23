@@ -598,14 +598,15 @@ describe('SsbjNarratives（書いている項目へ、右のプレビューも�
     expect(activePreviewItems()).toEqual(['governance.oversight_body']);
   });
 
-  it('文章の欄が書けない状態なら状態の選択へ移り、編集中のカードはそのまま（書きかけを消さない）', async () => {
+  it('未入力の項目でも文章の欄へ移り、編集中のカードはそのまま（書きかけを消さない）', async () => {
     rendered = render(<SsbjNarratives reportId={report.id} />);
     await settle();
     const card = cardOf('経営者の役割');
     click(previewItem('governance.management_role')!);
-    expect(document.activeElement).toBe(card.querySelector('select'));
-    setSelectValue(card.querySelector('select')!, 'answered');
+    expect(card.querySelector('select')?.value).toBe('unanswered');
+    expect(document.activeElement).toBe(textareaOf(card));
     setTextareaValue(textareaOf(card)!, '書きかけの文章');
+    expect(card.querySelector('select')?.value).toBe('answered');
     click(previewItem('governance.management_role')!);
     expect(textareaOf(card)?.value).toBe('書きかけの文章');
     expect(document.activeElement).toBe(textareaOf(card));
@@ -634,5 +635,76 @@ describe('SsbjNarratives（書いている項目へ、右のプレビューも�
     expect(textareaOf(card)).toBeNull();
     expect(document.activeElement).toBe(card);
     expect(card.getAttribute('data-active')).toBe('true');
+  });
+});
+
+describe('SsbjNarratives（書き始めれば入力済み・保存して次へ・キーで保存）', () => {
+  const textareaIn = (card: HTMLElement) => card.querySelector<HTMLTextAreaElement>('textarea[aria-label="開示する文章"]')!;
+  const keyDown = (target: Element, init: KeyboardEventInit) => {
+    act(() => { target.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })); });
+  };
+
+  it('状態を選ばなくても本文を書け、書き始めると入力済み、全部消すと未入力になる', async () => {
+    rendered = render(<SsbjNarratives reportId={report.id} />);
+    await settle();
+    const card = cardOf('経営者の役割');
+    click(buttonIn(card, '編集'));
+    const textarea = textareaIn(card);
+    expect(card.querySelector('select')?.value).toBe('unanswered');
+    expect(textarea.disabled).toBe(false);
+    setTextareaValue(textarea, '管');
+    expect(card.querySelector('select')?.value).toBe('answered');
+    setTextareaValue(textarea, '');
+    expect(card.querySelector('select')?.value).toBe('unanswered');
+  });
+
+  it('未確認の項目でも書き始めると入力済みになり、そのまま保存できる', async () => {
+    vi.mocked(saveSsbjNarrative).mockImplementation(async (_report, itemId, text) => ({ itemId, text }));
+    rendered = render(<SsbjNarratives reportId={report.id} />);
+    await settle();
+    const card = cardOf('ビジネス・モデルとバリュー・チェーンへの影響');
+    click(buttonIn(card, '編集'));
+    expect(card.querySelector('select')?.value).toBe('unconfirmed');
+    setTextareaValue(textareaIn(card), '物流費が上がる。');
+    await act(async () => { click(buttonIn(card, '保存')); });
+    await settle();
+    expect(saveSsbjNarrative).toHaveBeenCalledWith(expect.anything(), 'strategy.business_model_impact',
+      expect.objectContaining({ disclosure: { state: 'answered', value: '物流費が上がる。' } }), null);
+  });
+
+  it('「保存して次へ」で保存すると、後ろの入力済みでない項目の編集を開く', async () => {
+    vi.mocked(saveSsbjNarrative).mockImplementation(async (_report, itemId, text) => ({ itemId, text }));
+    rendered = render(<SsbjNarratives reportId={report.id} />);
+    await settle();
+    const card = cardOf('監督のための情報の入手方法と頻度');
+    click(buttonIn(card, '編集'));
+    setTextareaValue(textareaIn(card), '年 2 回報告を受ける。');
+    await act(async () => { click(buttonIn(card, '保存して次へ')); });
+    await settle();
+    expect(saveSsbjNarrative).toHaveBeenCalledTimes(1);
+    expect(textareaIn(cardOf('監督のための情報の入手方法と頻度'))).toBeNull();
+    const next = cardOf('経営者の役割');
+    expect(textareaIn(next)).not.toBeNull();
+    expect(document.activeElement).toBe(textareaIn(next));
+  });
+
+  it('Ctrl+S・⌘S で保存し、何も変えていなければ Esc で編集をやめる', async () => {
+    vi.mocked(saveSsbjNarrative).mockImplementation(async (_report, itemId, text) => ({ itemId, text }));
+    rendered = render(<SsbjNarratives reportId={report.id} />);
+    await settle();
+    const card = cardOf('経営者の役割');
+    click(buttonIn(card, '編集'));
+    keyDown(textareaIn(card), { key: 'Escape' });
+    expect(textareaIn(card)).toBeNull();
+
+    click(buttonIn(card, '編集'));
+    setTextareaValue(textareaIn(card), '委任している。');
+    keyDown(textareaIn(card), { key: 'Escape' });
+    expect(textareaIn(card)).not.toBeNull();
+    await act(async () => { keyDown(textareaIn(card), { key: 's', metaKey: true }); });
+    await settle();
+    expect(saveSsbjNarrative).toHaveBeenCalledWith(expect.anything(), 'governance.management_role',
+      expect.objectContaining({ disclosure: { state: 'answered', value: '委任している。' } }), null);
+    expect(textareaIn(card)).toBeNull();
   });
 });

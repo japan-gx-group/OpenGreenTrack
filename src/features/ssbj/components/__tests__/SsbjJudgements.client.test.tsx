@@ -269,6 +269,18 @@ describe('SsbjJudgements', () => {
     expect(rowOf('REQ-GEN-002').textContent).toContain('判断済み');
   });
 
+  it('詳細の「開示する説明」は状態を選ばなくても書け、書き始めると入力済みになる', async () => {
+    rendered = render(<SsbjJudgements reportId={report.id} />);
+    await settle();
+    click(buttonIn(rowOf('REQ-CLM-026'), '詳細'));
+    await flush();
+    const explanation = dialog().querySelector<HTMLTextAreaElement>('textarea[aria-label="開示する説明"]')!;
+    expect(explanation.disabled).toBe(false);
+    setTextareaValue(explanation, '経過措置を適用している。');
+    expect(selectLabeled('開示する説明の状態').value).toBe('answered');
+    expect(explanation.value).toBe('経過措置を適用している。');
+  });
+
   it('詳細の「保存して次の未判断・要確認へ」で、表示中の次の要求を開く', async () => {
     rendered = render(<SsbjJudgements reportId={report.id} />);
     await settle();
