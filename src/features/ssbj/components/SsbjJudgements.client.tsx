@@ -9,7 +9,8 @@
 // 該当性・重要性の 2 列だけを、読込時の更新日時を条件に保存する（他の画面で保存された根拠を古い値に戻さない）。
 // 「詳細」のダイアログに保存していない入力がある間は、タブを閉じる・再読み込みなど画面を離れる操作を止めて聞く。
 // 行のチェックで要求を選び、上の帯（SsbjJudgementBulkBar）から該当性・重要性をまとめて付けられる。保存は 1 件ずつ
-// 一覧の保存を通し、保存できなかった要求は理由を出して選んだままにする。件数・絞り込み・まとめての帯は、表をスクロールしても上に残す。
+// 一覧の保存を通し、保存できなかった要求は理由を出して選んだままにする。件数・絞り込み・まとめての帯は、表をスクロールしても上に残す
+// （スマホの幅では残さない。左上のメニューのボタンと重なり、画面の高さを取りすぎるため）。
 // 該当性・重要性の選択欄は、値（「重要性あり」など）が切れずに読める幅にする。
 
 import { useState, type FormEvent, type KeyboardEvent } from 'react';
@@ -449,7 +450,7 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
                 </li>
               </ul>
             </Card>
-            <Card data-testid="ssbj-judgement-toolbar" className="sticky top-0 z-10 flex flex-col gap-3 shadow-sm">
+            <Card data-testid="ssbj-judgement-toolbar" className="z-10 flex flex-col gap-3 shadow-sm md:sticky md:top-0">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p data-testid="ssbj-judgement-status-count" className="m-0 text-sm font-semibold">
                   {SSBJ_JUDGEMENT_STATUSES.map(status => `${SSBJ_JUDGEMENT_STATUS_LABELS[status]} ${countOf(status)} 件`).join(' / ')}
