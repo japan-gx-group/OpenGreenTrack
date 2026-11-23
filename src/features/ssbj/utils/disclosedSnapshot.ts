@@ -63,6 +63,8 @@ export const SSBJ_SNAPSHOT_FIELD_CLASSIFICATION: {
         'supplierReferences[].kind', 'supplierReferences[].fiscalYearId', 'supplierReferences[].scope3CategoryId',
         'supplierReferences[].supplierId', 'supplierReferences[].supplierName', 'supplierReferences[].emissions',
         'supplierReferences[].unit',
+        // R2-32。採用した時点の削減目標（基準年度・削減率・目標と実績の排出量）。すべて開示する値。
+        'reductionTarget',
       ],
       internal: ['adoptedBy', 'values[].adoptedBy', 'values[].source', 'values[].coverage'],
     },

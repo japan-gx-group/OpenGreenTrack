@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   FICTIONAL_DRAFT_REVIEW,
   fictionalOgtCandidates,
+  fictionalReductionTarget,
   fictionalReportBasicInfo,
   fictionalSupplierReferences,
 } from '../../__fixtures__/fictionalReport';
@@ -32,7 +33,7 @@ const report = {
   draftRevision: 3,
   review: FICTIONAL_DRAFT_REVIEW,
 };
-const displayedFingerprint = ogtCandidateFingerprint(fictionalOgtCandidates, fictionalSupplierReferences);
+const displayedFingerprint = ogtCandidateFingerprint(fictionalOgtCandidates, fictionalSupplierReferences, fictionalReductionTarget);
 const params = {
   reportId: report.id,
   organizationId: report.organizationId,
@@ -49,7 +50,9 @@ describe('adoptOgtCandidates（サーバ）', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.fetchSsbjReport.mockResolvedValue(report);
-    mocks.fetchOgtCandidates.mockResolvedValue({ candidates: fictionalOgtCandidates, suppliers: fictionalSupplierReferences });
+    mocks.fetchOgtCandidates.mockResolvedValue({
+      candidates: fictionalOgtCandidates, suppliers: fictionalSupplierReferences, reductionTarget: fictionalReductionTarget,
+    });
     mocks.rpc.mockResolvedValue({ data: { adoptedAt: '2025-06-03T02:00:00+00:00' }, error: null });
   });
 
@@ -62,13 +65,22 @@ describe('adoptOgtCandidates（サーバ）', () => {
       p_actor_user_id: 'user-1',
       p_candidates: fictionalOgtCandidates,
       p_supplier_references: fictionalSupplierReferences,
+      p_reduction_target: fictionalReductionTarget,
     });
+  });
+
+  it('OGT の削減目標が画面の表示から変わっていれば保存しない（R2-32）', async () => {
+    mocks.fetchOgtCandidates.mockResolvedValue({
+      candidates: fictionalOgtCandidates, suppliers: fictionalSupplierReferences, reductionTarget: { status: 'not_set' },
+    });
+    expect(await reasonOf(adoptOgtCandidates(params))).toBe('candidates_changed');
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
   it('OGT の値が画面の表示から変わっていれば保存しない（見ていない値を採用させない）', async () => {
     const changed = fictionalOgtCandidates.map((candidate, index) =>
       index === 0 ? { ...candidate, value: { state: 'answered' as const, value: '999.999' } } : candidate);
-    mocks.fetchOgtCandidates.mockResolvedValue({ candidates: changed, suppliers: fictionalSupplierReferences });
+    mocks.fetchOgtCandidates.mockResolvedValue({ candidates: changed, suppliers: fictionalSupplierReferences, reductionTarget: fictionalReductionTarget });
     expect(await reasonOf(adoptOgtCandidates(params))).toBe('candidates_changed');
     expect(mocks.rpc).not.toHaveBeenCalled();
   });

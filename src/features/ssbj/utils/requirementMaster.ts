@@ -447,7 +447,7 @@ export const SSBJ_REQUIREMENTS: readonly SsbjRequirement[] = [
     references: [{ standard: 'CLM', paragraphs: '92〜96' }],
     priority: 'core',
     inputTarget: { kind: 'narrative', itemId: 'metrics_targets.targets' },
-    guide: 'OGT の削減目標（基準年度と年度ごとの削減率）を登録していれば参考になる。目的（緩和・適応など）、対象が会社全体か一部か、絶対量か原単位か、見直しの方法、第三者の認証の有無も書く。',
+    guide: 'OGT の削減目標（基準年度と年度ごとの削減率）は、「GHG排出量の候補値」の画面で OGT の値と一緒に採用すると、レポートの「削減目標」に数値（基準年度・目標と実績・差）が入る。文章では目的（緩和・適応など）、対象が会社全体か一部か、絶対量か原単位か、見直しの方法、第三者の認証の有無も書く。',
   },
   {
     id: 'REQ-CLM-030',

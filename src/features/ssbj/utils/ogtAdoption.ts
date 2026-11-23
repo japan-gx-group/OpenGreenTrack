@@ -4,8 +4,9 @@
 // 指紋は「利用者が画面で見た値と、サーバが取り直した値が同じか」を確かめるためのもので、
 // 採用する値そのものはクライアントから送らない（docs/ssbj-spec.md §7・§8）。
 
-import type { OgtCandidateValue, OgtSupplierReference, SsbjGhgAdoption } from '../types';
+import type { OgtCandidateValue, OgtSupplierReference, SsbjGhgAdoption, SsbjReductionTargetAdoption } from '../types';
 import { ogtValueLabel } from './ogtValue';
+import { isReductionTargetChanged, REDUCTION_TARGET_CHANGED_LABEL } from './reductionTarget';
 
 /** キーを並べ替えた JSON。組み立て順や DB（jsonb）のキー順に左右されない比較のため。 */
 const canonicalJson = (value: unknown): string => {
@@ -34,11 +35,12 @@ const fnv1a64 = (text: string): string => {
   return hash.toString(16).padStart(16, '0');
 };
 
-/** 候補値一式の指紋。画面とサーバで同じ候補値なら同じ文字列になる。 */
+/** 候補値一式（削減目標を含む。R2-32）の指紋。画面とサーバで同じ候補値なら同じ文字列になる。 */
 export const ogtCandidateFingerprint = (
   candidates: readonly OgtCandidateValue[],
   suppliers: readonly OgtSupplierReference[],
-): string => fnv1a64(canonicalJson({ candidates, suppliers }));
+  reductionTarget: SsbjReductionTargetAdoption,
+): string => fnv1a64(canonicalJson({ candidates, suppliers, reductionTarget }));
 
 // 採用後の変化の判定に使う項目（採用日時・採用者と、取得時刻のような付随情報は比べない）。
 const comparableValue = (value: OgtCandidateValue) => ({
@@ -68,6 +70,7 @@ export const changedOgtValueLabels = (
   adoption: SsbjGhgAdoption,
   candidates: readonly OgtCandidateValue[],
   suppliers: readonly OgtSupplierReference[],
+  reductionTarget?: SsbjReductionTargetAdoption,
 ): string[] => {
   const adopted = new Map(adoption.values.map(value => [valueKey(value), value]));
   const labels: string[] = [];
@@ -87,6 +90,10 @@ export const changedOgtValueLabels = (
   const currentSuppliers = suppliers.map(supplierKey).sort();
   if (canonicalJson(adoptedSuppliers) !== canonicalJson(currentSuppliers)) {
     labels.push('サプライヤー別排出量（参考値）');
+  }
+  // 削減目標（R2-32）。現在の目標を渡さない呼び出し（目標を読んでいない画面）では比べない。
+  if (reductionTarget && isReductionTargetChanged(adoption.reductionTarget, reductionTarget)) {
+    labels.push(REDUCTION_TARGET_CHANGED_LABEL);
   }
   return labels;
 };

@@ -64,7 +64,7 @@ export const SsbjEditorLayout = ({
   const preview = useSsbjPreviewSource(report.id, WORKING);
   const ogt = useOgtCandidates(report);
   const { adoption } = useOgtAdoption(report.id);
-  const changedLabels = adoption && ogt.data ? changedOgtValueLabels(adoption, ogt.data.candidates, ogt.data.suppliers) : [];
+  const changedLabels = adoption && ogt.data ? changedOgtValueLabels(adoption, ogt.data.candidates, ogt.data.suppliers, ogt.data.reductionTarget) : [];
 
   return (
     <div className="flex flex-col gap-4">

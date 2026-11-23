@@ -542,6 +542,7 @@ RLSは自組織に限定し、レポートの組織帰属も検証する。変�
 | `reportId` | レポートID | UUID | Foreign Key, UNIQUE | 削除時: CASCADE |
 | `adoptedValues` | 採用値 | JSONB | NOT NULL, CHECK(配列) | `OgtAdoptedValue[]`（Scope 1・2・3 合計と Scope 3 の 15 カテゴリ。数値は十進文字列） |
 | `supplierReferences` | サプライヤー別の参考値 | JSONB | NOT NULL DEFAULT '[]', CHECK(配列) | `OgtSupplierReference[]`。合計には足さない |
+| `reductionTarget` | 削減目標 | JSONB | NULL, CHECK(null か status が `set` / `not_set` のオブジェクト) | `SsbjReductionTargetAdoption`。採用した時点の OGT の削減目標（基準年度・削減率・目標と実績の排出量）。null はこの列を足す前の採用（`20261123110000_ssbj_reduction_target_adoption.sql`） |
 | `adoptedAt` | 採用日時 | TIMESTAMPTZ | NOT NULL | 採用 RPC が付ける（各値の `adoptedAt` と同じ時刻） |
 | `adoptedByUserId` | 採用者ID | UUID | NOT NULL | |
 
@@ -549,6 +550,8 @@ RLSは自組織に限定し、レポートの組織帰属も検証する。変�
   書き込みは RPC `adopt_ssbj_ogt_values`（EXECUTE は service_role 限定）だけで、Route Handler がサーバ側で OGT から
   候補値を取り直してから呼ぶ。クライアントが送った数値を OGT 由来として保存する経路を作らないため。
 - `adopt_ssbj_ogt_values` は組織の一致（P2041）と、候補値・参考値の年度がレポートの年度と一致すること（P2042）を検証する。
+  削減目標も同じ RPC で一緒に保存し、レポートの年度について読んだものであること（P2042）を検証する。削減目標は、サーバが
+  `ssbj_ogt_reduction_target`（security invoker。numeric を text で返す）で OGT から取り直したもの。
 
 ### 3.25 SSBJ 四本柱の文章 (`ssbj_narratives`) — 要求項目マスターの項目ごとの文章（`supabase/migrations/20261001003809_ssbj_narratives.sql`）
 レポートと項目 ID の組ごとに 1 行の作業中データ。変更のたびに `ssbj_reports.draftRevision` を進め、
