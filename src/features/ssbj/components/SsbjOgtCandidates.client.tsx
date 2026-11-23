@@ -25,6 +25,7 @@ import {
   SCOPE2_BASIS_VIEW_LABELS, scope2BasisTotalsOf, type Scope2BasisView,
 } from '../utils/ogtValue';
 import { SsbjOgtAdoptionCard } from './SsbjOgtAdoptionCard.client';
+import { SsbjReductionTargetDetails } from './SsbjPreviewReductionTarget';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
 import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
 import { canEditSsbj } from '../utils/memberRole';
@@ -119,13 +120,13 @@ export const SsbjOgtCandidates = ({ reportId }: { reportId: string }) => {
             </Card>
             <SsbjOgtAdoptionCard
               adoption={adoption}
-              changedLabels={adoption ? changedOgtValueLabels(adoption, data.candidates, data.suppliers) : []}
+              changedLabels={adoption ? changedOgtValueLabels(adoption, data.candidates, data.suppliers, data.reductionTarget) : []}
               canAdopt={hasAdoptableOgtValue(data.candidates)}
               locked={isSsbjReportLocked(report.review) || !canEditSsbj(myRole.role)}
               isSubmitting={adoptionActions.isSubmitting}
               errorMessage={adoptionActions.errorMessage}
               onAdopt={async () => {
-                const done = await adoptionActions.adopt(data.candidates, data.suppliers);
+                const done = await adoptionActions.adopt(data);
                 if (done) reloadAdoption();
                 return done;
               }}
@@ -181,6 +182,17 @@ export const SsbjOgtCandidates = ({ reportId }: { reportId: string }) => {
                   <CandidateRow key={candidate.scope3CategoryId} candidate={candidate} scope2View={shownScope2View} />)}
               </TableBody></Table>
               <p className="mt-3 text-sm text-text-muted">各カテゴリでは直接入力または積上げの一方だけを合計に使用します。未入力・未算定は排出量 0 を意味しません。</p>
+            </Card>
+            <Card>
+              <h2 className="m-0 mb-1 text-base font-bold">OGT の削減目標</h2>
+              <p className="m-0 mb-3 text-sm text-text-muted">
+                OGT のダッシュボードで設定した削減目標です。採用すると、Scope 別の値と一緒にレポートの「目標」に入ります
+                （採用した時点の値で固定され、OGT で目標を変えても自動では変わりません）。
+                排出量は算定を確定した年度の集計（Scope 1・2・3 の合計）で、確定していない年度は「未算定」です。
+              </p>
+              {data.reductionTarget.status === 'set'
+                ? <SsbjReductionTargetDetails target={data.reductionTarget} />
+                : <p className="m-0 text-sm text-text-muted">OGT に削減目標が登録されていません（採用すると「未設定」として入ります）。</p>}
             </Card>
             {data.suppliers.length > 0 && <Card>
               <h2 className="m-0 mb-3 text-base font-bold">サプライヤー別排出量（参考値）</h2>

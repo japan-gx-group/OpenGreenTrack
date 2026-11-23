@@ -3,6 +3,7 @@
 
 import type { OgtAdoptedValue, SsbjGhgAdoption } from '../types';
 import { isDecimalString } from '../utils/decimal';
+import { reductionTargetCsvRows } from './versionCsvReductionTarget';
 import {
   OGT_DATA_QUALITY_LABELS, OGT_SOURCE_LABELS, ogtMethodLabel, ogtValueKey, ogtValueLabel, SCOPE2_BASIS_VIEW_LABELS,
 } from '../utils/ogtValue';
@@ -107,5 +108,7 @@ export const ghgAdoptionCsvRows = (
       'サプライヤー別の実排出量。Scope 3 の合計には含めない',
     ]);
   }
+  // 削減目標（R2-32）。OGT の値と一緒に採用したもの。
+  rows.push(...reductionTargetCsvRows(ghg));
   return rows;
 };

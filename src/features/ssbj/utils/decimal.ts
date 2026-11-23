@@ -15,3 +15,26 @@ export const formatDecimalForDisplay = (value: string): string => {
   const [integer, fraction] = value.split('.');
   return integer.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (fraction === undefined ? '' : `.${fraction}`);
 };
+
+/** 十進文字列を、小数部の桁数をそろえた BigInt にする（例 "12.5", 3 → 12500n）。 */
+const toScaledBigInt = (value: string, scale: number): bigint => {
+  const negative = value.startsWith('-');
+  const [integer, fraction = ''] = (negative ? value.slice(1) : value).split('.');
+  const scaled = BigInt(integer + fraction.padEnd(scale, '0'));
+  return negative ? -scaled : scaled;
+};
+
+/**
+ * 十進文字列どうしの差（a − b）を、丸めずに十進文字列で返す（例 "100.5" − "120.25" → "-19.75"）。
+ * number に変換すると桁落ちするため BigInt で計算する（docs/ssbj-spec.md §6）。末尾の 0 は落とす。
+ */
+export const subtractDecimalStrings = (a: string, b: string): string => {
+  if (!isDecimalString(a) || !isDecimalString(b)) throw new Error('十進表記の数値ではありません');
+  const scale = Math.max(a.split('.')[1]?.length ?? 0, b.split('.')[1]?.length ?? 0);
+  const diff = toScaledBigInt(a, scale) - toScaledBigInt(b, scale);
+  const negative = diff < BigInt(0);
+  const digits = (negative ? -diff : diff).toString().padStart(scale + 1, '0');
+  const integer = digits.slice(0, digits.length - scale);
+  const fraction = digits.slice(digits.length - scale).replace(/0+$/, '');
+  return `${negative ? '-' : ''}${integer}${fraction ? `.${fraction}` : ''}`;
+};

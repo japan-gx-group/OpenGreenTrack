@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   fictionalGhgAdoption,
   fictionalOgtCandidates,
+  fictionalReductionTarget,
   fictionalSupplierReferences,
 } from '../../__fixtures__/fictionalReport';
 import type { OgtCandidateValue } from '../../types';
@@ -14,20 +15,22 @@ const withValue = (candidates: OgtCandidateValue[], index: number, value: string
 
 describe('ogtCandidateFingerprint', () => {
   it('同じ候補値なら同じ指紋（16 桁の 16 進数）になり、キーの順序に左右されない', () => {
-    const fingerprint = ogtCandidateFingerprint(fictionalOgtCandidates, fictionalSupplierReferences);
+    const fingerprint = ogtCandidateFingerprint(fictionalOgtCandidates, fictionalSupplierReferences, fictionalReductionTarget);
     expect(fingerprint).toMatch(/^[0-9a-f]{16}$/);
     const reordered = fictionalOgtCandidates.map(candidate =>
       Object.fromEntries(Object.entries(candidate).reverse()) as OgtCandidateValue);
-    expect(ogtCandidateFingerprint(reordered, fictionalSupplierReferences)).toBe(fingerprint);
+    expect(ogtCandidateFingerprint(reordered, fictionalSupplierReferences, fictionalReductionTarget)).toBe(fingerprint);
   });
 
   it('値・算定状態・参考値のどれが変わっても指紋が変わる', () => {
-    const base = ogtCandidateFingerprint(fictionalOgtCandidates, fictionalSupplierReferences);
-    expect(ogtCandidateFingerprint(withValue(fictionalOgtCandidates, 0, '812.346'), fictionalSupplierReferences)).not.toBe(base);
+    const base = ogtCandidateFingerprint(fictionalOgtCandidates, fictionalSupplierReferences, fictionalReductionTarget);
+    expect(ogtCandidateFingerprint(withValue(fictionalOgtCandidates, 0, '812.346'), fictionalSupplierReferences, fictionalReductionTarget)).not.toBe(base);
     const quality = fictionalOgtCandidates.map((candidate, i) =>
       i === 0 ? { ...candidate, dataQuality: 'partially_calculated' as const } : candidate);
-    expect(ogtCandidateFingerprint(quality, fictionalSupplierReferences)).not.toBe(base);
-    expect(ogtCandidateFingerprint(fictionalOgtCandidates, [])).not.toBe(base);
+    expect(ogtCandidateFingerprint(quality, fictionalSupplierReferences, fictionalReductionTarget)).not.toBe(base);
+    expect(ogtCandidateFingerprint(fictionalOgtCandidates, [], fictionalReductionTarget)).not.toBe(base);
+    // 削減目標（R2-32）が変わっても指紋が変わる（画面で見ていない目標を採用させない）。
+    expect(ogtCandidateFingerprint(fictionalOgtCandidates, fictionalSupplierReferences, { status: 'not_set' })).not.toBe(base);
   });
 });
 
@@ -68,5 +71,22 @@ describe('hasAdoptableOgtValue', () => {
       ...candidate, value: { state: 'unanswered' as const }, dataQuality: 'not_calculated' as const,
     }));
     expect(hasAdoptableOgtValue(unanswered)).toBe(false);
+  });
+});
+
+describe('changedOgtValueLabels（削減目標）', () => {
+  it('採用した削減目標と OGT の現在の目標が違えば「削減目標」を出す。基準年度が終わったかの違いだけでは出さない', () => {
+    const args = [fictionalOgtCandidates, fictionalSupplierReferences] as const;
+    expect(changedOgtValueLabels(fictionalGhgAdoption, ...args, fictionalReductionTarget)).toEqual([]);
+    expect(changedOgtValueLabels(fictionalGhgAdoption, ...args, { status: 'not_set' })).toEqual(['削減目標']);
+    if (fictionalReductionTarget.status !== 'set') throw new Error('fixture');
+    expect(changedOgtValueLabels(fictionalGhgAdoption, ...args, { ...fictionalReductionTarget, baseYearEnded: false })).toEqual([]);
+  });
+
+  it('削減目標を一緒に採用する前の採用は、OGT に目標があるときだけ変わったとする', () => {
+    const { reductionTarget: _omitted, ...before } = fictionalGhgAdoption;
+    void _omitted;
+    expect(changedOgtValueLabels(before, fictionalOgtCandidates, fictionalSupplierReferences, fictionalReductionTarget)).toEqual(['削減目標']);
+    expect(changedOgtValueLabels(before, fictionalOgtCandidates, fictionalSupplierReferences, { status: 'not_set' })).toEqual([]);
   });
 });

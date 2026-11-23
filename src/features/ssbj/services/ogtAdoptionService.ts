@@ -3,13 +3,15 @@
 // （/api/ssbj/reports/[reportId]/ogt-adoption）。テーブルに insert / update の権限は無い。
 
 import { createClient } from '@/lib/supabase/client';
-import type { OgtAdoptedValue, OgtSupplierReference, SsbjGhgAdoption } from '../types';
+import type { OgtAdoptedValue, OgtSupplierReference, SsbjGhgAdoption, SsbjReductionTargetAdoption } from '../types';
 import { ssbjWriteErrorMessage } from '../utils/writeError';
 import { throwIfSsbjEditForbidden } from './memberRoleService';
 
 type SsbjOgtAdoptionRow = {
   adoptedValues: OgtAdoptedValue[];
   supplierReferences: OgtSupplierReference[];
+  /** null は削減目標を一緒に採用するようになる前の採用（R2-32）。 */
+  reductionTarget: SsbjReductionTargetAdoption | null;
   adoptedAt: string;
   adoptedByUserId: string;
 };
@@ -18,7 +20,7 @@ type SsbjOgtAdoptionRow = {
 export const getOgtAdoption = async (reportId: string): Promise<SsbjGhgAdoption | null> => {
   const { data, error } = await createClient()
     .from('ssbj_ogt_adoptions')
-    .select('adoptedValues, supplierReferences, adoptedAt, adoptedByUserId')
+    .select('adoptedValues, supplierReferences, reductionTarget, adoptedAt, adoptedByUserId')
     .eq('reportId', reportId)
     .maybeSingle();
   if (error) throw new Error('採用済みの値の取得に失敗しました');
@@ -29,6 +31,8 @@ export const getOgtAdoption = async (reportId: string): Promise<SsbjGhgAdoption 
     adoptedBy: row.adoptedByUserId,
     values: row.adoptedValues,
     supplierReferences: row.supplierReferences,
+    // 保存版（ssbj_snapshot_section__ghg）と同じく、削減目標を採用していない行はキーを付けない。
+    ...(row.reductionTarget ? { reductionTarget: row.reductionTarget } : {}),
   };
 };
 

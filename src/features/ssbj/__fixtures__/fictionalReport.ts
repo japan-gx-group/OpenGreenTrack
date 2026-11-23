@@ -25,7 +25,9 @@ import type {
   SsbjRiskOpportunity,
   SsbjTimeHorizonDefinitions,
   SsbjExternalEmissionSnapshot,
+  SsbjReductionTargetAdoption,
 } from '../types';
+import { OGT_EMISSION_UNIT } from '../types';
 
 export const FICTIONAL_ORGANIZATION_ID = '5b1f0000-0000-4000-8000-000000000001';
 export const FICTIONAL_FISCAL_YEAR_ID = '5b1f0000-0000-4000-8000-000000000002';
@@ -387,11 +389,35 @@ export const fictionalSupplierReferences: OgtSupplierReference[] = [
 ];
 
 /** レポートに採用した OGT の値一式（T08b。保存版の sections.ghg）。 */
+/**
+ * OGT の削減目標（R2-32）。基準年度は架空の 2022 年度（排出量 1000）、レポートの年度（2024 年度）の削減率は 12.5%。
+ * 2025 年度は削減率を入れているが、2023 年度は入れていない（目標未設定の年度）。
+ */
+export const fictionalReductionTarget: SsbjReductionTargetAdoption = {
+  status: 'set',
+  baseFiscalYear: { id: '5b1f0000-0000-4000-8000-000000000008', label: '2022年度', startDate: '2022-04-01', endDate: '2023-03-31' },
+  baseYearEnded: true,
+  baseYearEmissions: { state: 'answered', value: '1000' },
+  targetYears: [
+    { targetYear: 2024, reductionPercent: '12.5', targetEmissions: { state: 'answered', value: '875' } },
+    { targetYear: 2025, reductionPercent: '20', targetEmissions: { state: 'answered', value: '800' } },
+  ],
+  reportYear: {
+    fiscalYearId: FICTIONAL_FISCAL_YEAR_ID,
+    targetYear: 2024,
+    reductionPercent: { state: 'answered', value: '12.5' },
+    targetEmissions: { state: 'answered', value: '875' },
+    actualEmissions: { state: 'answered', value: '900.25' },
+  },
+  unit: OGT_EMISSION_UNIT,
+};
+
 export const fictionalGhgAdoption: SsbjGhgAdoption = {
   adoptedAt: '2025-06-03T02:00:00+00:00',
   adoptedBy: FICTIONAL_USER_ID,
   values: fictionalOgtAdoptedValues,
   supplierReferences: fictionalSupplierReferences,
+  reductionTarget: fictionalReductionTarget,
 };
 
 /** 保存版の中身の例。セクションは実装済みの機能の分だけ入る（未実装の機能のキーは無い）。 */

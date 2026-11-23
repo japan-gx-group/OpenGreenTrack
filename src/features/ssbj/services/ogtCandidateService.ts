@@ -15,10 +15,12 @@ import {
   type OgtScope2BasisTotals,
   type OgtSupplierReference,
   type OgtValueSource,
+  type SsbjReductionTargetAdoption,
   type SsbjReportRecord,
 } from '../types';
 import { isDecimalString } from '../utils/decimal';
 import { checkOgtCandidateValue, deriveDirectInputDataQuality, deriveOgtDataQuality } from '../utils/ogtValue';
+import { hasCalculatedScopeTotals, toSsbjReductionTarget } from '../utils/reductionTarget';
 
 type NumericValues = {
   aggregate: {
@@ -44,7 +46,12 @@ type MethodRow = { categoryId: number; method: 'direct' | 'calculated' };
 type DirectRow = { categoryId: number; updatedAt: string };
 type BatchRow = { id: string; fiscalYearId: string; status: 'pending' | 'completed' | 'failed'; completedAt: string | null };
 
-export type OgtCandidateData = { candidates: OgtCandidateValue[]; suppliers: OgtSupplierReference[] };
+export type OgtCandidateData = {
+  candidates: OgtCandidateValue[];
+  suppliers: OgtSupplierReference[];
+  /** R2-32。OGT の削減目標（候補値と一緒に採用する）。 */
+  reductionTarget: SsbjReductionTargetAdoption;
+};
 
 const count = (value: number | string): number => {
   const parsed = Number(value);
@@ -73,7 +80,7 @@ export const buildOgtCandidates = (input: {
   methods: MethodRow[];
   directRows: DirectRow[];
   batches: BatchRow[];
-}): OgtCandidateData => {
+}): Omit<OgtCandidateData, 'reductionTarget'> => {
   const { report, numeric } = input;
   const latest = input.batches.find(batch => batch.fiscalYearId === report.fiscalYearId) ?? null;
   const latestBatch = latest ? { id: latest.id, status: latest.status, completedAt: latest.completedAt } : null;
@@ -186,7 +193,7 @@ export const fetchOgtCandidates = async (
   report: SsbjReportRecord,
 ): Promise<OgtCandidateData> => {
   const yearId = report.fiscalYearId;
-  const [numeric, activityCoverage, scope3Coverage, methods, directRows, batches] = await Promise.all([
+  const [numeric, activityCoverage, scope3Coverage, methods, directRows, batches, reductionTarget] = await Promise.all([
     supabase.rpc('ssbj_ogt_numeric_values', { p_fiscal_year_id: yearId }),
     fetchAllRows<ActivityCoverageRow>((from, to) => supabase.rpc('report_activity_calculation_coverage', {
       p_start_date: report.periodStart, p_end_date: report.periodEnd,
@@ -195,12 +202,20 @@ export const fetchOgtCandidates = async (
     supabase.from('scope3_category_methods').select('categoryId, method').eq('fiscalYearId', yearId),
     supabase.from('scope3_category_emissions').select('categoryId, updatedAt').eq('fiscalYearId', yearId),
     supabase.rpc('report_latest_calculation_batches'),
+    supabase.rpc('ssbj_ogt_reduction_target', { p_fiscal_year_id: yearId }),
   ]);
   if (numeric.error || !numeric.data || scope3Coverage.error || methods.error || directRows.error || batches.error) {
     throw new Error('OGT 候補値の取得に失敗しました');
   }
-  return buildOgtCandidates({ report, numeric: numeric.data as NumericValues, activityCoverage,
+  if (reductionTarget.error) throw new Error('OGT の削減目標の取得に失敗しました');
+  const built = buildOgtCandidates({ report, numeric: numeric.data as NumericValues, activityCoverage,
     scope3Coverage: (scope3Coverage.data ?? []) as Scope3CoverageRow[],
     methods: (methods.data ?? []) as MethodRow[], directRows: (directRows.data ?? []) as DirectRow[],
     batches: (batches.data ?? []) as BatchRow[] });
+  return {
+    ...built,
+    reductionTarget: toSsbjReductionTarget(reductionTarget.data, {
+      reportYearCalculated: hasCalculatedScopeTotals(built.candidates),
+    }),
+  };
 };

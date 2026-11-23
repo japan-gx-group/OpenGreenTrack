@@ -9,6 +9,7 @@ import {
   fictionalReportBasicInfo,
   fictionalSnapshot,
   fictionalSupplierReferences,
+  fictionalReductionTarget,
 } from '../../__fixtures__/fictionalReport';
 import type { SsbjNarrative } from '../../types';
 
@@ -51,7 +52,7 @@ const renderLayout = async (hasUnsavedDrafts = true) => {
 
 beforeEach(() => {
   vi.mocked(getSsbjWorkingPreview).mockResolvedValue({ kind: 'working', draftRevision: 5, snapshot: fictionalSnapshot });
-  vi.mocked(getOgtCandidates).mockResolvedValue({ candidates: fictionalOgtCandidates, suppliers: fictionalSupplierReferences });
+  vi.mocked(getOgtCandidates).mockResolvedValue({ candidates: fictionalOgtCandidates, suppliers: fictionalSupplierReferences, reductionTarget: fictionalReductionTarget });
   vi.mocked(getOgtAdoption).mockResolvedValue(fictionalGhgAdoption);
 });
 afterEach(() => { rendered?.unmount(); rendered = null; vi.clearAllMocks(); });
@@ -76,7 +77,7 @@ describe('SsbjEditorLayout', () => {
   it('採用後に OGT の値が変わっていれば上部で知らせ、OGT の値のタブで最新の値と採用した値を並べる', async () => {
     const changed = fictionalOgtCandidates.map(candidate =>
       candidate.scope === 1 ? { ...candidate, value: { state: 'answered' as const, value: '900.000' } } : candidate);
-    vi.mocked(getOgtCandidates).mockResolvedValue({ candidates: changed, suppliers: fictionalSupplierReferences });
+    vi.mocked(getOgtCandidates).mockResolvedValue({ candidates: changed, suppliers: fictionalSupplierReferences, reductionTarget: fictionalReductionTarget });
     const { container } = await renderLayout();
     expect(container.querySelector('[data-testid="ssbj-ogt-change-banner"]')?.textContent).toContain('Scope 1');
 

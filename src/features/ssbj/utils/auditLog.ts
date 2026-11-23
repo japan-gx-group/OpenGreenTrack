@@ -67,7 +67,7 @@ const COLUMN_LABELS: Record<string, string> = {
   fileName: 'ファイル名', fileSha256: 'SHA-256', fileStorageVersionId: '保管先での版 ID', fileStoredBy: '保存担当',
   fileRecordedAt: 'ファイルの記録日時',
   decision: '判断', reason: '理由', candidateVersion: '候補の版', riskOpportunityId: '登録したリスク・機会',
-  adoptedValues: '採用値', supplierReferences: 'サプライヤー別の参考値', adoptedAt: '採用日時', adoptedByUserId: '採用者',
+  adoptedValues: '採用値', supplierReferences: 'サプライヤー別の参考値', reductionTarget: '削減目標', adoptedAt: '採用日時', adoptedByUserId: '採用者',
 };
 
 const text = (value: unknown): string | null => (typeof value === 'string' && value !== '' ? value : null);

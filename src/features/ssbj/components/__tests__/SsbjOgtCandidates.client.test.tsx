@@ -8,6 +8,7 @@ import {
   fictionalOgtCandidates,
   fictionalReportBasicInfo,
   fictionalSupplierReferences,
+  fictionalReductionTarget,
 } from '../../__fixtures__/fictionalReport';
 
 vi.mock('../../services/reportService', async importOriginal => ({
@@ -61,6 +62,7 @@ beforeEach(() => {
   vi.mocked(getOgtCandidates).mockResolvedValue({
     candidates: fictionalOgtCandidates,
     suppliers: fictionalSupplierReferences,
+    reductionTarget: fictionalReductionTarget,
   });
   vi.mocked(getOgtAdoption).mockResolvedValue(null);
   vi.mocked(adoptOgtCandidates).mockResolvedValue({ adoptedAt: '2025-06-03T02:00:00+00:00' });
@@ -81,6 +83,18 @@ describe('SsbjOgtCandidates', () => {
     expect(content).toContain('0 t-CO2e');
     expect(content).toContain('未算定');
     expect(content).toContain('Scope 3 の候補値・合計には加算していません');
+    // OGT の削減目標（R2-32）も、採用する前に確かめられる。
+    expect(content).toContain('OGT の削減目標');
+    expect(content).toContain('基準年度比 12.5% 削減');
+  });
+
+  it('OGT に削減目標が無ければ、採用すると「未設定」として入ることを出す', async () => {
+    vi.mocked(getOgtCandidates).mockResolvedValue({
+      candidates: fictionalOgtCandidates, suppliers: fictionalSupplierReferences, reductionTarget: { status: 'not_set' },
+    });
+    rendered = render(<SsbjOgtCandidates reportId={report.id} />);
+    await settle();
+    expect(rendered.container.textContent).toContain('OGT に削減目標が登録されていません');
   });
 
   it('基準別の値が無い候補値では、基準の切り替えを出さず「不明」と表示する', async () => {
@@ -92,6 +106,7 @@ describe('SsbjOgtCandidates', () => {
         return { ...candidate, method };
       }),
       suppliers: fictionalSupplierReferences,
+      reductionTarget: fictionalReductionTarget,
     });
     rendered = render(<SsbjOgtCandidates reportId={report.id} />);
     await settle();
@@ -125,7 +140,7 @@ describe('SsbjOgtCandidates（採用）', () => {
 
     expect(adoptOgtCandidates).toHaveBeenCalledWith(
       report.id,
-      ogtCandidateFingerprint(fictionalOgtCandidates, fictionalSupplierReferences),
+      ogtCandidateFingerprint(fictionalOgtCandidates, fictionalSupplierReferences, fictionalReductionTarget),
     );
     expect(getOgtAdoption).toHaveBeenCalledTimes(2);
     expect(rendered.container.textContent).toContain('採用済み');
@@ -137,6 +152,7 @@ describe('SsbjOgtCandidates（採用）', () => {
       candidates: fictionalOgtCandidates.map((candidate, index) =>
         index === 0 ? { ...candidate, value: { state: 'answered' as const, value: '900.000' } } : candidate),
       suppliers: fictionalSupplierReferences,
+      reductionTarget: fictionalReductionTarget,
     });
     vi.mocked(getOgtAdoption).mockResolvedValue(fictionalGhgAdoption);
     rendered = render(<SsbjOgtCandidates reportId={report.id} />);

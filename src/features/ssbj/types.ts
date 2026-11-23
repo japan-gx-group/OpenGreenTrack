@@ -588,7 +588,53 @@ export type SsbjGhgAdoption = {
   adoptedBy: string;
   values: OgtAdoptedValue[];
   supplierReferences: OgtSupplierReference[];
+  /**
+   * R2-32。OGT の値と一緒に採用した、採用した時点の OGT の削減目標。
+   * キーが無いのは、削減目標を一緒に採用するようになる前に採用した値（保存版を含む）。
+   */
+  reductionTarget?: SsbjReductionTargetAdoption;
 };
+
+/** 削減目標の年度ごとの値（R2-32）。 */
+export type SsbjReductionTargetYear = {
+  /** 年度の開始年（例: 2030 年度なら 2030）。OGT の reduction_target_years.targetYear。 */
+  targetYear: number;
+  /** 基準年度からの削減率（%）。 */
+  reductionPercent: SsbjDecimalString;
+  /** 年間目標排出量 = 基準年度の排出量 × (1 − 削減率 / 100)。基準年度の排出量が未算定なら unanswered。 */
+  targetEmissions: SsbjFieldValue<SsbjDecimalString>;
+};
+
+/**
+ * レポートに採用した OGT の削減目標（R2-32。ssbj_ogt_adoptions.reductionTarget）。採用した時点の値を複写して持ち、
+ * OGT の目標や実績が変わっても書き換えない。not_set は OGT に削減目標が登録されていない。
+ * 排出量は dashboard_aggregates（算定確定時の値）の Scope 1・2・3 の合計で、集計行が無い年度は unanswered（0 にしない）。
+ */
+export type SsbjReductionTargetAdoption =
+  | { status: 'not_set' }
+  | {
+      status: 'set';
+      baseFiscalYear: { id: string; label: string; startDate: string; endDate: string };
+      /**
+       * 採用した時点で基準年度が終わっていたか。false なら基準年度の排出量は期中の累計で、OGT では月々の入力で
+       * 目標排出量が動く（docs/functional-spec.md §4.7）。採用値は固定されるが、注意として出す。
+       */
+      baseYearEnded: boolean;
+      baseYearEmissions: SsbjFieldValue<SsbjDecimalString>;
+      /** 削減率を登録した年度（昇順）。 */
+      targetYears: SsbjReductionTargetYear[];
+      /** レポートの年度の目標と実績。 */
+      reportYear: {
+        fiscalYearId: string;
+        targetYear: number;
+        /** その年度の削減率。OGT で削減率を入れていない年度は unanswered（目標未設定。0% にしない）。 */
+        reductionPercent: SsbjFieldValue<SsbjDecimalString>;
+        targetEmissions: SsbjFieldValue<SsbjDecimalString>;
+        /** その年度の排出量（Scope 1・2・3 の合計）。 */
+        actualEmissions: SsbjFieldValue<SsbjDecimalString>;
+      };
+      unit: typeof OGT_EMISSION_UNIT;
+    };
 
 /**
  * サプライヤー別実排出量（supplier_emissions）。OGT では表示専用で scope3Total に算入していないため、

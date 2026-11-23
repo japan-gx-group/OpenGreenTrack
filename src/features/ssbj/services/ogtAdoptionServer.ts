@@ -2,7 +2,7 @@
 //
 // 改ざん防止: 採用する値はクライアントから受け取らない。セッションを引き継いだサーバ用クライアント（RLS あり）で
 // OGT から候補値を取り直し、画面が表示していた候補値の指紋と一致したときだけ、その取り直した値を
-// service_role 限定の RPC adopt_ssbj_ogt_values で保存する。一致しなければ「画面の表示から OGT の値が変わった」
+// service_role 限定の RPC adopt_ssbj_ogt_values で保存する。OGT の削減目標（R2-32）も同じく取り直して一緒に保存する。一致しなければ「画面の表示から OGT の値が変わった」
 // として拒否し、利用者に見ていない値を採用させない。
 //
 // ⚠️ サーバ専用: service_role の管理クライアント（createAdminClient）を使うため、Route Handler からのみ import すること。
@@ -61,8 +61,8 @@ export const adoptOgtCandidates = async (params: AdoptOgtCandidatesParams): Prom
     throw new SsbjOgtAdoptionError('locked', SSBJ_LOCKED_MESSAGE);
   }
 
-  const { candidates, suppliers } = await fetchOgtCandidates(supabase, report);
-  if (ogtCandidateFingerprint(candidates, suppliers) !== params.expectedFingerprint) {
+  const { candidates, suppliers, reductionTarget } = await fetchOgtCandidates(supabase, report);
+  if (ogtCandidateFingerprint(candidates, suppliers, reductionTarget) !== params.expectedFingerprint) {
     throw new SsbjOgtAdoptionError(
       'candidates_changed',
       'OGT の値が画面の表示から変わりました。「最新データに更新」を押して確認してから採用してください',
@@ -76,6 +76,7 @@ export const adoptOgtCandidates = async (params: AdoptOgtCandidatesParams): Prom
     p_actor_user_id: params.actorUserId,
     p_candidates: candidates,
     p_supplier_references: suppliers,
+    p_reduction_target: reductionTarget,
   });
   if (error) {
     if (error.code === SSBJ_OGT_ADOPTION_SQLSTATE.reportInvalid) {

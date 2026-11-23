@@ -4,7 +4,7 @@
 
 import { useState } from 'react';
 import { adoptOgtCandidates, clearOgtAdoption } from '../services/ogtAdoptionService';
-import type { OgtCandidateValue, OgtSupplierReference } from '../types';
+import type { OgtCandidateData } from '../services/ogtCandidateService';
 import { ogtCandidateFingerprint } from '../utils/ogtAdoption';
 
 export const useOgtAdoptionActions = (reportId: string) => {
@@ -27,9 +27,10 @@ export const useOgtAdoptionActions = (reportId: string) => {
     }
   };
 
-  /** 画面に表示している候補値を採用する（サーバは値を取り直し、表示と同じときだけ保存する）。 */
-  const adopt = (candidates: readonly OgtCandidateValue[], suppliers: readonly OgtSupplierReference[]) =>
-    run(() => adoptOgtCandidates(reportId, ogtCandidateFingerprint(candidates, suppliers)), 'OGT の値の採用に失敗しました');
+  /** 画面に表示している候補値と削減目標を採用する（サーバは値を取り直し、表示と同じときだけ保存する）。 */
+  const adopt = ({ candidates, suppliers, reductionTarget }: OgtCandidateData) =>
+    run(() => adoptOgtCandidates(reportId, ogtCandidateFingerprint(candidates, suppliers, reductionTarget)),
+      'OGT の値の採用に失敗しました');
 
   const clear = () => run(() => clearOgtAdoption(reportId), '採用の取り消しに失敗しました');
 
