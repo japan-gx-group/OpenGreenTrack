@@ -12,6 +12,7 @@ import {
 import type { SsbjExternalEmissionInput } from '../utils/externalEmission';
 import { ssbjWriteErrorMessage } from '../utils/writeError';
 import { throwIfSsbjEditForbidden } from './memberRoleService';
+import { notifySsbjWorkingChanged } from '../utils/workingChange';
 
 type SsbjExternalEmissionRow = {
   id: string;
@@ -115,6 +116,7 @@ export const createSsbjExternalEmission = async (
     .select(SELECT_COLUMNS)
     .single();
   if (error || !data) throw new Error(externalEmissionErrorMessage(error, '外部算定値の保存に失敗しました'));
+  notifySsbjWorkingChanged(report.id);
   return toSsbjExternalEmission(data as unknown as SsbjExternalEmissionRow);
 };
 
@@ -134,6 +136,7 @@ export const updateSsbjExternalEmission = async (
     await throwIfSsbjEditForbidden();
     throw new Error(`外部算定値を保存できませんでした（${NOT_CHANGED_REASON}）。画面を開き直してください`);
   }
+  notifySsbjWorkingChanged();
   return toSsbjExternalEmission(data as unknown as SsbjExternalEmissionRow);
 };
 
@@ -149,4 +152,5 @@ export const deleteSsbjExternalEmission = async (id: string): Promise<void> => {
     await throwIfSsbjEditForbidden();
     throw new Error(`外部算定値を削除できませんでした（${NOT_CHANGED_REASON}）。画面を開き直してください`);
   }
+  notifySsbjWorkingChanged();
 };

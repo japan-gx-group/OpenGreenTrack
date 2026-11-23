@@ -184,6 +184,17 @@ export const normalizeSsbjJudgementInput = (
   };
 };
 
+/**
+ * 編集中のフォームに、保存済みの判断と違う（保存しないと消える）入力があるか。画面を離れる前の確認に使う。
+ * 保存したときと同じ正規化をしてから比べる。「入力済み」以外の状態で残っている説明の本文も未保存として扱う。
+ */
+export const isSsbjJudgementFormDirty = (saved: SsbjJudgement, values: SsbjJudgementFormValues): boolean => {
+  const before = normalizeSsbjJudgementInput(saved.requirementId, toSsbjJudgementFormValues(saved));
+  const after = normalizeSsbjJudgementInput(saved.requirementId, values);
+  return JSON.stringify(before) !== JSON.stringify(after)
+    || (values.explanationState !== 'answered' && values.explanationText.trim() !== '');
+};
+
 /** 正規化済みの判断を検証する。問題が無ければ空配列。 */
 export const validateSsbjJudgementInput = (judgement: SsbjJudgement): string[] => {
   const errors: string[] = [];

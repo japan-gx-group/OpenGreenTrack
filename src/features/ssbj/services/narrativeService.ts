@@ -7,6 +7,7 @@ import type { SsbjDisclosableText, SsbjItemId, SsbjNarrative, SsbjNarrativeTempl
 import { ssbjWriteErrorMessage } from '../utils/writeError';
 import { fromFieldValue, toFieldValue } from '../utils/fieldValue';
 import { parseSsbjNarrativeTemplateInput } from '../utils/narrativeTemplateChoice';
+import { notifySsbjWorkingChanged } from '../utils/workingChange';
 
 type SsbjNarrativeRow = {
   itemId: string;
@@ -45,7 +46,7 @@ export const listSsbjNarratives = async (reportId: string): Promise<SsbjNarrativ
     .select(SELECT_COLUMNS)
     .eq('reportId', reportId)
     .order('itemId');
-  if (error) throw new Error('四本柱の文章の取得に失敗しました');
+  if (error) throw new Error('ガバナンス・戦略等の文章の取得に失敗しました');
   return ((data ?? []) as SsbjNarrativeRow[]).map(toSsbjNarrative);
 };
 
@@ -70,9 +71,12 @@ export const saveSsbjNarrative = async (
     .eq('reportId', report.id)
     .eq('itemId', itemId)
     .select(SELECT_COLUMNS);
-  if (updated.error) throw new Error(ssbjWriteErrorMessage(updated.error, '四本柱の文章の保存に失敗しました'));
+  if (updated.error) throw new Error(ssbjWriteErrorMessage(updated.error, 'ガバナンス・戦略等の文章の保存に失敗しました'));
   const updatedRows = (updated.data ?? []) as SsbjNarrativeRow[];
-  if (updatedRows.length > 0) return toSsbjNarrative(updatedRows[0]);
+  if (updatedRows.length > 0) {
+    notifySsbjWorkingChanged(report.id);
+    return toSsbjNarrative(updatedRows[0]);
+  }
 
   const inserted = await supabase
     .from('ssbj_narratives')
@@ -84,7 +88,8 @@ export const saveSsbjNarrative = async (
     if (inserted.error?.code === '23505') {
       throw new Error('他の画面で先に保存されました。画面を開き直してから保存し直してください');
     }
-    throw new Error(ssbjWriteErrorMessage(inserted.error, '四本柱の文章の保存に失敗しました'));
+    throw new Error(ssbjWriteErrorMessage(inserted.error, 'ガバナンス・戦略等の文章の保存に失敗しました'));
   }
+  notifySsbjWorkingChanged(report.id);
   return toSsbjNarrative(inserted.data as SsbjNarrativeRow);
 };

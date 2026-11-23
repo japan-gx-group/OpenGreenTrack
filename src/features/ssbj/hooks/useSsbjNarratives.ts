@@ -17,7 +17,7 @@ export const useSsbjNarratives = (reportId: string | null) => {
     }).catch((error: unknown) => {
       if (active) {
         setResult({ reportId, narratives: [],
-          errorMessage: error instanceof Error ? error.message : '四本柱の文章の取得に失敗しました' });
+          errorMessage: error instanceof Error ? error.message : 'ガバナンス・戦略等の文章の取得に失敗しました' });
       }
     });
     return () => { active = false; };

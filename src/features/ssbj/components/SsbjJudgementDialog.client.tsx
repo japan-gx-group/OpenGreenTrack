@@ -2,6 +2,7 @@
 
 // 該当性・重要性・記載しない理由（T09）の 1 要求の編集ダイアログ。状態と検証は useSsbjJudgementForm が持つ。
 // 開示する説明（記載しない旨など）と、内部の検討理由（開示しない。docs/ssbj-spec.md §5）を分けて入力する。
+// 開示する説明の欄は状態にかかわらず書け、書き始めると状態が「入力済み」になる（ssbjFieldStateAfterTyping）。
 
 import { useId, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
@@ -26,7 +27,7 @@ import {
   type SsbjMateriality,
   type SsbjOmissionReason,
 } from '../types';
-import { SSBJ_FIELD_STATE_LABELS } from '../utils/fieldValue';
+import { SSBJ_FIELD_STATE_LABELS, ssbjFieldStateAfterTyping } from '../utils/fieldValue';
 import {
   SSBJ_APPLICABILITY_LABELS,
   SSBJ_JUDGEMENT_TEXT_MAX_LENGTH,
@@ -158,10 +159,13 @@ export const SsbjJudgementDialog = ({ open, onOpenChange, form, onSubmit, onSubm
               aria-label="開示する説明"
               rows={3}
               maxLength={SSBJ_JUDGEMENT_TEXT_MAX_LENGTH}
-              placeholder={isTextEnabled ? '例: 経過措置を適用し、スコープ 3 の排出を開示していない。' : '状態を「入力済み」にすると入力できます'}
+              placeholder={isTextEnabled ? '例: 経過措置を適用し、スコープ 3 の排出を開示していない。' : '書き始めると、状態が「入力済み」になります'}
               value={isTextEnabled ? values.explanationText : ''}
-              disabled={form.isSaving || !isTextEnabled}
-              onChange={event => form.setValue('explanationText', event.target.value)}
+              disabled={form.isSaving}
+              onChange={event => {
+                form.setValue('explanationState', ssbjFieldStateAfterTyping(values.explanationState, event.target.value));
+                form.setValue('explanationText', event.target.value);
+              }}
             />
           </div>
 

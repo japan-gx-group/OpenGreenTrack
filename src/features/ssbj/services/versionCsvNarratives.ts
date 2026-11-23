@@ -15,7 +15,7 @@ const isValidNarrative = (narrative: SsbjNarrative): boolean =>
 
 export const narrativeCsvRows = (narratives: SsbjNarrative[]): string[][] => {
   if (!Array.isArray(narratives) || !narratives.every(isValidNarrative)) {
-    throw new Error('四本柱の文章の保存内容が不正です');
+    throw new Error('ガバナンス・戦略等の文章の保存内容が不正です');
   }
   return SSBJ_SECTION_IDS.flatMap(sectionId =>
     ssbjNarrativeEntriesOfSection(sectionId, narratives).map(entry => {

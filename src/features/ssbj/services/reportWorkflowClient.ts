@@ -2,6 +2,7 @@
 // 権限・状態の遷移・競合の検証はサーバ（service_role 限定の RPC）が行う。失敗したときはサーバのメッセージを例外にする。
 
 import type { SsbjReportStatus, SsbjReportStatusAction } from '../types';
+import { notifySsbjWorkingChanged } from '../utils/workingChange';
 
 export interface SsbjReportStatusChange {
   action: SsbjReportStatusAction;
@@ -51,13 +52,16 @@ export interface SsbjRestoreResult {
 }
 
 /** 作業中の内容を保存版の内容に戻す。戻す前の内容は、サーバが保存版として自動で残す。 */
-export const restoreSsbjReportVersion = (
+export const restoreSsbjReportVersion = async (
   reportId: string,
   versionId: string,
   expectedDraftRevision: number,
-): Promise<SsbjRestoreResult> =>
-  postJson<SsbjRestoreResult>(
+): Promise<SsbjRestoreResult> => {
+  const result = await postJson<SsbjRestoreResult>(
     `/api/ssbj/reports/${encodeURIComponent(reportId)}/versions/${encodeURIComponent(versionId)}/restore`,
     { expectedDraftRevision },
     '保存版の復元に失敗しました',
   );
+  notifySsbjWorkingChanged(reportId);
+  return result;
+};

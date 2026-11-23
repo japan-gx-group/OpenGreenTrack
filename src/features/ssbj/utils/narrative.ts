@@ -11,6 +11,7 @@ import type {
   SsbjSectionId,
 } from '../types';
 import { isSsbjItemId, sectionOfItem } from './ids';
+import { normalizeSsbjNarrativeTemplateInput } from './narrativeTemplateChoice';
 import { SSBJ_NARRATIVE_ITEMS, findSsbjNarrativeItem } from './requirementMaster';
 
 export const SSBJ_NARRATIVE_TEXT_MAX_LENGTH = 5000;
@@ -145,3 +146,61 @@ export const mergeSsbjNarrativeDrafts = (
   }
   return merged;
 };
+
+const sameDisclosableText = (a: SsbjDisclosableText, b: SsbjDisclosableText): boolean =>
+  a.disclosure.state === b.disclosure.state
+  && (a.disclosure.state === 'answered' ? a.disclosure.value : null)
+    === (b.disclosure.state === 'answered' ? b.disclosure.value : null)
+  && a.internalNote === b.internalNote;
+
+// DB（jsonb）から読んだ選択はキーの順が入力の順と違うことがあるので、キーの順によらずに比べる。
+const sortedEntries = (record: Record<string, string>): string =>
+  JSON.stringify(Object.entries(record).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+
+const sameTemplateInput = (a: SsbjNarrativeTemplateInput | null, b: SsbjNarrativeTemplateInput | null): boolean => {
+  if (a === null || b === null) return a === b;
+  return a.version === b.version
+    && sortedEntries(a.choices) === sortedEntries(b.choices)
+    && sortedEntries(a.texts) === sortedEntries(b.texts);
+};
+
+/**
+ * 編集中のフォームに、保存済みの内容と違う（保存しないと消える）入力があるか。画面を離れる前の確認と「未保存 n」に使う。
+ * 保存したときと同じ正規化をしてから比べる（前後の空白だけの違いは未保存にしない）。
+ * 「入力済み」以外の状態で残っている本文（保存すると消える本文）と、選択式テンプレートの選択の違いも未保存として扱う。
+ */
+export const isSsbjNarrativeFormDirty = (
+  itemId: string,
+  saved: SsbjDisclosableText,
+  savedTemplateInput: SsbjNarrativeTemplateInput | null,
+  values: SsbjNarrativeFormValues,
+): boolean =>
+  !sameDisclosableText(normalizeSsbjNarrativeInput(values), saved)
+  || ssbjNarrativeTextWillBeDiscarded(values)
+  || !sameTemplateInput(
+    normalizeSsbjNarrativeTemplateInput(itemId, values.templateInput),
+    normalizeSsbjNarrativeTemplateInput(itemId, savedTemplateInput),
+  );
+
+/**
+ * 「保存して次へ」で次に開く項目。画面の並び（章の順・マスターの順）で current より後ろにある、
+ * 開示する文章がまだ入力済みでない項目のうち最初のもの。無ければ null（最後まで書き終えた）。
+ * マスターに無い項目（item が null）は編集できないので飛ばす。
+ */
+export const ssbjNextNarrativeToEdit = (
+  entries: readonly SsbjNarrativeEntry[],
+  current: SsbjItemId,
+): SsbjItemId | null => {
+  const index = entries.findIndex(entry => entry.itemId === current);
+  if (index < 0) return null;
+  const next = entries.slice(index + 1).find(entry => entry.item !== null && entry.text.disclosure.state !== 'answered');
+  return next?.itemId ?? null;
+};
+/** 項目の並びのうち、開示する文章が入力済みの数と全体の数（マスターの項目だけを数える）。目次の進み具合に使う。 */
+export const ssbjNarrativeProgress = (entries: readonly SsbjNarrativeEntry[]): { answered: number; total: number } => {
+  const items = entries.filter(entry => entry.item !== null);
+  return { answered: items.filter(entry => entry.text.disclosure.state === 'answered').length, total: items.length };
+};
+
+/** 項目のカードへ移るためのアンカーの ID（項目 ID の「.」は、URL の # で扱いやすいように「-」にする）。 */
+export const ssbjNarrativeAnchorId = (itemId: SsbjItemId): string => `ssbj-narrative-${itemId.replace(/\./g, '-')}`;

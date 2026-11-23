@@ -5,6 +5,7 @@ import { fromFieldValue, toFieldValue } from '../utils/fieldValue';
 import type { SsbjEvidenceInput } from '../utils/evidence';
 import { ssbjWriteErrorMessage } from '../utils/writeError';
 import { throwIfSsbjEditForbidden } from './memberRoleService';
+import { notifySsbjWorkingChanged } from '../utils/workingChange';
 
 type SsbjEvidenceRow = {
   id: string;
@@ -75,6 +76,7 @@ export const createSsbjEvidence = async (
     .insert({ ...toColumns(input), organizationId: report.organizationId, reportId: report.id })
     .select(SELECT_COLUMNS).single();
   if (error || !data) throw new Error(ssbjWriteErrorMessage(error, '根拠文書の登録に失敗しました'));
+  notifySsbjWorkingChanged(report.id);
   return toEvidence(data as unknown as SsbjEvidenceRow);
 };
 
@@ -87,6 +89,7 @@ export const updateSsbjEvidence = async (id: string, input: SsbjEvidenceInput): 
     await throwIfSsbjEditForbidden();
     throw new Error('根拠文書が見つかりません。画面を開き直してください');
   }
+  notifySsbjWorkingChanged();
   return toEvidence(data as unknown as SsbjEvidenceRow);
 };
 
@@ -101,4 +104,5 @@ export const deleteSsbjEvidence = async (id: string): Promise<void> => {
     await throwIfSsbjEditForbidden();
     throw new Error('根拠文書が見つかりません。画面を開き直してください');
   }
+  notifySsbjWorkingChanged();
 };
