@@ -1,4 +1,5 @@
-// ガバナンス・戦略等の文章の画面の目次。画面をスクロールしても上に付いてきて、章ごとの入力済みの数と、
+// ガバナンス・戦略等の文章の画面の目次。画面をスクロールしても上に付いてきて（スマホの幅では付いてこない。
+// 左上のメニューのボタンと重なり、画面の高さを取りすぎるため）、章ごとの入力済みの数と、
 // 項目ごとの開示する文章の状態（入力済み・未確認・非該当・未入力）を印で出す。印を押すとその項目へ移る。
 // 「入力済みでない項目だけ表示」で、書き残しの項目だけに絞れる（絞り込みは画面の表示だけで、保存はしない）。
 // 状態は保存済みの内容で数える（編集中の未保存の内容は数えない）。
@@ -31,7 +32,7 @@ export const SsbjNarrativeToc = ({ sections, onlyUnanswered, onOnlyUnansweredCha
     <nav
       aria-label="目次"
       data-testid="ssbj-narrative-toc"
-      className="sticky top-0 z-10 flex flex-col gap-2 rounded-lg border border-border bg-bg-card px-4 py-3 shadow-sm"
+      className="z-10 flex flex-col md:sticky md:top-0 gap-2 rounded-lg border border-border bg-bg-card px-4 py-3 shadow-sm"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="m-0 text-sm font-semibold">
