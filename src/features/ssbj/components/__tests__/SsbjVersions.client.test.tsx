@@ -21,7 +21,9 @@ vi.mock('../../services/versionCsv', async importOriginal => ({
   downloadSsbjVersionCsv: vi.fn(),
 }));
 vi.mock('../../services/versionClient', () => ({ saveSsbjReportVersion: vi.fn() }));
-vi.mock('../../services/auditLogService', () => ({ recordSsbjExport: vi.fn(), listSsbjAuditLogs: vi.fn(async () => []) }));
+vi.mock('../../services/auditLogService', () => ({ recordSsbjExport: vi.fn(), listSsbjAuditLogs: vi.fn(async () => []),
+  listSsbjVersionAuditLogs: vi.fn(async () => []), listAllSsbjAuditLogs: vi.fn(async () => []),
+}));
 vi.mock('../../services/auditTrailService', async importOriginal => ({
   ...(await importOriginal<typeof import('../../services/auditTrailService')>()),
   getSsbjAuditTrailDetails: vi.fn(async () => ({ details: [], scope3Direct: [], factors: [] })),

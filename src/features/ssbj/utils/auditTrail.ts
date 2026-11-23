@@ -21,7 +21,12 @@ import {
   type SsbjReportSnapshotV1,
   type SsbjTrailDetail,
 } from '../types';
-import { ssbjAuditExportRows } from './auditLog';
+import {
+  SSBJ_AUDIT_ACTION_LABELS,
+  SSBJ_AUDIT_EXPORT_HEADER,
+  ssbjAuditDetail,
+  ssbjAuditTargetLabel,
+} from './auditLog';
 import { isDecimalString } from './decimal';
 import { isSsbjItemId } from './ids';
 import { findSsbjNarrativeItem } from './requirementMaster';
@@ -433,10 +438,43 @@ export const trailEvidenceRows = (
   return { rows, headerRowIndexes };
 };
 
-/** 操作履歴のシートの行（操作履歴の画面の出力と同じ形）。 */
-export const trailAuditRows = (
-  logs: readonly SsbjAuditLog[],
-  nameOf: (userId: string | null) => string,
-  reportTitle: string,
-  generatedAt: string,
-): string[][] => ssbjAuditExportRows(logs, nameOf, reportTitle, generatedAt);
+/**
+ * 操作履歴のシートの行。先頭に選んだ保存版の作成・承認の記録（DB で版に絞って読んだもの）を、続けてレポートの操作履歴の
+ * すべて（出力した時点まで）を、操作履歴の画面の出力と同じ列で並べる。
+ */
+export const trailAuditRows = (input: {
+  versionNumber: number;
+  versionLogs: readonly SsbjAuditLog[];
+  logs: readonly SsbjAuditLog[];
+  nameOf: (userId: string | null) => string;
+  reportTitle: string;
+  generatedAt: string;
+}): string[][] => {
+  const { versionNumber, versionLogs, logs, nameOf } = input;
+  const row = (log: SsbjAuditLog): string[] => [
+    log.createdAt,
+    nameOf(log.actorUserId),
+    SSBJ_AUDIT_ACTION_LABELS[log.action],
+    ssbjAuditTargetLabel(log),
+    ssbjAuditDetail(log, nameOf),
+    log.targetId ?? '',
+  ];
+  const hasCreate = versionLogs.some(log => log.action === 'version_create');
+  const hasApprove = versionLogs.some(log => log.action === 'status_change');
+  return [
+    ['SSBJレポート 操作履歴（社内確認用）'],
+    ['レポート名', input.reportTitle],
+    ['生成日時', input.generatedAt],
+    [],
+    [`版 ${versionNumber} の作成・承認の記録`],
+    SSBJ_AUDIT_EXPORT_HEADER,
+    ...versionLogs.map(row),
+    ...(hasCreate ? [] : [['（この版の作成の記録が見つかりません）']]),
+    ...(hasApprove ? [] : [['（この版は承認されていません）']]),
+    [],
+    ['このレポートの操作履歴（出力した時点までのすべて。新しい順）'],
+    ['件数', String(logs.length)],
+    SSBJ_AUDIT_EXPORT_HEADER,
+    ...logs.map(row),
+  ];
+};

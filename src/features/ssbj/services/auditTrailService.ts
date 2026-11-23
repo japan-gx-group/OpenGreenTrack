@@ -28,14 +28,17 @@ export const getSsbjAuditTrailDetails = async (fiscalYearId: string): Promise<Ss
 export const buildSsbjAuditTrailSheets = (
   context: TrailExportContext,
   trail: SsbjAuditTrailDetails,
-  logs: readonly SsbjAuditLog[],
+  logs: { version: readonly SsbjAuditLog[]; all: readonly SsbjAuditLog[] },
   nameOf: (userId: string | null) => string,
 ): SsbjXlsxSheet[] => {
   const { snapshot } = context.version;
   const summary = trailSummaryRows(context, reconcileTrail(snapshot.sections.ghg, trail));
   const details = trailDetailRows(trail, context.internalRecords);
   const evidence = trailEvidenceRows(snapshot, trail, context.internalRecords);
-  const audit = trailAuditRows(logs, nameOf, snapshot.report.title, context.generatedAt);
+  const audit = trailAuditRows({
+    versionNumber: context.version.versionNumber, versionLogs: logs.version, logs: logs.all, nameOf,
+    reportTitle: snapshot.report.title, generatedAt: context.generatedAt,
+  });
   return [
     { name: 'サマリ', rows: summary.rows, headerRowIndex: summary.headerRowIndex, columnWidths: [34, 26, 22, 26, 10, 22, 12], wrapColumns: [0] },
     {

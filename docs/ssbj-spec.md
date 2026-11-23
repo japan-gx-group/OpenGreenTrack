@@ -1084,7 +1084,7 @@ OGT で算定できない排出量（CO2 以外のガス、対応していない
 | 画面 | 保存履歴の画面の各版に「証跡一式を出力」（閲覧者には出さない）。確認のダイアログで、内部メモ・内部記録を含めるかを選ぶ（`SsbjAuditTrailDialog.client.tsx`） |
 | 出力 | Excel のシート「サマリ」（版・承認・出力した人・照合）・「明細」・「係数」・「根拠」・「操作履歴」 |
 | コード | `types.ts` の `SsbjAuditTrailDetails`、`utils/auditTrail.ts`（結果の検証・照合・各シートの行）、`services/auditTrailService.ts`、`hooks/useSsbjAuditTrailExport.ts`。係数・エネルギー種別の表示名は `features/factors/services/factorService.ts` の対応表を使う |
-| テスト | `scripts/db/__tests__/ssbjAuditTrailPolicy.test.ts`、`utils/auditTrail.ts` の単体テスト（照合）、保存履歴の画面のテスト |
+| テスト | `scripts/db/__tests__/ssbjAuditTrailPolicy.test.ts`、`utils/auditTrail.ts` の単体テスト（照合）、`services/__tests__/auditTrailLogs.test.ts`（承認後に操作履歴が 1,000 件以上増えても、版の作成・承認の記録が入る）、保存履歴の画面のテスト |
 
 決めたこと:
 
@@ -1100,6 +1100,11 @@ OGT で算定できない排出量（CO2 以外のガス、対応していない
   Scope 3 の直接入力のメモが対象。出力のたびに既定（含めない）に戻す。活動量に紐づく帳票（ファイル名と SHA-256）は OGT の記録として常に出す。
 - **承認していない版も出せる**（サマリと確認のダイアログに「承認していない版」と出す）。承認の前の社内の確認にも使うため。
 - **閲覧者には出さない。** 算定明細と操作履歴を含み、閲覧者には作業中のデータと操作履歴を見せないため（`record_ssbj_export` も拒否する）。
+- **「操作履歴」のシートには、選んだ版の作成・承認の記録を必ず入れる。** 先頭に、選んだ版の作成（`version_create`。対象 ID = 版の ID）と、
+  その版の承認（`status_change` の `details.operation = approve`・`details.versionId` = 版の ID）を、レポート ID と保存版 ID で DB 側で絞って
+  読んで載せる（承認していない版はその旨を書く）。続けて、レポートの操作履歴のすべて（出力した時点まで。新しい順）を載せる。
+  画面の操作履歴は新しい順に最大 1,000 件だけ読むが、証跡一式は古い順に 1 リクエスト最大 1,000 件ずつページングして全件を読む
+  （`listSsbjVersionAuditLogs`・`listAllSsbjAuditLogs`。共通の `fetchAllRows` を使う）。後から操作が増えても、版を誰がいつ作成・承認したかを追える。
 - **出力は操作履歴に記録してから行う**（記録できなければ出力しない。形式は `trail_xlsx`）。保存履歴の画面の「出力履歴」（OGT 本体の記録）には加えない。
 - 「係数」のシートは係数の現在の内容。明細の「係数値（適用時）」は算定した時点の値で、係数の版が変わっていれば違うことがある（両方を出す）。
 - 監査人がログインして見る専用の画面は対象外。

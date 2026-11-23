@@ -4,7 +4,7 @@
 // 出力は操作履歴に記録してから行う（記録できなければ出力しない）。
 
 import { useState } from 'react';
-import { listSsbjAuditLogs, recordSsbjExport } from '../services/auditLogService';
+import { listAllSsbjAuditLogs, listSsbjVersionAuditLogs, recordSsbjExport } from '../services/auditLogService';
 import { buildSsbjAuditTrailSheets, getSsbjAuditTrailDetails, ssbjAuditTrailFileName } from '../services/auditTrailService';
 import { getCurrentSsbjUserId, listSsbjMembers, memberName } from '../services/memberService';
 import { getSsbjCsvVersion } from '../services/versionExportService';
@@ -31,9 +31,10 @@ export const useSsbjAuditTrailExport = (reportId: string, approvedVersionId: str
     setErrorMessage('');
     try {
       const version = await getSsbjCsvVersion(reportId, versionId);
-      const [trail, logs, members, userId] = await Promise.all([
+      const [trail, versionLogs, allLogs, members, userId] = await Promise.all([
         getSsbjAuditTrailDetails(version.snapshot.report.fiscalYearId),
-        listSsbjAuditLogs(reportId),
+        listSsbjVersionAuditLogs(reportId, version.id),
+        listAllSsbjAuditLogs(reportId),
         listSsbjMembers(),
         getCurrentSsbjUserId(),
       ]);
@@ -45,7 +46,7 @@ export const useSsbjAuditTrailExport = (reportId: string, approvedVersionId: str
         generatedAt,
         generatedBy: nameOf(userId),
         internalRecords,
-      }, trail, logs, nameOf);
+      }, trail, { version: versionLogs, all: allLogs }, nameOf);
       const workbook = await buildSsbjWorkbook(sheets);
       // 記録してから出力する（誰がいつ出力したかを残せない出力をさせない）。
       await recordSsbjExport(reportId, 'trail_xlsx', version.id);

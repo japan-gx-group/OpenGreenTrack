@@ -3,6 +3,7 @@
 // 履歴は DB のトリガーと RPC が書く。画面から書けるのはファイル出力の記録（record_ssbj_export）だけ。
 
 import { createClient } from '@/lib/supabase/client';
+import { fetchAllRows } from '@/lib/supabaseRows';
 import { SSBJ_AUDIT_ACTIONS, type SsbjAuditAction, type SsbjAuditLog, type SsbjExportFormat } from '../types';
 
 /** 画面に読み込む件数の上限（新しい順）。出力もこの範囲で行う。 */
@@ -50,6 +51,37 @@ export const listSsbjAuditLogs = async (reportId: string): Promise<SsbjAuditLog[
     .limit(SSBJ_AUDIT_LOG_LIMIT);
   if (error) throw new Error('操作履歴の取得に失敗しました');
   return ((data ?? []) as SsbjAuditLogRow[]).map(toSsbjAuditLog);
+};
+
+/**
+ * 証跡一式（R2-33）用: 選んだ保存版の作成の記録と、その版を承認した記録（古い順）。件数の上限で落ちないよう、
+ * レポート ID と保存版 ID で DB 側で絞る（版の作成は targetId = 版の ID、承認は details.versionId = 版の ID）。
+ */
+export const listSsbjVersionAuditLogs = async (reportId: string, versionId: string): Promise<SsbjAuditLog[]> => {
+  const supabase = createClient();
+  const logs = () => supabase.from('ssbj_audit_logs').select(SELECT_COLUMNS).eq('reportId', reportId);
+  const errorMessage = '保存版の作成・承認の記録の取得に失敗しました';
+  const [created, approved] = await Promise.all([
+    fetchAllRows<SsbjAuditLogRow>((from, to) => logs()
+      .eq('action', 'version_create').eq('targetType', 'version').eq('targetId', versionId)
+      .order('id', { ascending: true }).range(from, to), errorMessage),
+    fetchAllRows<SsbjAuditLogRow>((from, to) => logs()
+      .eq('action', 'status_change').eq('details->>operation', 'approve').eq('details->>versionId', versionId)
+      .order('id', { ascending: true }).range(from, to), errorMessage),
+  ]);
+  return [...created, ...approved].sort((a, b) => a.id - b.id).map(toSsbjAuditLog);
+};
+
+/**
+ * 証跡一式（R2-33）用: レポートの操作履歴のすべて（出力した時点まで。新しい順）。PostgREST の上限（1 リクエスト 1,000 件）で
+ * 切り詰められないよう、古い順に 1,000 件ずつ読む（読んでいる間に増えた記録で、ページの境目がずれないように）。
+ */
+export const listAllSsbjAuditLogs = async (reportId: string): Promise<SsbjAuditLog[]> => {
+  const supabase = createClient();
+  const rows = await fetchAllRows<SsbjAuditLogRow>((from, to) => supabase
+    .from('ssbj_audit_logs').select(SELECT_COLUMNS).eq('reportId', reportId)
+    .order('id', { ascending: true }).range(from, to), '操作履歴の取得に失敗しました');
+  return rows.map(toSsbjAuditLog).reverse();
 };
 
 /**
