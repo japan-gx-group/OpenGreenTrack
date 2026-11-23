@@ -63,9 +63,9 @@ describe('ssbjAuditDetail', () => {
 
   it('印刷・PDF 保存は、版（版が無ければ作業中の内容）と、実際に印刷したかは区別できないことを出す', () => {
     expect(ssbjAuditDetail(log({ action: 'export', details: { format: 'print', versionNumber: 3 } }), nameOf))
-      .toBe('印刷・PDF 保存（版 3）。印刷のダイアログを開いた時点の記録。実際に印刷・保存したかは区別できない');
+      .toBe('『印刷・PDFとして保存』を選択（版 3）');
     expect(ssbjAuditDetail(log({ action: 'export', details: { format: 'print' } }), nameOf))
-      .toBe('印刷・PDF 保存（作業中の内容）。印刷のダイアログを開いた時点の記録。実際に印刷・保存したかは区別できない');
+      .toBe('『印刷・PDFとして保存』を選択（作業中の内容）');
   });
 });
 

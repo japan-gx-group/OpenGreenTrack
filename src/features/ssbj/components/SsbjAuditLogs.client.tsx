@@ -98,8 +98,8 @@ export const SsbjAuditLogs = ({ reportId }: { reportId: string }) => {
               このレポートのデータの作成・更新・削除、状態の変更（レビュー依頼・承認・差戻し）、保存版の作成・復元、
               ファイルの出力を、誰がいつ行ったかを自動で記録しています。記録はあとから書き換えられません。
               新しい順に最大 {SSBJ_AUDIT_LOG_LIMIT} 件を表示します。
-              印刷・PDF 保存は、印刷のダイアログを開いた時点で記録します。ブラウザの機能で印刷するため、実際に印刷・保存したか
-              （ダイアログを取り消したか）は区別できません。
+              印刷・PDF 保存は、「印刷・PDFとして保存」を選んだ時点で記録します。ブラウザの機能で印刷するため、実際に印刷・保存したか
+              （印刷を取り消したか）は区別できません。ブラウザのメニューや Ctrl+P からの印刷は記録されません。
             </p>
             <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
               <div className="flex flex-col gap-1.5">
