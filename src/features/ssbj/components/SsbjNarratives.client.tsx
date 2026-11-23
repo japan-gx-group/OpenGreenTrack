@@ -128,7 +128,10 @@ export const SsbjNarratives = ({ reportId }: { reportId: string }) => {
     SSBJ_REQUIREMENTS.filter(requirement => requirement.sectionId === sectionId);
 
   return (
-    <div className="page-content gt-scroll relative">
+    // 画面全体はウィンドウがスクロールする（.page-content は高さが決まっておらずスクロールしない）。
+    // .page-content の overflow-y: auto のままだと、中の sticky（目次・帯・右側のプレビュー）がこの要素に貼り付いて
+    // 画面に付いてこないため、この画面では overflow を戻す。
+    <div className="page-content gt-scroll relative overflow-y-visible">
       <PageHeading
         title="ガバナンス・戦略等の文章"
         titleAside={dirtyItemIds.length > 0 ? (
