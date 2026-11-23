@@ -30,8 +30,9 @@ export const AppTopBar = () => {
 
   return (
     <header className="header">
-      <div className="flex items-center" style={{ gap: '9px', fontSize: '13px', color: 'var(--color-text-muted)' }}>
-        <span className="truncate">{profile?.organizationName ?? 'OpenGreenTrack'}</span>
+      {/* 長い画面名でも右のボタンを押し出さないよう、段ごとに縮めて省略する（min-w-0）。 */}
+      <div className="flex min-w-0 flex-1 items-center" style={{ gap: '9px', fontSize: '13px', color: 'var(--color-text-muted)' }}>
+        <span className="min-w-0 truncate">{profile?.organizationName ?? 'OpenGreenTrack'}</span>
         {breadcrumbs.map((crumb, index) => {
           const isLast = index === breadcrumbs.length - 1;
           // 狭い画面では、途中の段を省いて末尾（今の画面）だけを出す。
@@ -40,11 +41,11 @@ export const AppTopBar = () => {
             <Fragment key={`${crumb.label}-${index}`}>
               <ChevronRight size={13} className={hideOnNarrow} style={{ color: 'var(--color-text-subtle)', flex: 'none' }} />
               {crumb.href && !isLast ? (
-                <Link href={crumb.href} className={`${hideOnNarrow} truncate hover:underline`}>{crumb.label}</Link>
+                <Link href={crumb.href} className={`${hideOnNarrow} min-w-0 shrink-0 hover:underline`}>{crumb.label}</Link>
               ) : (
                 <span
                   aria-current={isLast ? 'page' : undefined}
-                  className={`${hideOnNarrow} truncate`}
+                  className={isLast ? 'block min-w-0 truncate' : `${hideOnNarrow} min-w-0 truncate`}
                   style={{ color: 'var(--color-text-heading)', fontWeight: 600 }}
                 >
                   {crumb.label}
