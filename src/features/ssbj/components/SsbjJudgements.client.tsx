@@ -391,7 +391,10 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
   const leaveGuard = useUnsavedChangesGuard(isDialogDirty);
 
   return (
-    <div className="page-content gt-scroll relative">
+    // 画面全体はウィンドウがスクロールする（.page-content は高さが決まっておらずスクロールしない）。
+    // .page-content の overflow-y: auto のままだと、中の sticky（件数・絞り込み・まとめての帯、右側のプレビュー）が
+    // この要素に貼り付いて画面に付いてこないため、この画面では overflow を戻す。
+    <div className="page-content gt-scroll relative overflow-y-visible">
       <PageHeading title="該当性・重要性の判断" description={report?.title ?? 'SSBJレポート'} showFiscalYear={false} primaryAction={null} />
       <div className="flex flex-col gap-4">
         <Link
