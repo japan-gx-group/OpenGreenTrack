@@ -810,8 +810,88 @@ export type SsbjAuditLog = {
 
 /**
  * ファイルの出力形式（操作履歴・出力履歴に残す）。print は印刷・PDF 保存で、印刷のダイアログを開いた時点の記録
- * （ブラウザの機能で印刷するため、実際に印刷したか取り消したかは区別できない）。
+ * （ブラウザの機能で印刷するため、実際に印刷したか取り消したかは区別できない）。trail_xlsx は証跡一式の Excel（R2-33）。
  */
-export const SSBJ_EXPORT_FORMATS = ['csv', 'xlsx', 'audit_csv', 'audit_xlsx', 'print'] as const;
+export const SSBJ_EXPORT_FORMATS = ['csv', 'xlsx', 'audit_csv', 'audit_xlsx', 'print', 'trail_xlsx'] as const;
 
 export type SsbjExportFormat = (typeof SSBJ_EXPORT_FORMATS)[number];
+
+// ---------------------------------------------------------------------------
+// 証跡一式（R2-33）。DB 関数 ssbj_audit_trail_details の結果。数値は十進文字列（§6）。
+// ---------------------------------------------------------------------------
+
+/** Scope 2 の基準別の明細（scope2_basis_results の 1 行）。 */
+export type SsbjTrailBasisDetail = {
+  basis: 'location_based' | 'market_based';
+  evidence: string;
+  emissions: SsbjDecimalString;
+  emissionFactorId: string | null;
+  appliedFactorName: string | null;
+  appliedFactorValue: SsbjDecimalString | null;
+  appliedFactorUnit: string | null;
+};
+
+/** 算定明細の 1 行（活動量 1 件と、その算定結果）。合計に入るものだけ（Scope 3 は方式が積上げのカテゴリ）。 */
+export type SsbjTrailDetail = {
+  activityRecordId: string;
+  locationName: string | null;
+  sourceType: string;
+  energyType: string;
+  amount: SsbjDecimalString;
+  unit: string;
+  periodStart: string;
+  periodEnd: string;
+  /** 活動量のメモ。内部記録として扱う（既定では出力しない）。 */
+  note: string | null;
+  scope: 'scope1' | 'scope2' | 'scope3';
+  categoryId: number | null;
+  emissions: SsbjDecimalString;
+  emissionFactorId: string | null;
+  appliedFactorName: string | null;
+  appliedFactorValue: SsbjDecimalString | null;
+  appliedFactorUnit: string | null;
+  calculatedAt: string;
+  basis: SsbjTrailBasisDetail[];
+  evidenceFiles: { id: string; fileName: string; sha256: string }[];
+};
+
+/** Scope 3 の直接入力の値（方式が直接入力のカテゴリだけ）。 */
+export type SsbjTrailScope3Direct = {
+  id: string;
+  categoryId: number;
+  emissions: SsbjDecimalString;
+  periodStart: string | null;
+  periodEnd: string | null;
+  /** データの出所のメモ。内部記録として扱う（既定では出力しない）。 */
+  dataSourceNote: string | null;
+  updatedAt: string;
+};
+
+/** 明細で使った排出係数（emission_factors。適用後に版が変わっていれば、明細の適用値と違うことがある）。 */
+export type SsbjTrailFactor = {
+  id: string;
+  name: string;
+  energyType: string;
+  scope: string;
+  factorValue: SsbjDecimalString;
+  unit: string;
+  applicableYear: number;
+  regionName: string;
+  source: string;
+  status: string;
+  isCustom: boolean;
+  factorType: string | null;
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+  sourceDocumentName: string | null;
+  sourceUrl: string | null;
+  providerName: string | null;
+  menuName: string | null;
+};
+
+/** 証跡の明細一式。合計に入る明細だけを含む（範囲は dashboard_aggregates と同じ）。 */
+export type SsbjAuditTrailDetails = {
+  details: SsbjTrailDetail[];
+  scope3Direct: SsbjTrailScope3Direct[];
+  factors: SsbjTrailFactor[];
+};

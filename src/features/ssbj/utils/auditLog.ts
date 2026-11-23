@@ -48,6 +48,7 @@ const EXPORT_FORMAT_LABELS: Record<string, string> = {
   audit_csv: '操作履歴の CSV',
   audit_xlsx: '操作履歴の Excel',
   print: '印刷・PDF 保存',
+  trail_xlsx: '証跡一式の Excel',
 };
 
 /**
