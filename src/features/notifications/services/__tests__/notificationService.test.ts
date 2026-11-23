@@ -4,6 +4,7 @@
 //   - 算定バッチ / IDEA 取込の各状態 → お知らせ（level / title / href）への対応
 //   - 2 ソースを occurredAt の新しい順に結合し、MAX_NOTIFICATIONS（8 件）で切ること
 //   - 片方のテーブルが読めなくても、読めた側だけでお知らせを出すこと
+//   - SSBJ レポートのレビューの状態（自分が承認者・依頼者のもの）からお知らせを出すこと
 // と、既読マーカー（localStorage）・未読数・相対時刻の純粋ロジックを検証する。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,13 +13,17 @@ type QueryResult = { data: unknown[] | null; error: { message: string } | null }
 
 // テーブル名 → クエリ結果。テストごとに差し替える。
 const tableResults = vi.hoisted(() => new Map<string, QueryResult>());
+// ログイン中の利用者（null ならログインしていない扱い）。
+const currentUser = vi.hoisted(() => ({ id: null as string | null }));
 
 vi.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
+    auth: { getUser: async () => ({ data: { user: currentUser.id ? { id: currentUser.id } : null } }) },
     from: (table: string) => {
       // 実装のチェーン（select → order → limit）をそのまま受け、最後に固定結果を返す。
       const builder = {
         select: () => builder,
+        or: () => builder,
         order: () => builder,
         limit: async () => tableResults.get(table) ?? { data: [], error: null },
       };
@@ -321,5 +326,38 @@ describe('formatRelativeTime', () => {
 
   it('解釈できない時刻は空文字', () => {
     expect(formatRelativeTime('not-a-date', now)).toBe('');
+  });
+});
+
+describe('getNotifications: SSBJ レポートのレビュー', () => {
+  beforeEach(() => {
+    tableResults.clear();
+    currentUser.id = 'user-me';
+  });
+  afterEach(() => {
+    currentUser.id = null;
+  });
+
+  it('自分が承認者のレビュー中のレポートを、ほかのお知らせと新しい順に並べて出す', async () => {
+    tableResults.set('calculation_batches', { data: [batch({ completedAt: '2026-09-01T00:01:00.000Z' })], error: null });
+    tableResults.set('ssbj_reports', {
+      data: [{
+        id: 'report-1', title: '2024年度のレポート', status: 'in_review', approverUserId: 'user-me',
+        reviewRequestedByUserId: 'user-other', statusChangedAt: new Date().toISOString(), statusChangedByUserId: 'user-other',
+      }],
+      error: null,
+    });
+    const notifications = await getNotifications();
+    expect(notifications.map(notification => notification.title)).toEqual([
+      'SSBJ レポートのレビューを頼まれています',
+      '排出量の算定が完了しました',
+    ]);
+    expect(notifications[0].href).toBe('/ssbj/report-1');
+  });
+
+  it('ログインしていない・SSBJ のレポートが読めないときは、SSBJ のお知らせを出さない', async () => {
+    currentUser.id = null;
+    tableResults.set('ssbj_reports', { data: null, error: { message: 'permission denied' } });
+    expect(await getNotifications()).toEqual([]);
   });
 });
