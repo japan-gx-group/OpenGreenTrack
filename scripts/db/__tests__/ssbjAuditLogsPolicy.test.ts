@@ -91,7 +91,9 @@ describe('ssbj_audit_logs の権限', () => {
   it('操作の種類・出力形式は types.ts と同じ', () => {
     const actions = audit.match(/check \( action in \(([^)]*)\) \)/)?.[1].split(',').map(value => value.trim().replace(/'/g, ''));
     expect(actions).toEqual([...SSBJ_AUDIT_ACTIONS]);
-    const formats = audit.match(/if p_format not in \(([^)]*)\)/)?.[1].split(',').map(value => value.trim().replace(/'/g, ''));
+    // 出力形式は、record_ssbj_export を置き換えた最後のマイグレーションの定義で比べる（形式を足すたびに置き換えるため）。
+    const formatLists = [...all.matchAll(/if p_format not in \(([^)]*)\)/g)];
+    const formats = formatLists.at(-1)?.[1].split(',').map(value => value.trim().replace(/'/g, ''));
     expect(formats).toEqual([...SSBJ_EXPORT_FORMATS]);
   });
 

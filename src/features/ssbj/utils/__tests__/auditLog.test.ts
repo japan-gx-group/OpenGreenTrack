@@ -60,6 +60,13 @@ describe('ssbjAuditDetail', () => {
     expect(ssbjAuditDetail(log({ action: 'export', details: { format: 'audit_csv' } }), nameOf)).toBe('操作履歴の CSV');
     expect(ssbjAuditDetail(log({ action: 'version_create', details: { note: '承認時の保存版' } }), nameOf)).toBe('承認時の保存版');
   });
+
+  it('印刷・PDF 保存は、版（版が無ければ作業中の内容）と、実際に印刷したかは区別できないことを出す', () => {
+    expect(ssbjAuditDetail(log({ action: 'export', details: { format: 'print', versionNumber: 3 } }), nameOf))
+      .toBe('印刷・PDF 保存（版 3）。印刷のダイアログを開いた時点の記録。実際に印刷・保存したかは区別できない');
+    expect(ssbjAuditDetail(log({ action: 'export', details: { format: 'print' } }), nameOf))
+      .toBe('印刷・PDF 保存（作業中の内容）。印刷のダイアログを開いた時点の記録。実際に印刷・保存したかは区別できない');
+  });
 });
 
 describe('ssbjAuditExportRows', () => {

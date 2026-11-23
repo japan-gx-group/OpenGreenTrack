@@ -1,7 +1,7 @@
 'use client';
 
 // SSBJ レポートの操作履歴の画面（/ssbj/[reportId]/history。docs/ssbj-spec.md §13「操作履歴」）。
-// 誰が・いつ・何をしたか（データの作成・更新・削除、状態の変更、保存版の作成・復元、ファイルの出力）を新しい順に出し、
+// 誰が・いつ・何をしたか（データの作成・更新・削除、状態の変更、保存版の作成・復元、ファイルの出力・印刷）を新しい順に出し、
 // 操作の種類で絞り込み、CSV / Excel で出力する。出力も操作履歴に記録してから行う（記録できなければ出力しない）。
 
 import { useState } from 'react';
@@ -97,7 +97,9 @@ export const SsbjAuditLogs = ({ reportId }: { reportId: string }) => {
             <p className="m-0 mb-3 text-sm text-text-muted">
               このレポートのデータの作成・更新・削除、状態の変更（レビュー依頼・承認・差戻し）、保存版の作成・復元、
               ファイルの出力を、誰がいつ行ったかを自動で記録しています。記録はあとから書き換えられません。
-              新しい順に最大 {SSBJ_AUDIT_LOG_LIMIT} 件を表示します（印刷・PDF 保存は記録されません）。
+              新しい順に最大 {SSBJ_AUDIT_LOG_LIMIT} 件を表示します。
+              印刷・PDF 保存は、印刷のダイアログを開いた時点で記録します。ブラウザの機能で印刷するため、実際に印刷・保存したか
+              （ダイアログを取り消したか）は区別できません。
             </p>
             <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
               <div className="flex flex-col gap-1.5">

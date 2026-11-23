@@ -6,6 +6,7 @@
 // 表示する内容（作業中 / 保存版）はクエリ（source）で受け取る。
 // 印刷・PDF は社外に共有されうるため、内部メモと根拠文書の内部記録（開示しない内容）は常に出さない。
 // クエリに internal=1 などが付いていても読まない（URL を直接開いても内部情報が印刷に混ざらないようにする）。
+// 印刷のダイアログを開くことを、表示している版と一緒に操作履歴に記録する（hooks/useSsbjPrintRecorder.ts）。
 // 閲覧者は、クエリにかかわらず承認した保存版の開示する内容（内部メモ・内部記録を除いたもの）を API から読む
 // （閲覧者は保存版の行を読めない。docs/authorization-matrix.md §2.3）。
 
@@ -15,6 +16,7 @@ import { AlertCircle, Loader2, Printer } from 'lucide-react';
 import { useSsbjApprovedVersion } from '../hooks/useSsbjApprovedVersion';
 import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
 import { useSsbjPreviewSource } from '../hooks/useSsbjPreviewSource';
+import { useSsbjPrintRecorder } from '../hooks/useSsbjPrintRecorder';
 import { canViewSsbjWorking } from '../utils/memberRole';
 import { parsePreviewSelection } from '../utils/preview';
 import { SsbjPreviewDocument } from './SsbjPreviewDocument';
@@ -31,30 +33,40 @@ export const SsbjPreviewPrintView = ({ reportId }: { reportId: string }) => {
   const approved = useSsbjApprovedVersion(viewerOnly ? reportId : null);
   const { source, errorMessage } = viewerOnly ? approved : working;
   const isLoading = !roleKnown || (viewerOnly ? approved.isLoading : working.isLoading);
+  const printer = useSsbjPrintRecorder(reportId, source);
+  const { print } = printer;
   // 読み込み完了後に一度だけ自動で印刷ダイアログを開くためのガード。
   const hasAutoPrinted = useRef(false);
 
   useEffect(() => {
     if (source && !hasAutoPrinted.current) {
       hasAutoPrinted.current = true;
-      // レイアウト確定後に印刷ダイアログを開く。
-      const timer = window.setTimeout(() => window.print(), 300);
+      // レイアウト確定後に、操作履歴に記録してから印刷ダイアログを開く。
+      const timer = window.setTimeout(() => void print(), 300);
       return () => window.clearTimeout(timer);
     }
-  }, [source]);
+  }, [source, print]);
 
   return (
     <div className="report-print-root">
       <div className="report-print-toolbar report-print-no-print">
         <span className="report-print-toolbar-title">SSBJ レポートのプレビュー</span>
-        <button type="button" onClick={() => window.print()} disabled={!source} className="report-print-button">
+        <button type="button" onClick={() => void print()} disabled={!source || printer.isRecording} className="report-print-button">
           <Printer size={16} /> 印刷 / PDFとして保存
         </button>
       </div>
 
+      {printer.errorMessage && (
+        <div role="alert" className="report-print-status report-print-error report-print-no-print">
+          <AlertCircle size={20} />
+          <span>{printer.errorMessage}</span>
+        </div>
+      )}
+
       {source && (
         <p className="report-print-hint report-print-no-print">
           きれいに出力するコツ: 印刷ダイアログで「背景のグラフィック」を有効に、「ヘッダーとフッター」を無効にしてください。用紙は A4 縦・倍率 100% を想定しています。
+          印刷のダイアログを開くと、表示している版と一緒に操作履歴に記録されます（取り消しても記録は残ります）。
         </p>
       )}
 
