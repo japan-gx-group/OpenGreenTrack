@@ -110,7 +110,8 @@ export const getEmissionFactorMutationErrorMessage = (
   return isActiveFactorUniqueViolation ? ACTIVE_FACTOR_UNIQUE_ERROR_MESSAGE : fallbackMessage;
 };
 
-const ENERGY_LABEL_BY_VALUE: Record<EnergyType, EmissionFactor['energyType']> = {
+// SSBJ の証跡一式（features/ssbj/utils/auditTrail.ts）でも、係数・活動量の表示名に使うため export する。
+export const ENERGY_LABEL_BY_VALUE: Record<EnergyType, EmissionFactor['energyType']> = {
   electricity: '電気',
   city_gas: 'ガス',
   heat: '熱',
@@ -165,7 +166,8 @@ export const ENERGY_VALUE_BY_LABEL: Record<EmissionFactor['energyType'], EnergyT
   サプライヤーデータ: 'supplier_data',
 };
 
-const FACTOR_TYPE_LABEL_BY_VALUE: Record<FactorType, FactorTypeLabel> = {
+// SSBJ の証跡一式（features/ssbj/utils/auditTrail.ts）でも、係数・活動量の表示名に使うため export する。
+export const FACTOR_TYPE_LABEL_BY_VALUE: Record<FactorType, FactorTypeLabel> = {
   basic: '基礎',
   adjusted: '調整後',
 };
@@ -193,7 +195,8 @@ export const scopeLabelForEnergyLabel = (
 ): EmissionFactor['scope'] =>
   SCOPE_LABEL_BY_VALUE[scopeForEnergyType(ENERGY_VALUE_BY_LABEL[energyType])];
 
-const SOURCE_LABEL_BY_VALUE: Record<FactorSource, string> = {
+// SSBJ の証跡一式（features/ssbj/utils/auditTrail.ts）でも、係数・活動量の表示名に使うため export する。
+export const SOURCE_LABEL_BY_VALUE: Record<FactorSource, string> = {
   moe: '環境省',
   meti: '経済産業省',
   ketsoho: '温対法',
@@ -209,7 +212,8 @@ const SOURCE_VALUE_BY_LABEL: Record<string, FactorSource> = {
   自社設定: 'custom',
 };
 
-const STATUS_LABEL_BY_VALUE: Record<FactorStatus, EmissionFactor['status']> = {
+// SSBJ の証跡一式（features/ssbj/utils/auditTrail.ts）でも、係数・活動量の表示名に使うため export する。
+export const STATUS_LABEL_BY_VALUE: Record<FactorStatus, EmissionFactor['status']> = {
   active: '有効',
   pending_review: '確認中',
   draft: '下書き',

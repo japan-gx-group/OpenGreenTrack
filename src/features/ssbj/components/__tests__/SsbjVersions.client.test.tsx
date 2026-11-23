@@ -21,7 +21,18 @@ vi.mock('../../services/versionCsv', async importOriginal => ({
   downloadSsbjVersionCsv: vi.fn(),
 }));
 vi.mock('../../services/versionClient', () => ({ saveSsbjReportVersion: vi.fn() }));
-vi.mock('../../services/auditLogService', () => ({ recordSsbjExport: vi.fn() }));
+vi.mock('../../services/auditLogService', () => ({ recordSsbjExport: vi.fn(), listSsbjAuditLogs: vi.fn(async () => []),
+  listSsbjVersionAuditLogs: vi.fn(async () => []), listAllSsbjAuditLogs: vi.fn(async () => []),
+}));
+vi.mock('../../services/auditTrailService', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../services/auditTrailService')>()),
+  getSsbjAuditTrailDetails: vi.fn(async () => ({ details: [], scope3Direct: [], factors: [] })),
+}));
+vi.mock('../../services/memberService', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../services/memberService')>()),
+  listSsbjMembers: vi.fn(async () => [{ id: 'user-1', name: '架空 太郎' }]),
+  getCurrentSsbjUserId: vi.fn(async () => 'user-1'),
+}));
 vi.mock('../../services/reportWorkflowClient', () => ({ restoreSsbjReportVersion: vi.fn() }));
 // 新版の作成と復元は SSBJ のロールが入力担当か管理者のときだけ出す。既定は入力担当として操作する。
 vi.mock('../../services/memberRoleService', () => ({ getMySsbjRole: vi.fn(async () => 'editor') }));
@@ -47,6 +58,7 @@ import { recordSsbjExport } from '../../services/auditLogService';
 import { restoreSsbjReportVersion } from '../../services/reportWorkflowClient';
 import { getMySsbjRole } from '../../services/memberRoleService';
 import { buildSsbjWorkbook, downloadSsbjWorkbook } from '../../services/versionXlsx';
+import { getSsbjAuditTrailDetails } from '../../services/auditTrailService';
 import type { SsbjReportReview } from '../../types';
 import { SsbjVersions } from '../SsbjVersions.client';
 
@@ -194,6 +206,38 @@ describe('SsbjVersions', () => {
     expect(container.textContent).toContain('CSVを出力');
   });
 
+  it('証跡一式は、内部記録を含めない既定で確認してから、操作履歴に記録して Excel を出す', async () => {
+    // 前のテストで記録の失敗にした実装を戻す（clearAllMocks は実装を戻さない）。
+    vi.mocked(recordSsbjExport).mockResolvedValue(undefined as never);
+    const { container } = await renderScreen();
+    await act(async () => { click(buttonWith(container, '証跡一式を出力')); await Promise.resolve(); });
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog?.textContent).toContain('版 1 の証跡一式を出力');
+    expect(dialog?.querySelector('[role="checkbox"]')?.getAttribute('aria-checked')).toBe('false');
+    expect(recordSsbjExport).not.toHaveBeenCalled();
+
+    await act(async () => { click(buttonWith(document, 'Excel を出力')); });
+    for (let i = 0; i < 12; i += 1) await act(async () => { await Promise.resolve(); });
+    expect(getSsbjAuditTrailDetails).toHaveBeenCalledWith(fictionalVersion.snapshot.report.fiscalYearId);
+    expect(recordSsbjExport).toHaveBeenCalledWith(fictionalVersion.reportId, 'trail_xlsx', fictionalVersion.id);
+    const sheets = vi.mocked(buildSsbjWorkbook).mock.calls.at(-1)?.[0] ?? [];
+    expect(sheets.map(sheet => sheet.name)).toEqual(['サマリ', '明細', '係数', '根拠', '操作履歴']);
+    expect(JSON.stringify(sheets[0].rows)).toContain('"内部メモ・内部記録","含めない"');
+    expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent ?? '').toBe('');
+    expect(vi.mocked(recordSsbjExport).mock.invocationCallOrder.at(-1)!)
+      .toBeLessThan(vi.mocked(downloadSsbjWorkbook).mock.invocationCallOrder.at(-1)!);
+  });
+
+  it('証跡一式は、操作履歴に記録できなければ出さない', async () => {
+    vi.mocked(recordSsbjExport).mockRejectedValueOnce(new Error('出力の記録を保存できなかったため、出力を中止しました'));
+    const { container } = await renderScreen();
+    await act(async () => { click(buttonWith(container, '証跡一式を出力')); await Promise.resolve(); });
+    await act(async () => { click(buttonWith(document, 'Excel を出力')); });
+    for (let i = 0; i < 12; i += 1) await act(async () => { await Promise.resolve(); });
+    expect(downloadSsbjWorkbook).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain('出力を中止しました');
+  });
+
   it('保存版の内容と内部メモを表示する', async () => {
     const { container } = await renderScreen();
     const button = Array.from(container.querySelectorAll('button')).find(item => item.textContent?.includes('内容を見る'));
@@ -263,6 +307,7 @@ describe('SsbjVersions（閲覧者）', () => {
     expect(container.textContent).not.toContain('出力履歴');
     expect(container.textContent).not.toContain('この版から新版を作成');
     expect(container.textContent).not.toContain('この版の内容に戻す');
+    expect(container.textContent).not.toContain('証跡一式を出力');
   });
 
   it('「内容を見る」は内部メモ・内部記録を除いた内容だけを出す', async () => {

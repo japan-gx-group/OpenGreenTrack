@@ -118,6 +118,7 @@ SSBJ 開示レポートで、データを書き換えられる経路をすべて
 | 操作履歴 | `ssbj_audit_logs` select | ○ | ○ | × | ○ | R2-12 |
 | 保存版の CSV・Excel の出力 | `record_ssbj_export`（記録）→ ブラウザで出力 | ○ | ○ | 承認した版の開示する内容だけ | ○ | R2-12 |
 | 操作履歴の CSV・Excel の出力 | 同上 | ○ | ○ | × | ○ | R2-12 |
+| 証跡一式（Excel）の出力 | `ssbj_audit_trail_details`（読む）・`record_ssbj_export`（`trail_xlsx` で記録）→ ブラウザで出力 | ○ | ○ | × | ○ | R2-33 |
 | 印刷・PDF | 「印刷・PDFとして保存」を選んだ時点で `record_ssbj_export`（`print`）に記録 → ブラウザの印刷（記録できなくても印刷は続ける） | ○ | ○ | 承認した版の開示する内容だけ | ○ | R2-45 |
 | OGT の候補値 | `ssbj_ogt_numeric_values` ほか OGT の集計の RPC（読むだけ） | ○ | ○ | × | ○ | R2-12（画面の出し分け） |
 

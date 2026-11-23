@@ -1,6 +1,7 @@
 'use client';
 
 // 固定版の履歴・内容・複製・復元と、CSV / Excel 出力の画面。内容と出力は固定版の snapshot のみから作る。
+// 証跡一式（R2-33）は、snapshot の開示値に出力時点の OGT の明細を突き合わせて出す（hooks/useSsbjAuditTrailExport.ts）。
 // 出力は、出力履歴（system_audit_logs）と操作履歴（ssbj_audit_logs）に記録してからダウンロードさせる
 // （記録できなければ出力しない）。復元は、戻す前の作業中の内容をサーバが保存版として自動で残す
 // （文章の選択式テンプレートの選択は保存版に含めないので残らない。確認のダイアログで伝える）。
@@ -10,11 +11,12 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Copy, Download, FileCheck2, FileSpreadsheet, History, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Copy, Download, FileCheck2, FileSearch, FileSpreadsheet, History, RotateCcw } from 'lucide-react';
 import { PageHeading } from '@/components/layout/PageHeading';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { LoadingIndicator } from '@/components/ui/PageLoading';
+import { useSsbjAuditTrailExport } from '../hooks/useSsbjAuditTrailExport';
 import { useSsbjReport } from '../hooks/useSsbjReport';
 import { recordSsbjExport } from '../services/auditLogService';
 import { restoreSsbjReportVersion } from '../services/reportWorkflowClient';
@@ -35,6 +37,7 @@ import { buildSsbjWorkbook, downloadSsbjWorkbook, ssbjVersionSheet, ssbjVersionX
 import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
 import { canEditSsbj, canViewSsbjWorking } from '../utils/memberRole';
 import { isSsbjReportLocked } from '../utils/reportStatus';
+import { SsbjAuditTrailDialog } from './SsbjAuditTrailDialog.client';
 import { SsbjLockedNotice } from './SsbjLockedNotice';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
 import { SsbjVersionActionDialog } from './SsbjVersionActionDialog.client';
@@ -59,6 +62,8 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
   // 閲覧者は、承認した保存版の開示する内容だけを API から読む。ロールが分かるまでは読まない。
   const roleKnown = !myRole.isLoading;
   const viewerOnly = roleKnown && !canViewSsbjWorking(myRole.role);
+  // 証跡一式（R2-33）。算定明細と操作履歴を含むため、閲覧者には出さない。
+  const trail = useSsbjAuditTrailExport(reportId, report?.review.approvedVersionId ?? null);
 
   useEffect(() => {
     if (!report || !roleKnown) return;
@@ -236,6 +241,11 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
                         <Button type="button" size="sm" disabled={busyVersionId !== null} onClick={() => void handleDownload(version.id, 'xlsx')}>
                           <FileSpreadsheet size={14} /> {busyVersionId === version.id ? '処理中...' : 'Excelを出力'}
                         </Button>
+                        {roleKnown && !viewerOnly && (
+                          <Button type="button" size="sm" variant="outline" disabled={busyVersionId !== null || trail.isExporting} onClick={() => trail.open(version.id)}>
+                            <FileSearch size={14} /> 証跡一式を出力
+                          </Button>
+                        )}
                       </div>
                     </li>
                   ))}
@@ -266,6 +276,16 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
           </>
         ) : null}
       </div>
+      <SsbjAuditTrailDialog
+        versionNumber={versions.find(version => version.id === trail.versionId)?.versionNumber ?? null}
+        isApprovedVersion={report?.review.approvedVersionId === trail.versionId}
+        internalRecords={trail.internalRecords}
+        onInternalRecordsChange={trail.setInternalRecords}
+        isExporting={trail.isExporting}
+        errorMessage={trail.errorMessage}
+        onConfirm={() => void trail.exportTrail()}
+        onCancel={trail.close}
+      />
       <SsbjVersionActionDialog
         open={pending?.kind === 'copy'}
         title={`版 ${pendingVersion?.versionNumber ?? ''} から新版を作成`}

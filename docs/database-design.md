@@ -606,7 +606,7 @@ SSBJ の各テーブルのトリガー（`ssbj_audit_row_change`）と、状態�
 
 - RLS は自組織の select だけ。authenticated には select だけを GRANT し、update はトリガーで全ロール拒否する。
 - 版数・監査列だけが変わった更新は記録しない。復元中の行ごとの記録は止め、復元として 1 件記録する。
-- 出力（`action = export`）の `details.format` は `csv` / `xlsx` / `audit_csv` / `audit_xlsx` / `print`。`print` はプレビュー・印刷用のタブで「印刷・PDFとして保存」を選んだ時点の記録で、実際に印刷したかは区別できない（`20261123100000_ssbj_record_print.sql`）。
+- 出力（`action = export`）の `details.format` は `csv` / `xlsx` / `audit_csv` / `audit_xlsx` / `print` / `trail_xlsx`（証跡一式。`20261123120000_ssbj_audit_trail.sql`）。`print` はプレビュー・印刷用のタブで「印刷・PDFとして保存」を選んだ時点の記録で、実際に印刷したかは区別できない（`20261123100000_ssbj_record_print.sql`）。
 
 ### 3.28 SSBJ 業種の候補への判断 (`ssbj_risk_candidate_decisions`) — 業種から出したリスク・機会の候補の採用・除外（`supabase/migrations/20261018130000_ssbj_risk_candidate_decisions.sql`）
 レポートと候補 ID の組ごとに 1 行の作業用の記録。候補（`src/features/ssbj/utils/industryCandidates.ts`）を検討の出発点にしたかどうかの記録で、該当性・重要性の判断ではない。
