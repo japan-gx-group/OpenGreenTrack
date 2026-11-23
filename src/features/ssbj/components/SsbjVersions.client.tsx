@@ -10,7 +10,7 @@
 // 版の行は、内容を見る・CSV・Excel だけを並べ、「この版から新版を作成」「この版の内容に戻す」は「その他の操作」に畳む
 // （強い操作を出力と同じ並びに置かないため。確認のダイアログはこれまでどおり）。版 ID は控えめに出してコピーできるようにする。
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ChevronDown, Copy, Download, FileCheck2, FileSpreadsheet, History, RotateCcw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -48,6 +48,12 @@ import { SsbjVersionView } from './SsbjVersionView.client';
 const FORMAT_LABELS: Record<SsbjVersionExportFormat, string> = { csv: 'CSV', xlsx: 'Excel' };
 
 type PendingAction = { kind: 'copy' | 'restore'; versionId: string };
+
+// 「その他の操作」のメニュー（<details>）を、項目を選んだら閉じる（確認のダイアログの後ろに開いたまま残さない）。
+const closeMenu = (event: MouseEvent<HTMLElement>) => {
+  const menu = event.currentTarget.closest('details');
+  if (menu) menu.open = false;
+};
 
 export const SsbjVersions = ({ reportId }: { reportId: string }) => {
   const { report, reload: reloadReport, isLoading: isReportLoading, errorMessage: reportError, isNotFound } =
@@ -239,11 +245,11 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
                               その他の操作 <ChevronDown size={14} className="transition-transform group-open:rotate-180" aria-hidden="true" />
                             </summary>
                             <div className="absolute right-0 z-10 mt-1 flex w-max flex-col gap-1 rounded-lg border border-border bg-bg-card p-2 shadow-md">
-                              <Button type="button" size="sm" variant="ghost" className="justify-start" disabled={busyVersionId !== null} onClick={() => setPending({ kind: 'copy', versionId: version.id })}>
+                              <Button type="button" size="sm" variant="ghost" className="justify-start" disabled={busyVersionId !== null} onClick={event => { closeMenu(event); setPending({ kind: 'copy', versionId: version.id }); }}>
                                 <Copy size={14} /> この版から新版を作成
                               </Button>
                               {!locked && (
-                                <Button type="button" size="sm" variant="ghost" className="justify-start text-danger hover:text-danger" disabled={busyVersionId !== null} onClick={() => setPending({ kind: 'restore', versionId: version.id })}>
+                                <Button type="button" size="sm" variant="ghost" className="justify-start text-danger hover:text-danger" disabled={busyVersionId !== null} onClick={event => { closeMenu(event); setPending({ kind: 'restore', versionId: version.id }); }}>
                                   <RotateCcw size={14} /> この版の内容に戻す
                                 </Button>
                               )}
