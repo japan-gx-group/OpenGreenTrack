@@ -138,7 +138,7 @@ describe('diffSsbjSnapshots', () => {
     });
     const { changes } = diffSsbjSnapshots(fictionalSnapshot, after);
     expect(changes).toHaveLength(1);
-    expect(changes[0]).toMatchObject({ group: '四本柱の文章', title: '監督する機関・責任者', id: 'governance.oversight_body', status: 'changed' });
+    expect(changes[0]).toMatchObject({ group: 'ガバナンス・戦略等の文章', title: '監督する機関・責任者', id: 'governance.oversight_body', status: 'changed' });
     expect(changes[0].fields).toEqual([{
       kind: 'text',
       label: '開示する文章',

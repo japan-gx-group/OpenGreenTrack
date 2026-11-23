@@ -333,7 +333,7 @@ const REPORT_FIELDS: FieldSpec<SsbjReportRecord>[] = [
 ];
 
 const NARRATIVES: Keyed<SsbjNarrative> = {
-  group: '四本柱の文章',
+  group: 'ガバナンス・戦略等の文章',
   keyOf: narrative => narrative.itemId,
   titleOf: narrative => findSsbjNarrativeItem(narrative.itemId)?.label ?? narrative.itemId,
   idOf: narrative => narrative.itemId,

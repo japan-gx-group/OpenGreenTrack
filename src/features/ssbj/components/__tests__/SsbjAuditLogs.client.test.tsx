@@ -70,7 +70,7 @@ describe('SsbjAuditLogs', () => {
     expect(rows()).toHaveLength(3);
     expect(rows()[0].textContent).toContain('環境 太郎');
     expect(rows()[0].textContent).toContain('承認（レビュー中 → 承認済み） / 承認した版: 版 2');
-    expect(rows()[1].textContent).toContain('四本柱の文章: 監督する機関・責任者');
+    expect(rows()[1].textContent).toContain('ガバナンス・戦略等の文章: 監督する機関・責任者');
     expect(rows()[1].textContent).toContain('開示する内容');
     expect(rows()[2].textContent).toContain('不明な利用者');
   });

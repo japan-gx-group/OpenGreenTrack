@@ -33,7 +33,7 @@ export const SsbjPreviewNarratives = ({
   itemFocus?: SsbjPreviewItemFocus;
 }) => {
   if (narratives === undefined) {
-    return <p className="m-0 text-sm text-text-muted">この版には四本柱の文章が含まれていません。</p>;
+    return <p className="m-0 text-sm text-text-muted">この版にはガバナンス・戦略等の文章が含まれていません。</p>;
   }
 
   return (

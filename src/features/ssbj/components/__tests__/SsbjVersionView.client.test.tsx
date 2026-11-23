@@ -54,7 +54,7 @@ describe('SsbjVersionView', () => {
   it('「表で見る」は保存した項目の表、「JSON」は保存データそのもの', () => {
     rendered = render(<SsbjVersionView version={fictionalVersion} approved={false} viewerOnly={false} />);
     selectTab('表で見る');
-    expect(text()).toContain('四本柱の文章');
+    expect(text()).toContain('ガバナンス・戦略等の文章');
     expect(text()).toContain('項目ID');
     expect(text()).toContain('governance.oversight_body');
     selectTab('JSON');

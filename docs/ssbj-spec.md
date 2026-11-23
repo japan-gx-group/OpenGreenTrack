@@ -34,7 +34,7 @@ SSBJ（サステナビリティ基準委員会）基準に沿った開示レポ�
 |---|---|---|
 | `/ssbj` | レポート一覧・新規作成 | T04 |
 | `/ssbj/[reportId]` | 基本情報の表示・編集、手動保存 | T04 / T06 |
-| `/ssbj/[reportId]/narratives` | 四本柱・補足文章 | T05 |
+| `/ssbj/[reportId]/narratives` | ガバナンス・戦略等の文章（補足を含む） | T05 |
 | `/ssbj/[reportId]/risks` | リスク・機会 | T07 |
 | `/ssbj/[reportId]/ghg` | OGT 候補値の表示・採用 | T08a / T08b |
 | `/ssbj/[reportId]/external` | 外部で算定した排出量 | R2-13 |
@@ -601,7 +601,7 @@ R1 の初回対象（[`ssbj-r1-scope.md`](ssbj-r1-scope.md) §5.1）に含める
 | 対象 | 内容 |
 |---|---|
 | DB | `supabase/migrations/20261001003809_ssbj_narratives.sql`。レポートと項目 ID の組ごとに 1 行の `ssbj_narratives`（RLS・列 GRANT・`bump_ssbj_draft_revision`・保存版セクション `ssbj_snapshot_section__narratives`） |
-| 画面 | `components/SsbjNarratives.client.tsx`（章ごとの項目と、文章以外の画面で答える要求の案内）、`SsbjNarrativeItemCard.client.tsx`（要求・項番号・記載ガイド・記載例、文章の表示と編集）。レポートの内容の入口の先頭に「四本柱の文章」 |
+| 画面 | `components/SsbjNarratives.client.tsx`（章ごとの項目と、文章以外の画面で答える要求の案内）、`SsbjNarrativeItemCard.client.tsx`（要求・項番号・記載ガイド・記載例、文章の表示と編集）。レポートの内容の入口の先頭に「ガバナンス・戦略等の文章」 |
 | コード | `types.ts` の `SsbjNarrative`、`utils/narrative.ts`（正規化・検証、マスターの項目への当てはめ）、`services/narrativeService.ts`、`hooks/useSsbjNarratives.ts` / `useSsbjNarrativeForm.ts`、プレビューの `SsbjPreviewNarratives.tsx`、CSV の `services/versionCsvNarratives.ts` |
 | テスト | `scripts/db/__tests__/ssbjNarrativesPolicy.test.ts`（制約・RLS・GRANT・保存版連携）、正規化・保存・画面・CSV・プレビューの単体テスト |
 | デモデータ | 組織 A に 6 件（入力済み・「していない」の回答・未確認・非該当を含む。残りの項目は未入力の表示）、組織 B に 1 件 |
@@ -795,7 +795,7 @@ T14 の確認事項と、確かめている場所:
   黙って本文を消さないように。警告で取り消すと保存せず、入力した文章を残したまま編集に戻る。【 】が残っているときの案内も、「内部メモに移してから「未確認」で保存する」にする。
 - **右側のプレビューは、作業中の内容（サーバで組み立てたもの）を土台に、その画面の最新の入力を重ねて描く。** 保存はしない。未保存の編集を含むときはそう明示する。
   別の画面で変えた内容は「読み直す」で取り込む。横に広い表の画面（判断）は、右側を最初は閉じておく。
-- **保存していない入力があるまま画面を離れる前に、止めて聞く。** 四本柱の文章の画面では、保存済みと違う入力のあるカードの数を、見出しの横に「未保存 n」で出す。
+- **保存していない入力があるまま画面を離れる前に、止めて聞く。** ガバナンス・戦略等の文章の画面では、保存済みと違う入力のあるカードの数を、見出しの横に「未保存 n」で出す。
   タブを閉じる・再読み込みはブラウザの確認（beforeunload）で、アプリの中の移動（サイドバー・パンくず・「レポート詳細へ戻る」などのリンク）は
   画面の中の確認（「編集に戻る」「破棄して移動」。どの項目が未保存かを名前で出す）で止める。編集を始めただけ・前後の空白だけの違いは未保存にしない。
   判断の画面では「詳細」のダイアログに未保存の入力がある間だけ止める。「保存して移動」は置かない（保存の失敗・競合・保存前の確認を、移動の途中で

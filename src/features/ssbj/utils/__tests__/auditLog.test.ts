@@ -27,13 +27,13 @@ const nameOf = (userId: string | null) => (userId ? names[userId] ?? '不明な�
 describe('ssbjAuditTargetLabel', () => {
   it('文章は項目名、判断は要求 ID と要約、リスク・根拠は名前、保存版は版番号で出す', () => {
     expect(ssbjAuditTargetLabel(log({ targetType: 'narrative', targetId: 'governance.oversight_body' })))
-      .toBe('四本柱の文章: 監督する機関・責任者');
+      .toBe('ガバナンス・戦略等の文章: 監督する機関・責任者');
     expect(ssbjAuditTargetLabel(log({ targetType: 'judgement', targetId: 'REQ-CLM-020' }))).toContain('REQ-CLM-020（');
     expect(ssbjAuditTargetLabel(log({ targetType: 'risk_opportunity', details: { label: '炭素価格の導入' } })))
       .toBe('リスク・機会: 炭素価格の導入');
     expect(ssbjAuditTargetLabel(log({ targetType: 'version', details: { versionNumber: 3 } }))).toBe('保存版: 版 3');
     expect(ssbjAuditTargetLabel(log({ targetType: 'narrative', targetId: 'governance.removed_item' })))
-      .toBe('四本柱の文章: governance.removed_item');
+      .toBe('ガバナンス・戦略等の文章: governance.removed_item');
   });
 });
 
@@ -73,7 +73,7 @@ describe('ssbjAuditExportRows', () => {
     expect(rows[headerIndex]).toEqual(SSBJ_AUDIT_EXPORT_HEADER);
     expect(rows[headerIndex + 1]).toEqual([
       '2025-06-05T01:02:03.000Z', '環境 太郎', SSBJ_AUDIT_ACTION_LABELS.create,
-      '四本柱の文章: 監督する機関・責任者', '', 'governance.oversight_body',
+      'ガバナンス・戦略等の文章: 監督する機関・責任者', '', 'governance.oversight_body',
     ]);
     expect(rows[headerIndex + 2][1]).toBe('システム');
     expect(rows).toContainEqual(['件数', '2']);

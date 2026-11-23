@@ -244,7 +244,7 @@ describe('SsbjPreviewDocument（四本柱の文章）', () => {
     const withoutNarratives = { ...fictionalSnapshot.sections };
     delete withoutNarratives.narratives;
     rendered = render(<SsbjPreviewDocument source={working({ ...fictionalSnapshot, sections: withoutNarratives })} showInternalNotes={false} />);
-    expect(text()).toContain('この版には四本柱の文章が含まれていません');
+    expect(text()).toContain('この版にはガバナンス・戦略等の文章が含まれていません');
   });
 });
 

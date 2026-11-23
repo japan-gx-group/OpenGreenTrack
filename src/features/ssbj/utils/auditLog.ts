@@ -23,7 +23,7 @@ export const SSBJ_AUDIT_ACTION_LABELS: Record<SsbjAuditAction, string> = {
 
 const TARGET_TYPE_LABELS: Record<string, string> = {
   report: 'レポート（基本情報）',
-  narrative: '四本柱の文章',
+  narrative: 'ガバナンス・戦略等の文章',
   judgement: '該当性・重要性の判断',
   risk_opportunity: 'リスク・機会',
   risk_candidate: '業種の候補への判断',
@@ -73,7 +73,7 @@ const COLUMN_LABELS: Record<string, string> = {
 const text = (value: unknown): string | null => (typeof value === 'string' && value !== '' ? value : null);
 const num = (value: unknown): number | null => (typeof value === 'number' ? value : null);
 
-/** 対象の名前（例: 「四本柱の文章: 監督する機関・責任者」）。 */
+/** 対象の名前（例: 「ガバナンス・戦略等の文章: 監督する機関・責任者」）。 */
 export const ssbjAuditTargetLabel = (log: SsbjAuditLog): string => {
   const kind = TARGET_TYPE_LABELS[log.targetType] ?? log.targetType;
   const label = text(log.details.label);

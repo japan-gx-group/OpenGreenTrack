@@ -16,7 +16,7 @@ export type SsbjReportContent = {
 export const SSBJ_REPORT_CONTENTS: readonly SsbjReportContent[] = [
   {
     path: 'narratives',
-    label: '四本柱の文章',
+    label: 'ガバナンス・戦略等の文章',
     tabLabel: '文章',
     description: 'ガバナンス・戦略・リスク管理・指標及び目標の文章を、要求項目と記載ガイドを見ながら書きます。',
   },

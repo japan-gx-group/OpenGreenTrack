@@ -9,7 +9,7 @@ import type { SsbjCsvVersion } from '../services/versionCsv';
 const labels: Record<string, string> = {
   risks_opportunities: 'リスク・機会',
   time_horizons: '時間軸の定義',
-  narratives: '四本柱の文章',
+  narratives: 'ガバナンス・戦略等の文章',
   judgements: '該当性・重要性の判断',
   evidence: '根拠文書',
   ghg: 'GHG排出量（OGT の採用値）',

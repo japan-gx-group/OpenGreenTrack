@@ -104,7 +104,7 @@ export const SsbjNarratives = ({ reportId }: { reportId: string }) => {
   return (
     <div className="page-content gt-scroll relative">
       <PageHeading
-        title="四本柱の文章"
+        title="ガバナンス・戦略等の文章"
         titleAside={dirtyItemIds.length > 0 ? (
           <Badge variant="warning" data-testid="ssbj-narratives-unsaved-count">未保存 {dirtyItemIds.length}</Badge>
         ) : null}
@@ -134,7 +134,7 @@ export const SsbjNarratives = ({ reportId }: { reportId: string }) => {
           </div>
         )}
         {reportLoading || narrativesLoading ? (
-          <Card><LoadingIndicator label="四本柱の文章を読み込んでいます..." /></Card>
+          <Card><LoadingIndicator label="ガバナンス・戦略等の文章を読み込んでいます..." /></Card>
         ) : isNotFound ? (
           <Card className="flex flex-col items-center justify-center py-16 text-center">
             <FileCheck2 aria-hidden="true" size={48} className="mb-3 text-text-muted opacity-50" />
