@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { click, render, type RenderResult } from '@/lib/testing/render';
+import { click, keyDown, render, type RenderResult } from '@/lib/testing/render';
 import {
   FICTIONAL_DRAFT_REVIEW,
   fictionalJudgements,
@@ -348,5 +348,41 @@ describe('SsbjJudgements（承認ロック）', () => {
     expect(rows().some(row => row.textContent?.includes('詳細'))).toBe(false);
     expect(rows().some(row => row.querySelector('select') !== null)).toBe(false);
     expect(document.querySelector('[data-testid="ssbj-role-notice"]')).not.toBeNull();
+  });
+});
+
+describe('SsbjJudgements（詳細のダイアログに保存していない入力があるまま画面を離れる前の確認）', () => {
+  const beforeUnloadPrevented = () => {
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  };
+
+  it('詳細を開いただけでは止めず、入力を変えると止め、閉じると止めない', async () => {
+    rendered = render(<SsbjJudgements reportId={report.id} />);
+    await settle();
+    click(buttonIn(rowOf('REQ-CLM-020'), '詳細'));
+    await settle();
+    expect(beforeUnloadPrevented()).toBe(false);
+    setSelectValue(selectLabeled('重要性'), 'unconfirmed');
+    expect(beforeUnloadPrevented()).toBe(true);
+    keyDown(document.activeElement ?? document.body, 'Escape');
+    await settle();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(beforeUnloadPrevented()).toBe(false);
+  });
+
+  it('アプリの中のリンクで移ろうとすると、未保存の判断を要求項目マスターの内容（要求 ID ではなく）で示して止める', async () => {
+    rendered = render(<SsbjJudgements reportId={report.id} />);
+    await settle();
+    click(buttonIn(rowOf('REQ-CLM-020'), '詳細'));
+    await settle();
+    setSelectValue(selectLabeled('重要性'), 'unconfirmed');
+    const backLink = Array.from(document.querySelectorAll('a')).find(a => a.textContent?.includes('レポート詳細へ戻る'))!;
+    click(backLink);
+    await settle();
+    const dialog = document.querySelector('[data-testid="ssbj-unsaved-changes-dialog"]');
+    expect(dialog?.textContent).toContain('保存していない判断があります');
+    expect(dialog?.textContent).toContain('「スコープ 3 のカテゴリー別の内訳」の判断が保存されていません。');
   });
 });
