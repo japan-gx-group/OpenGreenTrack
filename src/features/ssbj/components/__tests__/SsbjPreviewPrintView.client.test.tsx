@@ -44,7 +44,10 @@ afterEach(() => {
 });
 
 describe('SsbjPreviewPrintView', () => {
-  it('source に保存版の ID があれば、その保存版を読み込んで印刷ダイアログを開く', async () => {
+  const printButton = () =>
+    [...rendered!.container.querySelectorAll('button')].find(item => item.textContent?.includes('印刷 / PDFとして保存'))!;
+
+  it('source に保存版の ID があれば、その保存版を読み込んで印刷ダイアログを開く。開いた直後の自動の印刷は記録しない', async () => {
     mocks.search = `source=${fictionalVersion.id}`;
     rendered = render(<SsbjPreviewPrintView reportId={fictionalVersion.reportId} />);
     await settle();
@@ -54,65 +57,56 @@ describe('SsbjPreviewPrintView', () => {
     expect(rendered.container.textContent).not.toContain('内部メモ（開示しない）');
     await act(async () => { vi.advanceTimersByTime(400); });
     await settle();
-    expect(recordSsbjExport).toHaveBeenCalledWith(fictionalVersion.reportId, 'print', fictionalVersion.id);
     expect(window.print).toHaveBeenCalledTimes(1);
+    // プレビューで選んだ時点で記録済みのため、自動の印刷では履歴を足さない。
+    expect(recordSsbjExport).not.toHaveBeenCalled();
   });
 
-  it('作業中の内容の印刷は、版なし（作業中）として記録してから印刷ダイアログを開く', async () => {
+  it('印刷用のタブでボタンを選び直すと、そのたびに版と一緒に 1 件記録してから印刷する', async () => {
+    mocks.search = `source=${fictionalVersion.id}`;
+    rendered = render(<SsbjPreviewPrintView reportId={fictionalVersion.reportId} />);
+    await settle();
+    await act(async () => { vi.advanceTimersByTime(400); });
+    await settle();
+    await act(async () => { printButton().click(); });
+    await settle();
+    expect(recordSsbjExport).toHaveBeenCalledTimes(1);
+    expect(recordSsbjExport).toHaveBeenCalledWith(fictionalVersion.reportId, 'print', fictionalVersion.id);
+    expect(window.print).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(recordSsbjExport).mock.invocationCallOrder[0])
+      .toBeLessThan(vi.mocked(window.print).mock.invocationCallOrder[1]);
+    await act(async () => { printButton().click(); });
+    await settle();
+    expect(recordSsbjExport).toHaveBeenCalledTimes(2);
+  });
+
+  it('作業中の内容は、版なし（作業中）として記録する', async () => {
     mocks.search = 'source=working';
     rendered = render(<SsbjPreviewPrintView reportId={fictionalVersion.reportId} />);
     await settle();
-    await act(async () => { vi.advanceTimersByTime(400); });
+    await act(async () => { printButton().click(); });
     await settle();
     expect(recordSsbjExport).toHaveBeenCalledWith(fictionalVersion.reportId, 'print', null);
-    expect(vi.mocked(recordSsbjExport).mock.invocationCallOrder[0])
-      .toBeLessThan(vi.mocked(window.print).mock.invocationCallOrder[0]);
   });
 
-  it('記録できなければ印刷ダイアログを開かず、理由を出す。ボタンから印刷し直すと記録してから開く', async () => {
+  it('記録に失敗しても印刷は続け、記録できなかったことを知らせる', async () => {
     vi.mocked(recordSsbjExport).mockRejectedValueOnce(new Error('network'));
     mocks.search = `source=${fictionalVersion.id}`;
     rendered = render(<SsbjPreviewPrintView reportId={fictionalVersion.reportId} />);
     await settle();
-    await act(async () => { vi.advanceTimersByTime(400); });
+    await act(async () => { printButton().click(); });
     await settle();
-    expect(window.print).not.toHaveBeenCalled();
-    expect(rendered.container.querySelector('[role="alert"]')?.textContent).toContain('印刷を中止しました');
-
-    const button = [...rendered.container.querySelectorAll('button')].find(item => item.textContent?.includes('印刷 / PDFとして保存'));
-    await act(async () => { button?.click(); });
-    await settle();
-    expect(recordSsbjExport).toHaveBeenCalledTimes(2);
     expect(window.print).toHaveBeenCalledTimes(1);
-    expect(rendered.container.querySelector('[role="alert"]')).toBeNull();
+    expect(rendered.container.querySelector('[role="alert"]')?.textContent).toContain('印刷・PDF 保存はそのまま続けられます');
   });
 
-  it('ブラウザのメニュー（Ctrl+P）からの印刷も記録する。ボタンからの印刷は二重に記録しない', async () => {
-    // ボタンからの印刷では、ブラウザが印刷のダイアログを開く前に beforeprint を送る。
-    vi.mocked(window.print).mockImplementation(() => { window.dispatchEvent(new Event('beforeprint')); });
+  it('ブラウザのメニュー（Ctrl+P）からの印刷は記録しない', async () => {
     mocks.search = `source=${fictionalVersion.id}`;
     rendered = render(<SsbjPreviewPrintView reportId={fictionalVersion.reportId} />);
     await settle();
-    await act(async () => { vi.advanceTimersByTime(400); });
-    await settle();
-    expect(recordSsbjExport).toHaveBeenCalledTimes(1);
-
     await act(async () => { window.dispatchEvent(new Event('beforeprint')); });
     await settle();
-    expect(recordSsbjExport).toHaveBeenCalledTimes(2);
-    expect(recordSsbjExport).toHaveBeenLastCalledWith(fictionalVersion.reportId, 'print', fictionalVersion.id);
-  });
-
-  it('ブラウザのメニューからの印刷を記録できなければ、印刷し直すよう知らせる', async () => {
-    mocks.search = `source=${fictionalVersion.id}`;
-    rendered = render(<SsbjPreviewPrintView reportId={fictionalVersion.reportId} />);
-    await settle();
-    await act(async () => { vi.advanceTimersByTime(400); });
-    await settle();
-    vi.mocked(recordSsbjExport).mockRejectedValueOnce(new Error('network'));
-    await act(async () => { window.dispatchEvent(new Event('beforeprint')); });
-    await settle();
-    expect(rendered.container.querySelector('[role="alert"]')?.textContent).toContain('記録できませんでした');
+    expect(recordSsbjExport).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -147,7 +141,9 @@ describe('SsbjPreviewPrintView', () => {
     expect(fictionalInternalTexts.filter(value => text.includes(value))).toEqual([]);
     await act(async () => { vi.advanceTimersByTime(400); });
     await settle();
-    expect(recordSsbjExport).toHaveBeenCalledWith(fictionalVersion.reportId, 'print', fictionalVersion.id);
     expect(window.print).toHaveBeenCalledTimes(1);
+    await act(async () => { printButton().click(); });
+    await settle();
+    expect(recordSsbjExport).toHaveBeenCalledWith(fictionalVersion.reportId, 'print', fictionalVersion.id);
   });
 });

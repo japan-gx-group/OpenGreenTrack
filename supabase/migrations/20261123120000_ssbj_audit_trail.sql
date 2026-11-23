@@ -193,7 +193,7 @@ $$;
 
 comment on function record_ssbj_export(uuid, text, uuid) is
   'SSBJ のファイル出力（CSV / Excel / 操作履歴の出力 / 印刷・PDF 保存 / 証跡一式）を操作履歴に記録する。自組織のレポートだけ。'
-  '閲覧者は承認した版の CSV / Excel / 印刷だけ。印刷は印刷のダイアログを開いた時点の記録で、実際に印刷したかは区別できない。'
+  '閲覧者は承認した版の CSV / Excel / 印刷だけ。印刷は「印刷・PDFとして保存」を選んだ時点の記録で、実際に印刷したかは区別できない。'
   'P2031 = レポート・版が無い（見えない）、P2061 = 形式が不正。';
 
 revoke execute on function record_ssbj_export(uuid, text, uuid) from public, anon;
