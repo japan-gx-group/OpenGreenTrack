@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatEmissionsAxisTick, formatEmissionsTooltipValue } from '../chartFormat';
+import { formatEmissionsAxisTick, formatEmissionsTooltipValue } from '../emissionsChartFormat';
 
 describe('formatEmissionsTooltipValue', () => {
   it('KPI カードと同じ要約表示にする（100 以上は整数）', () => {

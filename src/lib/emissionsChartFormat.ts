@@ -1,4 +1,4 @@
-// 排出量推移グラフ（Y軸・ツールチップ）の表示用フォーマッタ。
+// 排出量グラフ（Y軸・ツールチップ）の表示用フォーマッタ。ダッシュボードの排出量推移グラフと拠点詳細の月別グラフで共有する。
 // 表示規則そのものは共通フォーマッタ formatEmissionsNumber に置き、ここではグラフのどこにどちらの精度を使うかだけを決める。
 import { formatEmissionsNumber } from '@/lib/emissionsFormat';
 
@@ -10,8 +10,8 @@ export const formatEmissionsAxisTick = (value: number): string =>
   formatEmissionsNumber(value, { precision: 'detail' });
 
 /**
- * ツールチップの値。KPI カードと同じ要約表示にして、同じ画面で桁がずれないようにする。
- * 前年度ラインは未記録の月を null で持つため、null は「データなし」と明示する。
+ * ツールチップの値。KPI カード・Scope 別カードと同じ要約表示にして、同じ画面で桁がずれないようにする。
+ * ダッシュボードの前年度ラインは未記録の月を null で持つため、null は「データなし」と明示する。
  */
 export const formatEmissionsTooltipValue = (value: unknown): string => {
   if (value === null || value === undefined) {

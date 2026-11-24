@@ -13,6 +13,7 @@ import { LoadingIndicator } from '@/components/ui/PageLoading';
 import { useFiscalYear } from '@/hooks/useFiscalYear';
 import { useAppRefresh } from '@/hooks/useAppRefresh';
 import { formatEmissionsNumber } from '@/lib/emissionsFormat';
+import { formatEmissionsAxisTick, formatEmissionsTooltipValue } from '@/lib/emissionsChartFormat';
 import { getLocationById } from '@/features/locations/services/locationService';
 import { LocationStatusBadge } from '@/features/locations/components/LocationStatusBadge';
 import {
@@ -296,8 +297,16 @@ export const LocationDetail = ({ locationId }: { locationId: string }) => {
                       <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" />
                         <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'var(--color-text-label)' }} />
-                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'var(--color-text-label)' }} width={44} />
+                        <YAxis
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fontSize: 11, fill: 'var(--color-text-label)' }}
+                          // 目盛りにカンマが付くため、「10,000」以上の目盛りが左端で欠けない幅にする。
+                          width={60}
+                          tickFormatter={formatEmissionsAxisTick}
+                        />
                         <Tooltip
+                          formatter={value => formatEmissionsTooltipValue(value)}
                           contentStyle={{
                             backgroundColor: 'var(--color-bg-card)',
                             border: '1px solid var(--color-border)',

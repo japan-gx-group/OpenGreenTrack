@@ -30,7 +30,7 @@ import {
 } from '@/features/targets/components/ReductionTargetCard.client';
 import { KpiCard } from './KpiCard';
 import { TopLocationsTable } from './TopLocationsTable.client';
-import { formatEmissionsAxisTick, formatEmissionsTooltipValue } from '../utils/chartFormat';
+import { formatEmissionsAxisTick, formatEmissionsTooltipValue } from '@/lib/emissionsChartFormat';
 
 // KPI カードのラベル左に付く系列ドット（デザイン正の配色）。
 const SCOPE_DOT: Record<DashboardSummaryItem['title'], string> = {
