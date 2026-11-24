@@ -64,11 +64,10 @@ export const ssbjReportPath = (reportId: string, path: string): string =>
   `/ssbj/${encodeURIComponent(reportId)}${path ? `/${path}` : ''}`;
 
 export const getSsbjReportBreadcrumb = (pathname: string) => {
-  const match = /^\/ssbj\/([^/]+)(?:\/([^/]+)(\/print)?)?\/?$/.exec(pathname);
+  const match = /^\/ssbj\/([^/]+)(?:\/([^/]+))?\/?$/.exec(pathname);
   if (!match) return null;
 
-  const [, segment, tabPath, print] = match;
-  if (print && tabPath !== 'preview') return null;
+  const [, segment, tabPath] = match;
 
   const tab = SSBJ_REPORT_CONTENTS.find(content => content.path === tabPath);
   if (tabPath && !tab) return null;
@@ -76,7 +75,7 @@ export const getSsbjReportBreadcrumb = (pathname: string) => {
   try {
     const reportId = decodeURIComponent(segment);
     if (reportId === 'roles' || reportId === '.' || reportId === '..' || reportId.includes('/')) return null;
-    return { reportId, tab, isPrint: Boolean(print) };
+    return { reportId, tab };
   } catch {
     return null;
   }

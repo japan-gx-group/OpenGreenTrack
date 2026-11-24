@@ -28,6 +28,11 @@ const openTabMenu = (breadcrumb: HTMLElement, currentTab: string) => {
   keyDown(trigger, 'ArrowDown');
 };
 
+const closeTabMenu = async (breadcrumb: HTMLElement) => {
+  keyDown(document.activeElement!, 'Escape');
+  await vi.waitFor(() => expect(document.activeElement).toBe(breadcrumb.querySelector('button')));
+};
+
 const menuLinks = () => Array.from(document.querySelectorAll('a[role="menuitem"]'))
   .map(link => [link.textContent, link.getAttribute('href')]);
 
@@ -39,32 +44,37 @@ afterEach(() => {
 it('同じレポートのタブ・詳細・一覧へ移動でき、移動先のタブ名を表示する', async () => {
   vi.mocked(getMySsbjRole).mockResolvedValue('editor');
   const breadcrumb = mount(`${reportPath}/narratives`);
-  await act(async () => {});
+  expect(getMySsbjRole).not.toHaveBeenCalled();
   expect(Array.from(breadcrumb.querySelectorAll('a'), link => link.getAttribute('href')))
     .toEqual(['/ssbj', reportPath]);
 
   openTabMenu(breadcrumb, '四本柱の文章');
-  const risks = menuLinks().find(([label]) => label === 'リスク・機会');
-  expect(risks).toEqual(['リスク・機会', `${reportPath}/risks`]);
-  keyDown(document.activeElement!, 'Escape');
-  await vi.waitFor(() => expect(document.activeElement).toBe(breadcrumb.querySelector('button')));
-  pathname = risks![1]!;
+  await act(async () => {});
+  const risks = document.querySelector<HTMLAnchorElement>(`a[role="menuitem"][href="${reportPath}/risks"]`)!;
+  expect(risks.textContent).toBe('リスク・機会');
+  window.addEventListener('click', event => {
+    event.preventDefault();
+    pathname = risks.getAttribute('href')!;
+  }, { once: true });
+  const trigger = breadcrumb.querySelector('button');
+  focusElement(risks);
+  keyDown(risks, 'Enter');
   rendered.rerender(<AppTopBar />);
   expect(breadcrumb.querySelector('[aria-current="page"]')?.textContent).toBe('リスク・機会');
+  await vi.waitFor(() => expect(document.activeElement).toBe(trigger));
 });
 
 it('閲覧者のプレビューでは保存履歴と出力だけを移動先として表示する', async () => {
   vi.mocked(getMySsbjRole).mockResolvedValue('viewer');
   const breadcrumb = mount(`${reportPath}/preview`);
-  await act(async () => {});
-
   openTabMenu(breadcrumb, 'プレビュー');
+  await act(async () => {});
   expect(menuLinks()).toEqual([['保存履歴と出力', `${reportPath}/versions`]]);
 });
 
-it('ロール取得中も取得失敗後も作業中の内容へのリンクを出さない', async () => {
+it('同じタブでメニューを開き直すたびにロールを取得し、通信エラーと権限変更を反映する', async () => {
   const { promise, reject } = Promise.withResolvers<never>();
-  vi.mocked(getMySsbjRole).mockReturnValue(promise);
+  vi.mocked(getMySsbjRole).mockReturnValueOnce(promise).mockResolvedValueOnce('editor').mockResolvedValueOnce('viewer');
   const breadcrumb = mount(`${reportPath}/risks`);
 
   openTabMenu(breadcrumb, 'リスク・機会');
@@ -76,31 +86,37 @@ it('ロール取得中も取得失敗後も作業中の内容へのリンクを�
 
   await act(async () => reject(new Error('ロールの取得に失敗しました')));
   expect(menuLinks()).toEqual(viewerLinks);
+
+  await closeTabMenu(breadcrumb);
+  openTabMenu(breadcrumb, 'リスク・機会');
+  expect(menuLinks()).toEqual(viewerLinks);
+  await act(async () => {});
+  expect(menuLinks().slice(0, 2)).toEqual(viewerLinks);
+  expect(menuLinks()).toContainEqual(['四本柱の文章', `${reportPath}/narratives`]);
+
+  await closeTabMenu(breadcrumb);
+  openTabMenu(breadcrumb, 'リスク・機会');
+  expect(menuLinks()).toEqual(viewerLinks);
+  await act(async () => {});
+  expect(menuLinks()).toEqual(viewerLinks);
+  expect(getMySsbjRole).toHaveBeenCalledTimes(3);
 });
 
 it('同じレポートのタブへ移動したときも、移動前のロールを使わずに取得し直す', async () => {
   const { promise, resolve } = Promise.withResolvers<'viewer'>();
   vi.mocked(getMySsbjRole).mockResolvedValueOnce('editor').mockReturnValueOnce(promise);
   const breadcrumb = mount(`${reportPath}/narratives`);
-  await act(async () => {});
   openTabMenu(breadcrumb, '四本柱の文章');
+  await act(async () => {});
   expect(menuLinks()).toContainEqual(['リスク・機会', `${reportPath}/risks`]);
 
   pathname = `${reportPath}/versions`;
   rendered.rerender(<AppTopBar />);
   expect(getMySsbjRole).toHaveBeenCalledTimes(2);
-  openTabMenu(breadcrumb, '保存履歴と出力');
+  expect(breadcrumb.querySelector('[aria-current="page"]')?.textContent).toBe('保存履歴と出力');
   expect(menuLinks()).toEqual([['プレビュー', `${reportPath}/preview`]]);
   await act(async () => resolve('viewer'));
   expect(menuLinks()).toEqual([['プレビュー', `${reportPath}/preview`]]);
-});
-
-it('印刷ビューから同じレポートのプレビューへ戻れる', async () => {
-  vi.mocked(getMySsbjRole).mockResolvedValue('viewer');
-  const breadcrumb = mount(`${reportPath}/preview/print`);
-  await act(async () => {});
-  openTabMenu(breadcrumb, 'プレビュー');
-  expect(menuLinks()).toContainEqual(['プレビュー', `${reportPath}/preview`]);
 });
 
 it('レポート詳細では一覧へのリンクを出し、タブ用のロールは取得しない', () => {
@@ -114,6 +130,7 @@ it.each([
   ['/locations/example', '拠点詳細'],
   ['/ssbj/roles', 'SSBJ の権限'],
   ['/ssbj', 'SSBJレポート'],
+  [`${reportPath}/preview/print`, 'SSBJレポート詳細'],
   [`${reportPath}/unknown`, 'SSBJレポート詳細'],
 ])('%s では通常のパンくずを表示し、SSBJのロールは取得しない', (path, title) => {
   const breadcrumb = mount(path);

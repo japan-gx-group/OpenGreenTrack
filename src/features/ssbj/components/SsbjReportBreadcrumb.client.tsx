@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import {
   DropdownMenu,
@@ -13,13 +13,24 @@ import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
 import { canViewSsbjWorking } from '../utils/memberRole';
 import { getVisibleSsbjReportContents, ssbjReportPath, type SsbjReportContent } from '../utils/reportContents';
 
-const TabMenu = ({ reportId, tab, isPrint }: { reportId: string; tab: SsbjReportContent; isPrint: boolean }) => {
+const TabLinks = ({ reportId, currentPath }: { reportId: string; currentPath: string }) => {
   const { role } = useSsbjMyRole();
   const otherTabs = getVisibleSsbjReportContents(canViewSsbjWorking(role))
-    .filter(content => isPrint || content.path !== tab.path);
+    .filter(content => content.path !== currentPath)
+    .sort((left, right) => Number(right.viewer ?? false) - Number(left.viewer ?? false));
+
+  return otherTabs.map(content => (
+    <DropdownMenuItem key={content.path} asChild>
+      <Link href={ssbjReportPath(reportId, content.path)}>{content.label}</Link>
+    </DropdownMenuItem>
+  ));
+};
+
+const TabMenu = ({ reportId, tab }: { reportId: string; tab: SsbjReportContent }) => {
+  const [open, setOpen] = useState(false);
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger
         className="flex min-w-0 items-center gap-1 rounded-sm font-semibold text-text-heading hover:text-primary"
         aria-current="page"
@@ -28,11 +39,8 @@ const TabMenu = ({ reportId, tab, isPrint }: { reportId: string; tab: SsbjReport
         <ChevronDown size={13} aria-hidden="true" className="shrink-0" />
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-max max-w-(--radix-dropdown-menu-content-available-width)">
-        {otherTabs.map(content => (
-          <DropdownMenuItem key={content.path} asChild>
-            <Link href={ssbjReportPath(reportId, content.path)}>{content.label}</Link>
-          </DropdownMenuItem>
-        ))}
+        {/* 閉じるアニメーション中も、取得済みのロールは次回に持ち越さない。 */}
+        {open && <TabLinks key={ssbjReportPath(reportId, tab.path)} reportId={reportId} currentPath={tab.path} />}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -45,9 +53,7 @@ const ReportCrumb = ({ children }: { children: ReactNode }) => (
   </span>
 );
 
-export const SsbjReportBreadcrumb = ({
-  reportId, tab, isPrint,
-}: { reportId: string; tab?: SsbjReportContent; isPrint: boolean }) => (
+export const SsbjReportBreadcrumb = ({ reportId, tab }: { reportId: string; tab?: SsbjReportContent }) => (
   <>
     <ReportCrumb>
       <Link href="/ssbj" className="truncate hover:text-primary hover:underline">SSBJレポート</Link>
@@ -61,7 +67,7 @@ export const SsbjReportBreadcrumb = ({
     </ReportCrumb>
     {tab && (
       <ReportCrumb>
-        <TabMenu reportId={reportId} tab={tab} isPrint={isPrint} />
+        <TabMenu reportId={reportId} tab={tab} />
       </ReportCrumb>
     )}
   </>

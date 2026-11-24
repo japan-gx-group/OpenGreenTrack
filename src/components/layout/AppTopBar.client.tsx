@@ -23,6 +23,7 @@ export const AppTopBar = () => {
 
   const pageTitle = getPageTitle(pathname);
   const ssbjBreadcrumb = getSsbjReportBreadcrumb(pathname);
+  const organizationName = profile?.organizationName ?? 'OpenGreenTrack';
 
   const handleRefresh = () => {
     setSpin(previous => previous + 360);
@@ -30,15 +31,20 @@ export const AppTopBar = () => {
   };
 
   return (
-    <header className="header">
+    <header className={ssbjBreadcrumb ? 'header h-auto min-h-[53px] md:py-2' : 'header'}>
       <nav
         aria-label="パンくず"
-        className={ssbjBreadcrumb ? 'flex min-w-0 flex-wrap items-center md:flex-nowrap' : 'flex items-center'}
+        className={ssbjBreadcrumb ? 'flex min-w-0 flex-wrap items-center' : 'flex items-center'}
         style={{ columnGap: '9px', rowGap: '4px', fontSize: '13px', color: 'var(--color-text-muted)' }}
       >
-        <span className="truncate">{profile?.organizationName ?? 'OpenGreenTrack'}</span>
+        <span
+          className={ssbjBreadcrumb ? 'max-w-48 truncate' : 'truncate'}
+          title={ssbjBreadcrumb ? organizationName : undefined}
+        >
+          {organizationName}
+        </span>
         {ssbjBreadcrumb ? (
-          <SsbjReportBreadcrumb key={`${pathname}:${refreshToken}`} {...ssbjBreadcrumb} />
+          <SsbjReportBreadcrumb {...ssbjBreadcrumb} />
         ) : pageTitle && (
           <>
             <ChevronRight size={13} aria-hidden="true" style={{ color: 'var(--color-text-subtle)', flex: 'none' }} />
