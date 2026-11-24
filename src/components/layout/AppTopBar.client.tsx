@@ -7,6 +7,8 @@
 import { useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { ChevronRight, RefreshCw } from 'lucide-react';
+import { SsbjReportBreadcrumb } from '@/features/ssbj/components/SsbjReportBreadcrumb.client';
+import { getSsbjReportBreadcrumb } from '@/features/ssbj/utils/reportContents';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAppRefresh } from '@/hooks/useAppRefresh';
 import { getPageTitle } from './navItems';
@@ -20,6 +22,7 @@ export const AppTopBar = () => {
   const [spin, setSpin] = useState(0);
 
   const pageTitle = getPageTitle(pathname);
+  const ssbjBreadcrumb = getSsbjReportBreadcrumb(pathname);
 
   const handleRefresh = () => {
     setSpin(previous => previous + 360);
@@ -28,16 +31,22 @@ export const AppTopBar = () => {
 
   return (
     <header className="header">
-      <div className="flex items-center" style={{ gap: '9px', fontSize: '13px', color: 'var(--color-text-muted)' }}>
+      <nav
+        aria-label="パンくず"
+        className={ssbjBreadcrumb ? 'flex min-w-0 flex-wrap items-center md:flex-nowrap' : 'flex items-center'}
+        style={{ columnGap: '9px', rowGap: '4px', fontSize: '13px', color: 'var(--color-text-muted)' }}
+      >
         <span className="truncate">{profile?.organizationName ?? 'OpenGreenTrack'}</span>
-        {pageTitle && (
+        {ssbjBreadcrumb ? (
+          <SsbjReportBreadcrumb key={`${pathname}:${refreshToken}`} {...ssbjBreadcrumb} />
+        ) : pageTitle && (
           <>
-            <ChevronRight size={13} style={{ color: 'var(--color-text-subtle)', flex: 'none' }} />
-            <span style={{ color: 'var(--color-text-heading)', fontWeight: 600 }}>{pageTitle}</span>
+            <ChevronRight size={13} aria-hidden="true" style={{ color: 'var(--color-text-subtle)', flex: 'none' }} />
+            <span aria-current="page" style={{ color: 'var(--color-text-heading)', fontWeight: 600 }}>{pageTitle}</span>
           </>
         )}
-      </div>
-      <div className="flex items-center" style={{ gap: '4px' }}>
+      </nav>
+      <div className="flex shrink-0 items-center" style={{ gap: '4px' }}>
         <button type="button" className="gt-iconbtn" title="最新データに更新" onClick={handleRefresh}>
           <RefreshCw
             size={17}
