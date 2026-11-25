@@ -6,6 +6,7 @@
 // - 削除: DELETE /api/activity-evidence/[id]（どの記録にも紐づいていないものだけ。Storage のファイルも消す）
 
 import { createClient } from '@/lib/supabase/client';
+import { throwIfWriteForbidden } from '@/lib/writePermission';
 import { IN_CHUNK_SIZE, chunk, fetchAllRows } from '@/lib/supabaseRows';
 import {
   type ConvertibleImageType,
@@ -118,17 +119,24 @@ export const linkEvidence = async (activityRecordId: string, evidenceFileIds: st
     })),
     { onConflict: 'activityRecordId,evidenceFileId', ignoreDuplicates: true },
   );
-  if (error) throw new Error('帳票を記録に紐づけられませんでした');
+  if (error) {
+    // 閲覧者の紐づけは RLS（42501）で失敗する。
+    await throwIfWriteForbidden();
+    throw new Error('帳票を記録に紐づけられませんでした');
+  }
 };
 
 /** 帳票を記録から外す（帳票のファイルは残る） */
 export const unlinkEvidence = async (activityRecordId: string, evidenceFileId: string): Promise<void> => {
-  const { error } = await createClient()
+  const { data, error } = await createClient()
     .from('activity_record_evidence')
     .delete()
     .eq('activityRecordId', activityRecordId)
-    .eq('evidenceFileId', evidenceFileId);
+    .eq('evidenceFileId', evidenceFileId)
+    .select('evidenceFileId');
   if (error) throw new Error('帳票を記録から外せませんでした');
+  // 閲覧者の削除は RLS でエラーにならず 0 件になるため、外せたように見せない。
+  if ((data ?? []).length === 0) await throwIfWriteForbidden();
 };
 
 /** 帳票を開く URL（短い期間だけ有効な署名付き URL） */

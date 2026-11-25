@@ -2,6 +2,7 @@
 // Supabase の activity_records テーブルへ、RLS 前提でブラウザから書き込む。
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
+import { throwIfWriteForbidden } from '@/lib/writePermission';
 import { IN_CHUNK_SIZE, chunk, fetchAllRows } from '@/lib/supabaseRows';
 import type { EnergyType } from '@/features/calculation/types';
 import type { Region } from '@/types/region';
@@ -222,6 +223,8 @@ export const addManualActivityRecord = async (
     if (isDuplicateActivityRecordError(error)) {
       throw new Error(await buildManualDuplicateMessage(supabase, input));
     }
+    // 閲覧者の insert は RLS（42501）で失敗する。
+    await throwIfWriteForbidden();
     throw new Error('活動量レコードの登録に失敗しました');
   }
 
@@ -364,6 +367,8 @@ export const updateManualActivityRecord = async (
     if (isDuplicateActivityRecordError(error)) {
       throw new Error(await buildManualDuplicateMessage(supabase, input));
     }
+    // 閲覧者の更新は RLS で 0 件になる（PGRST116）。
+    await throwIfWriteForbidden();
     throw new Error('活動量レコードの更新に失敗しました');
   }
 
@@ -467,6 +472,8 @@ export const addScope3ActivityRecord = async (
     if (isDuplicateActivityRecordError(error)) {
       throw new Error(await buildScope3DuplicateMessage(supabase, input));
     }
+    // 閲覧者の insert は RLS（42501）で失敗する。
+    await throwIfWriteForbidden();
     throw new Error('Scope3活動量レコードの登録に失敗しました');
   }
 
@@ -539,6 +546,8 @@ export const updateScope3ActivityRecord = async (
     if (isDuplicateActivityRecordError(error)) {
       throw new Error(await buildScope3DuplicateMessage(supabase, input));
     }
+    // 閲覧者の更新は RLS で 0 件になる（PGRST116）。
+    await throwIfWriteForbidden();
     throw new Error('Scope3活動量レコードの更新に失敗しました');
   }
 
@@ -550,8 +559,12 @@ export const updateScope3ActivityRecord = async (
 export const deleteActivityRecord = async (id: string): Promise<void> => {
   const supabase = createClient();
 
-  const { error } = await supabase.from('activity_records').delete().eq('id', id);
+  const { data, error } = await supabase.from('activity_records').delete().eq('id', id).select('id');
   if (error) {
     throw new Error('活動量レコードの削除に失敗しました');
+  }
+  // 閲覧者の削除は RLS でエラーにならず 0 件になるため、削除できたように見せない。
+  if ((data ?? []).length === 0) {
+    await throwIfWriteForbidden();
   }
 };

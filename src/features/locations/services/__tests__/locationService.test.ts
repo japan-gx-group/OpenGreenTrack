@@ -11,7 +11,7 @@ type QueryResult = { data?: unknown; count?: number | null; error: { message: st
 // チェーン（select → eq / gte / lte / order / limit → maybeSingle / await）を thenable で解決する。
 type QueryLog = {
   table: string;
-  action: 'select' | 'delete' | 'insert';
+  action: 'select' | 'delete' | 'insert' | 'update';
   payload?: unknown;
   filters: { op: string; column: string; value: unknown }[];
   head: boolean;
@@ -33,6 +33,10 @@ const makeBuilder = (table: string) => {
     insert: (payload: unknown) => {
       query.action = 'insert';
       query.payload = payload;
+      return builder;
+    },
+    update: () => {
+      query.action = 'update';
       return builder;
     },
     eq: (column: string, value: unknown) => {
@@ -72,7 +76,10 @@ vi.mock('@/lib/supabase/client', () => ({
   }),
 }));
 
-import { addLocations, deleteLocation } from '../locationService';
+const throwIfWriteForbidden = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/writePermission', () => ({ throwIfWriteForbidden }));
+
+import { addLocation, addLocations, deleteLocation, updateLocations } from '../locationService';
 
 const fiscalYears = [
   { id: 'fy-2024', startDate: '2024-04-01', endDate: '2025-03-31' },
@@ -93,7 +100,9 @@ const defaultResolver = (query: QueryLog): QueryResult => {
     return { count: from === '2024-04-01' ? 12 : 0, error: null };
   }
   if (query.table === 'fiscal_years') return { data: fiscalYears, error: null };
-  if (query.table === 'locations') return { data: null, error: null };
+  if (query.table === 'locations') {
+    return { data: query.action === 'delete' ? [{ id: 'loc-1' }] : null, error: null };
+  }
   return { data: null, error: null };
 };
 
@@ -102,6 +111,7 @@ const fetchMock = vi.fn();
 beforeEach(() => {
   queryLog = [];
   resolveQuery = defaultResolver;
+  throwIfWriteForbidden.mockReset();
   fetchMock.mockReset();
   fetchMock.mockResolvedValue({ ok: true, json: async () => ({}) });
   vi.stubGlobal('fetch', fetchMock);
@@ -147,6 +157,20 @@ describe('addLocations', () => {
 });
 
 describe('deleteLocation', () => {
+  it('削除が 0 件（閲覧者は RLS で止められる）なら権限を確かめ、権限の文言で失敗させて集計は更新しない', async () => {
+    resolveQuery = query =>
+      query.table === 'locations' && query.action === 'delete' ? { data: [], error: null } : defaultResolver(query);
+    throwIfWriteForbidden.mockRejectedValue(new Error('閲覧者は閲覧のみ可能です。編集はできません'));
+
+    await expect(deleteLocation('loc-1')).rejects.toThrow('閲覧者は閲覧のみ可能です。編集はできません');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('削除できたときは権限を確かめない', async () => {
+    await deleteLocation('loc-1');
+    expect(throwIfWriteForbidden).not.toHaveBeenCalled();
+  });
+
   it('算定結果がある年度だけ、削除後に集計の再計算を呼ぶ', async () => {
     const result = await deleteLocation('loc-1');
 
@@ -208,5 +232,40 @@ describe('deleteLocation', () => {
 
     await expect(deleteLocation('loc-1')).rejects.toThrow('拠点の削除に失敗しました');
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+// 閲覧者の insert は RLS（42501）で失敗し、update は 0 件（PGRST116）になる。画面を開いたまま閲覧者に
+// 変えられた人にも、行ごとの「失敗」ではなく権限の文言を出す。
+describe('拠点の登録・CSV の一括登録と一括更新が RLS で止められたとき', () => {
+  const FORBIDDEN = '閲覧者は閲覧のみ可能です。編集はできません';
+  const input = { name: '本社', region: '関東', type: 'office' } as unknown as Parameters<typeof addLocation>[0];
+  const rlsDenied = { data: null, error: { code: '42501', message: 'new row violates row-level security policy' } };
+
+  beforeEach(() => {
+    resolveQuery = query =>
+      query.table === 'profiles' ? { data: { organizationId: 'org-1' }, error: null } : rlsDenied;
+    throwIfWriteForbidden.mockRejectedValue(new Error(FORBIDDEN));
+  });
+
+  it('addLocation は権限の文言で失敗する', async () => {
+    await expect(addLocation(input)).rejects.toThrow(FORBIDDEN);
+  });
+
+  it('addLocations は 1 件ずつの入れ直しに進まず、権限の文言で失敗する', async () => {
+    await expect(addLocations([input, input])).rejects.toThrow(FORBIDDEN);
+    expect(queryLog.filter(q => q.table === 'locations' && q.action === 'insert')).toHaveLength(1);
+  });
+
+  it('updateLocations は行ごとの失敗ではなく、権限の文言で失敗する', async () => {
+    resolveQuery = () => ({ data: null, error: { code: 'PGRST116', message: 'no rows' } });
+    await expect(updateLocations([{ id: 'loc-1', location: input }])).rejects.toThrow(FORBIDDEN);
+  });
+
+  it('書ける人の失敗は今までどおり（addLocation は既定の文言、一括は行ごとの失敗）', async () => {
+    throwIfWriteForbidden.mockResolvedValue(undefined);
+    await expect(addLocation(input)).rejects.toThrow('拠点の登録に失敗しました');
+    const result = await addLocations([input]);
+    expect(result.failures).toEqual([{ index: 0, message: 'new row violates row-level security policy' }]);
   });
 });

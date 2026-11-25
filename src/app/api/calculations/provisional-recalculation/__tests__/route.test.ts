@@ -22,6 +22,7 @@ vi.mock('@/features/calculation/services/provisionalRecalculation', () => ({
 }));
 
 import { GET, POST } from '../route';
+import { WRITE_FORBIDDEN_MESSAGE } from '@/lib/writePermission';
 
 const postRequest = (body: unknown) =>
   new Request('http://localhost/api/calculations/provisional-recalculation', {
@@ -32,7 +33,7 @@ const postRequest = (body: unknown) =>
 describe('GET /api/calculations/provisional-recalculation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getCurrentProfile.mockResolvedValue({ organizationId: 'org-id' });
+    mocks.getCurrentProfile.mockResolvedValue({ organizationId: 'org-id', role: 'logger' });
   });
 
   it('未ログインは401', async () => {
@@ -55,6 +56,15 @@ describe('GET /api/calculations/provisional-recalculation', () => {
     await expect(response.json()).resolves.toEqual({ targets });
   });
 
+  it('検出は読み取りだけなので、閲覧者も 200', async () => {
+    mocks.getCurrentProfile.mockResolvedValue({ organizationId: 'org-id', role: 'viewer' });
+    mocks.findProvisionalRecalculationTargets.mockResolvedValue([]);
+
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+  });
+
   it('検出に失敗しても内部エラーの詳細は返さない', async () => {
     mocks.findProvisionalRecalculationTargets.mockRejectedValue(new Error('relation … does not exist'));
 
@@ -70,7 +80,7 @@ describe('GET /api/calculations/provisional-recalculation', () => {
 describe('POST /api/calculations/provisional-recalculation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getCurrentProfile.mockResolvedValue({ organizationId: 'org-id' });
+    mocks.getCurrentProfile.mockResolvedValue({ organizationId: 'org-id', role: 'logger' });
   });
 
   it('未ログインは401', async () => {
@@ -79,6 +89,16 @@ describe('POST /api/calculations/provisional-recalculation', () => {
     const response = await POST(postRequest({ fiscalYearId: 'fy-2026' }));
 
     expect(response.status).toBe(401);
+    expect(mocks.resetProvisionalCalculatedRecords).not.toHaveBeenCalled();
+  });
+
+  it('閲覧者は403で、差し戻さない', async () => {
+    mocks.getCurrentProfile.mockResolvedValue({ organizationId: 'org-id', role: 'viewer' });
+
+    const response = await POST(postRequest({ fiscalYearId: 'fy-2026' }));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: WRITE_FORBIDDEN_MESSAGE });
     expect(mocks.resetProvisionalCalculatedRecords).not.toHaveBeenCalled();
   });
 

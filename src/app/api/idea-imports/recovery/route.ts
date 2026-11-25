@@ -14,8 +14,8 @@
 //   ロールによる絞り込みは行わない（IDEA の取込はメンバーも行う）。
 
 import { NextResponse } from 'next/server';
-import { getCurrentProfile } from '@/lib/currentProfile';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { requireWrite } from '@/lib/authz';
 import { getRequestLogger } from '@/lib/logging/requestLogger';
 import { recoverStaleIdeaImports } from '@/features/factors/services/ideaImportServer';
 
@@ -24,10 +24,11 @@ export const runtime = 'nodejs';
 
 export const POST = async () => {
   const log = await getRequestLogger();
-  const profile = await getCurrentProfile();
-  if (!profile) {
-    return NextResponse.json({ error: 'ログインが必要です' }, { status: 401 });
+  const check = await requireWrite();
+  if (!check.ok) {
+    return NextResponse.json({ error: check.error }, { status: check.status });
   }
+  const { profile } = check;
 
   try {
     // 失敗は recoverStaleIdeaImports の中でログに残すだけで、ここへは投げない（回収できなくても取込状況の表示は続く）。

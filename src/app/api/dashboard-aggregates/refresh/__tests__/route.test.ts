@@ -30,6 +30,7 @@ vi.mock('@/lib/supabase/admin', () => ({
 }));
 
 import { POST } from '../route';
+import { WRITE_FORBIDDEN_MESSAGE } from '@/lib/writePermission';
 
 const postRequest = (body: unknown) =>
   new Request('http://localhost/api/dashboard-aggregates/refresh', {
@@ -40,7 +41,7 @@ const postRequest = (body: unknown) =>
 describe('POST /api/dashboard-aggregates/refresh', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getCurrentProfile.mockResolvedValue({ organizationId: 'org-1' });
+    mocks.getCurrentProfile.mockResolvedValue({ organizationId: 'org-1', role: 'logger' });
     mocks.maybeSingle.mockResolvedValue({
       data: { id: 'fy-1', organizationId: 'org-1' },
       error: null,
@@ -65,6 +66,16 @@ describe('POST /api/dashboard-aggregates/refresh', () => {
     const response = await POST(postRequest({ fiscalYearId: 'fy-1' }));
 
     expect(response.status).toBe(401);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it('閲覧者は 403 を返し RPC を呼ばない', async () => {
+    mocks.getCurrentProfile.mockResolvedValue({ id: 'viewer-1', organizationId: 'org-1', role: 'viewer' });
+
+    const response = await POST(postRequest({ fiscalYearId: 'fy-1' }));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: WRITE_FORBIDDEN_MESSAGE });
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 

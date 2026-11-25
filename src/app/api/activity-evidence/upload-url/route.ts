@@ -9,8 +9,7 @@
 // - 発行の回数を組織ごとに抑え、ついでに取り残された古い一時ファイルを応答の後に消す
 
 import { NextResponse, after } from 'next/server';
-import { getCurrentProfile } from '@/lib/currentProfile';
-import { SIGNED_OUT_MESSAGE } from '@/lib/authz';
+import { requireWrite } from '@/lib/authz';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getRequestLogger } from '@/lib/logging/requestLogger';
 import {
@@ -26,10 +25,11 @@ export const runtime = 'nodejs';
 
 export const POST = async (request: Request) => {
   const log = await getRequestLogger();
-  const profile = await getCurrentProfile();
-  if (!profile) {
-    return NextResponse.json({ error: SIGNED_OUT_MESSAGE }, { status: 401 });
+  const check = await requireWrite();
+  if (!check.ok) {
+    return NextResponse.json({ error: check.error }, { status: check.status });
   }
+  const { profile } = check;
 
   const body: unknown = await request.json().catch(() => null);
   const { fileName, fileSize } = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;

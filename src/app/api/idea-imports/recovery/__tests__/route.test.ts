@@ -25,11 +25,12 @@ vi.mock('@/features/factors/services/ideaImportServer', () => ({
 }));
 
 import { POST } from '../route';
+import { WRITE_FORBIDDEN_MESSAGE } from '@/lib/writePermission';
 
 describe('POST /api/idea-imports/recovery', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getCurrentProfile.mockResolvedValue({ organizationId: 'org-id' });
+    mocks.getCurrentProfile.mockResolvedValue({ organizationId: 'org-id', role: 'logger' });
     mocks.recoverStaleIdeaImports.mockResolvedValue(undefined);
   });
 
@@ -39,6 +40,16 @@ describe('POST /api/idea-imports/recovery', () => {
     const response = await POST();
 
     expect(response.status).toBe(401);
+    expect(mocks.recoverStaleIdeaImports).not.toHaveBeenCalled();
+  });
+
+  it('閲覧者は403で、回収しない', async () => {
+    mocks.getCurrentProfile.mockResolvedValue({ id: 'viewer-1', organizationId: 'org-1', role: 'viewer' });
+
+    const response = await POST();
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: WRITE_FORBIDDEN_MESSAGE });
     expect(mocks.recoverStaleIdeaImports).not.toHaveBeenCalled();
   });
 

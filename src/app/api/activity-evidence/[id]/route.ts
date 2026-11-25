@@ -2,8 +2,7 @@
 // 全メンバーが呼べる（帳票の削除は全員に許す）。service_role で消すため、帳票がログイン中の組織のものかを確かめる。
 
 import { NextResponse } from 'next/server';
-import { getCurrentProfile } from '@/lib/currentProfile';
-import { SIGNED_OUT_MESSAGE } from '@/lib/authz';
+import { requireWrite } from '@/lib/authz';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getRequestLogger } from '@/lib/logging/requestLogger';
 import { deleteEvidenceFile } from '@/features/activity-evidence/services/evidenceServer';
@@ -14,10 +13,11 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const DELETE = async (_request: Request, { params }: { params: Promise<{ id: string }> }) => {
   const log = await getRequestLogger();
-  const profile = await getCurrentProfile();
-  if (!profile) {
-    return NextResponse.json({ error: SIGNED_OUT_MESSAGE }, { status: 401 });
+  const check = await requireWrite();
+  if (!check.ok) {
+    return NextResponse.json({ error: check.error }, { status: check.status });
   }
+  const { profile } = check;
   const { id } = await params;
   if (!UUID.test(id)) {
     return NextResponse.json({ error: '帳票が見つかりません' }, { status: 404 });

@@ -6,8 +6,8 @@
 // （組織スコープは RPC 引数 p_organization_id で強制。ロール判定はしない）。
 
 import { NextResponse } from 'next/server';
-import { getCurrentProfile } from '@/lib/currentProfile';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { requireWrite } from '@/lib/authz';
 import { getRequestLogger } from '@/lib/logging/requestLogger';
 import { IDEA_IMPORT_SQLSTATE } from '@/features/factors/services/ideaImportServer';
 
@@ -19,10 +19,11 @@ export const DELETE = async (
   { params }: { params: Promise<{ id: string }> },
 ) => {
   const log = await getRequestLogger();
-  const profile = await getCurrentProfile();
-  if (!profile) {
-    return NextResponse.json({ error: 'ログインが必要です' }, { status: 401 });
+  const check = await requireWrite();
+  if (!check.ok) {
+    return NextResponse.json({ error: check.error }, { status: check.status });
   }
+  const { profile } = check;
 
   const { id } = await params;
   // UUID 以外は RPC まで行かずに 404 相当で返す（DB エラー経由にしない）。

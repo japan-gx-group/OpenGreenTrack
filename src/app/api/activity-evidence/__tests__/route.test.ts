@@ -29,6 +29,7 @@ vi.mock('@/features/activity-evidence/services/evidenceServer', async (importOri
 
 import { resetEvidenceUploadUrlQuota } from '@/features/activity-evidence/services/evidenceServer';
 import { POST as postFinalize } from '../route';
+import { WRITE_FORBIDDEN_MESSAGE } from '@/lib/writePermission';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
 const UPLOAD_PATH = `${ORG}/activity-evidence/33333333-3333-4333-8333-333333333333`;
@@ -38,12 +39,20 @@ const jsonRequest = (url: string, body: unknown) =>
   new Request(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
 beforeEach(() => {
-  mocks.profile = { id: 'member-1', organizationId: ORG, role: 'member' };
+  mocks.profile = { id: 'member-1', organizationId: ORG, role: 'logger' };
   for (const mock of [mocks.after, mocks.finalize, mocks.createUploadUrl, mocks.removeStale, mocks.deleteFile]) mock.mockReset();
   resetEvidenceUploadUrlQuota();
 });
 
 describe('POST /api/activity-evidence', () => {
+  it('閲覧者は 403 で、帳票を保存しない', async () => {
+    mocks.profile = { id: 'viewer-1', organizationId: ORG, role: 'viewer' };
+    const response = await postFinalize(jsonRequest('http://localhost/x', { storagePath: UPLOAD_PATH, fileName: 'a.pdf' }));
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: WRITE_FORBIDDEN_MESSAGE });
+    expect(mocks.finalize).not.toHaveBeenCalled();
+  });
+
   it('他組織・任意のパスは、Storage に触れる前に 400', async () => {
     const response = await postFinalize(
       jsonRequest('http://localhost/x', { storagePath: UPLOAD_PATH.replace(ORG, '22222222-2222-2222-2222-222222222222'), fileName: 'a.pdf' }),

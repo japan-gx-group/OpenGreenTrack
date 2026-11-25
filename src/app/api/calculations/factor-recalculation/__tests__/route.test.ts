@@ -20,6 +20,7 @@ vi.mock('@/features/calculation/services/factorRecalculation', () => ({
 }));
 
 import { POST } from '../route';
+import { WRITE_FORBIDDEN_MESSAGE } from '@/lib/writePermission';
 
 const postRequest = (body: unknown) =>
   new Request('http://localhost/api/calculations/factor-recalculation', {
@@ -30,7 +31,7 @@ const postRequest = (body: unknown) =>
 describe('POST /api/calculations/factor-recalculation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getCurrentProfile.mockResolvedValue({ organizationId: 'org-id' });
+    mocks.getCurrentProfile.mockResolvedValue({ organizationId: 'org-id', role: 'logger' });
   });
 
   it('未ログインは401', async () => {
@@ -39,6 +40,16 @@ describe('POST /api/calculations/factor-recalculation', () => {
     const response = await POST(postRequest({ factorId: 'factor-1' }));
 
     expect(response.status).toBe(401);
+    expect(mocks.resetRecordsCalculatedWithFactor).not.toHaveBeenCalled();
+  });
+
+  it('閲覧者は403で、差し戻さない', async () => {
+    mocks.getCurrentProfile.mockResolvedValue({ organizationId: 'org-id', role: 'viewer' });
+
+    const response = await POST(postRequest({ factorId: 'factor-1' }));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: WRITE_FORBIDDEN_MESSAGE });
     expect(mocks.resetRecordsCalculatedWithFactor).not.toHaveBeenCalled();
   });
 
