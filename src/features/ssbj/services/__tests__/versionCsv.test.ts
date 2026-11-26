@@ -190,7 +190,7 @@ describe('ssbjVersionToCsvRows（GHG排出量）', () => {
   });
 });
 
-describe('ssbjVersionToCsvRows（四本柱の文章）', () => {
+describe('ssbjVersionToCsvRows（ガバナンス・戦略等の文章）', () => {
   it('マスターの全項目を章ごとに出し、文章の無い項目も未入力の行にする。内部メモは別列、要求 ID は注記', () => {
     const rows = ssbjVersionToCsvRows(fictionalVersion, GENERATED_AT);
     const oversight = rows.find(row => row[1] === 'governance.oversight_body' && row[2] === '監督する機関・責任者');

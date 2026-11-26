@@ -143,7 +143,7 @@ test('1. レポートを作成する（選択中の年度に作られる）', as
   await expect(page.getByText(FISCAL_YEAR_LABEL).first()).toBeVisible();
 });
 
-test('2. 四本柱の文章を書く（開示する文章と内部メモを分けて保存する）', async () => {
+test('2. ガバナンス・戦略等の文章を書く（開示する文章と内部メモを分けて保存する）', async () => {
   await editNarrative('監督する機関・責任者', INPUT.narrative, INPUT.narrativeNote);
   await page.reload();
   const card = page.getByTestId('ssbj-narrative-item').filter({ has: page.getByRole('heading', { name: '監督する機関・責任者', exact: true }) });
@@ -407,7 +407,9 @@ test('13. 同時保存: 読み込んだ後に別の画面で内容が変わっ�
 test('14. 過去の版から新しい版を作る（作業中の内容は変えない）', async () => {
   await page.goto(reportPath('/versions'));
   const item = page.getByRole('listitem').filter({ has: page.getByText('版 1', { exact: true }) });
-  await item.getByRole('button', { name: 'この版から新版を作成' }).click();
+  // 新版の作成と復元は「その他の操作」のメニューに畳んである（メニューは行の外に開く）。
+  await item.getByRole('button', { name: 'その他の操作' }).click();
+  await page.getByRole('menuitem', { name: 'この版から新版を作成' }).click();
   await page.getByRole('dialog').getByRole('button', { name: '新版を作成' }).click();
   await expect(page.getByText('版 3 を作成しました。作業中データは変更されていません。')).toBeVisible();
 

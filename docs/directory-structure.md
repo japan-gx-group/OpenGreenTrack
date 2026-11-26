@@ -99,7 +99,7 @@ src/app/
 | `/ssbj` | `src/app/(app)/ssbj/page.tsx` | SSBJ レポート一覧（試行版） |
 | `/ssbj/roles` | `src/app/(app)/ssbj/roles/page.tsx` | SSBJ の権限（ロールの割り当て） |
 | `/ssbj/[reportId]` | `src/app/(app)/ssbj/[reportId]/page.tsx` | SSBJ レポート詳細（基本情報・保存版の作成） |
-| `/ssbj/[reportId]/narratives` | `src/app/(app)/ssbj/[reportId]/narratives/page.tsx` | SSBJ 四本柱と企業固有の補足の文章 |
+| `/ssbj/[reportId]/narratives` | `src/app/(app)/ssbj/[reportId]/narratives/page.tsx` | SSBJ ガバナンス・戦略等の文章（企業固有の補足を含む） |
 | `/ssbj/[reportId]/risks` | `src/app/(app)/ssbj/[reportId]/risks/page.tsx` | SSBJ リスク・機会 |
 | `/ssbj/[reportId]/judgements` | `src/app/(app)/ssbj/[reportId]/judgements/page.tsx` | SSBJ 該当性・重要性・記載しない理由 |
 | `/ssbj/[reportId]/evidence` | `src/app/(app)/ssbj/[reportId]/evidence/page.tsx` | SSBJ 根拠文書・主管部署 |

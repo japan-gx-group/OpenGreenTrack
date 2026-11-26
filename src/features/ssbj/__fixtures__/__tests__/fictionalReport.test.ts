@@ -52,7 +52,7 @@ describe('識別子', () => {
     }
   });
 
-  it('四本柱の 4 章すべてに項目がある（R1 の仮置きの範囲）', () => {
+  it('4 つの章すべてに項目がある（R1 の仮置きの範囲）', () => {
     const sections = new Set(
       Object.keys(fictionalDisclosableTexts).map(id => sectionOfItem(id as keyof typeof fictionalDisclosableTexts)),
     );
@@ -194,7 +194,7 @@ describe('OGT の採用値一式（T08b）', () => {
   });
 });
 
-describe('四本柱の文章（T05）', () => {
+describe('ガバナンス・戦略等の文章（T05）', () => {
   it('項目 ID は要求項目マスターの項目で、保存版の例に含まれる', () => {
     for (const narrative of fictionalNarratives) {
       expect(findSsbjNarrativeItem(narrative.itemId), narrative.itemId).toBeDefined();

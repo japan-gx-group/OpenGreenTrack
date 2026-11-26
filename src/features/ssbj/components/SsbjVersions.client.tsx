@@ -7,15 +7,21 @@
 // 閲覧者は保存版の行を読めない（RLS）。承認した保存版の開示する内容（内部メモ・内部記録を除いたもの）だけを API から読み、
 // 内容の表示と出力に使う。出力には内部記録の列を入れず、操作履歴・出力履歴（組織の全員の出力）は出さない
 // （docs/authorization-matrix.md §2.3）。
+// 版の行は、内容を見る・CSV・Excel だけを並べ、「この版から新版を作成」「この版の内容に戻す」は「その他の操作」に畳む
+// （強い操作を出力と同じ並びに置かないため。確認のダイアログはこれまでどおり）。版 ID は控えめに出してコピーできるようにする。
+// 「その他の操作」は shadcn の DropdownMenu（R14）。外を押す・Esc で閉じ、矢印キー・Enter で選べる。
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Copy, Download, FileCheck2, FileSpreadsheet, History, RotateCcw } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Copy, Download, FileCheck2, FileSpreadsheet, History, RotateCcw } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { PageHeading } from '@/components/layout/PageHeading';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { LoadingIndicator } from '@/components/ui/PageLoading';
 import { useSsbjReport } from '../hooks/useSsbjReport';
+import { SsbjCopyableId } from './SsbjCopyableId.client';
 import { recordSsbjExport } from '../services/auditLogService';
 import { restoreSsbjReportVersion } from '../services/reportWorkflowClient';
 import {
@@ -25,11 +31,11 @@ import {
   listSsbjVersions,
   recordSsbjCsvGeneration,
   type SsbjCsvHistory,
+  type SsbjStoredVersion,
   type SsbjVersionExportFormat,
   type SsbjVersionSummary,
 } from '../services/versionExportService';
 import { downloadSsbjVersionCsv, ssbjVersionToCsvRows } from '../services/versionCsv';
-import type { SsbjCsvVersion } from '../services/versionCsv';
 import { saveSsbjReportVersion } from '../services/versionClient';
 import { buildSsbjWorkbook, downloadSsbjWorkbook, ssbjVersionSheet, ssbjVersionXlsxFileName } from '../services/versionXlsx';
 import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
@@ -38,7 +44,8 @@ import { isSsbjReportLocked } from '../utils/reportStatus';
 import { SsbjLockedNotice } from './SsbjLockedNotice';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
 import { SsbjVersionActionDialog } from './SsbjVersionActionDialog.client';
-import { SsbjVersionContents } from './SsbjVersionContents';
+import { SsbjVersionCompare } from './SsbjVersionCompare.client';
+import { SsbjVersionView } from './SsbjVersionView.client';
 
 const FORMAT_LABELS: Record<SsbjVersionExportFormat, string> = { csv: 'CSV', xlsx: 'Excel' };
 
@@ -53,7 +60,7 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [busyVersionId, setBusyVersionId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
-  const [selectedVersion, setSelectedVersion] = useState<SsbjCsvVersion | null>(null);
+  const [selectedVersion, setSelectedVersion] = useState<SsbjStoredVersion | null>(null);
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [successMessage, setSuccessMessage] = useState('');
   // 閲覧者は、承認した保存版の開示する内容だけを API から読む。ロールが分かるまでは読まない。
@@ -83,7 +90,7 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
   }, [report, reportId, roleKnown, viewerOnly]);
 
   /** 内容の表示・出力に使う保存版。閲覧者は承認した版（内部記録を除いたもの）だけ。 */
-  const loadVersion = async (versionId: string): Promise<SsbjCsvVersion> => {
+  const loadVersion = async (versionId: string): Promise<SsbjStoredVersion> => {
     if (!viewerOnly) return getSsbjCsvVersion(reportId, versionId);
     const version = await getSsbjApprovedVersion(reportId);
     // 画面を開いた後に差戻し・承認し直しがあれば、表示していた版とは別の版になる。
@@ -209,43 +216,62 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
                   {versions.map(version => (
                     <li key={version.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3">
                       <div className="min-w-0 text-sm">
-                        <p className="m-0 font-semibold">版 {version.versionNumber}</p>
-                        <p className="m-0 text-text-muted">{new Date(version.createdAt).toLocaleString('ja-JP')} · {version.id}</p>
-                        <p className="m-0 text-text-muted">作成者: {version.creatorName}</p>
+                        <p className="m-0 flex flex-wrap items-center gap-2 font-semibold">
+                          <span>版 {version.versionNumber}</span>
+                          {report.review.approvedVersionId === version.id && <Badge variant="success">承認した版</Badge>}
+                        </p>
+                        <p className="m-0 text-text-muted">{new Date(version.createdAt).toLocaleString('ja-JP')} · 作成者: {version.creatorName}</p>
                         {version.sourceVersionId && <p className="m-0 text-text-muted">版 {versions.find(item => item.id === version.sourceVersionId)?.versionNumber ?? version.sourceVersionId} から作成</p>}
                         {version.note && <p className="m-0 text-text-muted">{version.note}</p>}
-                        {report.review.approvedVersionId === version.id && <p className="m-0 font-semibold text-success">承認した版</p>}
+                        <SsbjCopyableId value={version.id} label="版 ID" display={`版 ID ${version.id.slice(0, 8)}…`} />
                       </div>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap items-start gap-2">
                         <Button type="button" size="sm" variant="outline" disabled={busyVersionId !== null} onClick={() => void handleInspect(version.id)}>
                           内容を見る
                         </Button>
-                        {canEdit && (
-                          <Button type="button" size="sm" variant="outline" disabled={busyVersionId !== null} onClick={() => setPending({ kind: 'copy', versionId: version.id })}>
-                            <Copy size={14} /> この版から新版を作成
-                          </Button>
-                        )}
-                        {canEdit && !locked && (
-                          <Button type="button" size="sm" variant="outline" disabled={busyVersionId !== null} onClick={() => setPending({ kind: 'restore', versionId: version.id })}>
-                            <RotateCcw size={14} /> この版の内容に戻す
-                          </Button>
-                        )}
-                        <Button type="button" size="sm" disabled={busyVersionId !== null} onClick={() => void handleDownload(version.id, 'csv')}>
+                        <Button type="button" size="sm" variant="outline" disabled={busyVersionId !== null} onClick={() => void handleDownload(version.id, 'csv')}>
                           <Download size={14} /> {busyVersionId === version.id ? '処理中...' : 'CSVを出力'}
                         </Button>
-                        <Button type="button" size="sm" disabled={busyVersionId !== null} onClick={() => void handleDownload(version.id, 'xlsx')}>
+                        <Button type="button" size="sm" variant="outline" disabled={busyVersionId !== null} onClick={() => void handleDownload(version.id, 'xlsx')}>
                           <FileSpreadsheet size={14} /> {busyVersionId === version.id ? '処理中...' : 'Excelを出力'}
                         </Button>
+                        {canEdit && (
+                          // 項目を選ぶとメニューは閉じ、確認のダイアログを開く（ダイアログの後ろにメニューを開いたまま残さない）。
+                          // メニューを閉じたあとにダイアログが開くので、メニューは modal にしない（閉じたメニューが画面の操作を止めたまま残らないように）。
+                          <DropdownMenu modal={false}>
+                            <DropdownMenuTrigger asChild>
+                              <Button type="button" size="sm" variant="outline" disabled={busyVersionId !== null}>
+                                その他の操作 <ChevronDown size={14} aria-hidden="true" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-max">
+                              <DropdownMenuItem disabled={busyVersionId !== null} onSelect={() => setPending({ kind: 'copy', versionId: version.id })}>
+                                <Copy size={14} /> この版から新版を作成
+                              </DropdownMenuItem>
+                              {!locked && (
+                                <DropdownMenuItem variant="destructive" disabled={busyVersionId !== null} onSelect={() => setPending({ kind: 'restore', versionId: version.id })}>
+                                  <RotateCcw size={14} /> この版の内容に戻す
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
                       </div>
                     </li>
                   ))}
                 </ul>
               )}
             </Card>
+            {/* 版どうしの比較は、作業中の内容を見られるロールだけ（閲覧者が読めるのは承認した版 1 つだけで、比べる相手が無い）。 */}
+            {!viewerOnly && versions.length >= 2 && <SsbjVersionCompare reportId={reportId} versions={versions} />}
             {selectedVersion && (
               <Card>
-                <h2 className="m-0 mb-4 text-base font-bold">版 {selectedVersion.versionNumber} の保存内容</h2>
-                <SsbjVersionContents version={selectedVersion} />
+                <SsbjVersionView
+                  key={selectedVersion.id}
+                  version={selectedVersion}
+                  approved={report.review.approvedVersionId === selectedVersion.id}
+                  viewerOnly={viewerOnly}
+                />
               </Card>
             )}
             {/* 出力履歴は組織の全員の出力を読む（OGT 本体の記録）。閲覧者には出さない。 */}

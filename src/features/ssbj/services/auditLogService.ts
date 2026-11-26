@@ -53,6 +53,42 @@ export const listSsbjAuditLogs = async (reportId: string): Promise<SsbjAuditLog[
 };
 
 /**
+ * レポートの最新の状態の変更 1 件（無ければ null）。差戻しの理由を画面の上に出すかの判定に使う
+ * （状態の変更は必ず 1 件ずつ記録されるので、最新の 1 件が今の状態に至った操作になる）。
+ */
+export const getLatestSsbjStatusChange = async (reportId: string): Promise<SsbjAuditLog | null> => {
+  const { data, error } = await createClient()
+    .from('ssbj_audit_logs')
+    .select(SELECT_COLUMNS)
+    .eq('reportId', reportId)
+    .eq('action', 'status_change')
+    .order('id', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error('差戻しの理由の取得に失敗しました');
+  return data ? toSsbjAuditLog(data as SsbjAuditLogRow) : null;
+};
+
+/**
+ * 最新のレビュー依頼の日時（操作履歴の最後の状態の変更のうち、依頼 submit の記録）。依頼したことが無ければ null。
+ * 保存履歴の「版を比べる」で、既定の比べる版（依頼より前の最後の版）を決めるために使う。閲覧者は操作履歴を読めない（RLS）ので呼ばない。
+ */
+export const getLatestSsbjReviewRequestAt = async (reportId: string): Promise<string | null> => {
+  const { data, error } = await createClient()
+    .from('ssbj_audit_logs')
+    .select('createdAt')
+    .eq('reportId', reportId)
+    .eq('action', 'status_change')
+    .eq('details->>operation', 'submit')
+    .order('id', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error('レビュー依頼の記録の取得に失敗しました');
+  const row = data as { createdAt: string } | null;
+  return row?.createdAt ?? null;
+};
+
+/**
  * ファイルの出力を操作履歴に記録する（出力の直前に呼ぶ）。記録できなければ例外にし、呼び出し元は出力を中止する
  * （誰がいつ出力したかを残せない出力をさせないため）。
  */

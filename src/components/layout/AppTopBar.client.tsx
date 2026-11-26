@@ -1,15 +1,17 @@
 'use client';
 
-// 画面上部の細いバー（デザイン正）。左に「組織名 › 画面名」のパンくず、
+// 画面上部の細いバー（デザイン正）。左に「組織名 › 画面名」のパンくず（SSBJ レポートの中は
+// 「組織名 › SSBJレポート › レポート詳細 › 画面名」。前の段は押して戻れ、狭い画面では末尾だけを出す）、
 // 右に「最新データに更新」とお知らせベルだけを置く。
 // 画面ごとの見出し・年度セレクタは本文側の PageHeading が持つ。
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
+import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ChevronRight, RefreshCw } from 'lucide-react';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAppRefresh } from '@/hooks/useAppRefresh';
-import { getPageTitle } from './navItems';
+import { getBreadcrumbs } from './navItems';
 import { NotificationBell } from './NotificationBell.client';
 
 export const AppTopBar = () => {
@@ -19,7 +21,7 @@ export const AppTopBar = () => {
   // 押した手応えとして 1 回転させるための累積角度。
   const [spin, setSpin] = useState(0);
 
-  const pageTitle = getPageTitle(pathname);
+  const breadcrumbs = getBreadcrumbs(pathname);
 
   const handleRefresh = () => {
     setSpin(previous => previous + 360);
@@ -28,14 +30,30 @@ export const AppTopBar = () => {
 
   return (
     <header className="header">
-      <div className="flex items-center" style={{ gap: '9px', fontSize: '13px', color: 'var(--color-text-muted)' }}>
-        <span className="truncate">{profile?.organizationName ?? 'OpenGreenTrack'}</span>
-        {pageTitle && (
-          <>
-            <ChevronRight size={13} style={{ color: 'var(--color-text-subtle)', flex: 'none' }} />
-            <span style={{ color: 'var(--color-text-heading)', fontWeight: 600 }}>{pageTitle}</span>
-          </>
-        )}
+      {/* 長い画面名でも右のボタンを押し出さないよう、段ごとに縮めて省略する（min-w-0）。 */}
+      <div className="flex min-w-0 flex-1 items-center" style={{ gap: '9px', fontSize: '13px', color: 'var(--color-text-muted)' }}>
+        <span className="min-w-0 truncate">{profile?.organizationName ?? 'OpenGreenTrack'}</span>
+        {breadcrumbs.map((crumb, index) => {
+          const isLast = index === breadcrumbs.length - 1;
+          // 狭い画面では、途中の段を省いて末尾（今の画面）だけを出す。
+          const hideOnNarrow = !isLast ? 'hidden sm:inline-flex' : 'inline-flex';
+          return (
+            <Fragment key={`${crumb.label}-${index}`}>
+              <ChevronRight size={13} className={hideOnNarrow} style={{ color: 'var(--color-text-subtle)', flex: 'none' }} />
+              {crumb.href && !isLast ? (
+                <Link href={crumb.href} className={`${hideOnNarrow} min-w-0 shrink-0 hover:underline`}>{crumb.label}</Link>
+              ) : (
+                <span
+                  aria-current={isLast ? 'page' : undefined}
+                  className={isLast ? 'block min-w-0 truncate' : `${hideOnNarrow} min-w-0 truncate`}
+                  style={{ color: 'var(--color-text-heading)', fontWeight: 600 }}
+                >
+                  {crumb.label}
+                </span>
+              )}
+            </Fragment>
+          );
+        })}
       </div>
       <div className="flex items-center" style={{ gap: '4px' }}>
         <button type="button" className="gt-iconbtn" title="最新データに更新" onClick={handleRefresh}>

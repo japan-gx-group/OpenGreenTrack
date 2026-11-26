@@ -222,8 +222,13 @@ test('5. 指定された承認者が承認すると、その時点の内容で�
 
 test('6. 承認済みでも保存版の出力はでき、Excel の中身は CSV と同じ', async () => {
   await page.goto(reportPath('/versions'));
-  await expect(page.getByRole('button', { name: 'この版の内容に戻す' })).toHaveCount(0);
   const item = page.getByRole('listitem').filter({ hasText: '承認した版' });
+  // 承認済みの間は、「その他の操作」のメニューに復元の項目を出さない。
+  await item.getByRole('button', { name: 'その他の操作' }).click();
+  await expect(page.getByRole('menuitem', { name: 'この版から新版を作成' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'この版の内容に戻す' })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu')).toHaveCount(0);
   const [csvDownload] = await Promise.all([page.waitForEvent('download'), item.getByRole('button', { name: 'CSVを出力' }).click()]);
   const csv = parseSsbjCsv(await readFile((await csvDownload.path())!));
   const [xlsxDownload] = await Promise.all([page.waitForEvent('download'), item.getByRole('button', { name: 'Excelを出力' }).click()]);
@@ -281,8 +286,10 @@ test('7. 理由を書かない（空白だけも含む）と差戻せない。�
   await expect(card).toContainText(CHANGED_TEXT);
 
   await page.goto(reportPath('/versions'));
-  await page.getByRole('listitem').filter({ hasText: '承認時の保存版' })
-    .getByRole('button', { name: 'この版の内容に戻す' }).click();
+  // 新版の作成と復元は「その他の操作」のメニューに畳んである（メニューは行の外に開く）。
+  const approvedItem = page.getByRole('listitem').filter({ hasText: '承認時の保存版' });
+  await approvedItem.getByRole('button', { name: 'その他の操作' }).click();
+  await page.getByRole('menuitem', { name: 'この版の内容に戻す' }).click();
   await expect(page.getByRole('dialog')).toContainText('自動で残します');
   await page.getByRole('dialog').getByRole('button', { name: 'この版の内容に戻す' }).click();
   await expect(page.getByRole('status').filter({ hasText: '版 1 の内容に戻しました' })).toContainText('版 2 として保存しています');

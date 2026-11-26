@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React, { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { click, render, type RenderResult } from '@/lib/testing/render';
+import { click, keyDown, render, type RenderResult } from '@/lib/testing/render';
 import {
   FICTIONAL_DRAFT_REVIEW,
   fictionalVersion,
@@ -57,6 +57,18 @@ const buttonWith = (root: ParentNode, text: string) => {
   const button = Array.from(root.querySelectorAll('button')).find(item => item.textContent?.includes(text));
   if (!button) throw new Error(`ボタン「${text}」がありません`);
   return button;
+};
+// 「その他の操作」（shadcn の DropdownMenu）。メニューは開いている間だけ body の直下に描かれる。
+const menu = () => document.querySelector<HTMLElement>('[role="menu"]');
+const openMoreMenu = (root: ParentNode) => { keyDown(buttonWith(root, 'その他の操作'), 'Enter'); };
+const menuItem = (text: string) => {
+  const item = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(element => element.textContent?.includes(text));
+  if (!item) throw new Error(`メニューの項目「${text}」がありません`);
+  return item;
+};
+// jsdom は PointerEvent が無いので、同名のイベントを MouseEvent で発火する（メニューの外を押した扱い）。
+const pointerDownOutside = () => {
+  act(() => { document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 })); });
 };
 
 const renderScreen = async (review: SsbjReportReview = FICTIONAL_DRAFT_REVIEW) => {
@@ -163,7 +175,9 @@ describe('SsbjVersions', () => {
       restoredVersionNumber: 1, backupVersionId: 'backup-1', backupVersionNumber: 4, draftRevision: 9,
     });
     const { container } = await renderScreen();
-    await act(async () => { click(buttonWith(container, 'この版の内容に戻す')); await Promise.resolve(); });
+    openMoreMenu(container);
+    await act(async () => { click(menuItem('この版の内容に戻す')); await Promise.resolve(); });
+    expect(menu()).toBeNull();
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('自動で残します');
     // 保存版に含めない選択式テンプレートの選択は残らないことも伝える（「失われるものは無い」と読ませない）。
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('選択式テンプレートで選んだ内容は保存版に含めないため、戻すと消えます');
@@ -179,10 +193,54 @@ describe('SsbjVersions', () => {
       ...FICTIONAL_DRAFT_REVIEW, status: 'approved', approverUserId: 'user-1', approvedAt: '2025-06-05T00:00:00.000Z',
       approvedByUserId: 'user-1', approvedVersionId: fictionalVersion.id,
     });
-    expect(container.textContent).not.toContain('この版の内容に戻す');
-    expect(container.textContent).toContain('この版から新版を作成');
+    openMoreMenu(container);
+    expect(menu()?.textContent).not.toContain('この版の内容に戻す');
+    expect(menu()?.textContent).toContain('この版から新版を作成');
     expect(container.textContent).toContain('承認した版');
     expect(container.querySelector('[data-testid="ssbj-locked-notice"]')).not.toBeNull();
+  });
+
+  it('版の行は、内容を見る・出力だけを並べ、新版の作成と復元は「その他の操作」に畳む。版 ID は控えめに出す', async () => {
+    const { container } = await renderScreen();
+    const row = container.querySelector('li')!;
+    const trigger = buttonWith(row, 'その他の操作');
+    expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
+    expect(row.textContent).not.toContain('この版から新版を作成');
+    expect(row.textContent).not.toContain('この版の内容に戻す');
+    openMoreMenu(row);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(menu()?.textContent).toContain('この版から新版を作成');
+    expect(menu()?.textContent).toContain('この版の内容に戻す');
+    expect(menu()?.textContent).not.toContain('CSVを出力');
+    expect(row.textContent).toContain(`版 ID ${fictionalVersion.id.slice(0, 8)}…`);
+    expect(row.querySelector('button[aria-label="版 ID をコピー"]')).not.toBeNull();
+  });
+
+  it('「その他の操作」は Esc・メニューの外を押すと閉じ、キーボードで項目を選べる（選ぶと閉じて確認を開く）', async () => {
+    const { container } = await renderScreen();
+    const trigger = buttonWith(container, 'その他の操作');
+
+    openMoreMenu(container);
+    expect(menu()).not.toBeNull();
+    keyDown(menu()!, 'Escape');
+    expect(menu()).toBeNull();
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+
+    openMoreMenu(container);
+    expect(menu()).not.toBeNull();
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    pointerDownOutside();
+    expect(menu()).toBeNull();
+
+    // 下矢印で開くと先頭の項目に入り、もう一度下矢印で次の項目へ移って Enter で選ぶ。
+    keyDown(trigger, 'ArrowDown');
+    expect(document.activeElement?.textContent).toContain('この版から新版を作成');
+    // 項目の間を移るフォーカスは、Radix がタイマーで移すので 1 拍待つ。
+    await act(async () => { keyDown(document.activeElement!, 'ArrowDown'); await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect(document.activeElement?.textContent).toContain('この版の内容に戻す');
+    await act(async () => { keyDown(document.activeElement!, 'Enter'); await Promise.resolve(); });
+    expect(menu()).toBeNull();
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('自動で残します');
   });
 
   it('SSBJ のロールが入力担当か管理者でなければ、新版の作成と復元を出さない（内容の確認と出力はできる）', async () => {
@@ -194,12 +252,18 @@ describe('SsbjVersions', () => {
     expect(container.textContent).toContain('CSVを出力');
   });
 
-  it('保存版の内容と内部メモを表示する', async () => {
+  it('保存版の内容をレポートの形で表示し、内部メモは選んだときだけ表示する', async () => {
     const { container } = await renderScreen();
     const button = Array.from(container.querySelectorAll('button')).find(item => item.textContent?.includes('内容を見る'));
     if (!button) throw new Error('内容表示ボタンがありません');
     await act(async () => { click(button); await Promise.resolve(); });
     expect(container.textContent).toContain(`版 ${fictionalVersion.versionNumber} の保存内容`);
+    expect(container.querySelector('[data-testid="ssbj-preview-source"]')?.textContent).toContain('保存版 第1版');
+    expect(container.textContent).not.toContain('内部メモ（開示しない）');
+    expect(container.textContent).not.toContain('影響額の試算は経営企画部で実施中（架空）。');
+    const toggle = container.querySelector('button[role="checkbox"]');
+    if (!toggle) throw new Error('内部メモの切替がありません');
+    await act(async () => { click(toggle); await Promise.resolve(); });
     expect(container.textContent).toContain('内部メモ（開示しない）');
     expect(container.textContent).toContain('影響額の試算は経営企画部で実施中（架空）。');
   });
@@ -218,9 +282,8 @@ describe('SsbjVersions', () => {
   it('確認後に元版を指定して新版を作り、作業中データを変更しないと表示する', async () => {
     vi.mocked(saveSsbjReportVersion).mockResolvedValue({ id: fictionalVersion.id, versionNumber: 2 });
     const { container } = await renderScreen();
-    const button = Array.from(container.querySelectorAll('button')).find(item => item.textContent?.includes('この版から新版を作成'));
-    if (!button) throw new Error('新版作成ボタンがありません');
-    await act(async () => { click(button); await Promise.resolve(); });
+    openMoreMenu(container);
+    await act(async () => { click(menuItem('この版から新版を作成')); await Promise.resolve(); });
     const confirm = Array.from(document.querySelectorAll('button')).find(item => item.textContent === '新版を作成');
     if (!confirm) throw new Error('確認ボタンがありません');
     await act(async () => { click(confirm); await Promise.resolve(); });

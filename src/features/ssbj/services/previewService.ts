@@ -4,6 +4,7 @@
 
 import { createClient } from '@/lib/supabase/client';
 import type { SsbjReportSnapshotV1 } from '../types';
+import { ssbjApiErrorMessage } from '../utils/apiError';
 
 /** プレビューに出す内容。作業中か保存版かを必ず区別して持つ（画面で取り違えないため）。 */
 export type SsbjPreviewSource =
@@ -17,7 +18,7 @@ export const getSsbjWorkingPreview = async (reportId: string): Promise<SsbjPrevi
     | { draftRevision?: number; snapshot?: SsbjReportSnapshotV1; error?: string }
     | null;
   if (!response.ok || typeof body?.draftRevision !== 'number' || !body.snapshot) {
-    throw new Error(body?.error ?? 'プレビューの取得に失敗しました');
+    throw new Error(response.ok ? 'プレビューの取得に失敗しました' : ssbjApiErrorMessage(response.status, body, 'プレビューの取得に失敗しました'));
   }
   return { kind: 'working', draftRevision: body.draftRevision, snapshot: body.snapshot };
 };

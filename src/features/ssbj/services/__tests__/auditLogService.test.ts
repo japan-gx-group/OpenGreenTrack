@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // 操作履歴の DB 行 ⇔ 画面の型の変換と、出力の記録の失敗の扱いを検証する（RLS・書き換え拒否はマイグレーション側で確認する）。
-const mocks = vi.hoisted(() => ({ rpc: vi.fn() }));
-vi.mock('@/lib/supabase/client', () => ({ createClient: () => ({ rpc: mocks.rpc }) }));
+const mocks = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn() }));
+vi.mock('@/lib/supabase/client', () => ({ createClient: () => ({ rpc: mocks.rpc, from: mocks.from }) }));
 
-import { recordSsbjExport, toSsbjAuditLog } from '../auditLogService';
+import { getLatestSsbjReviewRequestAt, getLatestSsbjStatusChange, recordSsbjExport, toSsbjAuditLog } from '../auditLogService';
 
 const row = {
   id: 7, reportId: 'report-1', actorUserId: 'user-1', action: 'status_change', targetType: 'report',
@@ -36,5 +36,67 @@ describe('recordSsbjExport', () => {
   it('記録できなければ例外にする（呼び出し元は出力を中止する）', async () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { code: 'P2031', message: 'not found' } });
     await expect(recordSsbjExport('report-1', 'audit_csv')).rejects.toThrow('出力を中止しました');
+  });
+});
+
+describe('getLatestSsbjStatusChange', () => {
+  it('レポートの状態の変更を新しい順に 1 件だけ読み、行を操作履歴に戻す', async () => {
+    const query = {
+      select: vi.fn(() => query), eq: vi.fn(() => query), order: vi.fn(() => query), limit: vi.fn(() => query),
+      maybeSingle: vi.fn(async () => ({ data: row, error: null })),
+    };
+    mocks.from.mockReturnValue(query);
+    await expect(getLatestSsbjStatusChange('report-1')).resolves.toEqual({ ...row, action: 'status_change' });
+    expect(mocks.from).toHaveBeenCalledWith('ssbj_audit_logs');
+    expect(query.eq).toHaveBeenCalledWith('reportId', 'report-1');
+    expect(query.eq).toHaveBeenCalledWith('action', 'status_change');
+    expect(query.order).toHaveBeenCalledWith('id', { ascending: false });
+    expect(query.limit).toHaveBeenCalledWith(1);
+  });
+
+  it('記録が無ければ null、読めなければ例外にする', async () => {
+    const query = {
+      select: vi.fn(() => query), eq: vi.fn(() => query), order: vi.fn(() => query), limit: vi.fn(() => query),
+      maybeSingle: vi.fn(async () => ({ data: null, error: null })),
+    };
+    mocks.from.mockReturnValue(query);
+    await expect(getLatestSsbjStatusChange('report-1')).resolves.toBeNull();
+    query.maybeSingle.mockResolvedValueOnce({ data: null, error: { message: 'denied' } } as never);
+    await expect(getLatestSsbjStatusChange('report-1')).rejects.toThrow('差戻しの理由の取得に失敗しました');
+  });
+});
+
+describe('getLatestSsbjReviewRequestAt', () => {
+  /** select からの呼び出しを記録し、最後に result を返す問い合わせの代わり。 */
+  const query = (result: { data: unknown; error: unknown }) => {
+    const calls: [string, ...unknown[]][] = [];
+    const builder: Record<string, unknown> = {};
+    for (const name of ['select', 'eq', 'order', 'limit']) {
+      builder[name] = (...args: unknown[]) => { calls.push([name, ...args]); return builder; };
+    }
+    builder.maybeSingle = async () => result;
+    mocks.from.mockReturnValue(builder);
+    return calls;
+  };
+
+  it('レポートの操作履歴から、最後のレビュー依頼（状態の変更の submit）の日時を読む', async () => {
+    const calls = query({ data: { createdAt: '2025-11-15T08:40:00.000Z' }, error: null });
+    await expect(getLatestSsbjReviewRequestAt('report-1')).resolves.toBe('2025-11-15T08:40:00.000Z');
+    expect(mocks.from).toHaveBeenCalledWith('ssbj_audit_logs');
+    expect(calls).toEqual([
+      ['select', 'createdAt'],
+      ['eq', 'reportId', 'report-1'],
+      ['eq', 'action', 'status_change'],
+      ['eq', 'details->>operation', 'submit'],
+      ['order', 'id', { ascending: false }],
+      ['limit', 1],
+    ]);
+  });
+
+  it('依頼したことが無ければ null、読めなければ例外にする', async () => {
+    query({ data: null, error: null });
+    await expect(getLatestSsbjReviewRequestAt('report-1')).resolves.toBeNull();
+    query({ data: null, error: { message: 'denied' } });
+    await expect(getLatestSsbjReviewRequestAt('report-1')).rejects.toThrow('レビュー依頼の記録の取得に失敗しました');
   });
 });

@@ -6,6 +6,8 @@ import { createClient } from '@/lib/supabase/client';
 import type { OgtAdoptedValue, OgtSupplierReference, SsbjGhgAdoption } from '../types';
 import { ssbjWriteErrorMessage } from '../utils/writeError';
 import { throwIfSsbjEditForbidden } from './memberRoleService';
+import { notifySsbjWorkingChanged } from '../utils/workingChange';
+import { ssbjApiErrorMessage } from '../utils/apiError';
 
 type SsbjOgtAdoptionRow = {
   adoptedValues: OgtAdoptedValue[];
@@ -44,8 +46,9 @@ export const adoptOgtCandidates = async (reportId: string, expectedFingerprint: 
   });
   const body = (await response.json().catch(() => null)) as { adoptedAt?: string; error?: string } | null;
   if (!response.ok || typeof body?.adoptedAt !== 'string') {
-    throw new Error(body?.error ?? 'OGT の値の採用に失敗しました');
+    throw new Error(response.ok ? 'OGT の値の採用に失敗しました' : ssbjApiErrorMessage(response.status, body, 'OGT の値の採用に失敗しました'));
   }
+  notifySsbjWorkingChanged(reportId);
   return { adoptedAt: body.adoptedAt };
 };
 
@@ -59,4 +62,5 @@ export const clearOgtAdoption = async (reportId: string): Promise<void> => {
     await throwIfSsbjEditForbidden();
     throw new Error('採用済みの値が見つかりません。画面を開き直してください');
   }
+  notifySsbjWorkingChanged(reportId);
 };

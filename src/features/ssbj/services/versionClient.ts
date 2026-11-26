@@ -3,6 +3,8 @@
 // 画面から直接 ssbj_report_versions へ書かないのは、スナップショットの中身（特に OGT 由来の値）を
 // クライアントが偽造できないようにするため（docs/ssbj-spec.md §8）。
 
+import { ssbjApiErrorMessage } from '../utils/apiError';
+
 export interface SavedSsbjReportVersion {
   id: string;
   versionNumber: number;
@@ -27,7 +29,7 @@ export const saveSsbjReportVersion = async (
     | { id?: string; versionNumber?: number; error?: string }
     | null;
   if (!response.ok || typeof body?.id !== 'string' || typeof body.versionNumber !== 'number') {
-    throw new Error(body?.error ?? '保存版の作成に失敗しました');
+    throw new Error(response.ok ? '保存版の作成に失敗しました' : ssbjApiErrorMessage(response.status, body, '保存版の作成に失敗しました'));
   }
   return { id: body.id, versionNumber: body.versionNumber };
 };
