@@ -13,7 +13,7 @@ import type { Scope2Basis } from '@/features/calculation/types';
 // 識別子
 // ---------------------------------------------------------------------------
 
-/** 章（四本柱）の ID。画面・DB・保存版・CSV で同じ値を使う。 */
+/** 章（ガバナンス・戦略・リスク管理・指標及び目標）の ID。画面・DB・保存版・CSV で同じ値を使う。 */
 export const SSBJ_SECTION_IDS = [
   'governance',
   'strategy',
@@ -85,7 +85,7 @@ export type SsbjParagraphReference = {
 export type SsbjRequirementPriority = 'core' | 'basic';
 
 /**
- * 要求にどこで答えるか。narrative は四本柱の文章（T05）の項目、それ以外は既存の機能か固定の注記。
+ * 要求にどこで答えるか。narrative はガバナンス・戦略等の文章（T05）の項目、それ以外は既存の機能か固定の注記。
  * notice は利用者の入力ではなく、プレビュー・出力の注記で扱うもの（OGT が対応していない要求など）。
  */
 export type SsbjRequirementInputTarget =
@@ -112,7 +112,7 @@ export type SsbjRequirement = {
 };
 
 /**
- * 四本柱の文章（T05）の項目。1 つの項目で複数の要求に答えられる（一般開示基準と気候関連開示基準の
+ * ガバナンス・戦略等の文章（T05）の項目。1 つの項目で複数の要求に答えられる（一般開示基準と気候関連開示基準の
  * 共通記載を二重に入力しないため）。company_supplement は要求に対応しない企業固有の補足。
  */
 export type SsbjNarrativeItem = {
@@ -164,7 +164,7 @@ export type SsbjDisclosableText = {
 };
 
 /**
- * 四本柱・企業固有の補足の文章 1 項目（T05。ssbj_narratives の 1 行）。項目 ID は要求項目マスター
+ * ガバナンス・戦略等の文章（企業固有の補足を含む）1 項目（T05。ssbj_narratives の 1 行）。項目 ID は要求項目マスター
  * （utils/requirementMaster.ts）の文章の項目。1 つの項目で複数の要求に答える。
  */
 export type SsbjNarrative = {
