@@ -34,6 +34,8 @@ describe('toSsbjReviewNotification', () => {
   it('自分が依頼したレポートが、ほかの人の操作で作成中に戻ったら知らせる（自分で取り下げたときは出さない）', () => {
     const reopened = row({ status: 'draft', approverUserId: OTHER, reviewRequestedByUserId: ME, statusChangedByUserId: OTHER });
     expect(toSsbjReviewNotification(reopened, ME, NOW)?.title).toBe('SSBJ レポートのレビューの依頼が作成中に戻りました');
+    // 承認後に管理者が作成中に戻した場合も同じ状態の変更なので、それも含むことが分かる文にする。
+    expect(toSsbjReviewNotification(reopened, ME, NOW)?.description).toContain('承認後に管理者が作成中に戻した場合も含みます');
     expect(toSsbjReviewNotification({ ...reopened, statusChangedByUserId: ME }, ME, NOW)).toBeNull();
   });
 
