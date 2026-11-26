@@ -281,6 +281,23 @@ describe('SsbjJudgements', () => {
     expect(explanation.value).toBe('経過措置を適用している。');
   });
 
+  it('説明を書いてから「非該当」にしても前の説明を隠さず、続けて書いても前の説明が残る', async () => {
+    rendered = render(<SsbjJudgements reportId={report.id} />);
+    await settle();
+    click(buttonIn(rowOf('REQ-CLM-026'), '詳細'));
+    await flush();
+    const explanation = () => dialog().querySelector<HTMLTextAreaElement>('textarea[aria-label="開示する説明"]')!;
+    setTextareaValue(explanation(), '経過措置を適用している。');
+    setSelectValue(selectLabeled('開示する説明の状態'), 'not_applicable');
+    expect(explanation().value).toBe('経過措置を適用している。');
+    expect(dialog().textContent).toContain('状態が「非該当」のため、この説明は保存されません。');
+    // 欄に出ている前の説明の後ろに 1 文字打つ（前の説明は置き換わらない）。
+    setTextareaValue(explanation(), '経過措置を適用している。追');
+    expect(explanation().value).toBe('経過措置を適用している。追');
+    expect(selectLabeled('開示する説明の状態').value).toBe('answered');
+    expect(dialog().textContent).not.toContain('この説明は保存されません');
+  });
+
   it('詳細の「保存して次の未判断・要確認へ」で、表示中の次の要求を開く', async () => {
     rendered = render(<SsbjJudgements reportId={report.id} />);
     await settle();

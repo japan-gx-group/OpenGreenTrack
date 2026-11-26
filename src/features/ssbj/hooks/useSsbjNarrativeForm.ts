@@ -39,6 +39,7 @@ export interface SsbjNarrativeFormController {
   /**
    * 選択式テンプレートの下書きを本文に入れる（状態は「入力済み」にする）。
    * 本文が空なら下書きにし、書いてあれば後ろに足す（自由入力の本文を上書きしない）。
+   * 「未確認」「非該当」にしていても本文の欄には前の本文が出ているので、状態にかかわらず後ろに足す。
    */
   insertDraft: (draft: string) => void;
   /** 入力エラー・保存エラー（画面にそのまま並べる）。 */
@@ -138,7 +139,7 @@ export function useSsbjNarrativeForm(
     setInternalNote: internalNote => setValues(prev => ({ ...prev, internalNote })),
     setTemplateInput: templateInput => setValues(prev => ({ ...prev, templateInput })),
     insertDraft: draft => {
-      const current = values.state === 'answered' ? values.text.trimEnd() : '';
+      const current = values.text.trimEnd();
       const text = current === '' ? draft : `${current}\n\n${draft}`;
       setValues(prev => ({ ...prev, state: 'answered', text }));
       setInsertedDraftText(text);

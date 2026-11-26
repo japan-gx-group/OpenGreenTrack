@@ -658,6 +658,41 @@ describe('SsbjNarratives（書き始めれば入力済み・保存して次へ�
     expect(card.querySelector('select')?.value).toBe('unanswered');
   });
 
+  it('本文のある項目を「非該当」にしても前の本文を隠さず、1 文字打っても前の本文が残る', async () => {
+    vi.mocked(saveSsbjNarrative).mockImplementation(async (_report, itemId, text) => ({ itemId, text }));
+    rendered = render(<SsbjNarratives reportId={report.id} />);
+    await settle();
+    const card = cardOf('監督する機関・責任者');
+    const saved = '当社では、取締役会が気候関連のリスク及び機会を監督している。';
+    click(buttonIn(card, '編集'));
+    setSelectValue(card.querySelector('select')!, 'not_applicable');
+    expect(textareaIn(card).value).toBe(saved);
+    expect(card.querySelector('[data-testid="ssbj-narrative-text-not-saved"]')?.textContent)
+      .toContain('状態が「非該当」のため、この本文は保存されません。');
+    // 欄に出ている前の本文の後ろに 1 文字打つ（前の本文は置き換わらない）。
+    setTextareaValue(textareaIn(card), `${saved}あ`);
+    expect(textareaIn(card).value).toBe(`${saved}あ`);
+    expect(card.querySelector('select')?.value).toBe('answered');
+    expect(card.querySelector('[data-testid="ssbj-narrative-text-not-saved"]')).toBeNull();
+    await act(async () => { click(buttonIn(card, '保存')); });
+    await settle();
+    expect(saveSsbjNarrative).toHaveBeenCalledWith(expect.anything(), 'governance.oversight_body',
+      expect.objectContaining({ disclosure: { state: 'answered', value: `${saved}あ` } }), null);
+  });
+
+  it('「非該当」にしても、下書きは前の本文の後ろに足す（前の本文を置き換えない）', async () => {
+    rendered = render(<SsbjNarratives reportId={report.id} />);
+    await settle();
+    const card = cardOf('監督する機関・責任者');
+    const saved = '当社では、取締役会が気候関連のリスク及び機会を監督している。';
+    click(buttonIn(card, '編集'));
+    setSelectValue(card.querySelector('select')!, 'not_applicable');
+    click(buttonIn(card, '選択肢から下書きを作る'));
+    click(buttonIn(card, '下書きを本文の後ろに追加'));
+    expect(textareaIn(card).value.startsWith(`${saved}\n\n`)).toBe(true);
+    expect(card.querySelector('select')?.value).toBe('answered');
+  });
+
   it('未確認の項目でも書き始めると入力済みになり、そのまま保存できる', async () => {
     vi.mocked(saveSsbjNarrative).mockImplementation(async (_report, itemId, text) => ({ itemId, text }));
     rendered = render(<SsbjNarratives reportId={report.id} />);

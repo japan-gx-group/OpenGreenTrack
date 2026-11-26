@@ -12,6 +12,8 @@
 // 枠で目立たせる。右のプレビューで押された（editRequest）ら、このカードへ移って編集を始める（編集させないときは移るだけ）。
 // 編集中は、開示する文章の字数を上限と並べて出す。
 // 本文の欄は状態にかかわらず書ける。書き始めると状態が「入力済み」になる（useSsbjNarrativeForm の setText）。
+// 本文の欄には、状態にかかわらず入力中の本文を出す。「未確認」「非該当」にしても前の本文を隠さない
+// （隠したまま書き始めると、前の本文が知らせなしに新しい文字で置き換わるため）。そのとき本文が保存されないことは欄の下で知らせる。
 // 「保存して次へ」で保存したら、親（onSaveAndNext）が次の項目の編集を開く。親は ref の openForEdit で、
 // その項目へ移って編集を始めさせる。編集中は Ctrl+S（Mac は ⌘S）で保存し、何も変えていなければ Esc で編集をやめる。
 // 日本語入力の変換中のキー（変換の取り消しの Esc など）は変換の操作なので、保存・編集の終了には使わない。
@@ -297,7 +299,7 @@ export const SsbjNarrativeItemCard = ({
                 input={form.values.templateInput}
                 onChange={form.setTemplateInput}
                 onInsert={form.insertDraft}
-                hasBody={isTextEnabled && form.values.text.trim() !== ''}
+                hasBody={form.values.text.trim() !== ''}
                 disabled={form.isSaving}
               />
             )}
@@ -308,13 +310,18 @@ export const SsbjNarrativeItemCard = ({
               rows={4}
               maxLength={SSBJ_NARRATIVE_TEXT_MAX_LENGTH}
               placeholder={isTextEnabled ? '開示に載せる文章を入力してください' : '書き始めると、状態が「入力済み」になります'}
-              value={isTextEnabled ? form.values.text : ''}
+              value={form.values.text}
               disabled={form.isSaving}
               onChange={event => form.setText(event.target.value)}
             />
             {isTextEnabled && (
               <p data-testid="ssbj-narrative-text-length" className="m-0 text-right text-xs text-text-muted">
                 {form.values.text.length} / {SSBJ_NARRATIVE_TEXT_MAX_LENGTH} 字
+              </p>
+            )}
+            {!isTextEnabled && form.values.text.trim() !== '' && (
+              <p data-testid="ssbj-narrative-text-not-saved" className="m-0 text-xs text-warning">
+                状態が「{SSBJ_FIELD_STATE_LABELS[form.values.state]}」のため、この本文は保存されません。書き足すと「{SSBJ_FIELD_STATE_LABELS.answered}」になります。
               </p>
             )}
             {placeholders.length > 0 && (
@@ -383,7 +390,7 @@ export const SsbjNarrativeItemCard = ({
                       書きかけの文章を残す場合は、内部メモに移してから保存してください。
                     </p>
                     <p className="m-0">
-                      「編集に戻る」を押すと、保存せずに編集へ戻ります。状態を「{SSBJ_FIELD_STATE_LABELS.answered}」に戻すと、入力した文章が表示されます。
+                      「編集に戻る」を押すと、保存せずに編集へ戻ります（入力した文章はそのまま残ります）。本文を保存するときは、状態を「{SSBJ_FIELD_STATE_LABELS.answered}」にしてください。
                     </p>
                   </div>
                 </DialogDescription>
