@@ -173,7 +173,7 @@ describe('useLocationCsvImport', () => {
     unmount();
   });
 
-  it('途中で止まった後に一覧の再取得も失敗したら、「取込は完了しました」とは知らせない', async () => {
+  it('途中で止まった後に一覧の再取得も失敗したら、止まった理由と件数を消さずに1件のトーストで知らせる', async () => {
     vi.mocked(addLocations).mockResolvedValue({
       created: [],
       failures: [],
@@ -190,7 +190,13 @@ describe('useLocationCsvImport', () => {
     await act(async () => { await controller.selectFile(file); });
     await act(async () => { await controller.runImport(); });
 
-    expect(showToast).toHaveBeenLastCalledWith('一覧の再取得にも失敗しました。画面を再読み込みしてください。', 'error');
+    // 最後に出るトーストだけが画面に残るため、そこに止まった理由・残りの件数・再取得の失敗をすべて含める
+    expect(showToast).toHaveBeenLastCalledWith(
+      'CSVインポートが途中で失敗しました（ログイン情報が確認できませんでした。再度ログインしてから取り込み直してください。' +
+        '残りの3件は取り込んでいません）: 追加0件・更新0件・スキップ0件・エラー0件。' +
+        '一覧の再取得にも失敗しました。画面を再読み込みしてください。',
+      'error',
+    );
     expect(showToast).not.toHaveBeenCalledWith(expect.stringContaining('取込は完了しました'), 'error');
     unmount();
   });

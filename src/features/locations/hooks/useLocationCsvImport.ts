@@ -133,8 +133,9 @@ export function useLocationCsvImport(
     const exampleNote = plan.exampleRowCount > 0 ? `・記入例${plan.exampleRowCount}件を除外` : '';
     const countLabel = (count: number | null) => (count === null ? '件数不明' : `${count}件`);
     const summary = `追加${countLabel(addedCount)}・更新${countLabel(updatedCount)}・スキップ${plan.skipCount}件・エラー${allErrors.length}件${exampleNote}`;
-    if (writeFailure !== null) {
-      showToast(`CSVインポートが途中で失敗しました（${writeFailure}）: ${summary}`, 'error');
+    const failureMessage = writeFailure !== null ? `CSVインポートが途中で失敗しました（${writeFailure}）: ${summary}` : null;
+    if (failureMessage !== null) {
+      showToast(failureMessage, 'error');
     } else {
       showToast(`CSVインポート完了: ${summary}`, allErrors.length > 0 ? 'error' : 'success');
     }
@@ -144,13 +145,14 @@ export function useLocationCsvImport(
       // throw した場合は件数に関係なく一部が書き込み済みかもしれないので取り直す。
       // 取込が完了していれば、再取得の失敗を取込の失敗として通知しない。
       // 取込が途中で止まった場合（ログイン切れなど）は再取得も同じ理由で失敗しやすいため、「完了」とは書かない。
-      if (writeFailure !== null || (addedCount ?? 0) > 0 || (updatedCount ?? 0) > 0) {
+      // トーストは1件ずつしか出せず後から出したものに置き換わるので、止まった理由と件数を消さないよう1件にまとめる。
+      if (failureMessage !== null || (addedCount ?? 0) > 0 || (updatedCount ?? 0) > 0) {
         try {
           await reload();
         } catch {
           showToast(
-            writeFailure !== null
-              ? '一覧の再取得にも失敗しました。画面を再読み込みしてください。'
+            failureMessage !== null
+              ? `${failureMessage}。一覧の再取得にも失敗しました。画面を再読み込みしてください。`
               : '取込は完了しましたが、一覧の再取得に失敗しました。画面を再読み込みしてください。',
             'error',
           );
