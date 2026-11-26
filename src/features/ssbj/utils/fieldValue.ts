@@ -58,3 +58,13 @@ export const toFieldValue = <T>(state: unknown, value: T | null | undefined): Ss
 /** SsbjFieldValue を DB の「状態列 + 値列」へ分解する（toFieldValue の逆）。 */
 export const fromFieldValue = <T>(field: SsbjFieldValue<T>): { state: SsbjFieldState; value: T | null } =>
   isAnswered(field) ? { state: 'answered', value: field.value } : { state: field.state, value: null };
+
+/**
+ * 本文の欄に入力したときの状態。書き始めたら「入力済み」にし、入力済みの本文を全部消したら「未入力」に戻す。
+ * 空白だけの入力では状態を変えない（「未確認」「非該当」を選んだまま空白を打っても、選んだ状態のまま）。
+ * 状態を先に選ばないと本文を書けない作りだと、項目ごとに余分な操作が要るため、書いた内容から状態を決める。
+ */
+export const ssbjFieldStateAfterTyping = (state: SsbjFieldState, text: string): SsbjFieldState => {
+  if (text.trim() !== '') return 'answered';
+  return state === 'answered' ? 'unanswered' : state;
+};

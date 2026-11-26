@@ -1,6 +1,9 @@
 'use client';
 
 // レポートとしての時間軸の定義（「短期」「中期」「長期」の定義と、計画期間との関係）の表示・編集欄。
+// 本文の欄は状態にかかわらず書け、書き始めると状態が「入力済み」になる（ssbjFieldStateAfterTyping）。
+// 本文の欄には状態にかかわらず入力中の本文を出す（「未確認」「非該当」にしても前の本文を隠さない。隠したまま書き始めると、
+// 前の本文が知らせなしに新しい文字で置き換わるため）。そのとき本文が保存されないことは欄の下で知らせる。
 // 状態と送信は useSsbjTimeHorizonForm が持ち、ここは表示と入力欄の描画だけを行う。
 // 未入力・未確認・非該当は状態のラベルで出し、空欄や「なし」にしない。内部メモは開示しないことを明示する。
 
@@ -12,7 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import type { SsbjTimeHorizonFormController } from '../hooks/useSsbjTimeHorizonForm';
 import { SSBJ_FIELD_STATES, type SsbjFieldState, type SsbjTimeHorizonDefinitions } from '../types';
-import { SSBJ_FIELD_STATE_LABELS, formatFieldValue, isAnswered } from '../utils/fieldValue';
+import { SSBJ_FIELD_STATE_LABELS, formatFieldValue, isAnswered, ssbjFieldStateAfterTyping } from '../utils/fieldValue';
 import {
   SSBJ_TIME_HORIZON_DEFINITION_FIELDS,
   SSBJ_TIME_HORIZON_DEFINITION_LABELS,
@@ -89,11 +92,19 @@ export const SsbjTimeHorizonCard = ({
                   name={field}
                   aria-label={SSBJ_TIME_HORIZON_DEFINITION_LABELS[field]}
                   maxLength={SSBJ_TIME_HORIZON_TEXT_MAX_LENGTH}
-                  placeholder={isTextEnabled ? '開示に載せる文章を入力してください' : '状態を「入力済み」にすると入力できます'}
-                  value={isTextEnabled ? value.text : ''}
-                  disabled={form.isSaving || !isTextEnabled}
-                  onChange={event => form.setField(field, { text: event.target.value })}
+                  placeholder={isTextEnabled ? '開示に載せる文章を入力してください' : '書き始めると、状態が「入力済み」になります'}
+                  value={value.text}
+                  disabled={form.isSaving}
+                  onChange={event => form.setField(field, {
+                    text: event.target.value,
+                    state: ssbjFieldStateAfterTyping(value.state, event.target.value),
+                  })}
                 />
+                {!isTextEnabled && value.text.trim() !== '' && (
+                  <p className="m-0 text-xs text-warning">
+                    状態が「{SSBJ_FIELD_STATE_LABELS[value.state]}」のため、この本文は保存されません。書き足すと「{SSBJ_FIELD_STATE_LABELS.answered}」になります。
+                  </p>
+                )}
               </div>
             );
           })}

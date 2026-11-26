@@ -227,7 +227,7 @@ describe('SsbjPreviewDocument（根拠文書）', () => {
   });
 });
 
-describe('SsbjPreviewDocument（四本柱の文章）', () => {
+describe('SsbjPreviewDocument（ガバナンス・戦略等の文章）', () => {
   it('章ごとに文章を出し、文章の無い項目は未入力。内部メモは選んだときだけ出す', () => {
     rendered = render(<SsbjPreviewDocument source={working()} showInternalNotes={false} />);
     expect(text()).toContain('当社では、取締役会が気候関連のリスク及び機会を監督している。');
@@ -240,11 +240,11 @@ describe('SsbjPreviewDocument（四本柱の文章）', () => {
     expect(text()).toContain('親会社のサステナビリティ委員会との関係は確認中（架空）。');
   });
 
-  it('四本柱の文章を含まない古い版は、その旨を出す', () => {
+  it('ガバナンス・戦略等の文章を含まない古い版は、その旨を出す', () => {
     const withoutNarratives = { ...fictionalSnapshot.sections };
     delete withoutNarratives.narratives;
     rendered = render(<SsbjPreviewDocument source={working({ ...fictionalSnapshot, sections: withoutNarratives })} showInternalNotes={false} />);
-    expect(text()).toContain('この版には四本柱の文章が含まれていません');
+    expect(text()).toContain('この版にはガバナンス・戦略等の文章が含まれていません');
   });
 });
 
@@ -285,5 +285,27 @@ describe('SsbjPreviewDocument（R1 の全体確認）', () => {
     rendered.unmount();
     rendered = render(<SsbjPreviewDocument source={saved} showInternalNotes />);
     expect(fictionalInternalTexts.filter(value => !text().includes(value))).toEqual([]);
+  });
+});
+
+describe('SsbjPreviewDocument（2 画面エディタの項目の目印）', () => {
+  it('itemFocus を渡さない表示（プレビュー画面・印刷ビュー・保存版）には、項目の目印も押せるボタンも出さない', () => {
+    rendered = render(<SsbjPreviewDocument source={saved} showInternalNotes={false} />);
+    expect(rendered.container.querySelector('[data-ssbj-item-id]')).toBeNull();
+    expect(rendered.container.querySelector('button')).toBeNull();
+  });
+
+  it('itemFocus を渡すと、文章の各項目に項目 ID の目印を付け、扱っている項目だけを目立たせる', () => {
+    rendered = render(
+      <SsbjPreviewDocument
+        source={working()}
+        showInternalNotes={false}
+        itemFocus={{ activeItemId: 'governance.oversight_body', editingItemIds: [], onSelect: () => {} }}
+      />,
+    );
+    expect(rendered.container.querySelector('[data-ssbj-item-id="governance.management_role"]')).not.toBeNull();
+    const active = Array.from(rendered.container.querySelectorAll('[data-ssbj-item-id][data-active]'));
+    expect(active.map(element => element.getAttribute('data-ssbj-item-id'))).toEqual(['governance.oversight_body']);
+    expect(active[0].querySelector('button')?.getAttribute('aria-current')).toBe('true');
   });
 });

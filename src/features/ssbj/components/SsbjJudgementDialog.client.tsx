@@ -2,6 +2,9 @@
 
 // 該当性・重要性・記載しない理由（T09）の 1 要求の編集ダイアログ。状態と検証は useSsbjJudgementForm が持つ。
 // 開示する説明（記載しない旨など）と、内部の検討理由（開示しない。docs/ssbj-spec.md §5）を分けて入力する。
+// 開示する説明の欄は状態にかかわらず書け、書き始めると状態が「入力済み」になる（ssbjFieldStateAfterTyping）。
+// 開示する説明の欄には状態にかかわらず入力中の説明を出す（「未確認」「非該当」にしても前の説明を隠さない。隠したまま書き始めると、
+// 前の説明が知らせなしに新しい文字で置き換わるため）。そのとき説明が保存されないことは欄の下で知らせる。
 
 import { useId, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
@@ -26,7 +29,7 @@ import {
   type SsbjMateriality,
   type SsbjOmissionReason,
 } from '../types';
-import { SSBJ_FIELD_STATE_LABELS } from '../utils/fieldValue';
+import { SSBJ_FIELD_STATE_LABELS, ssbjFieldStateAfterTyping } from '../utils/fieldValue';
 import {
   SSBJ_APPLICABILITY_LABELS,
   SSBJ_JUDGEMENT_TEXT_MAX_LENGTH,
@@ -158,11 +161,19 @@ export const SsbjJudgementDialog = ({ open, onOpenChange, form, onSubmit, onSubm
               aria-label="開示する説明"
               rows={3}
               maxLength={SSBJ_JUDGEMENT_TEXT_MAX_LENGTH}
-              placeholder={isTextEnabled ? '例: 経過措置を適用し、スコープ 3 の排出を開示していない。' : '状態を「入力済み」にすると入力できます'}
-              value={isTextEnabled ? values.explanationText : ''}
-              disabled={form.isSaving || !isTextEnabled}
-              onChange={event => form.setValue('explanationText', event.target.value)}
+              placeholder={isTextEnabled ? '例: 経過措置を適用し、スコープ 3 の排出を開示していない。' : '書き始めると、状態が「入力済み」になります'}
+              value={values.explanationText}
+              disabled={form.isSaving}
+              onChange={event => {
+                form.setValue('explanationState', ssbjFieldStateAfterTyping(values.explanationState, event.target.value));
+                form.setValue('explanationText', event.target.value);
+              }}
             />
+            {!isTextEnabled && values.explanationText.trim() !== '' && (
+              <p className="m-0 text-xs text-warning">
+                状態が「{SSBJ_FIELD_STATE_LABELS[values.explanationState]}」のため、この説明は保存されません。書き足すと「{SSBJ_FIELD_STATE_LABELS.answered}」になります。
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-1.5">

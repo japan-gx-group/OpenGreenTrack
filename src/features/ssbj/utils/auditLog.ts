@@ -23,7 +23,7 @@ export const SSBJ_AUDIT_ACTION_LABELS: Record<SsbjAuditAction, string> = {
 
 const TARGET_TYPE_LABELS: Record<string, string> = {
   report: 'レポート（基本情報）',
-  narrative: '四本柱の文章',
+  narrative: 'ガバナンス・戦略等の文章',
   judgement: '該当性・重要性の判断',
   risk_opportunity: 'リスク・機会',
   risk_candidate: '業種の候補への判断',
@@ -73,7 +73,7 @@ const COLUMN_LABELS: Record<string, string> = {
 const text = (value: unknown): string | null => (typeof value === 'string' && value !== '' ? value : null);
 const num = (value: unknown): number | null => (typeof value === 'number' ? value : null);
 
-/** 対象の名前（例: 「四本柱の文章: 監督する機関・責任者」）。 */
+/** 対象の名前（例: 「ガバナンス・戦略等の文章: 監督する機関・責任者」）。 */
 export const ssbjAuditTargetLabel = (log: SsbjAuditLog): string => {
   const kind = TARGET_TYPE_LABELS[log.targetType] ?? log.targetType;
   const label = text(log.details.label);
@@ -133,6 +133,31 @@ export const ssbjAuditDetail = (log: SsbjAuditLog, nameOf: (userId: string | nul
     default:
       return '';
   }
+};
+
+/** 差戻しの知らせ（入力画面の上に出す）。 */
+export type SsbjReopenNotice = {
+  /** 差戻しの理由（差戻しでは必須）。 */
+  comment: string;
+  /** 差戻した人。 */
+  actorUserId: string | null;
+  /** 差戻した日時。 */
+  reopenedAt: string;
+};
+
+/**
+ * 最新の状態の変更が差戻し（作成中に戻した）なら、その理由・誰が・いつを返す。
+ * レビュー依頼・取り下げ・承認の後や、状態の変更がまだ無いときは null（直した後に依頼し直せば消える）。
+ */
+export const ssbjReopenNotice = (latestStatusChange: SsbjAuditLog | null): SsbjReopenNotice | null => {
+  if (!latestStatusChange || latestStatusChange.action !== 'status_change') return null;
+  const { details } = latestStatusChange;
+  if (details.operation !== 'reopen' || details.to !== 'draft') return null;
+  return {
+    comment: text(details.comment) ?? '',
+    actorUserId: latestStatusChange.actorUserId,
+    reopenedAt: latestStatusChange.createdAt,
+  };
 };
 
 /** 出力の列見出し。 */

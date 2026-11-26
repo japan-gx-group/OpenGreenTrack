@@ -1,6 +1,6 @@
 'use client';
 
-// 四本柱・補足の文章（T05）の 1 項目の編集フォームの状態・検証・送信。正規化と検証は utils/narrative.ts に一本化している。
+// ガバナンス・戦略等の文章（企業固有の補足を含む。T05）の 1 項目の編集フォームの状態・検証・送信。正規化と検証は utils/narrative.ts に一本化している。
 // 入力済み以外の状態では本文を保存しないため、入力した本文が消える保存は、利用者が確認するまで止める。
 // 選択式テンプレートの選択（templateInput）は本文と別に持ち、下書きを本文に入れても本文の代わりにはしない。
 // 下書きを入れたまま一度も編集せずに「入力済み」で保存するときは、利用者が確認するまで止める
@@ -16,6 +16,7 @@ import {
   validateSsbjNarrativeInput,
   type SsbjNarrativeFormValues,
 } from '../utils/narrative';
+import { ssbjFieldStateAfterTyping } from '../utils/fieldValue';
 import {
   normalizeSsbjNarrativeTemplateInput,
   validateSsbjNarrativeTemplateInput,
@@ -30,6 +31,7 @@ export type SsbjNarrativeSave = (
 export interface SsbjNarrativeFormController {
   values: SsbjNarrativeFormValues;
   setState: (state: SsbjFieldState) => void;
+  /** 本文を変える。書き始めたら状態を「入力済み」に、全部消したら「未入力」にする（ssbjFieldStateAfterTyping）。 */
   setText: (text: string) => void;
   setInternalNote: (internalNote: string) => void;
   /** 選択式テンプレートの選択・補足入力を変える（本文は変えない）。 */
@@ -37,6 +39,7 @@ export interface SsbjNarrativeFormController {
   /**
    * 選択式テンプレートの下書きを本文に入れる（状態は「入力済み」にする）。
    * 本文が空なら下書きにし、書いてあれば後ろに足す（自由入力の本文を上書きしない）。
+   * 「未確認」「非該当」にしていても本文の欄には前の本文が出ているので、状態にかかわらず後ろに足す。
    */
   insertDraft: (draft: string) => void;
   /** 入力エラー・保存エラー（画面にそのまま並べる）。 */
@@ -132,11 +135,11 @@ export function useSsbjNarrativeForm(
   return {
     values,
     setState: state => setValues(prev => ({ ...prev, state })),
-    setText: text => setValues(prev => ({ ...prev, text })),
+    setText: text => setValues(prev => ({ ...prev, text, state: ssbjFieldStateAfterTyping(prev.state, text) })),
     setInternalNote: internalNote => setValues(prev => ({ ...prev, internalNote })),
     setTemplateInput: templateInput => setValues(prev => ({ ...prev, templateInput })),
     insertDraft: draft => {
-      const current = values.state === 'answered' ? values.text.trimEnd() : '';
+      const current = values.text.trimEnd();
       const text = current === '' ? draft : `${current}\n\n${draft}`;
       setValues(prev => ({ ...prev, state: 'answered', text }));
       setInsertedDraftText(text);

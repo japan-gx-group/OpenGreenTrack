@@ -363,6 +363,23 @@ describe('SsbjRisksOpportunities', () => {
       '短期は中期経営計画の期間と一致させている。',
     );
   });
+
+  it('時間軸の定義の本文を書いてから「非該当」にしても前の本文を隠さず、続けて書いても前の本文が残る', async () => {
+    await renderScreen();
+    click(findButton('定義を編集'));
+    const form = document.querySelector<HTMLElement>('[data-testid="ssbj-time-horizon-form"]');
+    if (!form) throw new Error('時間軸の定義のフォームがありません');
+    const relationState = () => form.querySelector<HTMLSelectElement>('select[name="planningHorizonRelationState"]')!;
+    const relationText = () => form.querySelector<HTMLTextAreaElement>('textarea[name="planningHorizonRelation"]')!;
+    setTextareaValue(relationText(), '中期経営計画と一致させている。');
+    setSelectValue(relationState(), 'not_applicable');
+    expect(relationText().value).toBe('中期経営計画と一致させている。');
+    expect(form.textContent).toContain('状態が「非該当」のため、この本文は保存されません。');
+    // 欄に出ている前の本文の後ろに 1 文字打つ（前の本文は置き換わらない）。
+    setTextareaValue(relationText(), '中期経営計画と一致させている。追');
+    expect(relationText().value).toBe('中期経営計画と一致させている。追');
+    expect(relationState().value).toBe('answered');
+  });
 });
 
 describe('SsbjRisksOpportunities（承認ロック）', () => {

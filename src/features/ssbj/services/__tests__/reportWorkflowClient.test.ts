@@ -1,19 +1,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { notifySsbjWorkingChanged } from '../../utils/workingChange';
 import { changeSsbjReportStatus, restoreSsbjReportVersion } from '../reportWorkflowClient';
 
 // 画面から API を呼ぶ処理: 送る内容と、失敗したときにサーバのメッセージを例外にすることを検証する。
+vi.mock('../../utils/workingChange', () => ({ notifySsbjWorkingChanged: vi.fn() }));
 const fetchMock = vi.fn();
 vi.stubGlobal('fetch', fetchMock);
 const respond = (status: number, body: unknown) =>
   fetchMock.mockResolvedValue(new Response(JSON.stringify(body), { status }));
 
-afterEach(() => fetchMock.mockReset());
+afterEach(() => { fetchMock.mockReset(); vi.mocked(notifySsbjWorkingChanged).mockClear(); });
 
 describe('changeSsbjReportStatus', () => {
   it('状態の操作を送り、結果を返す', async () => {
     respond(200, { status: 'approved', approverUserId: 'u', approvedVersionId: 'v', approvedVersionNumber: 2 });
     await expect(changeSsbjReportStatus('report 1', { action: 'approve', expectedDraftRevision: 5 }))
       .resolves.toMatchObject({ status: 'approved', approvedVersionNumber: 2 });
+    expect(notifySsbjWorkingChanged).not.toHaveBeenCalled();
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('/api/ssbj/reports/report%201/status');
     expect(JSON.parse(init.body)).toEqual({ action: 'approve', expectedDraftRevision: 5 });
@@ -33,10 +36,13 @@ describe('restoreSsbjReportVersion', () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('/api/ssbj/reports/r/versions/v/restore');
     expect(JSON.parse(init.body)).toEqual({ expectedDraftRevision: 7 });
+    // 作業中の内容が書き換わったので知らせる（状態の変更では知らせない）。
+    expect(notifySsbjWorkingChanged).toHaveBeenCalledWith('r');
   });
 
   it('本文が読めない失敗は既定のメッセージ', async () => {
     fetchMock.mockResolvedValue(new Response('oops', { status: 500 }));
     await expect(restoreSsbjReportVersion('r', 'v', 1)).rejects.toThrow('保存版の復元に失敗しました');
+    expect(notifySsbjWorkingChanged).not.toHaveBeenCalled();
   });
 });

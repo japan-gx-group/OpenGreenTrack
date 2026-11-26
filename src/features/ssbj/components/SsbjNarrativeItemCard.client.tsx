@@ -1,14 +1,24 @@
 'use client';
 
-// 四本柱・補足の文章（T05）の 1 項目のカード。対応する要求と項番号、記載ガイド・記載例、文章の表示と編集を出す。
+// ガバナンス・戦略等の文章（企業固有の補足を含む。T05）の 1 項目のカード。対応する要求と項番号、記載ガイド・記載例、文章の表示と編集を出す。
 // 未入力・未確認・非該当は状態のラベルで出し、空欄や「なし」にしない。内部メモは開示しないことを明示する（docs/ssbj-spec.md §5）。
 // 編集中は、選択肢から下書きを作って本文に入れられ（SsbjNarrativeTemplateChoices）、残っている【 】の数を出す。
 // 入口はこの 1 つで、何も選ばずに入れた下書きが【 】の穴埋めの文例になる。入力中の内容は onDraftChange で親に渡す
 // （2 画面エディタのプレビューにその場で反映するため。保存はしない）。
 // 入力済み以外の状態では本文を保存しないので、入力した本文が消える保存は、確認のダイアログで止める（取り消せば編集に戻る）。
 // 選択式テンプレートの下書きを一度も編集しないまま入力済みで保存するときも、確認のダイアログで止める。
+// 編集中に保存済みの内容と違う入力があるか（未保存か）を onDirtyChange で親に渡す（画面を離れる前の確認と「未保存 n」のため）。
+// 2 画面エディタの右のプレビューと結ぶため、カードの中にフォーカスが入ったら onActivate で親に知らせ、扱っている間（isActive）は
+// 枠で目立たせる。右のプレビューで押された（editRequest）ら、このカードへ移って編集を始める（編集させないときは移るだけ）。
+// 編集中は、開示する文章の字数を上限と並べて出す。
+// 本文の欄は状態にかかわらず書ける。書き始めると状態が「入力済み」になる（useSsbjNarrativeForm の setText）。
+// 本文の欄には、状態にかかわらず入力中の本文を出す。「未確認」「非該当」にしても前の本文を隠さない
+// （隠したまま書き始めると、前の本文が知らせなしに新しい文字で置き換わるため）。そのとき本文が保存されないことは欄の下で知らせる。
+// 「保存して次へ」で保存したら、親（onSaveAndNext）が次の項目の編集を開く。親は ref の openForEdit で、
+// その項目へ移って編集を始めさせる。編集中は Ctrl+S（Mac は ⌘S）で保存し、何も変えていなければ Esc で編集をやめる。
+// 日本語入力の変換中のキー（変換の取り消しの Esc など）は変換の操作なので、保存・編集の終了には使わない。
 
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useImperativeHandle, useRef, useState, type KeyboardEvent, type Ref } from 'react';
 import { ListChecks, Pencil } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,15 +31,19 @@ import { SSBJ_FIELD_STATES, type SsbjDisclosableText, type SsbjFieldState, type 
 import { SSBJ_FIELD_STATE_LABELS, formatFieldValue, isAnswered } from '../utils/fieldValue';
 import {
   SSBJ_NARRATIVE_TEXT_MAX_LENGTH,
+  isSsbjNarrativeFormDirty,
   normalizeSsbjNarrativeInput,
   ssbjTemplatePlaceholders,
+  toSsbjNarrativeFormValues,
   type SsbjNarrativeEntry,
+  type SsbjNarrativeFormValues,
 } from '../utils/narrative';
 import {
   describeSsbjNarrativeTemplateInput,
   findSsbjNarrativeChoiceTemplate,
   isCurrentSsbjNarrativeTemplateInput,
 } from '../utils/narrativeTemplateChoice';
+import { ssbjScrollBehavior } from '../utils/editorScroll';
 import { formatParagraphReference, ssbjRequirementsOfItem } from '../utils/requirementMaster';
 import { SsbjNarrativeTemplateChoices } from './SsbjNarrativeTemplateChoices.client';
 
@@ -42,12 +56,46 @@ interface SsbjNarrativeItemCardProps {
   readOnly?: boolean;
   /** 編集中の内容（未保存）。編集をやめた・保存したときは null。 */
   onDraftChange?: (itemId: SsbjItemId, text: SsbjDisclosableText | null) => void;
+  /** 保存済みの内容と違う入力（保存しないと消える入力）があるか。編集をやめた・保存したときは false。 */
+  onDirtyChange?: (itemId: SsbjItemId, dirty: boolean) => void;
+  /** 2 画面エディタで、いま扱っている項目か（右のプレビューと同じ項目を目立たせる）。 */
+  isActive?: boolean;
+  /** カードの中にフォーカスが入った（この項目を扱い始めた）。 */
+  onActivate?: (itemId: SsbjItemId) => void;
+  /** 右のプレビューで押された項目。seq は押すたびに増える。 */
+  editRequest?: { itemId: SsbjItemId; seq: number } | null;
+  /** 「保存して次へ」で保存できたときに呼ぶ。無いときはボタンを出さない。 */
+  onSaveAndNext?: (itemId: SsbjItemId) => void;
+  /** 親が「保存して次へ」の次の項目の編集を開くための操作。 */
+  ref?: Ref<SsbjNarrativeItemCardHandle>;
 }
 
-export const SsbjNarrativeItemCard = ({ entry, onSave, readOnly = false, onDraftChange }: SsbjNarrativeItemCardProps) => {
+export interface SsbjNarrativeItemCardHandle {
+  /** この項目へ移って編集を始め、本文の欄に入る。編集できない項目・編集中の項目では何もしない。 */
+  openForEdit: () => void;
+}
+
+const isSaveShortcut = (event: KeyboardEvent) =>
+  (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 's';
+
+export const SsbjNarrativeItemCard = ({
+  entry,
+  onSave,
+  readOnly = false,
+  onDraftChange,
+  onDirtyChange,
+  isActive = false,
+  onActivate,
+  editRequest = null,
+  onSaveAndNext,
+  ref,
+}: SsbjNarrativeItemCardProps) => {
   const id = useId();
   const [isEditing, setIsEditing] = useState(false);
   const [isChoosing, setIsChoosing] = useState(false);
+  // 受け取り済みの editRequest の seq（最初に描いたときに来ていた依頼は受け取り済みとみなす）。
+  const [handledSeq, setHandledSeq] = useState(() => editRequest?.seq ?? 0);
+  const initialSeqRef = useRef(handledSeq);
   const form = useSsbjNarrativeForm(entry.itemId, onSave);
   const requirements = ssbjRequirementsOfItem(entry.itemId);
   const { disclosure, internalNote } = entry.text;
@@ -57,21 +105,117 @@ export const SsbjNarrativeItemCard = ({ entry, onSave, readOnly = false, onDraft
   const choiceTemplate = entry.item ? findSsbjNarrativeChoiceTemplate(itemId) : undefined;
   const chosen = describeSsbjNarrativeTemplateInput(itemId, entry.templateInput);
   const hasStaleChoice = entry.templateInput != null && !isCurrentSsbjNarrativeTemplateInput(entry.templateInput);
-  const finishIfSaved = (saved: boolean) => { if (saved) setIsEditing(false); };
+  const cardRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLTextAreaElement>(null);
+  // 「保存して次へ」で保存を始めたか。確認のダイアログを挟んで保存したときも、次の項目へ移るために覚えておく。
+  const nextAfterSaveRef = useRef(false);
+  // 編集を始めたときの内容（Esc で編集をやめてよいか＝何も変えていないかを見るため）。
+  const [startValues, setStartValues] = useState<SsbjNarrativeFormValues | null>(null);
+  // 親に頼まれて編集を始めたとき、本文の欄に入る。
+  const focusOnOpenRef = useRef(false);
+  const finishIfSaved = (saved: boolean) => {
+    if (!saved) return;
+    setIsEditing(false);
+    if (nextAfterSaveRef.current) {
+      nextAfterSaveRef.current = false;
+      onSaveAndNext?.(itemId);
+    }
+  };
 
   // 編集中の内容を親へ渡す（プレビューにその場で反映する）。編集をやめたら取り消す。
   useEffect(() => {
     onDraftChange?.(itemId, isEditing ? normalizeSsbjNarrativeInput(form.values) : null);
   }, [isEditing, form.values, itemId, onDraftChange]);
 
-  const startEdit = () => {
+  const isDirty = isEditing && isSsbjNarrativeFormDirty(itemId, entry.text, entry.templateInput, form.values);
+  // 未保存になったら知らせ、未保存でなくなった・カードが外れたときは後片付けで取り消す（数え残しで移動を止め続けないように）。
+  useEffect(() => {
+    if (!isDirty) return;
+    onDirtyChange?.(itemId, true);
+    return () => onDirtyChange?.(itemId, false);
+  }, [isDirty, itemId, onDirtyChange]);
+
+  // 編集を始める（state だけを変える。描画の中からも呼ぶので ref には触らない）。
+  const beginEdit = () => {
     form.reset(entry.text, entry.templateInput);
+    setStartValues(toSsbjNarrativeFormValues(entry.text, entry.templateInput));
     setIsChoosing(entry.templateInput != null);
     setIsEditing(true);
   };
+  const startEdit = () => {
+    nextAfterSaveRef.current = false;
+    beginEdit();
+  };
+
+  // 右のプレビューで押されたら、描画の中で編集を始める（props の変化に合わせて state を変える React の書き方）。
+  // 移る・フォーカスするのは、描き終えてから下の effect で行う。
+  // 「保存して次へ」の印（nextAfterSaveRef）は、保存の操作ごとに付け直すので、ここでは戻さなくてよい。
+  const isRequested = editRequest !== null && editRequest.itemId === itemId && editRequest.seq !== handledSeq;
+  if (isRequested) {
+    setHandledSeq(editRequest.seq);
+    if (!isEditing && !readOnly && entry.item) beginEdit();
+  }
+  useEffect(() => {
+    const card = cardRef.current;
+    if (handledSeq === initialSeqRef.current || !card) return;
+    // 書ける欄（本文が書けなければ状態の選択）へ。編集させないときはカードそのものへ。
+    const field = [document.getElementById(`${id}-text`), document.getElementById(`${id}-state`)]
+      .find(element => element instanceof HTMLElement && !element.hasAttribute('disabled')) ?? card;
+    field.focus({ preventScroll: true });
+    card.scrollIntoView?.({ block: 'start', behavior: ssbjScrollBehavior() });
+  }, [handledSeq, id]);
+
+  // 親から頼まれたら（「保存して次へ」の次の項目）、この項目へ移って編集を始め、本文の欄に入る。
+  const canEdit = entry.item !== null && entry.item !== undefined && !readOnly;
+  useImperativeHandle(ref, () => ({
+    openForEdit: () => {
+      if (!canEdit || isEditing) return;
+      focusOnOpenRef.current = true;
+      startEdit();
+      cardRef.current?.scrollIntoView?.({ block: 'start', behavior: ssbjScrollBehavior() });
+    },
+  }));
+  useEffect(() => {
+    if (!isEditing || !focusOnOpenRef.current) return;
+    focusOnOpenRef.current = false;
+    textRef.current?.focus({ preventScroll: true });
+  }, [isEditing]);
+
+  const saveAndNext = () => {
+    nextAfterSaveRef.current = true;
+    void form.submit().then(saved => {
+      // 確認のダイアログを待っている（false）ときは、確認して保存したときに finishIfSaved が次へ移る。
+      if (saved) finishIfSaved(true);
+    });
+  };
+
+  const onFormKeyDown = (event: KeyboardEvent<HTMLFormElement>) => {
+    // 変換中のキーは変換の操作なので何もしない（SearchableSelect と同じ判定）。
+    // isComposing に加えて keyCode 229 も見るのは、変換確定直後の keydown を isComposing=false・keyCode=229 で届けるブラウザがあるため。
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if (isSaveShortcut(event)) {
+      event.preventDefault();
+      nextAfterSaveRef.current = false;
+      void form.submit().then(finishIfSaved);
+      return;
+    }
+    // Esc は、何も変えていないときだけ編集をやめる（書いた内容を黙って捨てない）。
+    if (event.key === 'Escape' && !form.isSaving && startValues !== null
+      && JSON.stringify(startValues) === JSON.stringify(form.values)) {
+      event.preventDefault();
+      setIsEditing(false);
+    }
+  };
 
   return (
-    <Card data-testid="ssbj-narrative-item">
+    <Card
+      ref={cardRef}
+      data-testid="ssbj-narrative-item"
+      data-active={isActive || undefined}
+      tabIndex={-1}
+      className={isActive ? 'scroll-mt-4 ring-2 ring-primary' : 'scroll-mt-4'}
+      onFocus={() => onActivate?.(itemId)}
+    >
       <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 className="m-0 text-sm font-bold">{entry.item?.label ?? entry.itemId}</h3>
@@ -113,7 +257,8 @@ export const SsbjNarrativeItemCard = ({ entry, onSave, readOnly = false, onDraft
       {isEditing ? (
         <form
           className="flex flex-col gap-3"
-          onSubmit={event => void form.submit(event).then(finishIfSaved)}
+          onSubmit={event => { nextAfterSaveRef.current = false; void form.submit(event).then(finishIfSaved); }}
+          onKeyDown={onFormKeyDown}
         >
           <div className="flex flex-col gap-1.5">
             <Label htmlFor={`${id}-state`}>開示する文章の状態</Label>
@@ -154,19 +299,31 @@ export const SsbjNarrativeItemCard = ({ entry, onSave, readOnly = false, onDraft
                 input={form.values.templateInput}
                 onChange={form.setTemplateInput}
                 onInsert={form.insertDraft}
-                hasBody={isTextEnabled && form.values.text.trim() !== ''}
+                hasBody={form.values.text.trim() !== ''}
                 disabled={form.isSaving}
               />
             )}
             <Textarea
+              id={`${id}-text`}
+              ref={textRef}
               aria-label="開示する文章"
               rows={4}
               maxLength={SSBJ_NARRATIVE_TEXT_MAX_LENGTH}
-              placeholder={isTextEnabled ? '開示に載せる文章を入力してください' : '状態を「入力済み」にすると入力できます'}
-              value={isTextEnabled ? form.values.text : ''}
-              disabled={form.isSaving || !isTextEnabled}
+              placeholder={isTextEnabled ? '開示に載せる文章を入力してください' : '書き始めると、状態が「入力済み」になります'}
+              value={form.values.text}
+              disabled={form.isSaving}
               onChange={event => form.setText(event.target.value)}
             />
+            {isTextEnabled && (
+              <p data-testid="ssbj-narrative-text-length" className="m-0 text-right text-xs text-text-muted">
+                {form.values.text.length} / {SSBJ_NARRATIVE_TEXT_MAX_LENGTH} 字
+              </p>
+            )}
+            {!isTextEnabled && form.values.text.trim() !== '' && (
+              <p data-testid="ssbj-narrative-text-not-saved" className="m-0 text-xs text-warning">
+                状態が「{SSBJ_FIELD_STATE_LABELS[form.values.state]}」のため、この本文は保存されません。書き足すと「{SSBJ_FIELD_STATE_LABELS.answered}」になります。
+              </p>
+            )}
             {placeholders.length > 0 && (
               <p data-testid="ssbj-template-placeholders" className="m-0 text-xs text-warning">
                 置き換えていない【 】が {placeholders.length} か所あります: {placeholders.join(' ')}
@@ -188,10 +345,16 @@ export const SsbjNarrativeItemCard = ({ entry, onSave, readOnly = false, onDraft
               {form.errors.map(error => <li key={error}>{error}</li>)}
             </ul>
           )}
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <span className="mr-auto text-xs text-text-muted">Ctrl+S（Mac は ⌘S）で保存</span>
             <Button type="button" variant="outline" disabled={form.isSaving} onClick={() => setIsEditing(false)}>
               キャンセル
             </Button>
+            {onSaveAndNext && (
+              <Button type="button" variant="outline" disabled={form.isSaving} onClick={saveAndNext}>
+                保存して次へ
+              </Button>
+            )}
             <Button type="submit" disabled={form.isSaving}>{form.isSaving ? '保存中...' : '保存'}</Button>
           </div>
           <Dialog open={form.isConfirmingUneditedDraft} onOpenChange={open => { if (!open) form.cancelUneditedDraft(); }}>
@@ -209,7 +372,7 @@ export const SsbjNarrativeItemCard = ({ entry, onSave, readOnly = false, onDraft
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={form.cancelUneditedDraft}>編集に戻る</Button>
+                <Button type="button" variant="outline" onClick={() => { nextAfterSaveRef.current = false; form.cancelUneditedDraft(); }}>編集に戻る</Button>
                 <Button type="button" onClick={() => void form.confirmUneditedDraft().then(finishIfSaved)}>
                   このまま保存
                 </Button>
@@ -227,13 +390,13 @@ export const SsbjNarrativeItemCard = ({ entry, onSave, readOnly = false, onDraft
                       書きかけの文章を残す場合は、内部メモに移してから保存してください。
                     </p>
                     <p className="m-0">
-                      「編集に戻る」を押すと、保存せずに編集へ戻ります。状態を「{SSBJ_FIELD_STATE_LABELS.answered}」に戻すと、入力した文章が表示されます。
+                      「編集に戻る」を押すと、保存せずに編集へ戻ります（入力した文章はそのまま残ります）。本文を保存するときは、状態を「{SSBJ_FIELD_STATE_LABELS.answered}」にしてください。
                     </p>
                   </div>
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={form.cancelDiscard}>編集に戻る</Button>
+                <Button type="button" variant="outline" onClick={() => { nextAfterSaveRef.current = false; form.cancelDiscard(); }}>編集に戻る</Button>
                 <Button type="button" variant="destructive" onClick={() => void form.confirmDiscard().then(finishIfSaved)}>
                   本文を空にして保存
                 </Button>

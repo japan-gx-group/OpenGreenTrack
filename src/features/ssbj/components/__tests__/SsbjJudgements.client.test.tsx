@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { click, render, type RenderResult } from '@/lib/testing/render';
+import { click, keyDown, render, type RenderResult } from '@/lib/testing/render';
 import {
   FICTIONAL_DRAFT_REVIEW,
   fictionalJudgements,
@@ -269,6 +269,35 @@ describe('SsbjJudgements', () => {
     expect(rowOf('REQ-GEN-002').textContent).toContain('判断済み');
   });
 
+  it('詳細の「開示する説明」は状態を選ばなくても書け、書き始めると入力済みになる', async () => {
+    rendered = render(<SsbjJudgements reportId={report.id} />);
+    await settle();
+    click(buttonIn(rowOf('REQ-CLM-026'), '詳細'));
+    await flush();
+    const explanation = dialog().querySelector<HTMLTextAreaElement>('textarea[aria-label="開示する説明"]')!;
+    expect(explanation.disabled).toBe(false);
+    setTextareaValue(explanation, '経過措置を適用している。');
+    expect(selectLabeled('開示する説明の状態').value).toBe('answered');
+    expect(explanation.value).toBe('経過措置を適用している。');
+  });
+
+  it('説明を書いてから「非該当」にしても前の説明を隠さず、続けて書いても前の説明が残る', async () => {
+    rendered = render(<SsbjJudgements reportId={report.id} />);
+    await settle();
+    click(buttonIn(rowOf('REQ-CLM-026'), '詳細'));
+    await flush();
+    const explanation = () => dialog().querySelector<HTMLTextAreaElement>('textarea[aria-label="開示する説明"]')!;
+    setTextareaValue(explanation(), '経過措置を適用している。');
+    setSelectValue(selectLabeled('開示する説明の状態'), 'not_applicable');
+    expect(explanation().value).toBe('経過措置を適用している。');
+    expect(dialog().textContent).toContain('状態が「非該当」のため、この説明は保存されません。');
+    // 欄に出ている前の説明の後ろに 1 文字打つ（前の説明は置き換わらない）。
+    setTextareaValue(explanation(), '経過措置を適用している。追');
+    expect(explanation().value).toBe('経過措置を適用している。追');
+    expect(selectLabeled('開示する説明の状態').value).toBe('answered');
+    expect(dialog().textContent).not.toContain('この説明は保存されません');
+  });
+
   it('詳細の「保存して次の未判断・要確認へ」で、表示中の次の要求を開く', async () => {
     rendered = render(<SsbjJudgements reportId={report.id} />);
     await settle();
@@ -348,5 +377,41 @@ describe('SsbjJudgements（承認ロック）', () => {
     expect(rows().some(row => row.textContent?.includes('詳細'))).toBe(false);
     expect(rows().some(row => row.querySelector('select') !== null)).toBe(false);
     expect(document.querySelector('[data-testid="ssbj-role-notice"]')).not.toBeNull();
+  });
+});
+
+describe('SsbjJudgements（詳細のダイアログに保存していない入力があるまま画面を離れる前の確認）', () => {
+  const beforeUnloadPrevented = () => {
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  };
+
+  it('詳細を開いただけでは止めず、入力を変えると止め、閉じると止めない', async () => {
+    rendered = render(<SsbjJudgements reportId={report.id} />);
+    await settle();
+    click(buttonIn(rowOf('REQ-CLM-020'), '詳細'));
+    await settle();
+    expect(beforeUnloadPrevented()).toBe(false);
+    setSelectValue(selectLabeled('重要性'), 'unconfirmed');
+    expect(beforeUnloadPrevented()).toBe(true);
+    keyDown(document.activeElement ?? document.body, 'Escape');
+    await settle();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(beforeUnloadPrevented()).toBe(false);
+  });
+
+  it('アプリの中のリンクで移ろうとすると、未保存の判断を要求項目マスターの内容（要求 ID ではなく）で示して止める', async () => {
+    rendered = render(<SsbjJudgements reportId={report.id} />);
+    await settle();
+    click(buttonIn(rowOf('REQ-CLM-020'), '詳細'));
+    await settle();
+    setSelectValue(selectLabeled('重要性'), 'unconfirmed');
+    const backLink = Array.from(document.querySelectorAll('a')).find(a => a.textContent?.includes('レポート詳細へ戻る'))!;
+    click(backLink);
+    await settle();
+    const dialog = document.querySelector('[data-testid="ssbj-unsaved-changes-dialog"]');
+    expect(dialog?.textContent).toContain('保存していない判断があります');
+    expect(dialog?.textContent).toContain('「スコープ 3 のカテゴリー別の内訳」の判断が保存されていません。');
   });
 });

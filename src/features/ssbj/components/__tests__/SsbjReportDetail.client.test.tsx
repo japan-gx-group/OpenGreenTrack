@@ -7,12 +7,21 @@ import type { SsbjReportWorkingRecord } from '../../types';
 import { SSBJ_EDIT_CONFLICT_MESSAGE, SsbjEditConflictError } from '../../utils/writeError';
 
 // SSBJ レポート詳細画面: 基本情報の再表示・未入力の表示・Not Found・編集保存・保存版の作成を検証する。
+// ページと同じく SsbjReportOverviewProvider で包んだときの、依頼の前の点検表も検証する。
 
 vi.mock('../../services/reportService', async importOriginal => ({
   ...(await importOriginal<typeof import('../../services/reportService')>()),
   getSsbjReport: vi.fn(),
   updateSsbjReportBasicInfo: vi.fn(),
 }));
+
+// Provider はレイアウトの下の選択中のセグメントで今いる画面を決める（詳細画面は空）。
+vi.mock('next/navigation', () => ({ useSelectedLayoutSegments: () => [] }));
+
+// Provider で包んだときだけ読む（作業中の内容・最新の差戻し・OGT の最新の値）。
+vi.mock('../../services/previewService', () => ({ getSsbjWorkingPreview: vi.fn(), getSsbjVersionPreview: vi.fn() }));
+vi.mock('../../services/auditLogService', () => ({ getLatestSsbjStatusChange: vi.fn(async () => null) }));
+vi.mock('../../services/ogtCandidateService', () => ({ getOgtCandidates: vi.fn() }));
 
 vi.mock('../../services/versionClient', () => ({
   saveSsbjReportVersion: vi.fn(),
@@ -42,12 +51,23 @@ vi.mock('../../services/memberRoleService', async importOriginal => ({
   listSsbjMemberRoles: vi.fn(async () => new Map()),
 }));
 
+import {
+  fictionalOgtCandidates,
+  fictionalSnapshot,
+  fictionalSupplierReferences,
+} from '../../__fixtures__/fictionalReport';
 import { getMySsbjApprovalBlocker } from '../../services/approvalBlockerService';
+import { getOgtCandidates } from '../../services/ogtCandidateService';
+import { getSsbjWorkingPreview } from '../../services/previewService';
 import { getMySsbjRole } from '../../services/memberRoleService';
+import { listSsbjMembers } from '../../services/memberService';
+import { SSBJ_WORKING_RELOAD_DELAY_MS } from '../../hooks/useSsbjWorkingChangeReload';
+import { notifySsbjWorkingChanged } from '../../utils/workingChange';
 import { changeSsbjReportStatus } from '../../services/reportWorkflowClient';
 import { getSsbjReport, updateSsbjReportBasicInfo } from '../../services/reportService';
 import { saveSsbjReportVersion } from '../../services/versionClient';
 import { SsbjReportDetail } from '../SsbjReportDetail.client';
+import { SsbjReportOverviewProvider } from '../SsbjReportOverviewProvider.client';
 
 const REPORT: SsbjReportWorkingRecord = {
   ...fictionalReportBasicInfo,
@@ -431,3 +451,119 @@ describe('SsbjReportDetail（状態と承認）', () => {
     expect(document.querySelector('#ssbj-reopen-reason')).toBeNull();
   });
 });
+
+describe('SsbjReportDetail（依頼の前の点検表）', () => {
+  const renderWithOverview = async (): Promise<RenderResult> => {
+    rendered = render(
+      <SsbjReportOverviewProvider reportId={REPORT.id}>
+        <SsbjReportDetail reportId={REPORT.id} />
+      </SsbjReportOverviewProvider>,
+    );
+    for (let i = 0; i < 4; i += 1) await flushPromises();
+    return rendered;
+  };
+  const checklistOf = (container: HTMLElement) => container.querySelector<HTMLElement>('[data-testid="ssbj-review-checklist"]');
+
+  it('作成中のレポートで依頼できる人には、依頼ボタンの上に点検表を出し、各行から該当の画面へ開ける（依頼は止めない）', async () => {
+    vi.mocked(getSsbjReport).mockResolvedValue(REPORT);
+    vi.mocked(getSsbjWorkingPreview).mockResolvedValue({ kind: 'working', draftRevision: 3, snapshot: fictionalSnapshot });
+    // 採用した後に Scope 1 の値が変わった。
+    vi.mocked(getOgtCandidates).mockResolvedValue({
+      candidates: fictionalOgtCandidates.map(candidate => (candidate.scope === 1 && candidate.scope3CategoryId === null
+        ? { ...candidate, value: { state: 'answered', value: '999.000' } } as typeof candidate : candidate)),
+      suppliers: fictionalSupplierReferences,
+    });
+    const { container } = await renderWithOverview();
+
+    const checklist = checklistOf(container);
+    expect(checklist).not.toBeNull();
+    expect(checklist?.textContent).toContain('依頼の前の点検（6 項目中 4 項目に注意）');
+    expect(checklist?.querySelector('[data-testid="ssbj-review-checklist-ogt"]')?.textContent).toContain('採用した後に変わった: Scope 1');
+    expect(checklist?.querySelector('[data-testid="ssbj-review-checklist-conflict-material_without_text"]')?.textContent)
+      .toContain('✓');
+    const hrefs = Array.from(checklist?.querySelectorAll('a') ?? []).map(link => link.getAttribute('href'));
+    expect(hrefs).toEqual(['narratives', 'judgements', 'evidence', 'ghg'].map(path => `/ssbj/${REPORT.id}/${path}`));
+    // 点検表は承認者の選択と依頼ボタンより前にあり、依頼ボタンは押せる。
+    const card = container.querySelector<HTMLElement>('[data-testid="ssbj-report-status-card"]')!;
+    const submit = findButton(card, 'レビューを依頼する');
+    expect(checklist!.compareDocumentPosition(submit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(submit.disabled).toBe(false);
+    // 作業中の内容は画面の上のタブと共有し、1 回だけ読む。
+    expect(getSsbjWorkingPreview).toHaveBeenCalledTimes(1);
+    expect(getOgtCandidates).toHaveBeenCalledTimes(1);
+  });
+
+  it('OGT の値を採用していなければ、OGT の最新の値を読まずに「採用していない」と出す', async () => {
+    vi.mocked(getSsbjReport).mockResolvedValue(REPORT);
+    vi.mocked(getSsbjWorkingPreview).mockResolvedValue({
+      kind: 'working', draftRevision: 3, snapshot: { ...fictionalSnapshot, sections: { ...fictionalSnapshot.sections, ghg: null } },
+    });
+    const { container } = await renderWithOverview();
+
+    expect(checklistOf(container)?.querySelector('[data-testid="ssbj-review-checklist-ogt"]')?.textContent)
+      .toContain('GHG 排出量を採用していない');
+    expect(getOgtCandidates).not.toHaveBeenCalled();
+  });
+
+  it('依頼できない人（承認担当）・作成中でないレポートには出さない', async () => {
+    vi.mocked(getSsbjWorkingPreview).mockResolvedValue({ kind: 'working', draftRevision: 3, snapshot: fictionalSnapshot });
+    vi.mocked(getMySsbjRole).mockResolvedValue('approver');
+    vi.mocked(getSsbjReport).mockResolvedValue(REPORT);
+    let { container } = await renderWithOverview();
+    expect(checklistOf(container)).toBeNull();
+    rendered?.unmount();
+
+    vi.mocked(getMySsbjRole).mockResolvedValue('editor');
+    vi.mocked(getSsbjReport).mockResolvedValue({
+      ...REPORT,
+      review: { ...REPORT.review, status: 'in_review', approverUserId: 'user-admin', reviewRequestedByUserId: 'user-logger' },
+    });
+    ({ container } = await renderWithOverview());
+    expect(checklistOf(container)).toBeNull();
+    expect(getOgtCandidates).not.toHaveBeenCalled();
+  });
+
+  it('OGT の最新の値を読んでいる間は「確認中」と出す（注意に数えない）', async () => {
+    vi.mocked(getSsbjReport).mockResolvedValue(REPORT);
+    vi.mocked(getSsbjWorkingPreview).mockResolvedValue({ kind: 'working', draftRevision: 3, snapshot: fictionalSnapshot });
+    vi.mocked(getOgtCandidates).mockReturnValue(new Promise(() => {}));
+    const { container } = await renderWithOverview();
+
+    const ogtRow = checklistOf(container)?.querySelector('[data-testid="ssbj-review-checklist-ogt"]');
+    expect(ogtRow?.textContent).toContain('確認中');
+    expect(ogtRow?.textContent).toContain('最新の値と比べています');
+    expect(checklistOf(container)?.textContent).toContain('（6 項目中 3 項目に注意）');
+  });
+
+  it('作業中の内容が書き換わった知らせで、同じ画面の中の点検表も新しくなる。ロールと利用者の一覧は 1 回だけ読む', async () => {
+    vi.mocked(getSsbjReport).mockResolvedValue(REPORT);
+    vi.mocked(getSsbjWorkingPreview).mockResolvedValue({
+      kind: 'working', draftRevision: 3, snapshot: { ...fictionalSnapshot, sections: { ...fictionalSnapshot.sections, ghg: null } },
+    });
+    const { container } = await renderWithOverview();
+    const evidenceRow = () => checklistOf(container)?.querySelector('[data-testid="ssbj-review-checklist-evidence"]')?.textContent;
+    expect(evidenceRow()).toContain('根拠文書の無い入力済みの文章 1');
+
+    // 根拠の無かった入力済みの文章（内部炭素価格）を未確認に戻した後の内容。
+    const narratives = (fictionalSnapshot.sections.narratives ?? []).map(narrative =>
+      narrative.itemId === 'metrics_targets.internal_carbon_price'
+        ? { ...narrative, text: { disclosure: { state: 'unconfirmed' as const }, internalNote: null } } : narrative);
+    vi.mocked(getSsbjWorkingPreview).mockResolvedValue({
+      kind: 'working', draftRevision: 4,
+      snapshot: { ...fictionalSnapshot, sections: { ...fictionalSnapshot.sections, ghg: null, narratives } },
+    });
+    vi.useFakeTimers();
+    try {
+      act(() => { notifySsbjWorkingChanged(REPORT.id); });
+      act(() => { vi.advanceTimersByTime(SSBJ_WORKING_RELOAD_DELAY_MS); });
+    } finally {
+      vi.useRealTimers();
+    }
+    for (let i = 0; i < 4; i += 1) await flushPromises();
+    expect(evidenceRow()).toContain('入力済みの文章にすべて根拠文書がある');
+    expect(getSsbjWorkingPreview).toHaveBeenCalledTimes(2);
+    expect(getMySsbjRole).toHaveBeenCalledTimes(1);
+    expect(listSsbjMembers).toHaveBeenCalledTimes(1);
+  });
+});
+

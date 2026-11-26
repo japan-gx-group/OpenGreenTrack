@@ -1,6 +1,6 @@
 'use client';
 
-// レポートの四本柱・補足の文章（T05）の読み込みと、保存後の差し替え。編集フォームは useSsbjNarrativeForm が持つ。
+// レポートのガバナンス・戦略等の文章（企業固有の補足を含む。T05）の読み込みと、保存後の差し替え。編集フォームは useSsbjNarrativeForm が持つ。
 
 import { useEffect, useState } from 'react';
 import { listSsbjNarratives } from '../services/narrativeService';
@@ -17,7 +17,7 @@ export const useSsbjNarratives = (reportId: string | null) => {
     }).catch((error: unknown) => {
       if (active) {
         setResult({ reportId, narratives: [],
-          errorMessage: error instanceof Error ? error.message : '四本柱の文章の取得に失敗しました' });
+          errorMessage: error instanceof Error ? error.message : 'ガバナンス・戦略等の文章の取得に失敗しました' });
       }
     });
     return () => { active = false; };

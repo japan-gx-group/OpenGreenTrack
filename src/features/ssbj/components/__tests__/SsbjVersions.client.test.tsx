@@ -194,12 +194,18 @@ describe('SsbjVersions', () => {
     expect(container.textContent).toContain('CSVを出力');
   });
 
-  it('保存版の内容と内部メモを表示する', async () => {
+  it('保存版の内容をレポートの形で表示し、内部メモは選んだときだけ表示する', async () => {
     const { container } = await renderScreen();
     const button = Array.from(container.querySelectorAll('button')).find(item => item.textContent?.includes('内容を見る'));
     if (!button) throw new Error('内容表示ボタンがありません');
     await act(async () => { click(button); await Promise.resolve(); });
     expect(container.textContent).toContain(`版 ${fictionalVersion.versionNumber} の保存内容`);
+    expect(container.querySelector('[data-testid="ssbj-preview-source"]')?.textContent).toContain('保存版 第1版');
+    expect(container.textContent).not.toContain('内部メモ（開示しない）');
+    expect(container.textContent).not.toContain('影響額の試算は経営企画部で実施中（架空）。');
+    const toggle = container.querySelector('button[role="checkbox"]');
+    if (!toggle) throw new Error('内部メモの切替がありません');
+    await act(async () => { click(toggle); await Promise.resolve(); });
     expect(container.textContent).toContain('内部メモ（開示しない）');
     expect(container.textContent).toContain('影響額の試算は経営企画部で実施中（架空）。');
   });

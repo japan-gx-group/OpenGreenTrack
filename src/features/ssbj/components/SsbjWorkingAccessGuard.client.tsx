@@ -9,11 +9,12 @@ import Link from 'next/link';
 import { ArrowLeft, Eye } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { LoadingIndicator } from '@/components/ui/PageLoading';
-import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
+import { useSsbjReportMyRole } from '../hooks/useSsbjReportOverview';
 import { canViewSsbjWorking } from '../utils/memberRole';
 
 export const SsbjWorkingAccessGuard = ({ reportId, children }: { reportId: string; children: ReactNode }) => {
-  const myRole = useSsbjMyRole();
+  // レポートの中の画面では、レイアウトの SsbjReportOverviewProvider が読んだロールを使う（読み直さない）。
+  const myRole = useSsbjReportMyRole();
   if (myRole.isLoading) {
     return <div className="page-content"><Card><LoadingIndicator label="権限を確かめています..." /></Card></div>;
   }

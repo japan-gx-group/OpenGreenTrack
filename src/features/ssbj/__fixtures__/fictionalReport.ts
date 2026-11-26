@@ -98,7 +98,7 @@ export const fictionalDisclosableTexts: Record<SsbjItemId, SsbjDisclosableText> 
 };
 
 /**
- * 四本柱・補足の文章（T05）。項目 ID は要求項目マスター（utils/requirementMaster.ts）の項目。
+ * ガバナンス・戦略等の文章（企業固有の補足を含む。T05）。項目 ID は要求項目マスター（utils/requirementMaster.ts）の項目。
  * 入力済み（内部メモあり）/ 未確認 / 非該当 / 「していない」の回答（入力済み）を含め、残りの項目は行が無い（未入力）。
  */
 export const fictionalNarratives: SsbjNarrative[] = [
