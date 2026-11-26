@@ -9,14 +9,16 @@
 // （docs/authorization-matrix.md §2.3）。
 // 版の行は、内容を見る・CSV・Excel だけを並べ、「この版から新版を作成」「この版の内容に戻す」は「その他の操作」に畳む
 // （強い操作を出力と同じ並びに置かないため。確認のダイアログはこれまでどおり）。版 ID は控えめに出してコピーできるようにする。
+// 「その他の操作」は shadcn の DropdownMenu（R14）。外を押す・Esc で閉じ、矢印キー・Enter で選べる。
 
-import { useEffect, useState, type MouseEvent } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ChevronDown, Copy, Download, FileCheck2, FileSpreadsheet, History, RotateCcw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { PageHeading } from '@/components/layout/PageHeading';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { LoadingIndicator } from '@/components/ui/PageLoading';
 import { useSsbjReport } from '../hooks/useSsbjReport';
 import { SsbjCopyableId } from './SsbjCopyableId.client';
@@ -48,12 +50,6 @@ import { SsbjVersionView } from './SsbjVersionView.client';
 const FORMAT_LABELS: Record<SsbjVersionExportFormat, string> = { csv: 'CSV', xlsx: 'Excel' };
 
 type PendingAction = { kind: 'copy' | 'restore'; versionId: string };
-
-// 「その他の操作」のメニュー（<details>）を、項目を選んだら閉じる（確認のダイアログの後ろに開いたまま残さない）。
-const closeMenu = (event: MouseEvent<HTMLElement>) => {
-  const menu = event.currentTarget.closest('details');
-  if (menu) menu.open = false;
-};
 
 export const SsbjVersions = ({ reportId }: { reportId: string }) => {
   const { report, reload: reloadReport, isLoading: isReportLoading, errorMessage: reportError, isNotFound } =
@@ -240,21 +236,25 @@ export const SsbjVersions = ({ reportId }: { reportId: string }) => {
                           <FileSpreadsheet size={14} /> {busyVersionId === version.id ? '処理中...' : 'Excelを出力'}
                         </Button>
                         {canEdit && (
-                          <details className="group relative">
-                            <summary className={`${buttonVariants({ variant: 'outline', size: 'sm' })} cursor-pointer list-none [&::-webkit-details-marker]:hidden`}>
-                              その他の操作 <ChevronDown size={14} className="transition-transform group-open:rotate-180" aria-hidden="true" />
-                            </summary>
-                            <div className="absolute right-0 z-10 mt-1 flex w-max flex-col gap-1 rounded-lg border border-border bg-bg-card p-2 shadow-md">
-                              <Button type="button" size="sm" variant="ghost" className="justify-start" disabled={busyVersionId !== null} onClick={event => { closeMenu(event); setPending({ kind: 'copy', versionId: version.id }); }}>
-                                <Copy size={14} /> この版から新版を作成
+                          // 項目を選ぶとメニューは閉じ、確認のダイアログを開く（ダイアログの後ろにメニューを開いたまま残さない）。
+                          // メニューを閉じたあとにダイアログが開くので、メニューは modal にしない（閉じたメニューが画面の操作を止めたまま残らないように）。
+                          <DropdownMenu modal={false}>
+                            <DropdownMenuTrigger asChild>
+                              <Button type="button" size="sm" variant="outline" disabled={busyVersionId !== null}>
+                                その他の操作 <ChevronDown size={14} aria-hidden="true" />
                               </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-max">
+                              <DropdownMenuItem disabled={busyVersionId !== null} onSelect={() => setPending({ kind: 'copy', versionId: version.id })}>
+                                <Copy size={14} /> この版から新版を作成
+                              </DropdownMenuItem>
                               {!locked && (
-                                <Button type="button" size="sm" variant="ghost" className="justify-start text-danger hover:text-danger" disabled={busyVersionId !== null} onClick={event => { closeMenu(event); setPending({ kind: 'restore', versionId: version.id }); }}>
+                                <DropdownMenuItem variant="destructive" disabled={busyVersionId !== null} onSelect={() => setPending({ kind: 'restore', versionId: version.id })}>
                                   <RotateCcw size={14} /> この版の内容に戻す
-                                </Button>
+                                </DropdownMenuItem>
                               )}
-                            </div>
-                          </details>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         )}
                       </div>
                     </li>
