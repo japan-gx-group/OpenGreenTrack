@@ -1,4 +1,4 @@
-// SSBJ 四本柱・補足の文章（ssbj_narratives）の制約・RLS・権限・保存版連携に対する回帰テスト（実DBを使わない机上検証）。
+// SSBJ ガバナンス・戦略等の文章（企業固有の補足を含む。ssbj_narratives）の制約・RLS・権限・保存版連携に対する回帰テスト（実DBを使わない机上検証）。
 //
 // 対応する実装ファイルが無く、検証対象が supabase/migrations/*.sql そのものなので、
 // feature 側ではなく DB スクリプトと同じ scripts/db/__tests__/ に置いている（AGENTS.md R13）。
