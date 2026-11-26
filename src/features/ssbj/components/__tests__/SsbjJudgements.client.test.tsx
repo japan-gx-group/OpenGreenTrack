@@ -438,6 +438,51 @@ describe('SsbjJudgements（まとめて付ける・選択欄の幅）', () => {
     expect(checkboxOf('REQ-GEN-002').getAttribute('aria-checked')).toBe('false');
   });
 
+  it('「未判断」で選んでから「要確認」に絞り込むと、隠れた要求の選択を外し、隠れた要求には値を付けない', async () => {
+    rendered = render(<SsbjJudgements reportId={report.id} />);
+    await settle();
+    const filterSelect = () => document.getElementById('ssbj-judgements-filter') as HTMLSelectElement;
+    setSelectValue(filterSelect(), 'undecided');
+    click(checkboxOf('REQ-GEN-002'));
+    click(checkboxOf('REQ-CLM-002'));
+    expect(bulkBar()?.textContent).toContain('選んだ要求 2 件に');
+
+    setSelectValue(filterSelect(), 'needs_review');
+    expect(rows().some(row => row.textContent?.includes('REQ-GEN-002'))).toBe(false);
+    expect(bulkBar()).toBeNull();
+    click(checkboxOf('REQ-APP-002'));
+    expect(bulkBar()?.textContent).toContain('選んだ要求 1 件に');
+    setSelectValue(bulkSelect('重要性'), 'material');
+    await act(async () => { click(buttonIn(bulkBar()!, 'まとめて付ける')); });
+    await settle();
+    expect(vi.mocked(saveSsbjJudgementQuickChange).mock.calls.map(call => call[2].requirementId)).toEqual(['REQ-APP-002']);
+
+    // 「すべて」に戻しても、隠れていた要求は選んだままにしていない。
+    setSelectValue(filterSelect(), 'all');
+    expect(checkboxOf('REQ-GEN-002').getAttribute('aria-checked')).toBe('false');
+    expect(checkboxOf('REQ-CLM-002').getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('選んだ要求が一覧の保存で絞り込みから外れたら、帯の件数に数えず、まとめて付けもしない', async () => {
+    rendered = render(<SsbjJudgements reportId={report.id} />);
+    await settle();
+    setSelectValue(document.getElementById('ssbj-judgements-filter') as HTMLSelectElement, 'undecided');
+    click(checkboxOf('REQ-GEN-002'));
+    click(checkboxOf('REQ-CLM-002'));
+    // REQ-GEN-002 の該当性を一覧で付けると「要確認」になり、「未判断」の表示から外れる。
+    await act(async () => {
+      setSelectValue(rowOf('REQ-GEN-002')!.querySelector<HTMLSelectElement>('select[aria-label="REQ-GEN-002 の該当性"]')!, 'applicable');
+    });
+    await settle();
+    expect(rows().some(row => row.textContent?.includes('REQ-GEN-002'))).toBe(false);
+    expect(bulkBar()?.textContent).toContain('選んだ要求 1 件に');
+    vi.mocked(saveSsbjJudgementQuickChange).mockClear();
+    setSelectValue(bulkSelect('重要性'), 'material');
+    await act(async () => { click(buttonIn(bulkBar()!, 'まとめて付ける')); });
+    await settle();
+    expect(vi.mocked(saveSsbjJudgementQuickChange).mock.calls.map(call => call[2].requirementId)).toEqual(['REQ-CLM-002']);
+  });
+
   it('章の見出しのチェックで、表示中のその章の要求をまとめて選ぶ・外す', async () => {
     rendered = render(<SsbjJudgements reportId={report.id} />);
     await settle();

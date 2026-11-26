@@ -3,6 +3,7 @@
 // 該当性・重要性の判断の一覧で、選んだ要求にまとめて該当性・重要性を付ける帯。
 // 保存は呼び出し元（onApply）が 1 件ずつ一覧の保存（詳細と同じ検証・読込時の更新日時を条件にした保存）で行い、
 // 保存できなかった要求は理由を並べる。どちらも「変えない」のままでは付けられない。
+// 件数（count）は、表示中で選んでいる要求の数（絞り込みで見えない要求は数えない・付けない）。
 
 import { useId, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -22,7 +23,7 @@ export interface SsbjJudgementBulkResult {
 }
 
 interface SsbjJudgementBulkBarProps {
-  /** 選んでいる要求の数。 */
+  /** 表示中で選んでいる要求の数。 */
   count: number;
   onApply: (change: SsbjJudgementQuickChange) => Promise<SsbjJudgementBulkResult>;
   onClear: () => void;

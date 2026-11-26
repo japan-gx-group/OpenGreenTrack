@@ -306,11 +306,19 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
   const masterEntries = entries.filter(entry => entry.requirement);
   const countOf = (status: SsbjJudgementStatus) =>
     masterEntries.filter(entry => ssbjJudgementStatus(entry.judgement) === status).length;
-  const matches = (entry: SsbjJudgementEntry) =>
-    filter === 'all' ? true
-      : filter === 'with_risks' ? risksByRequirement.has(entry.judgement.requirementId)
-        : ssbjJudgementStatus(entry.judgement) === filter;
-  const visible = entries.filter(matches);
+  const matchesFilter = (target: StatusFilter) => (entry: SsbjJudgementEntry) =>
+    target === 'all' ? true
+      : target === 'with_risks' ? risksByRequirement.has(entry.judgement.requirementId)
+        : ssbjJudgementStatus(entry.judgement) === target;
+  const visible = entries.filter(matchesFilter(filter));
+  // まとめて付ける対象は、表示中で選んでいる要求だけ（画面に出ていない要求には付けない）。帯の件数もこれで数える。
+  const visibleSelected = visible.filter(entry => entry.requirement && selection.isSelected(entry.judgement.requirementId));
+  // 絞り込みを変えたら、見えなくなる要求の選択を外す（見えないまま選んだ状態で残さない）。
+  const changeFilter = (next: StatusFilter) => {
+    setFilter(next);
+    const hidden = entries.filter(entry => !matchesFilter(next)(entry)).map(entry => entry.judgement.requirementId);
+    if (hidden.length > 0) selection.clear(hidden);
+  };
   const groups: { key: string; title: string; entries: SsbjJudgementEntry[] }[] = [
     ...SSBJ_SECTION_IDS.map(sectionId => ({
       key: sectionId,
@@ -348,8 +356,9 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
 
   // 選んだ要求に、該当性・重要性をまとめて付ける。表示の順に 1 件ずつ一覧の保存（quickChange）を通し、
   // 保存できた要求は選択から外し、保存できなかった要求は理由とともに選んだままにする。
+  // 対象は表示中で選んでいる要求だけ（visibleSelected）。
   const applyBulk = async (change: SsbjJudgementQuickChange): Promise<SsbjJudgementBulkResult> => {
-    const targets = entries.filter(entry => entry.requirement && selection.isSelected(entry.judgement.requirementId));
+    const targets = visibleSelected;
     const result: SsbjJudgementBulkResult = { saved: [], failed: [] };
     for (const entry of targets) {
       try {
@@ -462,7 +471,7 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
                     id="ssbj-judgements-filter"
                     className="gt-field gt-field-select"
                     value={filter}
-                    onChange={event => setFilter(event.target.value as StatusFilter)}
+                    onChange={event => changeFilter(event.target.value as StatusFilter)}
                   >
                     {(Object.keys(FILTER_LABELS) as StatusFilter[]).map(key => (
                       <option key={key} value={key}>{FILTER_LABELS[key]}</option>
@@ -471,8 +480,8 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
                 </div>
               </div>
               {!isSsbjReadOnly(report.review, myRole.role) && (
-                selection.selected.size > 0 ? (
-                  <SsbjJudgementBulkBar count={selection.selected.size} onApply={applyBulk} onClear={() => selection.clear()} />
+                visibleSelected.length > 0 ? (
+                  <SsbjJudgementBulkBar count={visibleSelected.length} onApply={applyBulk} onClear={() => selection.clear()} />
                 ) : (
                   <p className="m-0 text-xs text-text-muted">
                     行の左のチェックで要求を選ぶと、該当性・重要性をまとめて付けられます（章の見出しのチェックで、表示中の要求をまとめて選べます）。
