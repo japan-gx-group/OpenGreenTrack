@@ -1,8 +1,13 @@
 // ヘッダーのベルに出す「お知らせ」。
 // 独立した通知テーブルは持たず、既に記録されている非同期処理の結果
-// （算定バッチ・IDEAデータベース取込）を新しい順に読み出して組み立てる。
+// （算定バッチ・IDEAデータベース取込・SSBJ レポートのレビューの状態）を新しい順に読み出して組み立てる。
 // 取得は RLS 任せ（自組織のみ）で、既読状態はブラウザに閉じた localStorage で持つ。
 import { createClient } from '@/lib/supabase/client';
+import {
+  SSBJ_REVIEW_NOTIFICATION_DAYS,
+  toSsbjReviewNotification,
+  type SsbjReviewNotificationRow,
+} from '@/features/ssbj/utils/reviewNotification';
 
 export type AppNotificationLevel = 'info' | 'warning' | 'danger';
 
@@ -113,10 +118,55 @@ const toImportNotification = (row: ImportRow): AppNotification => {
   };
 };
 
+// 自分が承認者か依頼者の SSBJ レポートのうち、状態の変更が新しいものからお知らせを作る（toSsbjReviewNotification）。
+// SSBJ を使っていない組織・読めないとき・ログイン中の利用者が分からないときは、何も出さない。
+// 読むのは 2 つに分ける。まとめて新しい順に数件だけ読むと、自分が依頼したレポートやほかの状態の変更が新しいときに、
+// 自分宛てのレビューの依頼が数件に入らず、「レビュー中のあいだ出し続ける」が守れないため。
+//   (1) 自分が承認者で、レビュー中のレポート（期間の制限なし。対応が要るため）
+//   (2) 自分が依頼し、SSBJ_REVIEW_NOTIFICATION_DAYS 日以内に作成中に戻った・承認されたレポート
+// それぞれ新しい順に PER_SOURCE_LIMIT 件まで読み、同じレポートは 1 つにまとめる。
+const SSBJ_REVIEW_COLUMNS = 'id, title, status, approverUserId, reviewRequestedByUserId, statusChangedAt, statusChangedByUserId';
+
+const getSsbjReviewNotifications = async (supabase: ReturnType<typeof createClient>): Promise<AppNotification[]> => {
+  try {
+    const { data: auth } = await supabase.auth.getUser();
+    const userId = auth.user?.id;
+    if (!userId) return [];
+    const since = new Date(Date.now() - SSBJ_REVIEW_NOTIFICATION_DAYS * 86_400_000).toISOString();
+    const [assigned, requested] = await Promise.all([
+      supabase
+        .from('ssbj_reports')
+        .select(SSBJ_REVIEW_COLUMNS)
+        .eq('approverUserId', userId)
+        .eq('status', 'in_review')
+        .order('statusChangedAt', { ascending: false, nullsFirst: false })
+        .limit(PER_SOURCE_LIMIT),
+      supabase
+        .from('ssbj_reports')
+        .select(SSBJ_REVIEW_COLUMNS)
+        .eq('reviewRequestedByUserId', userId)
+        .in('status', ['draft', 'approved'])
+        .gte('statusChangedAt', since)
+        .order('statusChangedAt', { ascending: false, nullsFirst: false })
+        .limit(PER_SOURCE_LIMIT),
+    ]);
+    // 片方が読めなくても、読めた側だけで出す。
+    const rows = new Map<string, SsbjReviewNotificationRow>();
+    for (const row of [...(assigned.data ?? []), ...(requested.data ?? [])] as unknown as SsbjReviewNotificationRow[]) {
+      if (!rows.has(row.id)) rows.set(row.id, row);
+    }
+    return [...rows.values()]
+      .map(row => toSsbjReviewNotification(row, userId))
+      .filter((notification): notification is AppNotification => notification !== null);
+  } catch {
+    return [];
+  }
+};
+
 export const getNotifications = async (): Promise<AppNotification[]> => {
   const supabase = createClient();
 
-  const [batches, imports] = await Promise.all([
+  const [batches, imports, ssbjReviews] = await Promise.all([
     supabase
       .from('calculation_batches')
       .select('id, status, processedCount, errorMessage, startedAt, completedAt')
@@ -127,12 +177,14 @@ export const getNotifications = async (): Promise<AppNotification[]> => {
       .select('id, version, status, rowCount, unmappedRecordCount, errorMessage, updatedAt')
       .order('updatedAt', { ascending: false })
       .limit(PER_SOURCE_LIMIT),
+    getSsbjReviewNotifications(supabase),
   ]);
 
   // どちらか一方が読めなくても、読めた側だけで通知を出す（ベルは補助的な導線のため）。
   const notifications = [
     ...(((batches.data ?? []) as unknown as BatchRow[]).map(toBatchNotification)),
     ...(((imports.data ?? []) as unknown as ImportRow[]).map(toImportNotification)),
+    ...ssbjReviews,
   ];
 
   return notifications

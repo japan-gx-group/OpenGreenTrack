@@ -6,9 +6,10 @@
 // 入力担当か管理者、承認・差戻しは管理者か、指定された承認者（承認担当）。承認者に選べるのは承認担当か管理者だけ。
 // 書く人と承認する人を分けるため、承認者に自分は選べず、レビューを依頼した本人・依頼の後に内容を変更した人は承認できない。
 // 差戻しはダイアログで理由を必須にする。
+// 作成中は、依頼できる人に依頼の前の点検表（SsbjReviewChecklist。詳細画面が渡す）を承認者の選択と依頼ボタンの上に出す。依頼は止めない。
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -16,8 +17,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { formatDateTime } from '@/lib/datetime';
 import { useSsbjApprovalBlocker } from '../hooks/useSsbjApprovalBlocker';
 import { useSsbjMemberRoleMap } from '../hooks/useSsbjMemberRoleMap';
-import { useSsbjMembers } from '../hooks/useSsbjMembers';
-import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
+import { useSsbjReportMembers, useSsbjReportMyRole } from '../hooks/useSsbjReportOverview';
 import { useSsbjReportStatus } from '../hooks/useSsbjReportStatus';
 import { memberName } from '../services/memberService';
 import type { SsbjReportStatusChangeResult } from '../services/reportWorkflowClient';
@@ -39,11 +39,14 @@ interface SsbjReportStatusCardProps {
   onChanged: (result: SsbjReportStatusChangeResult) => void;
   /** 基本情報の編集中など、未保存の入力があるとき true（承認・依頼させない）。 */
   disabled: boolean;
+  /** 作成中のとき、承認者の選択と依頼ボタンの上に出す依頼の前の点検表（依頼できる人にだけ渡す。依頼は止めない）。 */
+  checklist?: ReactNode;
 }
 
-export const SsbjReportStatusCard = ({ report, onChanged, disabled }: SsbjReportStatusCardProps) => {
-  const { members, currentUserId, errorMessage: membersError } = useSsbjMembers();
-  const myRole = useSsbjMyRole();
+export const SsbjReportStatusCard = ({ report, onChanged, disabled, checklist }: SsbjReportStatusCardProps) => {
+  // レポートの中の画面では、レイアウトの SsbjReportOverviewProvider が読んだ利用者の一覧とロールを使う（読み直さない）。
+  const { members, currentUserId, errorMessage: membersError } = useSsbjReportMembers();
+  const myRole = useSsbjReportMyRole();
   const memberRoles = useSsbjMemberRoleMap();
   const status = useSsbjReportStatus(report, onChanged);
   const approval = useSsbjApprovalBlocker(report.id, report.review.status, report.draftRevision);
@@ -110,6 +113,7 @@ export const SsbjReportStatusCard = ({ report, onChanged, disabled }: SsbjReport
       </dl>
 
       <div className="flex flex-col gap-3">
+        {review.status === 'draft' && checklist}
         {review.status === 'draft' && (
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="ssbj-status-approver">承認者（自分以外）</Label>

@@ -4,6 +4,7 @@
 //   - 算定バッチ / IDEA 取込の各状態 → お知らせ（level / title / href）への対応
 //   - 2 ソースを occurredAt の新しい順に結合し、MAX_NOTIFICATIONS（8 件）で切ること
 //   - 片方のテーブルが読めなくても、読めた側だけでお知らせを出すこと
+//   - SSBJ レポートのレビューの状態（自分が承認者・依頼者のもの）からお知らせを出すこと
 // と、既読マーカー（localStorage）・未読数・相対時刻の純粋ロジックを検証する。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,15 +13,39 @@ type QueryResult = { data: unknown[] | null; error: { message: string } | null }
 
 // テーブル名 → クエリ結果。テストごとに差し替える。
 const tableResults = vi.hoisted(() => new Map<string, QueryResult>());
+// ログイン中の利用者（null ならログインしていない扱い）。
+const currentUser = vi.hoisted(() => ({ id: null as string | null }));
+
+type Row = Record<string, unknown>;
 
 vi.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
+    auth: { getUser: async () => ({ data: { user: currentUser.id ? { id: currentUser.id } : null } }) },
     from: (table: string) => {
-      // 実装のチェーン（select → order → limit）をそのまま受け、最後に固定結果を返す。
+      // 実装のチェーン（select → 条件 → order → limit）をそのまま受け、最後に固定結果を返す。
+      // SSBJ のレポートだけは、実装が付けた条件・並び順・件数をスタブの行に当てる（2 つの取得を区別して確かめるため）。
+      const filters: ((row: Row) => boolean)[] = [];
+      let orderColumn: string | null = null;
       const builder = {
         select: () => builder,
-        order: () => builder,
-        limit: async () => tableResults.get(table) ?? { data: [], error: null },
+        or: () => builder,
+        eq: (column: string, value: unknown) => { filters.push(row => row[column] === value); return builder; },
+        in: (column: string, values: unknown[]) => { filters.push(row => values.includes(row[column])); return builder; },
+        gte: (column: string, value: string) => {
+          filters.push(row => typeof row[column] === 'string' && (row[column] as string) >= value);
+          return builder;
+        },
+        order: (column: string) => { orderColumn = column; return builder; },
+        limit: async (count: number) => {
+          const result = tableResults.get(table) ?? { data: [], error: null };
+          if (table !== 'ssbj_reports' || !result.data) return result;
+          const rows = (result.data as Row[]).filter(row => filters.every(matches => matches(row)));
+          if (orderColumn) {
+            const column = orderColumn;
+            rows.sort((a, b) => String(b[column] ?? '').localeCompare(String(a[column] ?? '')));
+          }
+          return { data: rows.slice(0, count), error: null };
+        },
       };
       return builder;
     },
@@ -321,5 +346,74 @@ describe('formatRelativeTime', () => {
 
   it('解釈できない時刻は空文字', () => {
     expect(formatRelativeTime('not-a-date', now)).toBe('');
+  });
+});
+
+describe('getNotifications: SSBJ レポートのレビュー', () => {
+  beforeEach(() => {
+    tableResults.clear();
+    currentUser.id = 'user-me';
+  });
+  afterEach(() => {
+    currentUser.id = null;
+  });
+
+  it('自分が承認者のレビュー中のレポートを、ほかのお知らせと新しい順に並べて出す', async () => {
+    tableResults.set('calculation_batches', { data: [batch({ completedAt: '2026-09-01T00:01:00.000Z' })], error: null });
+    tableResults.set('ssbj_reports', {
+      data: [{
+        id: 'report-1', title: '2024年度のレポート', status: 'in_review', approverUserId: 'user-me',
+        reviewRequestedByUserId: 'user-other', statusChangedAt: new Date().toISOString(), statusChangedByUserId: 'user-other',
+      }],
+      error: null,
+    });
+    const notifications = await getNotifications();
+    expect(notifications.map(notification => notification.title)).toEqual([
+      'SSBJ レポートのレビューを頼まれています',
+      '排出量の算定が完了しました',
+    ]);
+    expect(notifications[0].href).toBe('/ssbj/report-1');
+  });
+
+  it('自分が依頼したレポートが新しい順に 5 件以上あっても、自分宛てのレビューの依頼を出す', async () => {
+    const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+    const requestedByMe = Array.from({ length: 6 }, (_, index) => ({
+      id: `requested-${index}`, title: `依頼したレポート ${index}`, status: 'approved', approverUserId: 'user-other',
+      reviewRequestedByUserId: 'user-me', statusChangedAt: minutesAgo(index + 1), statusChangedByUserId: 'user-other',
+    }));
+    // 自分宛ての依頼は、ほかのどの変更よりも古い（まとめて新しい順に 5 件読むと押し出される）。
+    const assignedToMe = {
+      id: 'assigned-1', title: '頼まれたレポート', status: 'in_review', approverUserId: 'user-me',
+      reviewRequestedByUserId: 'user-other', statusChangedAt: minutesAgo(60 * 24 * 30), statusChangedByUserId: 'user-other',
+    };
+    tableResults.set('ssbj_reports', { data: [...requestedByMe, assignedToMe], error: null });
+    const notifications = await getNotifications();
+    expect(notifications.find(notification => notification.href === '/ssbj/assigned-1')?.title)
+      .toBe('SSBJ レポートのレビューを頼まれています');
+    // 依頼したほうは新しい順に 5 件まで。
+    expect(notifications.filter(notification => notification.title === 'SSBJ レポートが承認されました')).toHaveLength(5);
+  });
+
+  it('自分が依頼したレポートのお知らせは、14 日より前の変更・レビュー中のものを読まない', async () => {
+    const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
+    tableResults.set('ssbj_reports', {
+      data: [
+        { id: 'old', title: '古い承認', status: 'approved', approverUserId: 'user-other', reviewRequestedByUserId: 'user-me',
+          statusChangedAt: daysAgo(15), statusChangedByUserId: 'user-other' },
+        { id: 'waiting', title: 'レビュー待ち', status: 'in_review', approverUserId: 'user-other', reviewRequestedByUserId: 'user-me',
+          statusChangedAt: daysAgo(1), statusChangedByUserId: 'user-me' },
+        { id: 'returned', title: '戻ったレポート', status: 'draft', approverUserId: 'user-other', reviewRequestedByUserId: 'user-me',
+          statusChangedAt: daysAgo(2), statusChangedByUserId: 'user-other' },
+      ],
+      error: null,
+    });
+    const notifications = await getNotifications();
+    expect(notifications.map(notification => notification.href)).toEqual(['/ssbj/returned']);
+  });
+
+  it('ログインしていない・SSBJ のレポートが読めないときは、SSBJ のお知らせを出さない', async () => {
+    currentUser.id = null;
+    tableResults.set('ssbj_reports', { data: null, error: { message: 'permission denied' } });
+    expect(await getNotifications()).toEqual([]);
   });
 });
