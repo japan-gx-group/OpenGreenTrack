@@ -215,6 +215,15 @@ describe('addLocations: リクエスト全体が原因の失敗', () => {
     expect(queryLog.filter(query => query.action === 'insert')).toHaveLength(1);
   });
 
+  it('code の無い 401（ゲートウェイが返す場合など）も、ログインし直すよう案内する', async () => {
+    resolveInserts(() => ({ data: null, status: 401, error: { code: '', message: 'Invalid JWT' } }));
+
+    const result = await addLocations(places(300));
+
+    expect(result.stopped).toEqual({ reason: sessionExpired, unconfirmedCount: 0 });
+    expect(singleInserts()).toHaveLength(0);
+  });
+
   it('RLS による拒否（403 / 42501）でも入れ直さない', async () => {
     resolveInserts(() => ({ data: null, status: 403, error: { code: '42501', message: 'new row violates row-level security policy' } }));
 
@@ -265,6 +274,7 @@ describe('addLocations: リクエスト全体が原因の失敗', () => {
     ['ゲートウェイの障害（502）', { data: null, status: 502, error: { code: '', message: 'Bad Gateway' } }],
     ['ゲートウェイのタイムアウト（504）', { data: null, status: 504, error: { code: '', message: 'Gateway Timeout' } }],
     ['code の無い 500', { data: null, status: 500, error: { code: '', message: 'Internal Server Error' } }],
+    ['プロキシのタイムアウト（524）', { data: null, status: 524, error: { code: '', message: 'A Timeout Occurred' } }],
   ] as [string, QueryResult][])('%sでは入れ直さず、応答が届かなかったチャンクの行を「確認できない」として返す', async (_label, response) => {
     resolveInserts(payload => (Array.isArray(payload) && payload[0].name === 'place-100' ? response : succeed(payload)));
 
@@ -272,7 +282,11 @@ describe('addLocations: リクエスト全体が原因の失敗', () => {
 
     expect(result.created).toHaveLength(100);
     expect(result.failures).toEqual([]);
-    expect(result.stopped?.unconfirmedCount).toBe(100);
+    // fetch やゲートウェイの英語の文面は出さない
+    expect(result.stopped).toEqual({
+      reason: 'サーバーとの通信に失敗したため取込を中止しました。通信環境を確かめてから取り込み直してください',
+      unconfirmedCount: 100,
+    });
     expect(singleInserts()).toHaveLength(0);
     expect(queryLog.filter(query => query.action === 'insert')).toHaveLength(2);
   });

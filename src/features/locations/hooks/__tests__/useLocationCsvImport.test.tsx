@@ -173,6 +173,28 @@ describe('useLocationCsvImport', () => {
     unmount();
   });
 
+  it('途中で止まった後に一覧の再取得も失敗したら、「取込は完了しました」とは知らせない', async () => {
+    vi.mocked(addLocations).mockResolvedValue({
+      created: [],
+      failures: [],
+      stopped: {
+        reason: 'ログイン情報が確認できませんでした。再度ログインしてから取り込み直してください',
+        unconfirmedCount: 0,
+      },
+    });
+    const reload = vi.fn().mockRejectedValue(new Error('JWT expired'));
+    const showToast = vi.fn();
+    const file = { name: 'locations.csv', arrayBuffer: async () => new ArrayBuffer(0) } as unknown as File;
+
+    const { unmount } = render(<Probe reload={reload} showToast={showToast} />);
+    await act(async () => { await controller.selectFile(file); });
+    await act(async () => { await controller.runImport(); });
+
+    expect(showToast).toHaveBeenLastCalledWith('一覧の再取得にも失敗しました。画面を再読み込みしてください。', 'error');
+    expect(showToast).not.toHaveBeenCalledWith(expect.stringContaining('取込は完了しました'), 'error');
+    unmount();
+  });
+
   it('更新の途中で止まったら、行エラーを並べずにエラー1件として通知する', async () => {
     vi.mocked(addLocations).mockResolvedValue({
       created: [{ id: 'n1' }, { id: 'n2' }] as LocationRecord[], failures: [], stopped: null,

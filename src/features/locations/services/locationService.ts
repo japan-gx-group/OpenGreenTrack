@@ -11,7 +11,11 @@ import {
   canDeleteLocation,
   type LocationDeletionImpact,
 } from './locationDeletionGuard';
-import { toLocationWriteErrorMessage, type LocationWriteAction } from './locationWriteError';
+import {
+  SESSION_EXPIRED_MESSAGE,
+  toLocationWriteErrorMessage,
+  type LocationWriteAction,
+} from './locationWriteError';
 import {
   type LocationRecord,
   type LocationStatus,
@@ -179,13 +183,26 @@ const isRequestLevelFailure = ({ status, error }: WriteResponse): boolean => {
   return code !== undefined && (REQUEST_LEVEL_CODES.has(code) || SCHEMA_CACHE_CODE.test(code));
 };
 
-// 応答が届かなかった（通信断・ゲートウェイのタイムアウト）ため、サーバー側で書き込まれたか分からない失敗。
-// 503（DB に接続できない）や 57014（タイムアウトでロールバック済み）は書き込まれていないので含めない。
-const isOutcomeUnknown = ({ status, error }: WriteResponse): boolean =>
-  status === 0 || status === 502 || status === 504 || (status === 500 && !error?.code);
+const CONNECTION_FAILED_MESSAGE =
+  'サーバーとの通信に失敗したため取込を中止しました。通信環境を確かめてから取り込み直してください';
 
-const toStopReason = (response: WriteResponse, action: LocationWriteAction): string =>
-  response.status === 429 ? RATE_LIMITED_MESSAGE : toLocationWriteErrorMessage(response.error, action);
+// 応答が届かなかった（通信断・ゲートウェイの障害やタイムアウト）ため、サーバー側で書き込まれたか分からない失敗。
+// isRequestLevelFailure が止める「code の無い 5xx」とそろえる。ただし 503（DB に接続できない）や
+// 57014（タイムアウトでロールバック済み、code あり）は書き込まれていないので含めない。
+const isOutcomeUnknown = ({ status, error }: WriteResponse): boolean =>
+  status === 0 ||
+  status === 502 ||
+  status === 504 ||
+  (status !== undefined && status >= 500 && status !== 503 && !error?.code);
+
+// 止めた理由の文。code だけでは判定できない場合（ゲートウェイが返す 401、本文が JSON でない応答など）があるため、
+// HTTP ステータスで決まるものを先に見る。fetch の英語のエラー文は出さない。
+const toStopReason = (response: WriteResponse, action: LocationWriteAction): string => {
+  if (response.status === 401) return SESSION_EXPIRED_MESSAGE;
+  if (response.status === 429) return RATE_LIMITED_MESSAGE;
+  if (isOutcomeUnknown(response)) return CONNECTION_FAILED_MESSAGE;
+  return toLocationWriteErrorMessage(response.error, action);
+};
 
 /** リクエスト全体が原因の失敗で途中で止めたときの情報（取込画面はファイル単位のエラー1件として表示する）。 */
 export interface BulkLocationStop {

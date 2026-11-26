@@ -17,7 +17,7 @@ export interface LocationWriteErrorLike {
 //   ログイン中（authenticated）なら RLS は組織一致のみを見るため、自組織への書き込みでは起こらない
 // どれも「権限が無い」のではなく、ログインし直せば解消するので、その案内を出す。
 const SESSION_EXPIRED_CODES = new Set(['PGRST301', 'PGRST303', '42501']);
-const SESSION_EXPIRED_MESSAGE =
+export const SESSION_EXPIRED_MESSAGE =
   'ログイン情報が確認できませんでした。再度ログインしてから取り込み直してください';
 
 // update().eq('id', …).single() が0件にマッチしたときのコード。
