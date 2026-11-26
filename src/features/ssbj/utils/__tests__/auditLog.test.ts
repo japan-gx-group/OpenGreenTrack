@@ -6,6 +6,7 @@ import {
   ssbjAuditDetail,
   ssbjAuditExportRows,
   ssbjAuditTargetLabel,
+  ssbjReopenNotice,
 } from '../auditLog';
 
 const log = (overrides: Partial<SsbjAuditLog>): SsbjAuditLog => ({
@@ -76,5 +77,28 @@ describe('ssbjAuditExportRows', () => {
     ]);
     expect(rows[headerIndex + 2][1]).toBe('システム');
     expect(rows).toContainEqual(['件数', '2']);
+  });
+});
+
+describe('ssbjReopenNotice', () => {
+  const reopen = log({
+    action: 'status_change', actorUserId: 'user-2', createdAt: '2025-06-10T09:40:00.000Z',
+    details: { operation: 'reopen', from: 'in_review', to: 'draft', comment: '監督の頻度が未入力です' },
+  });
+
+  it('最新の状態の変更が差戻しなら、理由・誰が・いつを返す', () => {
+    expect(ssbjReopenNotice(reopen)).toEqual({
+      comment: '監督の頻度が未入力です', actorUserId: 'user-2', reopenedAt: '2025-06-10T09:40:00.000Z',
+    });
+    // 承認済みからの差戻しも同じ。
+    expect(ssbjReopenNotice({ ...reopen, details: { ...reopen.details, from: 'approved' } })?.comment).toBe('監督の頻度が未入力です');
+  });
+
+  it('依頼・取り下げ・承認の後、状態の変更が無いとき、状態の変更でない記録には出さない', () => {
+    for (const operation of ['submit', 'withdraw', 'approve']) {
+      expect(ssbjReopenNotice({ ...reopen, details: { ...reopen.details, operation } })).toBeNull();
+    }
+    expect(ssbjReopenNotice(null)).toBeNull();
+    expect(ssbjReopenNotice({ ...reopen, action: 'update' })).toBeNull();
   });
 });

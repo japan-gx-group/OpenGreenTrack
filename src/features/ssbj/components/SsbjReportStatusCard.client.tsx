@@ -16,8 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { formatDateTime } from '@/lib/datetime';
 import { useSsbjApprovalBlocker } from '../hooks/useSsbjApprovalBlocker';
 import { useSsbjMemberRoleMap } from '../hooks/useSsbjMemberRoleMap';
-import { useSsbjMembers } from '../hooks/useSsbjMembers';
-import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
+import { useSsbjReportMembers, useSsbjReportMyRole } from '../hooks/useSsbjReportOverview';
 import { useSsbjReportStatus } from '../hooks/useSsbjReportStatus';
 import { memberName } from '../services/memberService';
 import type { SsbjReportStatusChangeResult } from '../services/reportWorkflowClient';
@@ -42,8 +41,9 @@ interface SsbjReportStatusCardProps {
 }
 
 export const SsbjReportStatusCard = ({ report, onChanged, disabled }: SsbjReportStatusCardProps) => {
-  const { members, currentUserId, errorMessage: membersError } = useSsbjMembers();
-  const myRole = useSsbjMyRole();
+  // レポートの中の画面では、レイアウトの SsbjReportOverviewProvider が読んだ利用者の一覧とロールを使う（読み直さない）。
+  const { members, currentUserId, errorMessage: membersError } = useSsbjReportMembers();
+  const myRole = useSsbjReportMyRole();
   const memberRoles = useSsbjMemberRoleMap();
   const status = useSsbjReportStatus(report, onChanged);
   const approval = useSsbjApprovalBlocker(report.id, report.review.status, report.draftRevision);

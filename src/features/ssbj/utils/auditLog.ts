@@ -135,6 +135,31 @@ export const ssbjAuditDetail = (log: SsbjAuditLog, nameOf: (userId: string | nul
   }
 };
 
+/** 差戻しの知らせ（入力画面の上に出す）。 */
+export type SsbjReopenNotice = {
+  /** 差戻しの理由（差戻しでは必須）。 */
+  comment: string;
+  /** 差戻した人。 */
+  actorUserId: string | null;
+  /** 差戻した日時。 */
+  reopenedAt: string;
+};
+
+/**
+ * 最新の状態の変更が差戻し（作成中に戻した）なら、その理由・誰が・いつを返す。
+ * レビュー依頼・取り下げ・承認の後や、状態の変更がまだ無いときは null（直した後に依頼し直せば消える）。
+ */
+export const ssbjReopenNotice = (latestStatusChange: SsbjAuditLog | null): SsbjReopenNotice | null => {
+  if (!latestStatusChange || latestStatusChange.action !== 'status_change') return null;
+  const { details } = latestStatusChange;
+  if (details.operation !== 'reopen' || details.to !== 'draft') return null;
+  return {
+    comment: text(details.comment) ?? '',
+    actorUserId: latestStatusChange.actorUserId,
+    reopenedAt: latestStatusChange.createdAt,
+  };
+};
+
 /** 出力の列見出し。 */
 export const SSBJ_AUDIT_EXPORT_HEADER = ['日時', '操作した人', '操作', '対象', '内容', '対象ID'];
 
