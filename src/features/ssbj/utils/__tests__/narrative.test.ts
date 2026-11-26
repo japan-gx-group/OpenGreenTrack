@@ -3,6 +3,7 @@ import { fictionalNarratives } from '../../__fixtures__/fictionalReport';
 import type { SsbjNarrative } from '../../types';
 import {
   EMPTY_SSBJ_DISCLOSABLE_TEXT,
+  isSsbjNarrativeFormDirty,
   normalizeSsbjNarrativeInput,
   ssbjNarrativeEntriesOfSection,
   mergeSsbjNarrativeDrafts,
@@ -92,5 +93,45 @@ describe('mergeSsbjNarrativeDrafts', () => {
     expect(merged.filter(narrative => narrative.itemId === 'governance.oversight_body')).toHaveLength(1);
     expect(merged).toHaveLength(fictionalNarratives.length + 1);
     expect(mergeSsbjNarrativeDrafts(fictionalNarratives, {})).toEqual(fictionalNarratives);
+  });
+});
+
+describe('isSsbjNarrativeFormDirty（保存していない入力があるか）', () => {
+  const itemId = 'governance.oversight_body';
+  const saved = { disclosure: { state: 'answered', value: '取締役会が監督している。' }, internalNote: 'メモ' } as const;
+
+  it('保存済みの内容から編集を始めただけ・前後の空白だけの違いは未保存にしない', () => {
+    expect(isSsbjNarrativeFormDirty(itemId, saved, null, toSsbjNarrativeFormValues(saved))).toBe(false);
+    expect(isSsbjNarrativeFormDirty(itemId, saved, null, {
+      ...toSsbjNarrativeFormValues(saved), text: ' 取締役会が監督している。\n', internalNote: 'メモ ',
+    })).toBe(false);
+    expect(isSsbjNarrativeFormDirty(itemId, EMPTY_SSBJ_DISCLOSABLE_TEXT, null, toSsbjNarrativeFormValues(EMPTY_SSBJ_DISCLOSABLE_TEXT)))
+      .toBe(false);
+  });
+
+  it('本文・内部メモ・状態を変えたら未保存', () => {
+    const base = toSsbjNarrativeFormValues(saved);
+    expect(isSsbjNarrativeFormDirty(itemId, saved, null, { ...base, text: '取締役会が年 2 回監督している。' })).toBe(true);
+    expect(isSsbjNarrativeFormDirty(itemId, saved, null, { ...base, internalNote: '' })).toBe(true);
+    expect(isSsbjNarrativeFormDirty(itemId, EMPTY_SSBJ_DISCLOSABLE_TEXT, null, {
+      ...toSsbjNarrativeFormValues(EMPTY_SSBJ_DISCLOSABLE_TEXT), state: 'not_applicable',
+    })).toBe(true);
+  });
+
+  it('「入力済み」以外の状態で本文が残っている（保存すると消える）ときも未保存', () => {
+    const unconfirmed = { disclosure: { state: 'unconfirmed' }, internalNote: null } as const;
+    expect(isSsbjNarrativeFormDirty(itemId, unconfirmed, null, {
+      ...toSsbjNarrativeFormValues(unconfirmed), text: '書きかけ',
+    })).toBe(true);
+  });
+
+  it('選択式テンプレートの選択の違いも未保存。キーの順だけの違いは同じとみなす', () => {
+    const chosen = { ...emptySsbjNarrativeTemplateInput(), choices: { scope: 'climate', body: 'board' } };
+    const reordered = { ...emptySsbjNarrativeTemplateInput(), choices: { body: 'board', scope: 'climate' } };
+    const values = { ...toSsbjNarrativeFormValues(saved), templateInput: reordered };
+    expect(isSsbjNarrativeFormDirty(itemId, saved, chosen, values)).toBe(false);
+    expect(isSsbjNarrativeFormDirty(itemId, saved, null, values)).toBe(true);
+    expect(isSsbjNarrativeFormDirty(itemId, saved, chosen, { ...values, templateInput: { ...reordered, choices: { scope: 'climate' } } }))
+      .toBe(true);
   });
 });

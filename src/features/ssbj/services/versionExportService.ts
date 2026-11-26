@@ -62,15 +62,18 @@ export const listSsbjVersions = async (reportId: string): Promise<SsbjVersionSum
   }));
 };
 
-export const getSsbjCsvVersion = async (reportId: string, versionId: string): Promise<SsbjCsvVersion> => {
+/** 保存版 1 件（内容の表示・出力に使う）。保存日時は、内容をプレビューと同じ本文で描くときの版の表示に使う。 */
+export type SsbjStoredVersion = SsbjCsvVersion & { createdAt: string };
+
+export const getSsbjCsvVersion = async (reportId: string, versionId: string): Promise<SsbjStoredVersion> => {
   const { data, error } = await createClient()
     .from('ssbj_report_versions')
-    .select('id, reportId, versionNumber, snapshot')
+    .select('id, reportId, versionNumber, createdAt, snapshot')
     .eq('reportId', reportId)
     .eq('id', versionId)
     .maybeSingle();
   if (error || !data) throw new Error('保存版が見つかりません');
-  return data as SsbjCsvVersion;
+  return data as SsbjStoredVersion;
 };
 
 /**

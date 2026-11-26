@@ -7,6 +7,7 @@ import type { SsbjDisclosableText, SsbjItemId, SsbjNarrative, SsbjNarrativeTempl
 import { ssbjWriteErrorMessage } from '../utils/writeError';
 import { fromFieldValue, toFieldValue } from '../utils/fieldValue';
 import { parseSsbjNarrativeTemplateInput } from '../utils/narrativeTemplateChoice';
+import { notifySsbjWorkingChanged } from '../utils/workingChange';
 
 type SsbjNarrativeRow = {
   itemId: string;
@@ -72,7 +73,10 @@ export const saveSsbjNarrative = async (
     .select(SELECT_COLUMNS);
   if (updated.error) throw new Error(ssbjWriteErrorMessage(updated.error, '四本柱の文章の保存に失敗しました'));
   const updatedRows = (updated.data ?? []) as SsbjNarrativeRow[];
-  if (updatedRows.length > 0) return toSsbjNarrative(updatedRows[0]);
+  if (updatedRows.length > 0) {
+    notifySsbjWorkingChanged(report.id);
+    return toSsbjNarrative(updatedRows[0]);
+  }
 
   const inserted = await supabase
     .from('ssbj_narratives')
@@ -86,5 +90,6 @@ export const saveSsbjNarrative = async (
     }
     throw new Error(ssbjWriteErrorMessage(inserted.error, '四本柱の文章の保存に失敗しました'));
   }
+  notifySsbjWorkingChanged(report.id);
   return toSsbjNarrative(inserted.data as SsbjNarrativeRow);
 };

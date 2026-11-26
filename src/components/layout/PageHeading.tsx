@@ -9,6 +9,8 @@ import { FiscalYearMenu } from './FiscalYearMenu.client';
 
 type PageHeadingProps = {
   title: string;
+  /** 見出しのすぐ横に添える小さな表示（例: 入力画面の「未保存 n」のバッジ） */
+  titleAside?: ReactNode;
   /** 見出し直下の1行説明 */
   description?: string;
   /** 年度セレクタの左に置く画面固有の操作（例: ダッシュボードの拠点絞り込み） */
@@ -28,6 +30,7 @@ const CreateReportButton = () => (
 
 export const PageHeading = ({
   title,
+  titleAside,
   description,
   actions,
   showFiscalYear = true,
@@ -39,7 +42,14 @@ export const PageHeading = ({
   return (
     <div className="gt-page-heading">
       <div style={{ minWidth: 0 }}>
-        <h1 className="gt-page-title">{title}</h1>
+        {titleAside ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="gt-page-title">{title}</h1>
+            {titleAside}
+          </div>
+        ) : (
+          <h1 className="gt-page-title">{title}</h1>
+        )}
         {description && <p className="gt-page-sub">{description}</p>}
       </div>
       <div className="gt-page-heading-actions">

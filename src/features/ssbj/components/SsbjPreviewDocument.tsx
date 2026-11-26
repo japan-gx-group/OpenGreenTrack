@@ -1,6 +1,7 @@
 // SSBJ レポートのプレビュー本文（T12。表示のみ）。保存版、または作業中の内容を保存版と同じ形に組み立てたものから描く。
 // 画面と印刷ビュー（PDF）で同じものを使う。どちらを表示しているか（作業中 / 保存版）を先頭に必ず出す。
 // プレビューが描けないセクションは黙って落とさず、名前を出して知らせる（出力漏れを見落とさないため）。
+// itemFocus は 2 画面エディタの右側だけが渡す（文章の項目と左の入力を結ぶ）。印刷ビュー・保存版の表示では渡さない。
 
 import { formatDateTime } from '@/lib/datetime';
 import type { SsbjPreviewSource } from '../services/previewService';
@@ -11,7 +12,7 @@ import { SsbjPreviewEvidence } from './SsbjPreviewEvidence';
 import { SsbjPreviewExternalEmissions } from './SsbjPreviewExternalEmissions';
 import { SsbjPreviewGhg } from './SsbjPreviewGhg';
 import { SsbjPreviewJudgements } from './SsbjPreviewJudgements';
-import { SsbjPreviewNarratives } from './SsbjPreviewNarratives';
+import { SsbjPreviewNarratives, type SsbjPreviewItemFocus } from './SsbjPreviewNarratives';
 import { SsbjPreviewRisks, SsbjPreviewTimeHorizons } from './SsbjPreviewStrategy';
 import { SsbjReportBasicInfo } from './SsbjReportBasicInfo';
 
@@ -45,9 +46,11 @@ const sourceDescription = (source: SsbjPreviewSource): string =>
 export const SsbjPreviewDocument = ({
   source,
   showInternalNotes,
+  itemFocus,
 }: {
   source: SsbjPreviewSource;
   showInternalNotes: boolean;
+  itemFocus?: SsbjPreviewItemFocus;
 }) => {
   const { report, sections } = source.snapshot;
   const unsupported = unsupportedPreviewSections(source.snapshot);
@@ -73,11 +76,11 @@ export const SsbjPreviewDocument = ({
       </Section>
 
       <Section title={SSBJ_SECTION_LABELS.governance}>
-        <SsbjPreviewNarratives sectionId="governance" narratives={sections.narratives} showInternalNotes={showInternalNotes} />
+        <SsbjPreviewNarratives sectionId="governance" narratives={sections.narratives} showInternalNotes={showInternalNotes} itemFocus={itemFocus} />
       </Section>
 
       <Section title={SSBJ_SECTION_LABELS.strategy}>
-        <SsbjPreviewNarratives sectionId="strategy" narratives={sections.narratives} showInternalNotes={showInternalNotes} />
+        <SsbjPreviewNarratives sectionId="strategy" narratives={sections.narratives} showInternalNotes={showInternalNotes} itemFocus={itemFocus} />
         <h3 className="m-0 text-sm font-bold">リスク及び機会</h3>
         <SsbjPreviewRisks items={sections.risks_opportunities} showInternalNotes={showInternalNotes} />
         <h3 className="m-0 mt-2 text-sm font-bold">時間軸の定義</h3>
@@ -85,7 +88,7 @@ export const SsbjPreviewDocument = ({
       </Section>
 
       <Section title={SSBJ_SECTION_LABELS.risk_management}>
-        <SsbjPreviewNarratives sectionId="risk_management" narratives={sections.narratives} showInternalNotes={showInternalNotes} />
+        <SsbjPreviewNarratives sectionId="risk_management" narratives={sections.narratives} showInternalNotes={showInternalNotes} itemFocus={itemFocus} />
       </Section>
 
       <Section title={SSBJ_SECTION_LABELS.metrics_targets}>
@@ -98,7 +101,7 @@ export const SsbjPreviewDocument = ({
           scope2WithBasis={scope2WithBasis}
         />
         <h3 className="m-0 mt-2 text-sm font-bold">そのほかの指標・目標・測定方法の説明</h3>
-        <SsbjPreviewNarratives sectionId="metrics_targets" narratives={sections.narratives} showInternalNotes={showInternalNotes} />
+        <SsbjPreviewNarratives sectionId="metrics_targets" narratives={sections.narratives} showInternalNotes={showInternalNotes} itemFocus={itemFocus} />
       </Section>
 
       <Section title="該当性・重要性・記載しない理由">

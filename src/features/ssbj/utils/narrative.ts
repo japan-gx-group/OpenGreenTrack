@@ -11,6 +11,7 @@ import type {
   SsbjSectionId,
 } from '../types';
 import { isSsbjItemId, sectionOfItem } from './ids';
+import { normalizeSsbjNarrativeTemplateInput } from './narrativeTemplateChoice';
 import { SSBJ_NARRATIVE_ITEMS, findSsbjNarrativeItem } from './requirementMaster';
 
 export const SSBJ_NARRATIVE_TEXT_MAX_LENGTH = 5000;
@@ -145,3 +146,38 @@ export const mergeSsbjNarrativeDrafts = (
   }
   return merged;
 };
+
+const sameDisclosableText = (a: SsbjDisclosableText, b: SsbjDisclosableText): boolean =>
+  a.disclosure.state === b.disclosure.state
+  && (a.disclosure.state === 'answered' ? a.disclosure.value : null)
+    === (b.disclosure.state === 'answered' ? b.disclosure.value : null)
+  && a.internalNote === b.internalNote;
+
+// DB（jsonb）から読んだ選択はキーの順が入力の順と違うことがあるので、キーの順によらずに比べる。
+const sortedEntries = (record: Record<string, string>): string =>
+  JSON.stringify(Object.entries(record).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+
+const sameTemplateInput = (a: SsbjNarrativeTemplateInput | null, b: SsbjNarrativeTemplateInput | null): boolean => {
+  if (a === null || b === null) return a === b;
+  return a.version === b.version
+    && sortedEntries(a.choices) === sortedEntries(b.choices)
+    && sortedEntries(a.texts) === sortedEntries(b.texts);
+};
+
+/**
+ * 編集中のフォームに、保存済みの内容と違う（保存しないと消える）入力があるか。画面を離れる前の確認と「未保存 n」に使う。
+ * 保存したときと同じ正規化をしてから比べる（前後の空白だけの違いは未保存にしない）。
+ * 「入力済み」以外の状態で残っている本文（保存すると消える本文）と、選択式テンプレートの選択の違いも未保存として扱う。
+ */
+export const isSsbjNarrativeFormDirty = (
+  itemId: string,
+  saved: SsbjDisclosableText,
+  savedTemplateInput: SsbjNarrativeTemplateInput | null,
+  values: SsbjNarrativeFormValues,
+): boolean =>
+  !sameDisclosableText(normalizeSsbjNarrativeInput(values), saved)
+  || ssbjNarrativeTextWillBeDiscarded(values)
+  || !sameTemplateInput(
+    normalizeSsbjNarrativeTemplateInput(itemId, values.templateInput),
+    normalizeSsbjNarrativeTemplateInput(itemId, savedTemplateInput),
+  );

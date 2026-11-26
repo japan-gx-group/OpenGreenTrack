@@ -23,6 +23,9 @@ vi.mock('@/lib/supabase/client', () => ({
   }),
 }));
 
+vi.mock('../../utils/workingChange', () => ({ notifySsbjWorkingChanged: vi.fn() }));
+
+import { notifySsbjWorkingChanged } from '../../utils/workingChange';
 import { saveSsbjNarrative, toSsbjNarrative } from '../narrativeService';
 
 const report = { id: 'report-1', organizationId: 'org-1' };
@@ -80,5 +83,19 @@ describe('saveSsbjNarrative', () => {
     mocks.updateSelect.mockResolvedValue({ data: [], error: null });
     mocks.insertSingle.mockResolvedValue({ data: null, error: { code: '23505', message: 'duplicate' } });
     await expect(saveSsbjNarrative(report, 'governance.oversight_body', text)).rejects.toThrow('画面を開き直して');
+    expect(notifySsbjWorkingChanged).not.toHaveBeenCalled();
+  });
+
+  it('更新でも作成でも、保存できたら作業中の内容が書き換わったことを 1 回知らせる', async () => {
+    mocks.updateSelect.mockResolvedValue({ data: [row], error: null });
+    await saveSsbjNarrative(report, 'governance.oversight_body', text);
+    expect(notifySsbjWorkingChanged).toHaveBeenCalledTimes(1);
+    expect(notifySsbjWorkingChanged).toHaveBeenCalledWith('report-1');
+
+    vi.mocked(notifySsbjWorkingChanged).mockClear();
+    mocks.updateSelect.mockResolvedValue({ data: [], error: null });
+    mocks.insertSingle.mockResolvedValue({ data: row, error: null });
+    await saveSsbjNarrative(report, 'governance.oversight_body', text);
+    expect(notifySsbjWorkingChanged).toHaveBeenCalledTimes(1);
   });
 });

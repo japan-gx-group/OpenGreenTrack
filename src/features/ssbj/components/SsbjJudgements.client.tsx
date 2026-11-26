@@ -7,8 +7,14 @@
 // 一覧では該当性・重要性を選んで続けて保存でき（詳細の内容は変えない）、未判断・要確認・判断済みで絞り込める。
 // 記載しない理由・開示する説明・内部の検討理由（根拠）は「詳細」のダイアログで扱う。一覧の保存は詳細と同じ検証を通し、
 // 該当性・重要性の 2 列だけを、読込時の更新日時を条件に保存する（他の画面で保存された根拠を古い値に戻さない）。
+// 「詳細」のダイアログに保存していない入力がある間は、タブを閉じる・再読み込みなど画面を離れる操作を止めて聞く。
+// 行のチェックで要求を選び、上の帯（SsbjJudgementBulkBar）から該当性・重要性をまとめて付けられる。保存は 1 件ずつ
+// 一覧の保存を通し、保存できなかった要求は理由を出して選んだままにする。件数・絞り込み・まとめての帯は、表をスクロールしても上に残す
+// （スマホの幅では残さない。左上のメニューのボタンと重なり、画面の高さを取りすぎるため）。
+// 該当性・重要性の選択欄は、値（「重要性あり」など）が切れずに読める幅にする。
 
 import { useState, type FormEvent, type KeyboardEvent } from 'react';
+import { Checkbox } from '@/components/ui/checkbox';
 import Link from 'next/link';
 import { ArrowLeft, FileCheck2, Pencil } from 'lucide-react';
 import { PageHeading } from '@/components/layout/PageHeading';
@@ -17,9 +23,11 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { LoadingIndicator } from '@/components/ui/PageLoading';
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useSsbjJudgementForm } from '../hooks/useSsbjJudgementForm';
 import { useSsbjJudgements } from '../hooks/useSsbjJudgements';
+import { useSsbjJudgementSelection, type SsbjJudgementSelection } from '../hooks/useSsbjJudgementSelection';
 import { useSsbjReport } from '../hooks/useSsbjReport';
 import { useSsbjRisksOpportunities } from '../hooks/useSsbjRisksOpportunities';
 import { saveSsbjJudgement, saveSsbjJudgementQuickChange } from '../services/judgementService';
@@ -43,6 +51,7 @@ import {
   SSBJ_JUDGEMENT_STATUS_LABELS,
   SSBJ_JUDGEMENT_STATUSES,
   applySsbjJudgementQuickChange,
+  isSsbjJudgementFormDirty,
   normalizeSsbjJudgementInput,
   ssbjJudgementEntries,
   ssbjJudgementReviewReasons,
@@ -53,15 +62,17 @@ import {
   type SsbjJudgementQuickChange,
   type SsbjJudgementStatus,
 } from '../utils/judgement';
-import { formatParagraphReference } from '../utils/requirementMaster';
+import { findSsbjRequirement, formatParagraphReference } from '../utils/requirementMaster';
 import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
 import { isSsbjReadOnly } from '../utils/reportStatus';
 import { SsbjEditConflictError } from '../utils/writeError';
 import { SsbjEditorLayout } from './SsbjEditorLayout.client';
+import { SsbjJudgementBulkBar, type SsbjJudgementBulkResult } from './SsbjJudgementBulkBar.client';
 import { SsbjJudgementDialog } from './SsbjJudgementDialog.client';
 import { SsbjLockedNotice } from './SsbjLockedNotice';
 import { SsbjRoleNotice } from './SsbjRoleNotice';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
+import { SsbjUnsavedChangesDialog } from './SsbjUnsavedChangesDialog.client';
 
 const muted = (isUnconfirmed: boolean) => (isUnconfirmed ? 'text-text-muted' : '');
 
@@ -79,6 +90,8 @@ interface JudgementRowProps {
   /** 一覧での該当性・重要性の選択を保存する。無い（承認済みなど）ときは選択を出さない。 */
   onQuickChange?: (entry: SsbjJudgementEntry, change: SsbjJudgementQuickChange) => Promise<void>;
   onEdit?: (entry: SsbjJudgementEntry) => void;
+  /** まとめて付ける要求の選択。無い（承認済みなど）ときはチェックを出さない。 */
+  selection?: SsbjJudgementSelection;
 }
 
 // 閉じた選択欄で ↑↓ を押したときは、値を変えずに選択肢の一覧を開く。Windows の Edge・Chrome は、閉じた選択欄の ↑↓ で
@@ -97,7 +110,7 @@ const openPickerOnArrowKey = (event: KeyboardEvent<HTMLSelectElement>) => {
 };
 
 // 1 要求の行。一覧では該当性・重要性だけを選んですぐ保存し、記載しない理由・説明・根拠は詳細の編集で扱う。
-const JudgementRow = ({ entry, risks, onQuickChange, onEdit }: JudgementRowProps) => {
+const JudgementRow = ({ entry, risks, onQuickChange, onEdit, selection }: JudgementRowProps) => {
   const { requirement, judgement } = entry;
   const [isSaving, setIsSaving] = useState(false);
   // 行のエラー。forJudgement が null（競合）なら次に選ぶまで出し、それ以外はその判断のあいだだけ出す
@@ -129,6 +142,17 @@ const JudgementRow = ({ entry, risks, onQuickChange, onEdit }: JudgementRowProps
 
   return (
     <TableRow data-testid="ssbj-judgement-row" data-requirement-id={judgement.requirementId}>
+      {selection && (
+        <TableCell className="w-8">
+          {canQuickEdit && (
+            <Checkbox
+              aria-label={`${label} を選ぶ`}
+              checked={selection.isSelected(judgement.requirementId)}
+              onCheckedChange={checked => selection.toggle(judgement.requirementId, checked === true)}
+            />
+          )}
+        </TableCell>
+      )}
       <TableCell className="min-w-64 whitespace-normal">
         <span className="block text-xs text-text-muted">
           {judgement.requirementId}
@@ -145,7 +169,7 @@ const JudgementRow = ({ entry, risks, onQuickChange, onEdit }: JudgementRowProps
         <Badge variant={STATUS_BADGE_VARIANTS[status]}>{SSBJ_JUDGEMENT_STATUS_LABELS[status]}</Badge>
         {reasons.length > 0 && <span className="mt-1 block text-xs text-warning">{reasons.join('・')}</span>}
       </TableCell>
-      <TableCell className={muted(judgement.applicability === 'unconfirmed')}>
+      <TableCell className={`min-w-36 ${muted(judgement.applicability === 'unconfirmed')}`}>
         {canQuickEdit ? (
           <select
             aria-label={`${label} の該当性`}
@@ -161,7 +185,7 @@ const JudgementRow = ({ entry, risks, onQuickChange, onEdit }: JudgementRowProps
           </select>
         ) : SSBJ_APPLICABILITY_LABELS[judgement.applicability]}
       </TableCell>
-      <TableCell className={muted(judgement.materiality === 'unconfirmed')}>
+      <TableCell className={`min-w-36 ${muted(judgement.materiality === 'unconfirmed')}`}>
         {canQuickEdit ? (
           <select
             aria-label={`${label} の重要性`}
@@ -198,17 +222,36 @@ const JudgementRow = ({ entry, risks, onQuickChange, onEdit }: JudgementRowProps
 };
 
 const JudgementTable = ({
+  title,
   entries,
   risksByRequirement,
   onQuickChange,
   onEdit,
+  selection,
 }: {
+  title: string;
   entries: SsbjJudgementEntry[];
   risksByRequirement: Map<SsbjRequirementId, SsbjRiskOpportunity[]>;
-} & Pick<JudgementRowProps, 'onQuickChange' | 'onEdit'>) => (
+} & Pick<JudgementRowProps, 'onQuickChange' | 'onEdit' | 'selection'>) => {
+  // 章の見出しのチェック: 表示中の、一覧で変えられる要求をまとめて選ぶ・外す。
+  const selectable = entries.filter(entry => entry.requirement !== null).map(entry => entry.judgement.requirementId);
+  const selectedCount = selection ? selectable.filter(id => selection.isSelected(id)).length : 0;
+  const allChecked = selectable.length > 0 && selectedCount === selectable.length;
+  return (
   <Table>
     <TableHeader>
       <TableRow>
+        {selection && (
+          <TableHead className="w-8">
+            {selectable.length > 0 && (
+              <Checkbox
+                aria-label={`${title}の要求をすべて選ぶ`}
+                checked={allChecked ? true : selectedCount > 0 ? 'indeterminate' : false}
+                onCheckedChange={checked => selection.setMany(selectable, checked === true)}
+              />
+            )}
+          </TableHead>
+        )}
         <TableHead>要求</TableHead>
         <TableHead>状態</TableHead>
         <TableHead>該当性</TableHead>
@@ -226,11 +269,13 @@ const JudgementTable = ({
           risks={risksByRequirement.get(entry.judgement.requirementId) ?? []}
           onQuickChange={onQuickChange}
           onEdit={onEdit}
+          selection={selection}
         />
       ))}
     </TableBody>
   </Table>
-);
+  );
+};
 
 const FILTER_LABELS: Record<StatusFilter, string> = {
   all: 'すべて',
@@ -248,6 +293,7 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
     useSsbjJudgements(report?.id ?? null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [filter, setFilter] = useState<StatusFilter>('all');
+  const selection = useSsbjJudgementSelection();
   const risks = useSsbjRisksOpportunities(reportId, report !== null);
 
   const form = useSsbjJudgementForm(async (judgement: SsbjJudgement) => {
@@ -260,11 +306,19 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
   const masterEntries = entries.filter(entry => entry.requirement);
   const countOf = (status: SsbjJudgementStatus) =>
     masterEntries.filter(entry => ssbjJudgementStatus(entry.judgement) === status).length;
-  const matches = (entry: SsbjJudgementEntry) =>
-    filter === 'all' ? true
-      : filter === 'with_risks' ? risksByRequirement.has(entry.judgement.requirementId)
-        : ssbjJudgementStatus(entry.judgement) === filter;
-  const visible = entries.filter(matches);
+  const matchesFilter = (target: StatusFilter) => (entry: SsbjJudgementEntry) =>
+    target === 'all' ? true
+      : target === 'with_risks' ? risksByRequirement.has(entry.judgement.requirementId)
+        : ssbjJudgementStatus(entry.judgement) === target;
+  const visible = entries.filter(matchesFilter(filter));
+  // まとめて付ける対象は、表示中で選んでいる要求だけ（画面に出ていない要求には付けない）。帯の件数もこれで数える。
+  const visibleSelected = visible.filter(entry => entry.requirement && selection.isSelected(entry.judgement.requirementId));
+  // 絞り込みを変えたら、見えなくなる要求の選択を外す（見えないまま選んだ状態で残さない）。
+  const changeFilter = (next: StatusFilter) => {
+    setFilter(next);
+    const hidden = entries.filter(entry => !matchesFilter(next)(entry)).map(entry => entry.judgement.requirementId);
+    if (hidden.length > 0) selection.clear(hidden);
+  };
   const groups: { key: string; title: string; entries: SsbjJudgementEntry[] }[] = [
     ...SSBJ_SECTION_IDS.map(sectionId => ({
       key: sectionId,
@@ -300,6 +354,28 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
     }
   };
 
+  // 選んだ要求に、該当性・重要性をまとめて付ける。表示の順に 1 件ずつ一覧の保存（quickChange）を通し、
+  // 保存できた要求は選択から外し、保存できなかった要求は理由とともに選んだままにする。
+  // 対象は表示中で選んでいる要求だけ（visibleSelected）。保存できなかった要求は、探しやすいよう要求の名前も返す。
+  const applyBulk = async (change: SsbjJudgementQuickChange): Promise<SsbjJudgementBulkResult> => {
+    const targets = visibleSelected;
+    const result: SsbjJudgementBulkResult = { saved: [], failed: [] };
+    for (const entry of targets) {
+      try {
+        await quickChange(entry, change);
+        result.saved.push(entry.judgement.requirementId);
+      } catch (error) {
+        result.failed.push({
+          requirementId: entry.judgement.requirementId,
+          summary: entry.requirement?.summary ?? null,
+          message: error instanceof Error ? error.message : '保存に失敗しました',
+        });
+      }
+    }
+    selection.clear(result.saved);
+    return result;
+  };
+
   // 保存して、表示中の一覧で次の未判断・要確認の要求を開く（次が無ければ閉じる）。
   const submitAndNext = () => {
     const currentId = form.requirementId;
@@ -318,9 +394,18 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
   const previewJudgements = draftJudgement
     ? [...judgements.filter(judgement => judgement.requirementId !== draftJudgement.requirementId), draftJudgement]
     : judgements;
+  // ダイアログを開いている間だけ、保存済みの判断と違う入力があれば、画面を離れる前に止める。
+  const editingEntry = draftJudgement
+    ? entries.find(entry => entry.judgement.requirementId === draftJudgement.requirementId)
+    : undefined;
+  const isDialogDirty = !!editingEntry && isSsbjJudgementFormDirty(editingEntry.judgement, form.values);
+  const leaveGuard = useUnsavedChangesGuard(isDialogDirty);
 
   return (
-    <div className="page-content gt-scroll relative">
+    // 画面全体はウィンドウがスクロールする（.page-content は高さが決まっておらずスクロールしない）。
+    // .page-content の overflow-y: auto のままだと、中の sticky（件数・絞り込み・まとめての帯、右側のプレビュー）が
+    // この要素に貼り付いて画面に付いてこないため、この画面では overflow を戻す。
+    <div className="page-content gt-scroll relative overflow-y-visible">
       <PageHeading title="該当性・重要性の判断" description={report?.title ?? 'SSBJレポート'} showFiscalYear={false} primaryAction={null} />
       <div className="flex flex-col gap-4">
         <Link
@@ -374,6 +459,8 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
                   記載しない旨の説明が未入力のどれかに当たる要求です。一覧で該当性・重要性を選んだだけの要求は、「詳細」で根拠を書くまで要確認です。
                 </li>
               </ul>
+            </Card>
+            <Card data-testid="ssbj-judgement-toolbar" className="z-10 flex flex-col gap-3 shadow-sm md:sticky md:top-0">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p data-testid="ssbj-judgement-status-count" className="m-0 text-sm font-semibold">
                   {SSBJ_JUDGEMENT_STATUSES.map(status => `${SSBJ_JUDGEMENT_STATUS_LABELS[status]} ${countOf(status)} 件`).join(' / ')}
@@ -385,7 +472,7 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
                     id="ssbj-judgements-filter"
                     className="gt-field gt-field-select"
                     value={filter}
-                    onChange={event => setFilter(event.target.value as StatusFilter)}
+                    onChange={event => changeFilter(event.target.value as StatusFilter)}
                   >
                     {(Object.keys(FILTER_LABELS) as StatusFilter[]).map(key => (
                       <option key={key} value={key}>{FILTER_LABELS[key]}</option>
@@ -393,16 +480,27 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
                   </select>
                 </div>
               </div>
+              {!isSsbjReadOnly(report.review, myRole.role) && (
+                visibleSelected.length > 0 ? (
+                  <SsbjJudgementBulkBar count={visibleSelected.length} onApply={applyBulk} onClear={() => selection.clear()} />
+                ) : (
+                  <p className="m-0 text-xs text-text-muted">
+                    行の左のチェックで要求を選ぶと、該当性・重要性をまとめて付けられます（章の見出しのチェックで、表示中の要求をまとめて選べます）。
+                  </p>
+                )
+              )}
             </Card>
             {groups.map(group => (
               <Card key={group.key} role="region" aria-label={group.title}>
                 <h2 className="m-0 mb-3 text-base font-bold">{group.title}</h2>
                 {group.entries.length > 0 ? (
                   <JudgementTable
+                    title={group.title}
                     entries={group.entries}
                     risksByRequirement={risksByRequirement}
                     onQuickChange={isSsbjReadOnly(report.review, myRole.role) ? undefined : quickChange}
                     onEdit={isSsbjReadOnly(report.review, myRole.role) ? undefined : openEdit}
+                    selection={isSsbjReadOnly(report.review, myRole.role) ? undefined : selection}
                   />
                 ) : (
                   <p className="m-0 text-sm text-text-muted">条件に合う要求はありません。</p>
@@ -415,6 +513,15 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
               form={form}
               onSubmit={submit}
               onSubmitAndNext={submitAndNext}
+            />
+            <SsbjUnsavedChangesDialog
+              open={leaveGuard.isConfirming}
+              kindLabel="判断"
+              itemLabels={editingEntry
+                ? [findSsbjRequirement(editingEntry.judgement.requirementId)?.summary ?? editingEntry.judgement.requirementId]
+                : []}
+              onStay={leaveGuard.cancelLeave}
+              onLeave={() => { setDialogOpen(false); leaveGuard.confirmLeave(); }}
             />
           </SsbjEditorLayout>
         ) : null}
