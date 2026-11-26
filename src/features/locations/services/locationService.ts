@@ -166,7 +166,8 @@ const INSERT_CHUNK_SIZE = 100;
 // 誤って止めると以降の正しい行が取り込まれず行エラーも失われる。誤って続けても失うのは追加リクエストだけなので、
 // 「同じコードが続いたら止める」ような推測はせず、全体が原因と分かっているものだけで止める。
 const REQUEST_LEVEL_STATUSES = new Set([0, 401, 403, 429, 502, 503, 504]);
-const REQUEST_LEVEL_CODES = new Set(['57014', '42P01', '42703']);
+const STATEMENT_TIMEOUT_CODE = '57014';
+const REQUEST_LEVEL_CODES = new Set([STATEMENT_TIMEOUT_CODE, '42P01', '42703']);
 const SCHEMA_CACHE_CODE = /^PGRST2\d\d$/;
 const RATE_LIMITED_MESSAGE =
   'アクセスが集中しているため取込を中止しました。しばらく待ってから取り込み直してください';
@@ -273,7 +274,9 @@ export const addLocations = async (
       onProgress?.(offset + chunk.length);
       continue;
     }
-    if (isRequestLevelFailure(chunkResult)) {
+    // ステートメントタイムアウトはロールバック済みで、100 件まとめた insert が重かっただけのこともある。
+    // 小さな insert なら通る可能性があるため、チャンクでは止めずに1件ずつ入れ直す（1件でもタイムアウトしたらそこで止める）。
+    if (isRequestLevelFailure(chunkResult) && chunkResult.error?.code !== STATEMENT_TIMEOUT_CODE) {
       const unconfirmedCount = isOutcomeUnknown(chunkResult) ? chunk.length : 0;
       return { created, failures, stopped: { reason: toStopReason(chunkResult, 'create'), unconfirmedCount } };
     }

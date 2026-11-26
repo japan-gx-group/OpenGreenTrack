@@ -247,8 +247,23 @@ describe('addLocations: リクエスト全体が原因の失敗', () => {
     expect(singleInserts()).toHaveLength(0);
   });
 
-  it('ステートメントタイムアウト（57014）ではロールバック済みなので、確認できない行としては数えない', async () => {
-    resolveInserts(() => ({ data: null, status: 500, error: { code: '57014', message: 'canceling statement due to statement timeout' } }));
+  const statementTimeout: QueryResult = {
+    data: null, status: 500, error: { code: '57014', message: 'canceling statement due to statement timeout' },
+  };
+
+  it('チャンクがステートメントタイムアウト（57014）になっても、ロールバック済みなので1件ずつ入れ直して取り込む', async () => {
+    resolveInserts(payload => (Array.isArray(payload) && payload[0].name === 'place-100' ? statementTimeout : succeed(payload)));
+
+    const result = await addLocations(places(300));
+
+    expect(result.created).toHaveLength(300);
+    expect(result.failures).toEqual([]);
+    expect(result.stopped).toBeNull();
+    expect(singleInserts()).toHaveLength(100);
+  });
+
+  it('1件ずつの入れ直しでもステートメントタイムアウトになったら止め、確認できない行としては数えない', async () => {
+    resolveInserts(() => statementTimeout);
 
     const result = await addLocations(places(300));
 
@@ -257,7 +272,8 @@ describe('addLocations: リクエスト全体が原因の失敗', () => {
       reason: '拠点の登録に失敗しました（詳細: canceling statement due to statement timeout）',
       unconfirmedCount: 0,
     });
-    expect(singleInserts()).toHaveLength(0);
+    // 最初のバッチ（同時実行数ぶん）で止め、残りの行は送らない
+    expect(singleInserts()).toHaveLength(5);
   });
 
   it('DB に接続できない（503）ときも入れ直さない', async () => {
