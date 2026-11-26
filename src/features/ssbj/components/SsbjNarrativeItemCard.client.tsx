@@ -14,6 +14,7 @@
 // 本文の欄は状態にかかわらず書ける。書き始めると状態が「入力済み」になる（useSsbjNarrativeForm の setText）。
 // 「保存して次へ」で保存したら、親（onSaveAndNext）が次の項目の編集を開く。親は ref の openForEdit で、
 // その項目へ移って編集を始めさせる。編集中は Ctrl+S（Mac は ⌘S）で保存し、何も変えていなければ Esc で編集をやめる。
+// 日本語入力の変換中のキー（変換の取り消しの Esc など）は変換の操作なので、保存・編集の終了には使わない。
 
 import { useEffect, useId, useImperativeHandle, useRef, useState, type KeyboardEvent, type Ref } from 'react';
 import { ListChecks, Pencil } from 'lucide-react';
@@ -187,6 +188,9 @@ export const SsbjNarrativeItemCard = ({
   };
 
   const onFormKeyDown = (event: KeyboardEvent<HTMLFormElement>) => {
+    // 変換中のキーは変換の操作なので何もしない（SearchableSelect と同じ判定）。
+    // isComposing に加えて keyCode 229 も見るのは、変換確定直後の keydown を isComposing=false・keyCode=229 で届けるブラウザがあるため。
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     if (isSaveShortcut(event)) {
       event.preventDefault();
       nextAfterSaveRef.current = false;

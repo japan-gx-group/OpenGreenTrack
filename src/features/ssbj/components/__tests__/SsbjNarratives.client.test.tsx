@@ -707,4 +707,28 @@ describe('SsbjNarratives（書き始めれば入力済み・保存して次へ�
       expect.objectContaining({ disclosure: { state: 'answered', value: '委任している。' } }), null);
     expect(textareaIn(card)).toBeNull();
   });
+
+  it('日本語の変換中の Ctrl+S・Esc では、保存も編集の終了もしない', async () => {
+    vi.mocked(saveSsbjNarrative).mockImplementation(async (_report, itemId, text) => ({ itemId, text }));
+    rendered = render(<SsbjNarratives reportId={report.id} />);
+    await settle();
+    const card = cardOf('経営者の役割');
+    click(buttonIn(card, '編集'));
+    // 何も変えていなくても、変換の取り消しの Esc では閉じない（変換確定直後の keyCode 229 も同じ）。
+    keyDown(textareaIn(card), { key: 'Escape', isComposing: true });
+    keyDown(textareaIn(card), { key: 'Escape', keyCode: 229 });
+    expect(textareaIn(card)).not.toBeNull();
+
+    setTextareaValue(textareaIn(card), '委任している。');
+    await act(async () => { keyDown(textareaIn(card), { key: 's', ctrlKey: true, isComposing: true }); });
+    await act(async () => { keyDown(textareaIn(card), { key: 's', ctrlKey: true, keyCode: 229 }); });
+    await settle();
+    expect(saveSsbjNarrative).not.toHaveBeenCalled();
+    expect(textareaIn(card)).not.toBeNull();
+
+    // 変換を終えた後の Ctrl+S では保存する。
+    await act(async () => { keyDown(textareaIn(card), { key: 's', ctrlKey: true }); });
+    await settle();
+    expect(saveSsbjNarrative).toHaveBeenCalledTimes(1);
+  });
 });
