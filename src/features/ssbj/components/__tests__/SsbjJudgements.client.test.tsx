@@ -32,7 +32,7 @@ import { listSsbjJudgements, saveSsbjJudgement, saveSsbjJudgementQuickChange } f
 import { getMySsbjRole } from '../../services/memberRoleService';
 import { getSsbjReport } from '../../services/reportService';
 import { listSsbjRisksOpportunities } from '../../services/riskOpportunityService';
-import { SSBJ_REQUIREMENTS } from '../../utils/requirementMaster';
+import { SSBJ_REQUIREMENTS, findSsbjRequirement } from '../../utils/requirementMaster';
 import { SsbjEditConflictError } from '../../utils/writeError';
 import { SsbjJudgements } from '../SsbjJudgements.client';
 
@@ -433,7 +433,8 @@ describe('SsbjJudgements（まとめて付ける・選択欄の幅）', () => {
     await settle();
     expect(bulkBar()?.textContent).toContain('選んだ要求 1 件に');
     expect(bulkBar()?.textContent).toContain('1 件を保存しました。1 件は保存できませんでした');
-    expect(bulkBar()?.textContent).toContain('REQ-CLM-002: 他の画面で先に変更されました');
+    // 探しやすいよう、要求 ID に要求の名前を添える。
+    expect(bulkBar()?.textContent).toContain(`REQ-CLM-002（${findSsbjRequirement('REQ-CLM-002')!.summary}）: 他の画面で先に変更されました`);
     expect(checkboxOf('REQ-CLM-002').getAttribute('aria-checked')).toBe('true');
     expect(checkboxOf('REQ-GEN-002').getAttribute('aria-checked')).toBe('false');
   });

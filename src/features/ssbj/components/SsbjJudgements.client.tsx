@@ -356,7 +356,7 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
 
   // 選んだ要求に、該当性・重要性をまとめて付ける。表示の順に 1 件ずつ一覧の保存（quickChange）を通し、
   // 保存できた要求は選択から外し、保存できなかった要求は理由とともに選んだままにする。
-  // 対象は表示中で選んでいる要求だけ（visibleSelected）。
+  // 対象は表示中で選んでいる要求だけ（visibleSelected）。保存できなかった要求は、探しやすいよう要求の名前も返す。
   const applyBulk = async (change: SsbjJudgementQuickChange): Promise<SsbjJudgementBulkResult> => {
     const targets = visibleSelected;
     const result: SsbjJudgementBulkResult = { saved: [], failed: [] };
@@ -367,6 +367,7 @@ export const SsbjJudgements = ({ reportId }: { reportId: string }) => {
       } catch (error) {
         result.failed.push({
           requirementId: entry.judgement.requirementId,
+          summary: entry.requirement?.summary ?? null,
           message: error instanceof Error ? error.message : '保存に失敗しました',
         });
       }
