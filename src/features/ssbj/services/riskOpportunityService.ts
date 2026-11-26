@@ -17,6 +17,7 @@ import { fromFieldValue, toFieldValue } from '../utils/fieldValue';
 import type { SsbjRiskOpportunityInput } from '../utils/riskOpportunity';
 import { SsbjEditConflictError, ssbjWriteErrorMessage } from '../utils/writeError';
 import { throwIfSsbjEditForbidden } from './memberRoleService';
+import { notifySsbjWorkingChanged } from '../utils/workingChange';
 
 export interface SsbjRiskOpportunityRow {
   id: string;
@@ -125,6 +126,7 @@ export const createSsbjRiskOpportunity = async (
   if (error || !data) {
     throw new Error(ssbjWriteErrorMessage(error, 'リスク・機会の登録に失敗しました'));
   }
+  notifySsbjWorkingChanged(report.id);
   return toSsbjRiskOpportunityWorkingRecord(data as unknown as SsbjRiskOpportunityWorkingRow);
 };
 
@@ -169,6 +171,7 @@ export const updateSsbjRiskOpportunity = async (
     }
     throw new Error('リスク・機会が見つかりません。画面を開き直してください');
   }
+  notifySsbjWorkingChanged();
   return toSsbjRiskOpportunityWorkingRecord(data as unknown as SsbjRiskOpportunityWorkingRow);
 };
 
@@ -183,4 +186,5 @@ export const deleteSsbjRiskOpportunity = async (id: string): Promise<void> => {
     await throwIfSsbjEditForbidden();
     throw new Error('リスク・機会が見つかりません。画面を開き直してください');
   }
+  notifySsbjWorkingChanged();
 };
