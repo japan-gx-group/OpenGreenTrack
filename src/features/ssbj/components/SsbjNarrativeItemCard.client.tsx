@@ -1,14 +1,18 @@
 'use client';
 
-// 四本柱・補足の文章（T05）の 1 項目のカード。対応する要求と項番号、記載ガイド・記載例、文章の表示と編集を出す。
+// ガバナンス・戦略等の文章（企業固有の補足を含む。T05）の 1 項目のカード。対応する要求と項番号、記載ガイド・記載例、文章の表示と編集を出す。
 // 未入力・未確認・非該当は状態のラベルで出し、空欄や「なし」にしない。内部メモは開示しないことを明示する（docs/ssbj-spec.md §5）。
 // 編集中は、選択肢から下書きを作って本文に入れられ（SsbjNarrativeTemplateChoices）、残っている【 】の数を出す。
 // 入口はこの 1 つで、何も選ばずに入れた下書きが【 】の穴埋めの文例になる。入力中の内容は onDraftChange で親に渡す
 // （2 画面エディタのプレビューにその場で反映するため。保存はしない）。
 // 入力済み以外の状態では本文を保存しないので、入力した本文が消える保存は、確認のダイアログで止める（取り消せば編集に戻る）。
 // 選択式テンプレートの下書きを一度も編集しないまま入力済みで保存するときも、確認のダイアログで止める。
+// 編集中に保存済みの内容と違う入力があるか（未保存か）を onDirtyChange で親に渡す（画面を離れる前の確認と「未保存 n」のため）。
+// 2 画面エディタの右のプレビューと結ぶため、カードの中にフォーカスが入ったら onActivate で親に知らせ、扱っている間（isActive）は
+// 枠で目立たせる。右のプレビューで押された（editRequest）ら、このカードへ移って編集を始める（編集させないときは移るだけ）。
+// 編集中は、開示する文章の字数を上限と並べて出す。
 
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { ListChecks, Pencil } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,6 +25,7 @@ import { SSBJ_FIELD_STATES, type SsbjDisclosableText, type SsbjFieldState, type 
 import { SSBJ_FIELD_STATE_LABELS, formatFieldValue, isAnswered } from '../utils/fieldValue';
 import {
   SSBJ_NARRATIVE_TEXT_MAX_LENGTH,
+  isSsbjNarrativeFormDirty,
   normalizeSsbjNarrativeInput,
   ssbjTemplatePlaceholders,
   type SsbjNarrativeEntry,
@@ -30,6 +35,7 @@ import {
   findSsbjNarrativeChoiceTemplate,
   isCurrentSsbjNarrativeTemplateInput,
 } from '../utils/narrativeTemplateChoice';
+import { ssbjScrollBehavior } from '../utils/editorScroll';
 import { formatParagraphReference, ssbjRequirementsOfItem } from '../utils/requirementMaster';
 import { SsbjNarrativeTemplateChoices } from './SsbjNarrativeTemplateChoices.client';
 
@@ -42,12 +48,26 @@ interface SsbjNarrativeItemCardProps {
   readOnly?: boolean;
   /** 編集中の内容（未保存）。編集をやめた・保存したときは null。 */
   onDraftChange?: (itemId: SsbjItemId, text: SsbjDisclosableText | null) => void;
+  /** 保存済みの内容と違う入力（保存しないと消える入力）があるか。編集をやめた・保存したときは false。 */
+  onDirtyChange?: (itemId: SsbjItemId, dirty: boolean) => void;
+  /** 2 画面エディタで、いま扱っている項目か（右のプレビューと同じ項目を目立たせる）。 */
+  isActive?: boolean;
+  /** カードの中にフォーカスが入った（この項目を扱い始めた）。 */
+  onActivate?: (itemId: SsbjItemId) => void;
+  /** 右のプレビューで押された項目。seq は押すたびに増える。 */
+  editRequest?: { itemId: SsbjItemId; seq: number } | null;
 }
 
-export const SsbjNarrativeItemCard = ({ entry, onSave, readOnly = false, onDraftChange }: SsbjNarrativeItemCardProps) => {
+export const SsbjNarrativeItemCard = ({
+  entry, onSave, readOnly = false, onDraftChange, onDirtyChange, isActive = false, onActivate, editRequest = null,
+}: SsbjNarrativeItemCardProps) => {
   const id = useId();
+  const cardRef = useRef<HTMLDivElement>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isChoosing, setIsChoosing] = useState(false);
+  // 受け取り済みの editRequest の seq（最初に描いたときに来ていた依頼は受け取り済みとみなす）。
+  const [handledSeq, setHandledSeq] = useState(() => editRequest?.seq ?? 0);
+  const initialSeqRef = useRef(handledSeq);
   const form = useSsbjNarrativeForm(entry.itemId, onSave);
   const requirements = ssbjRequirementsOfItem(entry.itemId);
   const { disclosure, internalNote } = entry.text;
@@ -64,14 +84,46 @@ export const SsbjNarrativeItemCard = ({ entry, onSave, readOnly = false, onDraft
     onDraftChange?.(itemId, isEditing ? normalizeSsbjNarrativeInput(form.values) : null);
   }, [isEditing, form.values, itemId, onDraftChange]);
 
+  const isDirty = isEditing && isSsbjNarrativeFormDirty(itemId, entry.text, entry.templateInput, form.values);
+  // 未保存になったら知らせ、未保存でなくなった・カードが外れたときは後片付けで取り消す（数え残しで移動を止め続けないように）。
+  useEffect(() => {
+    if (!isDirty) return;
+    onDirtyChange?.(itemId, true);
+    return () => onDirtyChange?.(itemId, false);
+  }, [isDirty, itemId, onDirtyChange]);
+
   const startEdit = () => {
     form.reset(entry.text, entry.templateInput);
     setIsChoosing(entry.templateInput != null);
     setIsEditing(true);
   };
 
+  // 右のプレビューで押されたら、描画の中で編集を始める（props の変化に合わせて state を変える React の書き方）。
+  // 移る・フォーカスするのは、描き終えてから下の effect で行う。
+  const isRequested = editRequest !== null && editRequest.itemId === itemId && editRequest.seq !== handledSeq;
+  if (isRequested) {
+    setHandledSeq(editRequest.seq);
+    if (!isEditing && !readOnly && entry.item) startEdit();
+  }
+  useEffect(() => {
+    const card = cardRef.current;
+    if (handledSeq === initialSeqRef.current || !card) return;
+    // 書ける欄（本文が書けなければ状態の選択）へ。編集させないときはカードそのものへ。
+    const field = [document.getElementById(`${id}-text`), document.getElementById(`${id}-state`)]
+      .find(element => element instanceof HTMLElement && !element.hasAttribute('disabled')) ?? card;
+    field.focus({ preventScroll: true });
+    card.scrollIntoView?.({ block: 'start', behavior: ssbjScrollBehavior() });
+  }, [handledSeq, id]);
+
   return (
-    <Card data-testid="ssbj-narrative-item">
+    <Card
+      ref={cardRef}
+      data-testid="ssbj-narrative-item"
+      data-active={isActive || undefined}
+      tabIndex={-1}
+      className={isActive ? 'ring-2 ring-primary' : undefined}
+      onFocus={() => onActivate?.(itemId)}
+    >
       <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 className="m-0 text-sm font-bold">{entry.item?.label ?? entry.itemId}</h3>
@@ -159,6 +211,7 @@ export const SsbjNarrativeItemCard = ({ entry, onSave, readOnly = false, onDraft
               />
             )}
             <Textarea
+              id={`${id}-text`}
               aria-label="開示する文章"
               rows={4}
               maxLength={SSBJ_NARRATIVE_TEXT_MAX_LENGTH}
@@ -167,6 +220,11 @@ export const SsbjNarrativeItemCard = ({ entry, onSave, readOnly = false, onDraft
               disabled={form.isSaving || !isTextEnabled}
               onChange={event => form.setText(event.target.value)}
             />
+            {isTextEnabled && (
+              <p data-testid="ssbj-narrative-text-length" className="m-0 text-right text-xs text-text-muted">
+                {form.values.text.length} / {SSBJ_NARRATIVE_TEXT_MAX_LENGTH} 字
+              </p>
+            )}
             {placeholders.length > 0 && (
               <p data-testid="ssbj-template-placeholders" className="m-0 text-xs text-warning">
                 置き換えていない【 】が {placeholders.length} か所あります: {placeholders.join(' ')}

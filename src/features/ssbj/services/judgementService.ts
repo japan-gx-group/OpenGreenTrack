@@ -13,6 +13,7 @@ import {
 import { fromFieldValue, toFieldValue } from '../utils/fieldValue';
 import { SsbjEditConflictError, ssbjWriteErrorMessage } from '../utils/writeError';
 import { throwIfSsbjEditForbidden } from './memberRoleService';
+import { notifySsbjWorkingChanged } from '../utils/workingChange';
 
 type SsbjJudgementRow = {
   requirementId: string;
@@ -96,7 +97,10 @@ export const saveSsbjJudgement = async (
     .select(SELECT_COLUMNS);
   if (updated.error) throw new Error(ssbjWriteErrorMessage(updated.error, '該当性・重要性の判断の保存に失敗しました'));
   const updatedRows = (updated.data ?? []) as (SsbjJudgementRow & { updatedAt: string })[];
-  if (updatedRows.length > 0) return toSsbjJudgementWorkingRecord(updatedRows[0]);
+  if (updatedRows.length > 0) {
+    notifySsbjWorkingChanged(report.id);
+    return toSsbjJudgementWorkingRecord(updatedRows[0]);
+  }
 
   const inserted = await supabase
     .from('ssbj_judgements')
@@ -115,6 +119,7 @@ export const saveSsbjJudgement = async (
     }
     throw new Error(ssbjWriteErrorMessage(inserted.error, '該当性・重要性の判断の保存に失敗しました'));
   }
+  notifySsbjWorkingChanged(report.id);
   return toSsbjJudgementWorkingRecord(inserted.data as SsbjJudgementRow & { updatedAt: string });
 };
 
@@ -148,6 +153,7 @@ export const saveSsbjJudgementQuickChange = async (
     if (inserted.error || !inserted.data) {
       throw new Error(ssbjWriteErrorMessage(inserted.error, '該当性・重要性の判断の保存に失敗しました'));
     }
+    notifySsbjWorkingChanged(report.id);
     return toSsbjJudgementWorkingRecord(inserted.data as SsbjJudgementRow & { updatedAt: string });
   }
 
@@ -166,5 +172,6 @@ export const saveSsbjJudgementQuickChange = async (
     await throwIfSsbjEditForbidden();
     throw new SsbjEditConflictError();
   }
+  notifySsbjWorkingChanged(report.id);
   return toSsbjJudgementWorkingRecord(updated.data as SsbjJudgementRow & { updatedAt: string });
 };

@@ -7,6 +7,7 @@ import type { SsbjTimeHorizonDefinitions } from '../types';
 import { fromFieldValue, toFieldValue } from '../utils/fieldValue';
 import { EMPTY_SSBJ_TIME_HORIZON_DEFINITIONS } from '../utils/timeHorizons';
 import { ssbjWriteErrorMessage } from '../utils/writeError';
+import { notifySsbjWorkingChanged } from '../utils/workingChange';
 
 export interface SsbjTimeHorizonRow {
   shortTermState: string;
@@ -91,6 +92,7 @@ export const saveSsbjTimeHorizons = async (
   }
   const updatedRows = (updated.data ?? []) as unknown as SsbjTimeHorizonRow[];
   if (updatedRows.length > 0) {
+    notifySsbjWorkingChanged(report.id);
     return toSsbjTimeHorizonDefinitions(updatedRows[0]);
   }
 
@@ -106,5 +108,6 @@ export const saveSsbjTimeHorizons = async (
     }
     throw new Error(ssbjWriteErrorMessage(inserted.error, '時間軸の定義の保存に失敗しました'));
   }
+  notifySsbjWorkingChanged(report.id);
   return toSsbjTimeHorizonDefinitions(inserted.data as unknown as SsbjTimeHorizonRow);
 };

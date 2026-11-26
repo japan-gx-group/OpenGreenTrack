@@ -14,12 +14,19 @@ export interface SsbjMembersState {
   errorMessage: string;
 }
 
-export const useSsbjMembers = (): SsbjMembersState => {
+/**
+ * enabled = false の間は読まない（レポートの中の画面で、要るときだけ SsbjReportOverviewProvider が読むため。
+ * hooks/useSsbjReportOverview.ts の useSsbjReportMembers）。一度読んだら、enabled が変わっても読み直さない。
+ */
+export const useSsbjMembers = (enabled = true): SsbjMembersState => {
   const [state, setState] = useState<SsbjMembersState>({
     members: [], currentUserId: null, currentRole: null, isLoading: true, errorMessage: '',
   });
+  const [requested, setRequested] = useState<boolean>(false);
+  if (enabled && !requested) setRequested(true);
 
   useEffect(() => {
+    if (!requested) return;
     let active = true;
     Promise.all([listSsbjMembers(), getCurrentSsbjUserId()])
       .then(([members, currentUserId]) => {
@@ -33,7 +40,7 @@ export const useSsbjMembers = (): SsbjMembersState => {
           errorMessage: error instanceof Error ? error.message : '利用者の一覧の取得に失敗しました' }));
       });
     return () => { active = false; };
-  }, []);
+  }, [requested]);
 
   return state;
 };

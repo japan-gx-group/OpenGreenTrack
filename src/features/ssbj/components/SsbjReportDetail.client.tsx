@@ -20,7 +20,8 @@ import { useSsbjReportForm } from '../hooks/useSsbjReportForm';
 import { useSsbjVersionSave } from '../hooks/useSsbjVersionSave';
 import type { SsbjReportStatusChangeResult } from '../services/reportWorkflowClient';
 import { updateSsbjReportBasicInfo } from '../services/reportService';
-import { useSsbjMyRole } from '../hooks/useSsbjMyRole';
+import { useSsbjReportMyRole, useSsbjReportOverview } from '../hooks/useSsbjReportOverview';
+import { useSsbjReviewChecklist } from '../hooks/useSsbjReviewChecklist';
 import { canEditSsbj, canViewSsbjWorking } from '../utils/memberRole';
 import { isSsbjReadOnly } from '../utils/reportStatus';
 import { toSsbjReportFormValues } from '../utils/reportValidation';
@@ -30,6 +31,7 @@ import { SsbjReportBasicInfo } from './SsbjReportBasicInfo';
 import { SsbjReportContentsNav } from './SsbjReportContentsNav';
 import { SsbjReportFormFields } from './SsbjReportFormFields.client';
 import { SsbjReportStatusCard } from './SsbjReportStatusCard.client';
+import { SsbjReviewChecklist } from './SsbjReviewChecklist';
 import { SsbjTrialNotice } from './SsbjTrialNotice';
 import { SsbjVersionSaveCard } from './SsbjVersionSaveCard';
 
@@ -38,7 +40,10 @@ export const SsbjReportDetail = ({ reportId }: { reportId: string }) => {
   const { report, setReport, reload, isLoading, errorMessage, isNotFound } = useSsbjReport(reportId);
   // 保存版の作成・基本情報の編集は、SSBJ のロールが入力担当か管理者のときだけ出す（API・DB も同じ判定をする）。
   // 閲覧者には、作業中の内容の画面への入口を出さない。
-  const myRole = useSsbjMyRole();
+  // レイアウトの SsbjReportOverviewProvider の中では、Provider が読んだロールを使う（読み直さない）。
+  const myRole = useSsbjReportMyRole();
+  // 画面の上の部品と共有する情報（layout.tsx の SsbjReportOverviewProvider。単体で描いたときは null）。
+  const overview = useSsbjReportOverview();
   const [isEditing, setIsEditing] = useState<boolean>(false);
   // 編集を始めた時点の基本情報の版数。表示中のレポートを読み直しても、フォームの値の元になった版数で保存する
   // （読み直した版数で保存すると、フォームに残った古い値で他の画面の変更を上書きしてしまう）。
@@ -66,6 +71,10 @@ export const SsbjReportDetail = ({ reportId }: { reportId: string }) => {
 
   const versionSave = useSsbjVersionSave(reportId);
 
+  // 依頼の前の点検表は、作成中のレポートで依頼できる人（入力担当か管理者）にだけ出す。数は画面の上のタブと同じ値を使う。
+  const showChecklist = !!report && report.review.status === 'draft' && canEditSsbj(myRole.role) && !!overview?.workingAccess;
+  const checklist = useSsbjReviewChecklist(showChecklist ? report : null, overview?.progress ?? null);
+
   const handleSave = async (event: FormEvent) => {
     if (await form.submit(event)) {
       setIsEditing(false);
@@ -74,6 +83,8 @@ export const SsbjReportDetail = ({ reportId }: { reportId: string }) => {
 
   const handleStatusChanged = (result: SsbjReportStatusChangeResult) => {
     reload();
+    // 画面の上の差戻しの帯なども読み直す（依頼し直したら帯を消し、差戻したら帯を出す）。
+    overview?.reloadStatus();
     const message = result.status === 'approved'
       ? `承認しました（承認した内容を 版 ${result.approvedVersionNumber} として保存しました）`
       : result.status === 'in_review' ? 'レビューを依頼しました' : '作成中に戻しました';
@@ -169,8 +180,21 @@ export const SsbjReportDetail = ({ reportId }: { reportId: string }) => {
                 <SsbjReportBasicInfo report={report} />
               )}
             </Card>
-            <SsbjReportStatusCard report={report} disabled={isEditing} onChanged={handleStatusChanged} />
-            <SsbjReportContentsNav reportId={report.id} workingAccess={myRole.isLoading || canViewSsbjWorking(myRole.role)} />
+            <SsbjReportStatusCard
+              report={report}
+              disabled={isEditing}
+              onChanged={handleStatusChanged}
+              checklist={showChecklist ? (
+                <SsbjReviewChecklist reportId={report.id} rows={checklist.rows} errorMessage={checklist.errorMessage} />
+              ) : undefined}
+            />
+            <SsbjReportContentsNav
+              reportId={report.id}
+              workingAccess={myRole.isLoading || canViewSsbjWorking(myRole.role)}
+              // 進み具合は画面の上のタブと同じ値（Provider が 1 回だけ数える）。閲覧者には数えない。
+              progress={overview?.workingAccess ? overview.progress : null}
+              withTabs={!!overview}
+            />
             {canEditSsbj(myRole.role) && (
               <SsbjVersionSaveCard
                 isSaving={versionSave.isSaving}
