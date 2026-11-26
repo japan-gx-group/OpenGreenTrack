@@ -204,7 +204,7 @@ export type SsbjVersionFieldChange =
 export type SsbjVersionChange = {
   /** 画面の中で「見た」を覚えるための一意のキー。 */
   key: string;
-  /** まとまりの名前（例「四本柱の文章」）。 */
+  /** まとまりの名前（例「ガバナンス・戦略等の文章」）。 */
   group: string;
   /** 項目の名前（要求項目マスターの名前など）。 */
   title: string;

@@ -227,7 +227,7 @@ describe('SsbjPreviewDocument（根拠文書）', () => {
   });
 });
 
-describe('SsbjPreviewDocument（四本柱の文章）', () => {
+describe('SsbjPreviewDocument（ガバナンス・戦略等の文章）', () => {
   it('章ごとに文章を出し、文章の無い項目は未入力。内部メモは選んだときだけ出す', () => {
     rendered = render(<SsbjPreviewDocument source={working()} showInternalNotes={false} />);
     expect(text()).toContain('当社では、取締役会が気候関連のリスク及び機会を監督している。');
@@ -240,7 +240,7 @@ describe('SsbjPreviewDocument（四本柱の文章）', () => {
     expect(text()).toContain('親会社のサステナビリティ委員会との関係は確認中（架空）。');
   });
 
-  it('四本柱の文章を含まない古い版は、その旨を出す', () => {
+  it('ガバナンス・戦略等の文章を含まない古い版は、その旨を出す', () => {
     const withoutNarratives = { ...fictionalSnapshot.sections };
     delete withoutNarratives.narratives;
     rendered = render(<SsbjPreviewDocument source={working({ ...fictionalSnapshot, sections: withoutNarratives })} showInternalNotes={false} />);

@@ -8,7 +8,7 @@ import {
 } from '../ids';
 
 describe('isSsbjSectionId', () => {
-  it('四本柱の 4 値だけを受け付ける', () => {
+  it('4 つの章の値だけを受け付ける', () => {
     for (const id of ['governance', 'strategy', 'risk_management', 'metrics_targets']) {
       expect(isSsbjSectionId(id)).toBe(true);
     }

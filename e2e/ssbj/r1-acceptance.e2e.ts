@@ -143,7 +143,7 @@ test('1. レポートを作成する（選択中の年度に作られる）', as
   await expect(page.getByText(FISCAL_YEAR_LABEL).first()).toBeVisible();
 });
 
-test('2. 四本柱の文章を書く（開示する文章と内部メモを分けて保存する）', async () => {
+test('2. ガバナンス・戦略等の文章を書く（開示する文章と内部メモを分けて保存する）', async () => {
   await editNarrative('監督する機関・責任者', INPUT.narrative, INPUT.narrativeNote);
   await page.reload();
   const card = page.getByTestId('ssbj-narrative-item').filter({ has: page.getByRole('heading', { name: '監督する機関・責任者', exact: true }) });

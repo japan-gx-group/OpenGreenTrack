@@ -46,7 +46,7 @@ erDiagram
     ssbj_reports ||--o| ssbj_report_time_horizons : "時間軸の定義"
     ssbj_reports ||--o{ ssbj_evidence : "根拠文書"
     ssbj_reports ||--o| ssbj_ogt_adoptions : "OGT採用値"
-    ssbj_reports ||--o{ ssbj_narratives : "四本柱の文章"
+    ssbj_reports ||--o{ ssbj_narratives : "ガバナンス・戦略等の文章"
     ssbj_reports ||--o{ ssbj_judgements : "該当性・重要性の判断"
     ssbj_reports ||--o{ ssbj_audit_logs : "操作履歴"
     ssbj_reports ||--o{ ssbj_risk_candidate_decisions : "業種の候補への判断"
@@ -550,7 +550,7 @@ RLSは自組織に限定し、レポートの組織帰属も検証する。変�
   候補値を取り直してから呼ぶ。クライアントが送った数値を OGT 由来として保存する経路を作らないため。
 - `adopt_ssbj_ogt_values` は組織の一致（P2041）と、候補値・参考値の年度がレポートの年度と一致すること（P2042）を検証する。
 
-### 3.25 SSBJ 四本柱の文章 (`ssbj_narratives`) — 要求項目マスターの項目ごとの文章（`supabase/migrations/20261001003809_ssbj_narratives.sql`）
+### 3.25 SSBJ ガバナンス・戦略等の文章 (`ssbj_narratives`) — 要求項目マスターの項目ごとの文章（`supabase/migrations/20261001003809_ssbj_narratives.sql`）
 レポートと項目 ID の組ごとに 1 行の作業中データ。変更のたびに `ssbj_reports.draftRevision` を進め、
 保存版には `ssbj_snapshot_section__narratives` で取り込む（行の無い項目は含めず、表示側で未入力とする）。
 

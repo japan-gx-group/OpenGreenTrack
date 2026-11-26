@@ -1,4 +1,4 @@
-// 四本柱・企業固有の補足の文章（ssbj_narratives。レポートと項目の組ごとに 1 行）の取得・保存サービス（T05）。
+// ガバナンス・戦略等の文章（企業固有の補足を含む。ssbj_narratives。レポートと項目の組ごとに 1 行）の取得・保存サービス（T05）。
 // ブラウザの Supabase クライアント（= Client Component）からのみ呼ぶこと。組織分離は RLS が強制する。
 // 変更のたびに DB のトリガーが ssbj_reports.draftRevision を進める（docs/ssbj-spec.md §8）。
 
