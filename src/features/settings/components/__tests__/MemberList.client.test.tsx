@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   currentProfile: null as null | { id: string; role: string },
   refresh: vi.fn(),
   invitesQueried: 0,
+  invites: [] as { token: string; email: string; expiresAt: string }[],
 }));
 
 vi.mock('@/lib/supabase/client', () => ({
@@ -24,7 +25,7 @@ vi.mock('@/lib/supabase/client', () => ({
       }
       mocks.invitesQueried += 1;
       return {
-        select: () => ({ is: () => ({ order: async () => ({ data: [], error: null }) }) }),
+        select: () => ({ is: () => ({ order: async () => ({ data: mocks.invites, error: null }) }) }),
       };
     },
   }),
@@ -70,6 +71,7 @@ describe('MemberList のロール', () => {
     vi.clearAllMocks();
     vi.mocked(saveMemberChanges).mockResolvedValue({ ok: true, data: undefined });
     mocks.invitesQueried = 0;
+    mocks.invites = [];
     mocks.profiles = [
       { id: 'admin-1', fullName: '管理 一郎', email: 'admin@example.com', role: 'admin' },
       { id: 'member-1', fullName: '入力 花子', email: 'member@example.com', role: 'logger' },
@@ -190,5 +192,39 @@ describe('MemberList のロール', () => {
     expect(container.textContent).toContain('この組織には管理者がいません');
     const link = container.querySelector<HTMLAnchorElement>('a[href*="setup-guide.md#h-2-"]');
     expect(link).not.toBeNull();
+  });
+
+  describe('操作のセル', () => {
+    // jsdom はレイアウトを計算しないため、セルの高さ・縦位置そのものは確かめられない。
+    // 崩れの原因である「<td> の display を table-cell から変えること」が起きていないことを、クラスで確かめる。
+    const cellsOf = (table: Element) => Array.from(table.querySelectorAll('tbody td'));
+
+    beforeEach(() => {
+      mocks.currentProfile = { id: 'admin-1', role: 'admin' };
+      mocks.invites = [
+        { token: 'token-1', email: 'invitee@example.com', expiresAt: '2999-01-01T00:00:00.000Z' },
+      ];
+    });
+
+    it('管理者がメンバー一覧を開いたとき、削除ボタンのセルをテーブルのセルのまま（flex を当てずに）描画する', async () => {
+      const container = await mount();
+      const [memberTable] = Array.from(container.querySelectorAll('table'));
+
+      const flexCells = cellsOf(memberTable).filter(cell => cell.classList.contains('flex'));
+
+      expect(flexCells).toEqual([]);
+    });
+
+    it('管理者が招待一覧を開いたとき、コピー・取り消しボタンのセルをテーブルのセルのまま（flex を当てずに）描画する', async () => {
+      const container = await mount();
+      const inviteTable = Array.from(container.querySelectorAll('table')).find(table =>
+        table.textContent?.includes('invitee@example.com'),
+      );
+      if (!inviteTable) throw new Error('招待一覧の表が見つかりません');
+
+      const flexCells = cellsOf(inviteTable).filter(cell => cell.classList.contains('flex'));
+
+      expect(flexCells).toEqual([]);
+    });
   });
 });

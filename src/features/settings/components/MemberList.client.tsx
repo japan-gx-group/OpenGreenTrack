@@ -398,16 +398,20 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
                       </Badge>
                     )}
                   </td>
-                  <td className="px-4 py-3 flex justify-end">
+                  <td className="px-4 py-3">
                     {/* 自分自身の削除・管理者でない人の削除はサーバ側でも拒否されるが、UIでも塞いでおく */}
                     {canManageMembers && !isSelf && (
-                      <button
-                        type="button"
-                        onClick={() => handleRemove(member.id)}
-                        className="text-danger hover:brightness-75 flex items-center gap-1 text-xs p-1"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      // <td> 自体に flex を当てるとテーブルのセルでなくなり、行の高さ・縦位置が他のセルとずれる。
+                      // ボタンは flex（ブロック扱い）で text-right では右に寄らないため、中の要素で右に寄せる。
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => handleRemove(member.id)}
+                          className="text-danger hover:brightness-75 flex items-center gap-1 text-xs p-1"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -489,25 +493,27 @@ export const MemberList = ({ showToast }: { showToast: (message: string, type: '
                         <span className="text-text-muted">{formatExpiry(invite.expiresAt)} まで</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 flex justify-end gap-2">
-                      {!expired && (
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-2">
+                        {!expired && (
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(buildInviteUrl(invite.token), invite.token)}
+                            className="text-text-muted hover:text-text-main flex items-center gap-1 text-xs p-1"
+                            title="招待リンクをコピー"
+                          >
+                            {copiedToken === invite.token ? <Check size={16} className="text-primary" /> : <Copy size={16} />}
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={() => copyToClipboard(buildInviteUrl(invite.token), invite.token)}
-                          className="text-text-muted hover:text-text-main flex items-center gap-1 text-xs p-1"
-                          title="招待リンクをコピー"
+                          onClick={() => handleRevokeInvite(invite.token)}
+                          className="text-danger hover:brightness-75 flex items-center gap-1 text-xs p-1"
+                          title="招待を取り消す"
                         >
-                          {copiedToken === invite.token ? <Check size={16} className="text-primary" /> : <Copy size={16} />}
+                          <Trash2 size={16} />
                         </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => handleRevokeInvite(invite.token)}
-                        className="text-danger hover:brightness-75 flex items-center gap-1 text-xs p-1"
-                        title="招待を取り消す"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      </div>
                     </td>
                   </tr>
                 );
