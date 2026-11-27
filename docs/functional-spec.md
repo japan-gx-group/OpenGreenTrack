@@ -219,7 +219,7 @@ erDiagram
 | `/data-input` | データ入力 | `activity_records`、`emission_factors`、`idea_factors` |
 | `/scope-analysis` | Scope 分析 | `scope3_category_methods`、`scope3_category_emissions`、`emission_results`、`supplier_emissions`、`dashboard_aggregates`（Scope 別構成・Scope 2 基準別） |
 | `/factors` | 排出係数管理 | `emission_factors`、`idea_imports` |
-| `/locations` `/locations/[locationId]` | 拠点管理 | `locations` |
+| `/locations` `/locations/[locationId]` | 拠点管理 | `locations`、`activity_records`・`emission_results`（拠点詳細の集計、削除前の影響確認とガード）、`fiscal_years`（拠点詳細の年度期間、削除後に集計を再計算する年度の特定） |
 | `/reports` `/reports/print` | レポート | 集計 RPC、`system_audit_logs`（履歴） |
 | `/settings/company` `/settings/account` | 設定 | `organizations`、`profiles`、`fiscal_years`、`invites` |
 | `/login` `/signup` `/forgot-password` `/reset-password` `/invite/[token]` | 認証 | Supabase Auth、`invites` |
@@ -406,6 +406,39 @@ IDEA データベースは、「IDEAの版と算定年度」カードで**会計
 拠点は `name` / `region` / `type` / `managerName` / `status` を持つ。`name` は必須、`name` と `managerName` は 100 文字以内（V-LOC-001 / V-LOC-002。フォームと CSV 取込で共通）。
 
 `locations` テーブルの `scopes` / `prefecture` / `address` / `isAggregationTarget` / `managerUserId` 列はアプリから読み書きしない（画面・CSV・算定のどこにも効かないため型からも外している。列は据え置き）。
+
+#### 4.5.1 拠点詳細
+
+`/locations/[locationId]`。拠点一覧の行または拠点名のリンクから開く（Cmd / Ctrl / Shift を押しながらのクリックでは、今のタブを動かさず別のタブ・ウィンドウで開く）。`locationId` は拠点の ID（uuid）。年度は URL に持たず、ヘッダーの年度セレクタ（選択中の会計年度）に追従する。選んだ年度は保存しないため、別のタブで開いたときや URL を共有したときは最新年度（§1.2 の既定選択）で表示される。
+
+見出しは拠点名（拠点を読み込む前・拠点が見つからない・取得に失敗したときは「拠点詳細」）。その下に「拠点一覧へ戻る」と、種別・地域・稼働状況のバッジを出す。その下に、**選択中の年度 × この拠点**の排出量を次の 3 つで表示する。
+
+| 項目 | 内容 |
+|---|---|
+| Scope 別サマリー | Scope 1・Scope 2・Scope 3・合計（t-CO2e）のカード。Scope 3 のカードは、この拠点の Scope 3 の排出量が 0 より大きいときだけ出す |
+| 月別排出量推移 | 年度の開始日（`fiscal_years.startDate`）の月から 12 か月の、Scope 別の積み上げ棒グラフ。Scope 3 の系列・凡例は、Scope 3 のカードと同じ条件のときだけ出す |
+| カテゴリ別内訳 | 活動量のカテゴリ（`energyType`。§3.2）ごとの活動量（単位ごとの合計）・排出量・構成比（この拠点の合計排出量に対する割合）。排出量の多い順（同じ値ならカテゴリ名順）。算定前の活動量も排出量 0 として表示する |
+
+排出量の数値の表示規則は [`coverage-and-limitations.md`](./coverage-and-limitations.md) §8。
+
+集計の対象は、この拠点の `activity_records` のうち `periodStart` が年度の期間内にあるものと、それに紐づく `emission_results`（年度の期間は `fiscal_years` から求める）。
+
+拠点詳細の Scope 3 は、この拠点の活動量に紐づく Scope 3 の算定結果を単純に合計した値で、§4.3.3 の方式（direct / calculated）は適用しない。direct 方式の登録値（`scope3_category_emissions`）は含まず、direct を選んだカテゴリの積上げ結果は含む。そのため、全拠点の値を足しても組織全体の Scope 3（§4.1）とは一致しないことがある。Scope 3 を表示しているときは、月別排出量推移の下にこの旨を注記する。
+
+状態ごとの表示は次のとおり（上の行ほど優先）。
+
+| 条件 | 表示 |
+|---|---|
+| `locationId` が uuid の形でない・拠点が存在しない・他組織の拠点（RLS で見えない） | 「拠点が見つかりません」と「拠点一覧へ戻る」。uuid の形でないときは問い合わせをしない |
+| 年度の取得に失敗 | 「年度を取得できませんでした。…」と「再試行」 |
+| 算定年度が 1 件も無い | 「算定年度が登録されていません。…」と「企業設定へ」 |
+| 集計データの取得に失敗 | エラーメッセージ（直前に表示していたデータは消す） |
+| 表示できる直前のデータが無い状態での読み込み中（初回、または取得に失敗した後の取り直し） | 「拠点別データを読み込んでいます...」 |
+| 選択中の年度に、この拠点の活動量が 1 件も無い | 「{年度}年度の活動量データはまだ登録されていません」 |
+
+拠点そのものの取得に失敗したときは、上部にエラーメッセージを出す。このときバッジは出ないが、年度別の表示は上の表どおり続ける。
+
+年度の切り替え中と「最新データに更新」での取り直し中は、直前のデータがあればそれを表示したまま、更新中であることを示す。
 
 ### 4.6 レポート
 
@@ -750,6 +783,6 @@ IDEA データベース取込は、数十MBの Excel をブラウザから Supab
 | データ入力 | `activity_records`, `emission_factors`, `idea_factors` | 手動入力 / `POST /api/calculations` |
 | Scope 分析 | `scope3_category_methods`, `scope3_category_emissions`, `emission_results`, `supplier_emissions` | 方式切替、direct 値の upsert |
 | 排出係数管理 | `emission_factors`, `idea_imports`, `idea_factors` | カスタム係数 CRUD、係数 CSV 取込・書き出し、`POST /api/idea-imports` |
-| 拠点管理 | `locations` | 拠点 CRUD、CSV 取込・書き出し（削除は V-LOC-004 / V-LOC-005 のガードあり） |
+| 拠点管理 | `locations`, `activity_records`, `emission_results`, `fiscal_years` | 拠点 CRUD、CSV 取込・書き出し（削除は V-LOC-004 / V-LOC-005 のガードあり） |
 | レポート | 集計 RPC, `system_audit_logs` | クライアント生成（PDF 印刷ビュー / CSV） |
 | 設定 | `organizations`, `profiles`, `fiscal_years`, `invites` | 組織情報・算定年度・招待の管理 |
