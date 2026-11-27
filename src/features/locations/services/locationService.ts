@@ -11,6 +11,7 @@ import {
   canDeleteLocation,
   type LocationDeletionImpact,
 } from './locationDeletionGuard';
+import { toLocationWriteErrorMessage } from './locationWriteError';
 import {
   type LocationRecord,
   type LocationStatus,
@@ -184,7 +185,7 @@ export const addLocations = async (
       results.forEach((single, indexInBatch) => {
         const index = offset + start + indexInBatch;
         if (single.error || !single.data) {
-          failures.push({ index, message: single.error?.message ?? '拠点の登録に失敗しました' });
+          failures.push({ index, message: toLocationWriteErrorMessage(single.error, 'create') });
         } else {
           created.push(toLocationRecord(single.data as unknown as LocationRow));
         }
@@ -222,7 +223,7 @@ export const updateLocations = async (
     results.forEach((result, indexInChunk) => {
       const index = offset + indexInChunk;
       if (result.error || !result.data) {
-        failures.push({ index, message: result.error?.message ?? '拠点の更新に失敗しました' });
+        failures.push({ index, message: toLocationWriteErrorMessage(result.error, 'update') });
         return;
       }
       updated.push(toLocationRecord(result.data as unknown as LocationRow));

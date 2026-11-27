@@ -3,15 +3,21 @@
 // dashboard_aggregates（KPI・レポート・削減目標の正本）は自動では更新されない。
 // 削除前に対象年度を控え、削除後に /api/dashboard-aggregates/refresh を年度ごとに呼ぶこと、
 // 再計算の失敗は削除を取り消さず警告として返すことを保証する。
+// あわせて、CSVインポートの一括登録・更新（addLocations / updateLocations）が、
+// 行ごとの失敗理由を PostgREST の英語メッセージのままではなく日本語で返すことを保証する。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-type QueryResult = { data?: unknown; count?: number | null; error: { message: string } | null };
+type QueryResult = {
+  data?: unknown;
+  count?: number | null;
+  error: { message: string; code?: string } | null;
+};
 
 // テーブル名と適用した絞り込みから結果を返す簡易ビルダー。
 // チェーン（select → eq / gte / lte / order / limit → maybeSingle / await）を thenable で解決する。
 type QueryLog = {
   table: string;
-  action: 'select' | 'delete' | 'insert';
+  action: 'select' | 'delete' | 'update' | 'insert';
   payload?: unknown;
   filters: { op: string; column: string; value: unknown }[];
   head: boolean;
@@ -28,6 +34,10 @@ const makeBuilder = (table: string) => {
     },
     delete: () => {
       query.action = 'delete';
+      return builder;
+    },
+    update: () => {
+      query.action = 'update';
       return builder;
     },
     insert: (payload: unknown) => {
@@ -72,7 +82,7 @@ vi.mock('@/lib/supabase/client', () => ({
   }),
 }));
 
-import { addLocations, deleteLocation } from '../locationService';
+import { addLocations, deleteLocation, updateLocations } from '../locationService';
 
 const fiscalYears = [
   { id: 'fy-2024', startDate: '2024-04-01', endDate: '2025-03-31' },
@@ -138,11 +148,28 @@ describe('addLocations', () => {
     const result = await addLocations(locations, count => progress.push(count));
 
     expect(result.created).toHaveLength(204);
-    expect(result.failures).toEqual([{ index: 101, message: 'bad row' }]);
+    expect(result.failures).toEqual([
+      { index: 101, message: '拠点の登録に失敗しました（詳細: bad row）' },
+    ]);
     expect(progress[0]).toBe(100);
     expect(progress.at(-1)).toBe(205);
     expect(queryLog.filter(query => query.action === 'insert' && !Array.isArray(query.payload)))
       .toHaveLength(100);
+  });
+
+  it('一括登録が失敗し1件ずつ入れ直しても失敗したとき、登録失敗として詳細つきの日本語で返す', async () => {
+    resolveQuery = query => {
+      if (query.table === 'profiles') return { data: { organizationId: 'org-1' }, error: null };
+      // 一括 insert（配列）は1行でも弾かれると全体が失敗する。続く1件ずつの insert も失敗させる。
+      if (Array.isArray(query.payload)) return { data: null, error: { code: '08006', message: 'bulk failed' } };
+      return { data: null, error: { code: '08006', message: 'connection failure' } };
+    };
+
+    const result = await addLocations([osakaFactory]);
+
+    expect(result.failures).toEqual([
+      { index: 0, message: '拠点の登録に失敗しました（詳細: connection failure）' },
+    ]);
   });
 });
 
@@ -208,5 +235,34 @@ describe('deleteLocation', () => {
 
     await expect(deleteLocation('loc-1')).rejects.toThrow('拠点の削除に失敗しました');
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+// CSVインポートの一括更新は、失敗した行の理由を取込画面の行エラー欄へそのまま出す。
+// PostgREST の英語メッセージを素通しせず、日本語に変換して返すことを保証する。
+const osakaFactory = {
+  name: '大阪工場',
+  region: 'Kansai',
+  type: 'factory',
+  person: '',
+  status: 'active',
+} as const;
+
+describe('updateLocations', () => {
+  it('プレビュー後に対象が削除され0件マッチになったとき、行エラーを日本語で返す', async () => {
+    resolveQuery = () => ({
+      data: null,
+      error: { code: 'PGRST116', message: 'Cannot coerce the result to a single JSON object' },
+    });
+
+    const result = await updateLocations([{ id: 'loc-deleted', location: osakaFactory }]);
+
+    expect(result.failures).toEqual([
+      {
+        index: 0,
+        message:
+          '更新対象の拠点が見つかりません。取込の確認後に削除された可能性があります。一覧を再読み込みし、プレビューを確認してから取り込み直してください',
+      },
+    ]);
   });
 });
