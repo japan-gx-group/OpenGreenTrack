@@ -2,11 +2,13 @@ import { describe, it, expect } from 'vitest';
 import {
   LOCATION_CSV_EXAMPLE_PREFIX,
   LOCATION_CSV_HEADERS,
+  MALFORMED_QUOTE_MESSAGE,
   buildLocationCsvTemplateRows,
   buildLocationImportPlan,
   locationToCsvRow,
 } from '../locationCsvImport';
 import type { LocationRecord } from '../../types';
+import { toCsvText } from '@/lib/files/csv';
 
 // エクスポート（downloadCsv）と同じタブ区切りでCSVテキストを組み立てるヘルパー
 const csv = (rows: string[][]): string =>
@@ -490,5 +492,130 @@ describe('locationToCsvRow', () => {
     const plan = buildLocationImportPlan(csv([row]), []);
     expect(plan.creates[0].location.name).toBe(location.name);
     expect(plan.creates[0].location.person).toBe(location.person);
+  });
+});
+
+// エクスポートは改行入りのセルをダブルクォートで囲んで書き出す（downloadCsv と同じ toCsvText）。
+// 読み込み側がクォートを見ずに改行で行を割ると、自分で書き出したファイルを読み込み直せず、
+// 以降の行番号も Excel の行番号とずれる。実際のエクスポート出力を通して確かめる。
+describe('buildLocationImportPlan（セル内改行）', () => {
+  const multiline: LocationRecord[] = [
+    { id: 'loc-ml-1', name: '大阪\n第二工場', region: 'Kansai', type: 'factory', person: '工場 一郎\n（代理: 二郎）', status: 'active' },
+    { id: 'loc-ml-2', name: '名古屋支社', region: 'Chubu', type: 'branch', person: '', status: 'active' },
+  ];
+  const exported = (records: LocationRecord[]) =>
+    toCsvText([[...LOCATION_CSV_HEADERS], ...records.map(locationToCsvRow)]);
+
+  it('改行入りのセルを含むエクスポートを変更せずに読み込み直したとき、エラーなしで全行を変更なしとして扱う', () => {
+    expect(buildLocationImportPlan(exported(multiline), multiline)).toEqual({
+      creates: [],
+      updates: [],
+      skipCount: 2,
+      exampleRowCount: 0,
+      errors: [],
+    });
+  });
+
+  it('改行入りのセルより後ろの行にエラーがあるとき、Excel と同じ行番号（1レコード1行）で返す', () => {
+    const text = toCsvText([
+      [...LOCATION_CSV_HEADERS],
+      locationToCsvRow(multiline[0]),
+      ['', '火星基地', '火星', '支社', '', '稼働中'],
+    ]);
+
+    expect(buildLocationImportPlan(text, multiline).errors.map(error => error.row)).toEqual([3]);
+  });
+  it('セルの途中に囲まれていない " がある行があっても、その行だけのエラーにして後ろの行は読み込む', () => {
+    const text = [
+      LOCATION_CSV_HEADERS.join('\t'),
+      ['', '13" モニター倉庫', '関東', 'その他', '', '稼働中'].join('\t'),
+      ['', '仙台営業所', '東北', '支社', '', '稼働中'].join('\t'),
+    ].join('\r\n');
+
+    const plan = buildLocationImportPlan(text, []);
+
+    expect({
+      errorRows: plan.errors.map(error => error.row),
+      created: plan.creates.map(create => [create.row, create.location.name]),
+    }).toEqual({
+      errorRows: [2],
+      created: [[3, '仙台営業所']],
+    });
+  });
+  it('セルの先頭に閉じていない " がある行があっても、後ろの行を巻き込まず正しい行番号で読み込む', () => {
+    const text = [
+      LOCATION_CSV_HEADERS.join('\t'),
+      ['', '"A棟', '関東', '支社', '', '稼働中'].join('\t'),
+      ['', 'B棟', '関東', '支社', '', '稼働中'].join('\t'),
+      ['', 'C棟', '関東', '支社', '', '稼働中'].join('\t'),
+    ].join('\r\n');
+
+    const plan = buildLocationImportPlan(text, []);
+
+    expect({
+      errorRows: plan.errors.map(error => error.row),
+      created: plan.creates.map(create => [create.row, create.location.name]),
+    }).toEqual({
+      errorRows: [2],
+      created: [[3, 'B棟'], [4, 'C棟']],
+    });
+  });
+
+  it('閉じていない " の数行後に " で始まるセルがあっても、その間の行を飲み込まず正しい行番号で読み込む', () => {
+    const text = [
+      LOCATION_CSV_HEADERS.join('\t'),
+      ['', '"A棟', '関東', '支社', '', '稼働中'].join('\t'),
+      ['', 'B棟', '関東', '支社', '', '稼働中'].join('\t'),
+      ['', '"D"棟', '関東', '支社', '', '稼働中'].join('\t'),
+      ['', 'E棟', '関東', '支社', '', '稼働中'].join('\t'),
+    ].join('\r\n');
+
+    const plan = buildLocationImportPlan(text, []);
+
+    expect(plan.creates.map(create => [create.row, create.location.name])).toEqual([
+      [3, 'B棟'],
+      [4, 'D棟'],
+      [5, 'E棟'],
+    ]);
+  });
+  it('Excel で Alt+Enter のセルをカンマ区切りで保存したとき、その行を取り込み後ろの行も Excel と同じ行番号で返す', () => {
+    // Excel はセル内改行を LF、行の区切りを CRLF で書き出し、改行入りのセルを " で囲む
+    const text = [
+      LOCATION_CSV_HEADERS.join(','),
+      ',"大阪\n工場",関西,工場,,稼働中',
+      ',火星基地,火星,支社,,稼働中',
+    ].join('\r\n');
+
+    const plan = buildLocationImportPlan(text, []);
+
+    expect({
+      created: plan.creates.map(create => [create.row, create.location.name]),
+      errorRows: plan.errors.map(error => error.row),
+    }).toEqual({
+      created: [[2, '大阪\n工場']],
+      errorRows: [3],
+    });
+  });
+
+  it('改行入りのセルと空行が両方あるとき、空行も1行と数えて Excel と同じ行番号で返す', () => {
+    const text = [
+      toCsvText([[...LOCATION_CSV_HEADERS], locationToCsvRow(multiline[0])]),
+      '',
+      ['', '火星基地', '火星', '支社', '', '稼働中'].join('\t'),
+    ].join('\r\n');
+
+    expect(buildLocationImportPlan(text, multiline).errors.map(error => error.row)).toEqual([4]);
+  });
+
+  it('改行をまたぐクォートの対応が取れない行があるとき、列数ではなくクォートの書き方を案内する', () => {
+    const text = [
+      LOCATION_CSV_HEADERS.join('\t'),
+      ['', '"A棟', '関東', '支社', '', '稼働中'].join('\t'),
+      ['', 'B棟', '関東', '支社', '', '稼働中'].join('\t'),
+    ].join('\r\n');
+
+    expect(buildLocationImportPlan(text, []).errors).toEqual([
+      { row: 2, reasons: [MALFORMED_QUOTE_MESSAGE] },
+    ]);
   });
 });

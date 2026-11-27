@@ -13,7 +13,7 @@
 //   同名拠点が既に複数ある場合だけはID列での指定を求める。
 // - ID列が空で拠点名が「（記入例）」で始まる行はテンプレートの記入例とみなして取り込まない
 
-import { decodeCsvBufferAllowingUtf16, splitCsvLine } from '@/lib/files/csv';
+import { decodeCsvBufferAllowingUtf16, splitCsvLine, splitCsvRecords } from '@/lib/files/csv';
 import { validateLocationNameAndPerson } from './locationValidation';
 import {
   LOCATION_STATUS_LABELS,
@@ -145,6 +145,11 @@ const headersMatch = (headers: string[], expected: readonly string[]): boolean =
 /** 拠点名の照合キー。前後空白と全角空白の差で別拠点と誤判定しないよう正規化する。 */
 const nameKey = (name: string): string => name.trim().replace(/[\s\u3000]+/g, ' ');
 
+// 改行をまたぐクォートの対応が取れなかった行のエラー。
+// セル内で " を使うときの正しい書き方（セル全体を " で囲み、中の " は "" と書く）を添える。
+export const MALFORMED_QUOTE_MESSAGE =
+  'ダブルクォート（"）の対応が取れていません。セル内で " を使う場合は、セル全体を " で囲み、中の " は "" と書いてください';
+
 /** UTF-16（BOM付き。未編集の再インポート）と UTF-8 / Shift_JIS を判別してデコードする。 */
 export const decodeLocationCsvBuffer = decodeCsvBufferAllowingUtf16;
 
@@ -155,15 +160,21 @@ export const decodeLocationCsvBuffer = decodeCsvBufferAllowingUtf16;
 export const parseLocationCsvText = (
   text: string,
 ): { rows: ParsedLocationRow[]; errors: LocationImportRowError[]; exampleRowCount: number } => {
-  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/);
+  const body = text.replace(/^\uFEFF/, '');
 
-  if (lines.length === 0 || !lines[0].trim()) {
+  // 区切り文字の自動判別: エクスポート直後はタブ区切り、Excelで再保存するとカンマ区切りになる
+  // （ヘッダー行にはセル内改行が無いため、最初の物理行で判別できる。レコードへの分割に区切り文字を使うので先に決める）
+  const delimiter = body.split(/\r?\n/, 1)[0].includes('\t') ? '\t' : ',';
+
+  // クォート内の改行（改行入りの拠点名・担当者）では区切らず、レコード単位に分ける。
+  // lines[i] は i+1 件目のレコードなので、行番号（i + 1）は Excel の行番号と一致する。
+  const lines = splitCsvRecords(body, delimiter);
+
+  if (lines.length === 0 || !lines[0].text.trim()) {
     throw new Error('CSVファイルが空です。');
   }
 
-  // 区切り文字の自動判別: エクスポート直後はタブ区切り、Excelで再保存するとカンマ区切りになる
-  const delimiter = lines[0].includes('\t') ? '\t' : ',';
-  const headers = splitCsvLine(lines[0], delimiter).map(col => col.trim());
+  const headers = splitCsvLine(lines[0].text, delimiter).map(col => col.trim());
   while (headers.at(-1) === '') headers.pop();
 
   // 廃止前のフォーマット（Scope対象区分あり）なら、その列を各行から取り除いて現行の並びに揃える
@@ -183,7 +194,7 @@ export const parseLocationCsvText = (
   for (let i = 1; i < lines.length; i++) {
     // 行全体を trim すると「末尾列が空のタブ区切り行」の区切り文字まで消えて列数が狂うため、
     // 行はそのまま分割し、各フィールド側で trim する。
-    const line = lines[i];
+    const { text: line, malformedQuote } = lines[i];
     if (!line.trim()) continue;
 
     const rawColumns = splitCsvLine(line, delimiter).map(col => col.trim());
@@ -202,6 +213,12 @@ export const parseLocationCsvText = (
     }
 
     const rowNumber = i + 1;
+
+    // 改行をまたぐクォートの対応が取れなかった行。列数も崩れているため、原因（クォート）を直接案内する。
+    if (malformedQuote) {
+      errors.push({ row: rowNumber, reasons: [MALFORMED_QUOTE_MESSAGE] });
+      continue;
+    }
 
     // 列数の不足はファイルのヘッダー基準で判定する（旧フォーマットなら7列）。
     // 旧フォーマットで列が欠けた行は「どの列が欠けたか」を特定できないため、Scope列を

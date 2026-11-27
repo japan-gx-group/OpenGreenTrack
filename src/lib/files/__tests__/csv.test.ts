@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decodeCsvBuffer, splitCsvLine } from '../csv';
+import { decodeCsvBuffer, splitCsvLine, splitCsvRecords, toCsvText } from '../csv';
 
 const utf8Buffer = (text: string): ArrayBuffer =>
   new TextEncoder().encode(text).buffer as ArrayBuffer;
@@ -46,5 +46,72 @@ describe('splitCsvLine', () => {
 
   it('区切り文字を指定するとタブ区切りも分割できる', () => {
     expect(splitCsvLine('東京本社\t電気\t100', '\t')).toEqual(['東京本社', '電気', '100']);
+  });
+});
+
+// レコードの本文だけを取り出す（壊れたクォートの印を見ないテスト用）
+const recordTexts = (text: string, delimiter: string) =>
+  splitCsvRecords(text, delimiter).map(record => record.text);
+
+describe('splitCsvRecords', () => {
+  it('クォートの外の改行（CRLF・LF）のとき、レコードを区切る', () => {
+    expect(recordTexts('a\tb\r\nc\td\ne\tf', '\t')).toEqual(['a\tb', 'c\td', 'e\tf']);
+  });
+
+  it('クォートの中に改行があるとき、区切らずにセルの一部として残す', () => {
+    expect(splitCsvRecords('id\t"大阪\n工場"\tx\r\nnext', '\t')).toEqual([
+      { text: 'id\t"大阪\n工場"\tx', malformedQuote: false },
+      { text: 'next', malformedQuote: false },
+    ]);
+  });
+
+  it('クォートの中にエスケープされた "" があっても、クォートの内外を取り違えない', () => {
+    expect(recordTexts('"a""\nb"\tc\nd', '\t')).toEqual(['"a""\nb"\tc', 'd']);
+  });
+
+  it('空行があるとき、行番号がずれないよう空のレコードとして残す', () => {
+    expect(recordTexts('a\n\nb', '\t')).toEqual(['a', '', 'b']);
+  });
+
+  it('セルの途中にある囲まれていない " のとき、クォートの始まりとみなさず後ろの行を巻き込まない', () => {
+    expect(recordTexts('a\t13" モニター\nb\tc\nd\te', '\t')).toEqual(['a\t13" モニター', 'b\tc', 'd\te']);
+  });
+
+  it('カンマ区切りのとき、カンマ直後の " をクォートの始まりとみなす', () => {
+    expect(recordTexts('a,"x\ny"\nb', ',')).toEqual(['a,"x\ny"', 'b']);
+  });
+
+  it('改行をまたいだクォートが末尾まで閉じないとき、その行だけを壊れたレコードにして後ろの行を読み直す', () => {
+    expect(splitCsvRecords('a\n"b\nc\r\nd', '\t')).toEqual([
+      { text: 'a', malformedQuote: false },
+      { text: '"b', malformedQuote: true },
+      { text: 'c', malformedQuote: false },
+      { text: 'd', malformedQuote: false },
+    ]);
+  });
+
+  it('改行をまたいだクォートが区切り文字・改行以外の直前で閉じたとき、その行だけを壊れたレコードにする', () => {
+    expect(splitCsvRecords('"a\nb\n"c"x\td', '\t')).toEqual([
+      { text: '"a', malformedQuote: true },
+      { text: 'b', malformedQuote: false },
+      { text: '"c"x\td', malformedQuote: false },
+    ]);
+  });
+
+  it('改行をまたがないクォートが区切り文字以外の直前で閉じたとき、従来どおり1行のレコードとして扱う', () => {
+    expect(splitCsvRecords('"ab"c\td\ne', '\t')).toEqual([
+      { text: '"ab"c\td', malformedQuote: false },
+      { text: 'e', malformedQuote: false },
+    ]);
+  });
+
+  it('末尾が改行で終わるとき、最後に空のレコードを残す', () => {
+    expect(recordTexts('a\r\nb\r\n', '\t')).toEqual(['a', 'b', '']);
+  });
+});
+
+describe('toCsvText', () => {
+  it('セルに改行があるとき、ダブルクォートで囲んでタブ区切り・CRLF で出力する', () => {
+    expect(toCsvText([['ID', '拠点名'], ['loc-1', '大阪\n工場']])).toBe('ID\t拠点名\r\nloc-1\t"大阪\n工場"');
   });
 });
