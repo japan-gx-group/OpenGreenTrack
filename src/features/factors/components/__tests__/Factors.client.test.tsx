@@ -429,4 +429,32 @@ describe('排出係数の一覧（エネルギー・燃料 / Scope 3 活動の�
     const activityOptions = Array.from(providerSelect().options).map(option => option.value);
     expect(activityOptions).not.toContain(providerFactor.providerName);
   });
+
+  it('検索で絞った一覧の途中のページで検索欄の「×」を押したとき、1ページ目に戻る', async () => {
+    // 「検索対象」で 25 件（10 件ずつで 3 ページ）、タブ全体では 26 件（同じく 3 ページ）になるように並べる。
+    // クリア後も 3 ページ目が存在するため、ページを戻し忘れると 3 ページ目のまま残る。
+    const searchableFactors: EmissionFactor[] = Array.from({ length: 25 }, (_, index) => ({
+      ...factorWithSource,
+      id: `factor-searchable-${index}`,
+      name: `検索対象 係数${String(index).padStart(2, '0')}`,
+    }));
+    await renderList(searchableFactors);
+
+    const required = <T extends Element>(selector: string, description: string): T => {
+      const element = view.container.querySelector<T>(selector);
+      if (!element) throw new Error(`${description}が見つかりません`);
+      return element;
+    };
+    const currentPage = (): string | null =>
+      view.container.querySelector('button[aria-current="page"]')?.textContent ?? null;
+
+    setInputValue(required<HTMLInputElement>('#factor-search', '検索欄'), '検索対象');
+    click(required<HTMLButtonElement>('button[aria-label="3ページ目へ"]', '「3ページ目へ」ボタン'));
+    // 前提: クリアする前に 3 ページ目にいる（ページ送りが効いていなければ、この検証は意味を持たない）
+    expect(currentPage()).toBe('3');
+
+    click(required<HTMLButtonElement>('button[aria-label="検索キーワードをクリア"]', '検索欄の「×」ボタン'));
+
+    expect(currentPage()).toBe('1');
+  });
 });

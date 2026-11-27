@@ -99,7 +99,7 @@ export const FactorFilterBar = ({ filters, onChange }: FactorFilterBarProps) => 
         {filters.searchQuery && (
           <button
             type="button"
-            onClick={() => filters.setSearchQuery('')}
+            onClick={() => { filters.setSearchQuery(''); onChange(); }}
             aria-label="検索キーワードをクリア"
             style={{ position: 'absolute', right: '12px' }}
             className="text-text-subtle hover:text-text-main"
