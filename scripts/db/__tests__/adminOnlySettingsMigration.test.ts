@@ -5,7 +5,7 @@
 //
 // - current_user_is_admin() は「ログイン中の利用者の role が admin か」を返す（organizations の更新・invites のポリシーが参照）
 // - search_path を空にした security definer のまま（RLS の中から profiles を読むため）
-// - current_user_can_edit() は差し替えない（データの編集はロールにかかわらず全員が行う）
+// - current_user_can_edit() は差し替えない（このマイグレーションの時点。後に 20261120010605_viewer_role_policies.sql で閲覧者を除くよう差し替えた）
 // - 権限（GRANT）・ポリシーには触れない（ポリシーは関数の差し替えだけで管理者に絞られる）
 
 import { readFileSync } from 'node:fs';

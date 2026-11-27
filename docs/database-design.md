@@ -381,18 +381,21 @@ GHG プロトコルのロケーション基準／マーケット基準それぞ�
 - 書き込みは service_role 限定の RPC `assign_idea_import_to_fiscal_year` だけ（割り当てと同時に、その年度の未算定の積上げ明細を割り当てた版へ付け替えるため）。`authenticated` は SELECT のみ（自組織限定。IDEA のライセンスは法人単位）。
 - 取込完了の `complete_idea_import` は、版を割り当てた年度の明細を新しい版への付け替え・孤児化の対象から除く。`delete_idea_import` は割り当て中の版を P2033 で拒否する。
 
-### 3.14 メンバーのロール（`profiles.role`）（`supabase/migrations/20261024090000_member_roles.sql`）
+### 3.14 メンバーのロール（`profiles.role`）（`supabase/migrations/20261024090000_member_roles.sql`・`20261120010605_viewer_role_policies.sql`）
 
-ロールは管理者とメンバーの 2 つ。`profiles.role` が `admin` なら管理者、それ以外（`logger`・`viewer`）はすべてメンバーとして扱う。判定は「`role` が `admin` か」だけで行い（`src/types/role.ts` の `isAdmin`）、`logger` や `viewer` を個別に判定しない。新しくメンバーにするときに書く値は `logger`（列の既定値）。`member` という値は足さない（既存の行を書き換えるデータの更新をマイグレーションに書けないため: AGENTS.md R12）。
+ロールは管理者（`admin`）・メンバー（`logger`）・閲覧者（`viewer`）の 3 つ。閲覧者は読み取り専用で、レポート・CSV の出力と自分の氏名・電話の更新は許す。新しくメンバーにするときに書く値は `logger`（列の既定値）。`member` という値は足さず、既存の `viewer` 行も書き換えない。既存の閲覧者は編集できなくなるため、リリースノートで告知する。
 
 | 物理名 | 論理名 | 型 | 制約 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `role` | ロール | VARCHAR(50) | NOT NULL, DEFAULT `'logger'`, CHECK (`admin` / `logger` / `viewer`) | `admin` = 管理者、それ以外 = メンバー。組織を作った人（初期セットアップ）は `admin`、招待された人は招待の `role`（既定 `logger`） |
+| `role` | ロール | VARCHAR(50) | NOT NULL, DEFAULT `'logger'`, CHECK (`admin` / `logger` / `viewer`) | `admin` = 管理者、`logger` = メンバー、`viewer` = 閲覧者。組織を作った人（初期セットアップ）は `admin`、招待された人は招待の `role`（既定 `logger`） |
 
-- `authenticated` は `role` を更新できない（列 GRANT に含めない）。ロールの変更は service_role 限定の RPC `change_member_role(p_actor_id, p_target_user_id, p_role)` だけが行う。RPC は操作する人が同じ組織の管理者であること（P2082）、対象が同じ組織のメンバーであること（P2083）、値が `admin` か `logger` であること（P2084）を確かめ、`system_audit_logs` に `member.role.update` を同じトランザクションで残す。管理者かどうかが変わらない変更（`viewer` → `logger` など）は何もしない。
+- `authenticated` は `role` を更新できない（列 GRANT に含めない）。ロールの変更は service_role 限定の RPC `change_member_role(p_actor_id, p_target_user_id, p_role)` だけが行う。RPC は操作する人が同じ組織の管理者であること（P2082）、対象が同じ組織のメンバーであること（P2083）、値が `admin` / `logger` / `viewer` のいずれかであること（P2084）を確かめ、`system_audit_logs` に `member.role.update` を同じトランザクションで残す。変更前後のロール値が同じときだけ何もしない。`logger` と `viewer` の相互変更も更新し、監査ログを残す。
 - トリガー `ensure_organization_keeps_admin`（`profiles` の `role`・`organizationId` の更新と削除の前）は、組織の管理者が 0 人になる変更を P2081 で拒否する。メンバーの削除・退会（`auth.users` の削除から連鎖する削除）・ロールの変更のどの経路でも効く。組織ごとに `pg_advisory_xact_lock` を取ってから数えるため、2 人の管理者が同時に互いを降格しても 0 人にならない。組織ごとの削除（`organizations` からの連鎖）は止めない。
 - メンバーの削除は `system_audit_logs` に `member.remove`（`detail` に削除したときのロール）として Server Action が残す。
-- `current_user_is_admin()`（`supabase/migrations/20261024120000_admin_only_settings.sql` で差し替え）は「ログイン中の利用者の `role` が `admin` か」を返す。`organizations` の更新（企業情報）と `invites` の参照・作成・削除（招待）のポリシーが参照し、これらは管理者だけになる。`current_user_can_edit()` はロールにかかわらず「認証済みか」を返すまま（データの入力・算定・マスタの編集は全員が行う）。
+- `current_user_is_admin()`（`supabase/migrations/20261024120000_admin_only_settings.sql` で差し替え）は「ログイン中の利用者の `role` が `admin` か」を返す。`organizations` の更新（企業情報）と `invites` の参照・作成・削除（招待）のポリシーが参照し、これらは管理者だけになる。`current_user_can_edit()` は、ログイン中の利用者のプロフィールが存在し、`role` が `viewer` 以外のときだけ true を返す（`stable` / `security definer` / `set search_path = ''`）。
+- 既存の組織分離・参照先チェックのポリシーは残し、`current_user_can_edit()` を条件にした `as restrictive` の書き込みポリシーを重ねる。対象は `suppliers` / `locations` / `emission_factors` / `activity_records` / `scope3_category_emissions` / `supplier_emissions` / `scope3_category_methods` / `reduction_targets` / `reduction_target_years` の insert・update・delete、`activity_record_evidence` の insert・delete、Storage の `import-files` の delete（合計 30 本）。select は制限しない。Storage の `activity-evidence` フォルダを直接削除できない既存の制限も保持する。
+- 自分の `fullName`・`phone` の更新と、出力記録のための `system_audit_logs` の insert は閲覧者にも許す。`profiles.role` の列 GRANT は広げない。組織設定・招待の管理者制限も変えない。
+- この RLS は `service_role` 経路の書き込みを防がない。算定・IDEA 取込・AI 読取・証憑ファイルの操作などはアプリ層でも権限を確認する必要があり、DB の変更だけでは閲覧者の読み取り専用を全経路で保証しない。
 
 ### 3.15 AI の設定 (`ai_settings`)（`supabase/migrations/20261024150000_ai_settings.sql`）
 
