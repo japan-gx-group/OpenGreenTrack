@@ -11,6 +11,8 @@ type QueryResult = {
   data?: unknown;
   count?: number | null;
   error: { message: string; code?: string } | null;
+  /** HTTP ステータス（supabase-js の応答と同じ。通信断は 0） */
+  status?: number;
 };
 
 // テーブル名と適用した絞り込みから結果を返す簡易ビルダー。
@@ -170,6 +172,219 @@ describe('addLocations', () => {
     expect(result.failures).toEqual([
       { index: 0, message: '拠点の登録に失敗しました（詳細: connection failure）' },
     ]);
+  });
+});
+
+// リクエスト全体が原因の失敗（ログイン切れ・RLS・レート制限・タイムアウト・ゲートウェイ障害）では、1件ずつ書き直しても
+// 全行が同じ理由で失敗する。書き直しを止め、行エラーを行数分並べずに stopped の1件で返すことを保証する。
+const places = (count: number) =>
+  Array.from({ length: count }, (_, index) => ({
+    name: `place-${index}`, region: 'Kanto' as const, type: 'branch' as const,
+    person: '', status: 'active' as const,
+  }));
+const sessionExpired = 'ログイン情報が確認できませんでした。再度ログインしてから取り込み直してください';
+const jwtExpired: QueryResult = { data: null, status: 401, error: { code: 'PGRST301', message: 'JWT expired' } };
+
+describe('addLocations: リクエスト全体が原因の失敗', () => {
+  const singleInserts = () =>
+    queryLog.filter(query => query.action === 'insert' && !Array.isArray(query.payload));
+
+  // insert の応答を差し替える。profiles（組織IDの解決）は常に成功させる。
+  const resolveInserts = (onInsert: (payload: { name: string } | { name: string }[]) => QueryResult) => {
+    resolveQuery = query => {
+      if (query.table === 'profiles') return { data: { organizationId: 'org-1' }, error: null };
+      if (query.table === 'locations' && query.action === 'insert') {
+        return onInsert(query.payload as { name: string } | { name: string }[]);
+      }
+      return defaultResolver(query);
+    };
+  };
+  const succeed = (payload: { name: string } | { name: string }[]): QueryResult =>
+    Array.isArray(payload)
+      ? { data: payload.map(row => ({ ...row, id: row.name })), error: null, status: 201 }
+      : { data: { ...payload, id: payload.name }, error: null, status: 201 };
+
+  it('セッション切れ（401）では1件ずつ入れ直さず、残りのチャンクも送らない', async () => {
+    resolveInserts(() => jwtExpired);
+
+    const result = await addLocations(places(1000));
+
+    expect(result).toEqual({
+      created: [], failures: [], stopped: { reason: sessionExpired, unconfirmedCount: 0 },
+    });
+    expect(queryLog.filter(query => query.action === 'insert')).toHaveLength(1);
+  });
+
+  it('code の無い 401（ゲートウェイが返す場合など）も、ログインし直すよう案内する', async () => {
+    resolveInserts(() => ({ data: null, status: 401, error: { code: '', message: 'Invalid JWT' } }));
+
+    const result = await addLocations(places(300));
+
+    expect(result.stopped).toEqual({ reason: sessionExpired, unconfirmedCount: 0 });
+    expect(singleInserts()).toHaveLength(0);
+  });
+
+  it('RLS による拒否（403 / 42501）でも入れ直さない', async () => {
+    resolveInserts(() => ({ data: null, status: 403, error: { code: '42501', message: 'new row violates row-level security policy' } }));
+
+    const result = await addLocations(places(300));
+
+    expect(result.failures).toEqual([]);
+    expect(result.stopped).toEqual({ reason: sessionExpired, unconfirmedCount: 0 });
+    expect(singleInserts()).toHaveLength(0);
+  });
+
+  it('レート制限（429）では入れ直さず、待ってから取り込み直すよう案内する', async () => {
+    resolveInserts(() => ({ data: null, status: 429, error: { code: '', message: 'Too Many Requests' } }));
+
+    const result = await addLocations(places(300));
+
+    expect(result.failures).toEqual([]);
+    expect(result.stopped).toEqual({
+      reason: 'アクセスが集中しているため取込を中止しました。しばらく待ってから取り込み直してください',
+      unconfirmedCount: 0,
+    });
+    expect(singleInserts()).toHaveLength(0);
+  });
+
+  const statementTimeout: QueryResult = {
+    data: null, status: 500, error: { code: '57014', message: 'canceling statement due to statement timeout' },
+  };
+
+  it('チャンクがステートメントタイムアウト（57014）になっても、ロールバック済みなので1件ずつ入れ直して取り込む', async () => {
+    resolveInserts(payload => (Array.isArray(payload) && payload[0].name === 'place-100' ? statementTimeout : succeed(payload)));
+
+    const result = await addLocations(places(300));
+
+    expect(result.created).toHaveLength(300);
+    expect(result.failures).toEqual([]);
+    expect(result.stopped).toBeNull();
+    expect(singleInserts()).toHaveLength(100);
+  });
+
+  it('1件ずつの入れ直しでもステートメントタイムアウトになったら止め、確認できない行としては数えない', async () => {
+    resolveInserts(() => statementTimeout);
+
+    const result = await addLocations(places(300));
+
+    expect(result.failures).toEqual([]);
+    expect(result.stopped).toEqual({
+      reason: '拠点の登録に失敗しました（詳細: canceling statement due to statement timeout）',
+      unconfirmedCount: 0,
+    });
+    // 最初のバッチ（同時実行数ぶん）で止め、残りの行は送らない
+    expect(singleInserts()).toHaveLength(5);
+  });
+
+  it('DB に接続できない（503）ときも入れ直さない', async () => {
+    resolveInserts(() => ({ data: null, status: 503, error: { code: 'PGRST001', message: 'Database client error' } }));
+
+    const result = await addLocations(places(300));
+
+    expect(result.stopped?.unconfirmedCount).toBe(0);
+    expect(singleInserts()).toHaveLength(0);
+  });
+
+  it.each([
+    ['通信断（status 0）', { data: null, status: 0, error: { code: '', message: 'FetchError: Failed to fetch' } }],
+    ['ゲートウェイの障害（502）', { data: null, status: 502, error: { code: '', message: 'Bad Gateway' } }],
+    ['ゲートウェイのタイムアウト（504）', { data: null, status: 504, error: { code: '', message: 'Gateway Timeout' } }],
+    ['code の無い 500', { data: null, status: 500, error: { code: '', message: 'Internal Server Error' } }],
+    ['プロキシのタイムアウト（524）', { data: null, status: 524, error: { code: '', message: 'A Timeout Occurred' } }],
+  ] as [string, QueryResult][])('%sでは入れ直さず、応答が届かなかったチャンクの行を「確認できない」として返す', async (_label, response) => {
+    resolveInserts(payload => (Array.isArray(payload) && payload[0].name === 'place-100' ? response : succeed(payload)));
+
+    const result = await addLocations(places(300));
+
+    expect(result.created).toHaveLength(100);
+    expect(result.failures).toEqual([]);
+    // fetch やゲートウェイの英語の文面は出さない
+    expect(result.stopped).toEqual({
+      reason: 'サーバーとの通信に失敗したため取込を中止しました。通信環境を確かめてから取り込み直してください',
+      unconfirmedCount: 100,
+    });
+    expect(singleInserts()).toHaveLength(0);
+    expect(queryLog.filter(query => query.action === 'insert')).toHaveLength(2);
+  });
+
+  it('スキーマが合わない（PGRST204）ときは、どの行でも同じく失敗するので入れ直さない', async () => {
+    resolveInserts(() => ({ data: null, status: 400, error: { code: 'PGRST204', message: "Could not find the 'name' column" } }));
+
+    const result = await addLocations(places(1000));
+
+    expect(result.failures).toEqual([]);
+    expect(result.stopped?.reason).toBe("拠点の登録に失敗しました（詳細: Could not find the 'name' column）");
+    expect(singleInserts()).toHaveLength(0);
+  });
+
+  it('入れ直しの途中でセッションが切れたら止め、行そのものが原因の失敗は行エラーとして残す', async () => {
+    const badRow: QueryResult = { data: null, status: 400, error: { code: 'P0001', message: 'bad row' } };
+    resolveInserts(payload => {
+      if (Array.isArray(payload)) return badRow;
+      const position = Number(payload.name.replace('place-', ''));
+      // place-1 と、セッションが切れるバッチ（place-5 〜 place-9）の中の place-6 は行そのものが原因で失敗する
+      if (position === 1 || position === 6) return badRow;
+      if (position >= 7) return jwtExpired;
+      return succeed(payload);
+    });
+    const progress: number[] = [];
+
+    const result = await addLocations(places(100), count => progress.push(count));
+
+    expect(result.failures).toEqual([
+      { index: 1, message: '拠点の登録に失敗しました（詳細: bad row）' },
+      { index: 6, message: '拠点の登録に失敗しました（詳細: bad row）' },
+    ]);
+    expect(result.created.map(record => record.name)).toEqual(['place-0', 'place-2', 'place-3', 'place-4', 'place-5']);
+    expect(result.stopped).toEqual({ reason: sessionExpired, unconfirmedCount: 0 });
+    expect(singleInserts()).toHaveLength(10);
+    // 止めたバッチまでの進捗を返す（止まった時点の件数で表示が止まらないように）
+    expect(progress.at(-1)).toBe(10);
+  });
+
+  it('分類にないコード（P0001 など）は行が原因の可能性があるので、同じコードが続いても止めずに行エラーとして返す', async () => {
+    resolveInserts(() => ({ data: null, status: 400, error: { code: 'P0001', message: 'bad row' } }));
+
+    const result = await addLocations(places(100));
+
+    expect(result.stopped).toBeNull();
+    expect(result.failures).toHaveLength(100);
+    expect(singleInserts()).toHaveLength(100);
+  });
+});
+
+describe('updateLocations: リクエスト全体が原因の失敗', () => {
+  const updates = (count: number) =>
+    places(count).map((location, index) => ({ id: `loc-${index}`, location }));
+  const updateQueries = () => queryLog.filter(query => query.action === 'update');
+  const targetId = (query: QueryLog) => query.filters.find(filter => filter.column === 'id')?.value as string;
+
+  it('途中でセッションが切れたら残りを送らず、行エラーを並べずに止めた理由1件で返す', async () => {
+    resolveQuery = query => {
+      if (query.action !== 'update') return defaultResolver(query);
+      const position = Number(targetId(query).replace('loc-', ''));
+      return position < 5 ? { data: { id: targetId(query) }, error: null, status: 200 } : jwtExpired;
+    };
+
+    const result = await updateLocations(updates(1000));
+
+    expect(result.updated).toHaveLength(5);
+    expect(result.failures).toEqual([]);
+    expect(result.stopped).toEqual({ reason: sessionExpired, unconfirmedCount: 0 });
+    expect(updateQueries()).toHaveLength(10);
+  });
+
+  it('対象が削除されていた（PGRST116 / 406）のは行が原因なので、止めずに行エラーとして返す', async () => {
+    resolveQuery = query =>
+      query.action === 'update'
+        ? { data: null, status: 406, error: { code: 'PGRST116', message: 'Cannot coerce the result to a single JSON object' } }
+        : defaultResolver(query);
+
+    const result = await updateLocations(updates(10));
+
+    expect(result.stopped).toBeNull();
+    expect(result.failures).toHaveLength(10);
+    expect(updateQueries()).toHaveLength(10);
   });
 });
 

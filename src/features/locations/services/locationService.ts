@@ -11,7 +11,11 @@ import {
   canDeleteLocation,
   type LocationDeletionImpact,
 } from './locationDeletionGuard';
-import { toLocationWriteErrorMessage } from './locationWriteError';
+import {
+  SESSION_EXPIRED_MESSAGE,
+  toLocationWriteErrorMessage,
+  type LocationWriteAction,
+} from './locationWriteError';
 import {
   type LocationRecord,
   type LocationStatus,
@@ -150,16 +154,111 @@ export interface BulkLocationFailure {
 const MAX_PARALLEL_WRITES = 5;
 const INSERT_CHUNK_SIZE = 100;
 
+// 行の中身ではなくリクエスト全体が原因の失敗かどうか。こうした失敗は1件ずつ書き直しても
+// 全行が同じ理由で失敗し、行数分の追加リクエストと同じエラーが並ぶだけになる（レート制限では悪化もする）。
+// - status 0: 通信断（fetch 自体の失敗）
+// - 401 / 403: ログイン切れ・anon として送られた（RLS による拒否を含む）
+// - 429: レート制限
+// - 502 / 503 / 504、または code の無い 5xx: ゲートウェイ・DB 接続の障害（応答本文が JSON でないと code は空になる）
+// - 57014: ステートメントタイムアウト（PostgREST は 500 で返すため code で見る）
+// - PGRST2xx / 42P01 / 42703: スキーマキャッシュ・テーブル・列が見つからない（どの行でも同じく失敗する）
+// ここに無いコードは行が原因の可能性があるため、従来どおり行エラーとして扱う。
+// 誤って止めると以降の正しい行が取り込まれず行エラーも失われる。誤って続けても失うのは追加リクエストだけなので、
+// 「同じコードが続いたら止める」ような推測はせず、全体が原因と分かっているものだけで止める。
+const REQUEST_LEVEL_STATUSES = new Set([0, 401, 403, 429, 502, 503, 504]);
+const STATEMENT_TIMEOUT_CODE = '57014';
+const REQUEST_LEVEL_CODES = new Set([STATEMENT_TIMEOUT_CODE, '42P01', '42703']);
+const SCHEMA_CACHE_CODE = /^PGRST2\d\d$/;
+const RATE_LIMITED_MESSAGE =
+  'アクセスが集中しているため取込を中止しました。しばらく待ってから取り込み直してください';
+
+interface WriteResponse {
+  data: unknown;
+  status?: number;
+  error: { code?: string; message?: string } | null;
+}
+
+const isRequestLevelFailure = ({ status, error }: WriteResponse): boolean => {
+  const code = error?.code;
+  if (status !== undefined && (REQUEST_LEVEL_STATUSES.has(status) || (status >= 500 && !code))) return true;
+  return code !== undefined && (REQUEST_LEVEL_CODES.has(code) || SCHEMA_CACHE_CODE.test(code));
+};
+
+const CONNECTION_FAILED_MESSAGE =
+  'サーバーとの通信に失敗したため取込を中止しました。通信環境を確かめてから取り込み直してください';
+
+// 応答が届かなかった（通信断・ゲートウェイの障害やタイムアウト）ため、サーバー側で書き込まれたか分からない失敗。
+// isRequestLevelFailure が止める「code の無い 5xx」とそろえる。ただし 503（DB に接続できない）や
+// 57014（タイムアウトでロールバック済み、code あり）は書き込まれていないので含めない。
+const isOutcomeUnknown = ({ status, error }: WriteResponse): boolean =>
+  status === 0 ||
+  status === 502 ||
+  status === 504 ||
+  (status !== undefined && status >= 500 && status !== 503 && !error?.code);
+
+// 止めた理由の文。code だけでは判定できない場合（ゲートウェイが返す 401、本文が JSON でない応答など）があるため、
+// HTTP ステータスで決まるものを先に見る。fetch の英語のエラー文は出さない。
+const toStopReason = (response: WriteResponse, action: LocationWriteAction): string => {
+  if (response.status === 401) return SESSION_EXPIRED_MESSAGE;
+  if (response.status === 429) return RATE_LIMITED_MESSAGE;
+  if (isOutcomeUnknown(response)) return CONNECTION_FAILED_MESSAGE;
+  return toLocationWriteErrorMessage(response.error, action);
+};
+
+/** リクエスト全体が原因の失敗で途中で止めたときの情報（取込画面はファイル単位のエラー1件として表示する）。 */
+export interface BulkLocationStop {
+  reason: string;
+  /** 応答が届かず、書き込まれたか確認できない行数。止めた時点より後の行は試みておらず、ここにも failures にも入らない */
+  unconfirmedCount: number;
+}
+
+// 1件ずつの書き込みのバッチを振り分ける。成功は onSuccess へ、行が原因の失敗は failures へ入れる。
+// リクエスト全体が原因の失敗が1件でもあれば止めるための情報を返す。その行は行エラーにせず、止めた理由の1件にまとめる
+// （同じバッチでも、行そのものが原因で失敗した行は行エラーとして残す）。
+const collectSingleWrites = (
+  results: WriteResponse[],
+  baseIndex: number,
+  action: LocationWriteAction,
+  failures: BulkLocationFailure[],
+  onSuccess: (row: LocationRow) => void,
+): BulkLocationStop | null => {
+  let stopResponse: WriteResponse | null = null;
+  let unconfirmedCount = 0;
+  results.forEach((result, indexInBatch) => {
+    if (!result.error && result.data) {
+      onSuccess(result.data as LocationRow);
+      return;
+    }
+    if (isRequestLevelFailure(result)) {
+      stopResponse ??= result;
+      if (isOutcomeUnknown(result)) unconfirmedCount += 1;
+      return;
+    }
+    failures.push({ index: baseIndex + indexInBatch, message: toLocationWriteErrorMessage(result.error, action) });
+  });
+  return stopResponse ? { reason: toStopReason(stopResponse, action), unconfirmedCount } : null;
+};
+
+/** CSVインポートの一括登録の結果。 */
+export interface BulkLocationCreateResult {
+  created: LocationRecord[];
+  /** 行が原因の失敗（行番号つきで表示する） */
+  failures: BulkLocationFailure[];
+  /** リクエスト全体が原因の失敗で途中で止めたとき。最後まで処理したら null */
+  stopped: BulkLocationStop | null;
+}
+
 /**
  * CSVインポート用の一括登録。組織IDの解決を1回で済ませ、チャンク単位で insert する。
  * 失敗したチャンクだけ1件ずつ入れ直し、どの行が原因かを行単位で返す
  * （取込画面が行番号つきでエラーを出せるようにするため）。
+ * ただしリクエスト全体が原因の失敗（ログイン切れ・レート制限など）では入れ直さずに止め、stopped で返す。
  */
 export const addLocations = async (
   locations: NewLocationInput[],
   onProgress?: (completed: number) => void,
-): Promise<{ created: LocationRecord[]; failures: BulkLocationFailure[] }> => {
-  if (locations.length === 0) return { created: [], failures: [] };
+): Promise<BulkLocationCreateResult> => {
+  if (locations.length === 0) return { created: [], failures: [], stopped: null };
 
   const supabase = createClient();
   const organizationId = await getCurrentOrganizationId(supabase);
@@ -169,41 +268,54 @@ export const addLocations = async (
   const failures: BulkLocationFailure[] = [];
   for (let offset = 0; offset < rows.length; offset += INSERT_CHUNK_SIZE) {
     const chunk = rows.slice(offset, offset + INSERT_CHUNK_SIZE);
-    const { data, error } = await supabase.from('locations').insert(chunk).select(SELECT_COLUMNS);
-    if (!error && data) {
-      created.push(...(data as unknown as LocationRow[]).map(toLocationRecord));
+    const chunkResult = await supabase.from('locations').insert(chunk).select(SELECT_COLUMNS);
+    if (!chunkResult.error && chunkResult.data) {
+      created.push(...(chunkResult.data as unknown as LocationRow[]).map(toLocationRecord));
       onProgress?.(offset + chunk.length);
       continue;
     }
+    // ステートメントタイムアウトはロールバック済みで、100 件まとめた insert が重かっただけのこともある。
+    // 小さな insert なら通る可能性があるため、チャンクでは止めずに1件ずつ入れ直す（1件でもタイムアウトしたらそこで止める）。
+    if (isRequestLevelFailure(chunkResult) && chunkResult.error?.code !== STATEMENT_TIMEOUT_CODE) {
+      const unconfirmedCount = isOutcomeUnknown(chunkResult) ? chunk.length : 0;
+      return { created, failures, stopped: { reason: toStopReason(chunkResult, 'create'), unconfirmedCount } };
+    }
 
     // 一括 insert は1行でも弾かれるとチャンク全体が失敗する。原因行を特定する。
+    // 入れ直しの途中でセッションが切れることもあるため、バッチごとに止めるかを確かめる。
     for (let start = 0; start < chunk.length; start += MAX_PARALLEL_WRITES) {
       const batch = chunk.slice(start, start + MAX_PARALLEL_WRITES);
       const results = await Promise.all(
         batch.map(row => supabase.from('locations').insert(row).select(SELECT_COLUMNS).single()),
       );
-      results.forEach((single, indexInBatch) => {
-        const index = offset + start + indexInBatch;
-        if (single.error || !single.data) {
-          failures.push({ index, message: toLocationWriteErrorMessage(single.error, 'create') });
-        } else {
-          created.push(toLocationRecord(single.data as unknown as LocationRow));
-        }
-      });
+      const stopped = collectSingleWrites(results, offset + start, 'create', failures, row =>
+        created.push(toLocationRecord(row)),
+      );
       onProgress?.(offset + start + batch.length);
+      if (stopped) return { created, failures, stopped };
     }
   }
-  return { created, failures };
+  return { created, failures, stopped: null };
 };
+
+/** CSVインポートの一括更新の結果。 */
+export interface BulkLocationUpdateResult {
+  updated: LocationRecord[];
+  /** 行が原因の失敗（行番号つきで表示する） */
+  failures: BulkLocationFailure[];
+  /** リクエスト全体が原因の失敗で途中で止めたとき。最後まで処理したら null */
+  stopped: BulkLocationStop | null;
+}
 
 /**
  * CSVインポート用の一括更新。更新は行ごとに対象IDが異なり1文にまとめられないため、
  * 同時実行数を絞って並行に流す（行単位の成否はそのまま保つ）。
+ * リクエスト全体が原因の失敗（ログイン切れ・レート制限など）では残りを送らずに止め、stopped で返す。
  */
 export const updateLocations = async (
   updates: { id: string; location: NewLocationInput }[],
   onProgress?: (completed: number) => void,
-): Promise<{ updated: LocationRecord[]; failures: BulkLocationFailure[] }> => {
+): Promise<BulkLocationUpdateResult> => {
   const supabase = createClient();
   const updated: LocationRecord[] = [];
   const failures: BulkLocationFailure[] = [];
@@ -220,18 +332,14 @@ export const updateLocations = async (
           .single(),
       ),
     );
-    results.forEach((result, indexInChunk) => {
-      const index = offset + indexInChunk;
-      if (result.error || !result.data) {
-        failures.push({ index, message: toLocationWriteErrorMessage(result.error, 'update') });
-        return;
-      }
-      updated.push(toLocationRecord(result.data as unknown as LocationRow));
-    });
+    const stopped = collectSingleWrites(results, offset, 'update', failures, row =>
+      updated.push(toLocationRecord(row)),
+    );
     onProgress?.(offset + chunk.length);
+    if (stopped) return { updated, failures, stopped };
   }
 
-  return { updated, failures };
+  return { updated, failures, stopped: null };
 };
 
 // 既存拠点の更新。編集後の LocationRecord を返す。

@@ -36,6 +36,17 @@ export interface LocationCsvImportController {
   runImport: () => Promise<void>;
 }
 
+// 取込を途中で止めたときのファイル単位のエラー文。止めた理由に、確認できない件数と試みていない件数を添える。
+// 応答が届かなかった行は書き込まれている可能性があるため、「取り込んでいない」には数えない。
+const describeStop = (reason: string, unconfirmedCount: number, notAttemptedCount: number): string => {
+  const parts = [reason];
+  if (unconfirmedCount > 0) {
+    parts.push(`${unconfirmedCount}件は反映されたか確認できません。一覧で確かめてから取り込み直してください`);
+  }
+  if (notAttemptedCount > 0) parts.push(`残りの${notAttemptedCount}件は取り込んでいません`);
+  return parts.join('。');
+};
+
 export function useLocationCsvImport(
   database: LocationRecord[],
   /** 取込後に一覧を取り直す（採番された ID と更新後の値を反映するため）。失敗は throw する */
@@ -85,17 +96,31 @@ export function useLocationCsvImport(
         })),
       );
 
-      const updateResult = await updateLocations(
-        plan.updates.map(update => ({ id: update.targetId, location: update.location })),
-        completed => setCompletedCount(plan.creates.length + completed),
-      );
-      updatedCount = updateResult.updated.length;
-      runtimeErrors.push(
-        ...updateResult.failures.map(failure => ({
-          row: plan.updates[failure.index].row,
-          reasons: [failure.message],
-        })),
-      );
+      if (createResult.stopped !== null) {
+        // ログイン切れ・レート制限などリクエスト全体が原因で止まったときは、更新も同じ理由で失敗するため実行しない。
+        // 行エラーを行数分並べず、ファイル単位のエラー1件として通知する。
+        const { stopped } = createResult;
+        const handled = createResult.created.length + createResult.failures.length + stopped.unconfirmedCount;
+        updatedCount = 0;
+        writeFailure = describeStop(stopped.reason, stopped.unconfirmedCount, plan.creates.length - handled + plan.updates.length);
+      } else {
+        const updateResult = await updateLocations(
+          plan.updates.map(update => ({ id: update.targetId, location: update.location })),
+          completed => setCompletedCount(plan.creates.length + completed),
+        );
+        updatedCount = updateResult.updated.length;
+        runtimeErrors.push(
+          ...updateResult.failures.map(failure => ({
+            row: plan.updates[failure.index].row,
+            reasons: [failure.message],
+          })),
+        );
+        if (updateResult.stopped !== null) {
+          const { stopped } = updateResult;
+          const handled = updateResult.updated.length + updateResult.failures.length + stopped.unconfirmedCount;
+          writeFailure = describeStop(stopped.reason, stopped.unconfirmedCount, plan.updates.length - handled);
+        }
+      }
     } catch (error: unknown) {
       writeFailure = error instanceof Error ? error.message : 'CSVインポートに失敗しました';
     }
@@ -108,8 +133,9 @@ export function useLocationCsvImport(
     const exampleNote = plan.exampleRowCount > 0 ? `・記入例${plan.exampleRowCount}件を除外` : '';
     const countLabel = (count: number | null) => (count === null ? '件数不明' : `${count}件`);
     const summary = `追加${countLabel(addedCount)}・更新${countLabel(updatedCount)}・スキップ${plan.skipCount}件・エラー${allErrors.length}件${exampleNote}`;
-    if (writeFailure !== null) {
-      showToast(`CSVインポートが途中で失敗しました（${writeFailure}）: ${summary}`, 'error');
+    const failureMessage = writeFailure !== null ? `CSVインポートが途中で失敗しました（${writeFailure}）: ${summary}` : null;
+    if (failureMessage !== null) {
+      showToast(failureMessage, 'error');
     } else {
       showToast(`CSVインポート完了: ${summary}`, allErrors.length > 0 ? 'error' : 'success');
     }
@@ -117,12 +143,19 @@ export function useLocationCsvImport(
     try {
       // 反映された可能性があれば一覧を取り直す（採番されたIDと更新後の値を表示に反映するため）。
       // throw した場合は件数に関係なく一部が書き込み済みかもしれないので取り直す。
-      // 取込自体は成功しているため、再取得の失敗を取込の失敗として通知しない。
-      if (writeFailure !== null || (addedCount ?? 0) > 0 || (updatedCount ?? 0) > 0) {
+      // 取込が完了していれば、再取得の失敗を取込の失敗として通知しない。
+      // 取込が途中で止まった場合（ログイン切れなど）は再取得も同じ理由で失敗しやすいため、「完了」とは書かない。
+      // トーストは1件ずつしか出せず後から出したものに置き換わるので、止まった理由と件数を消さないよう1件にまとめる。
+      if (failureMessage !== null || (addedCount ?? 0) > 0 || (updatedCount ?? 0) > 0) {
         try {
           await reload();
         } catch {
-          showToast('取込は完了しましたが、一覧の再取得に失敗しました。画面を再読み込みしてください。', 'error');
+          showToast(
+            failureMessage !== null
+              ? `${failureMessage}。一覧の再取得にも失敗しました。画面を再読み込みしてください。`
+              : '取込は完了しましたが、一覧の再取得に失敗しました。画面を再読み込みしてください。',
+            'error',
+          );
         }
       }
     } finally {
